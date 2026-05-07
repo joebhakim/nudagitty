@@ -1,0 +1,301 @@
+export type GraphKind = "dag" | "digraph" | "mag" | "pdag" | "pag" | "graph";
+
+export type EdgeKind =
+  | "directed"
+  | "bidirected"
+  | "undirected"
+  | "partialDirected"
+  | "partialUndirected"
+  | "unspecified";
+
+export type ViewMode = "normal" | "moral" | "correlation" | "equivalence";
+
+export type EffectKind = "total" | "direct" | "causalOdds" | "instrument";
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface NodeRoleFlags {
+  exposure: boolean;
+  outcome: boolean;
+  adjusted: boolean;
+  selected: boolean;
+  latent: boolean;
+}
+
+export type VariableValueType =
+  | "continuous"
+  | "binary"
+  | "categorical"
+  | "ordinal"
+  | "count"
+  | "positive"
+  | "proportion"
+  | "time_to_event"
+  | "vector"
+  | "time_series"
+  | "text"
+  | "embedding"
+  | "distributional";
+
+export type MeasurementModelKind =
+  | "observed"
+  | "noisy_proxy"
+  | "latent_construct"
+  | "censored"
+  | "rounded"
+  | "missing_prone";
+
+export type InterventionKind =
+  | "none"
+  | "hard_do"
+  | "soft_shift"
+  | "stochastic"
+  | "policy"
+  | "manual_override";
+
+export type SimulationDisplayMode =
+  | "single_draw"
+  | "expected_value"
+  | "population_mean"
+  | "uncertainty_band"
+  | "causal_contrast";
+
+export interface VariableMeasurementModel {
+  kind: MeasurementModelKind;
+  errorSd: number;
+  missingRate: number;
+  lowerLimit: number | null;
+  upperLimit: number | null;
+}
+
+export interface VariableInterventionModel {
+  kind: InterventionKind;
+  value: number;
+  shift: number;
+  probability: number;
+}
+
+export interface VariableSimulationView {
+  mode: SimulationDisplayMode;
+  sampleSize: number;
+}
+
+export interface VariableModel {
+  description: string;
+  valueType: VariableValueType;
+  unit: string;
+  categories: string[];
+  measurement: VariableMeasurementModel;
+  intervention: VariableInterventionModel;
+  simulation: VariableSimulationView;
+  tags: string[];
+}
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  position: Point;
+  roles: NodeRoleFlags;
+  variable: VariableModel;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  kind: EdgeKind;
+  control?: Point;
+}
+
+export interface GraphModel {
+  kind: GraphKind;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export type NodeDistribution =
+  | { kind: "constant"; value: number }
+  | { kind: "normal"; mean: number; sd: number }
+  | { kind: "lognormal"; meanLog: number; sdLog: number }
+  | { kind: "uniform"; min: number; max: number }
+  | { kind: "bernoulli"; p: number }
+  | { kind: "poisson"; lambda: number }
+  | { kind: "beta"; alpha: number; beta: number }
+  | { kind: "laplace"; mean: number; scale: number }
+  | { kind: "student_t"; mean: number; scale: number; df: number }
+  | { kind: "gamma"; shape: number; scale: number }
+  | { kind: "exponential"; rate: number };
+
+export type NodeCombinerKind =
+  | "additive"
+  | "bounded_logistic"
+  | "positive_softplus"
+  | "bernoulli_logit"
+  | "poisson_log"
+  | "gamma_log"
+  | "noisy_or";
+
+export type NodeInteraction =
+  | { id: string; kind: "product"; left: string; right: string; coefficient: number }
+  | { id: string; kind: "smooth_gated"; source: string; gate: string; coefficient: number; threshold: number; steepness: number };
+
+export interface NodeMechanism {
+  distribution: NodeDistribution;
+  intercept: number;
+  noise: NodeDistribution;
+  combiner: NodeCombinerKind;
+  interactions: NodeInteraction[];
+}
+
+export type EdgeMechanismKind =
+  | "linear"
+  | "threshold"
+  | "smooth_threshold"
+  | "saturating"
+  | "quadratic"
+  | "piecewise_linear"
+  | "hill_emax"
+  | "log_linear"
+  | "power_law"
+  | "monotone_spline";
+
+export interface PiecewisePoint {
+  x: number;
+  y: number;
+}
+
+export interface EdgeMechanism {
+  kind: EdgeMechanismKind;
+  coefficient: number;
+  enabled: boolean;
+  threshold: number;
+  low: number;
+  high: number;
+  scale: number;
+  steepness: number;
+  midpoint: number;
+  beta1: number;
+  beta2: number;
+  baseline: number;
+  maxEffect: number;
+  ec50: number;
+  exponent: number;
+  offset: number;
+  points: PiecewisePoint[];
+}
+
+export interface SimulationSpec {
+  seed: number;
+  nodes: Record<string, NodeMechanism>;
+  edges: Record<string, EdgeMechanism>;
+  overrides: Record<string, number>;
+  selections: Record<string, SimulationSelectionCondition>;
+}
+
+export type SimulationSelectionOperator = "at_least" | "at_most" | "between";
+export type SimulationSamplingMode = "auto" | "rejection" | "importance";
+
+export interface SimulationSelectionCondition {
+  operator: SimulationSelectionOperator;
+  value: number;
+  upper: number | null;
+  sampling: SimulationSamplingMode;
+}
+
+export interface SimulatedAnalyticDistribution {
+  distribution: NodeDistribution;
+  mean: number | null;
+  variance: number | null;
+  note: string;
+}
+
+export interface SimulatedEmpiricalDistribution {
+  samples: number[];
+  weights: number[];
+  mean: number | null;
+  variance: number | null;
+  min: number | null;
+  max: number | null;
+  effectiveSampleSize: number | null;
+}
+
+export interface SimulatedNodeState {
+  kind: "scalar" | "distribution";
+  value: number;
+  observed: number | null;
+  analytic: SimulatedAnalyticDistribution | null;
+  empirical: SimulatedEmpiricalDistribution;
+}
+
+export interface SimulationConditioningSummary {
+  totalSamples: number;
+  acceptedSamples: number;
+  activeConditions: string[];
+  analytic: string | null;
+  empiricalMethod: "forward" | "rejection" | "importance";
+  effectiveSampleSize: number | null;
+}
+
+export interface GraphDocument {
+  schemaVersion: 1;
+  id: string;
+  title: string;
+  graph: GraphModel;
+  simulation: SimulationSpec;
+  updatedAt: string;
+}
+
+export interface ParsedModel {
+  document: GraphDocument;
+  warnings: string[];
+}
+
+export interface ConditionalIndependence {
+  left: string;
+  right: string;
+  given: string[];
+}
+
+export interface AdjustmentReport {
+  valid: boolean;
+  message: string;
+  minimalSets: string[][];
+}
+
+export interface InstrumentReport {
+  instruments: Array<{ instrument: string; conditionedOn: string[] }>;
+  message: string;
+}
+
+export interface AnalysisReport {
+  cycle: string[] | null;
+  semiCycle: string[] | null;
+  exposures: string[];
+  outcomes: string[];
+  adjusted: string[];
+  selected: string[];
+  latent: string[];
+  covariateCount: number;
+  causalPathCount: number;
+  openBiasingPathCount: number;
+  causalPaths: string[][];
+  biasingPaths: string[][];
+  totalEffect: AdjustmentReport;
+  directEffect: AdjustmentReport;
+  causalOdds: AdjustmentReport;
+  instruments: InstrumentReport;
+  implications: ConditionalIndependence[];
+}
+
+export interface SimulationResult {
+  seed: number;
+  values: Record<string, number>;
+  nodeStates: Record<string, SimulatedNodeState>;
+  contributions: Record<string, number>;
+  changedNodes: string[];
+  diagnostics: string[];
+  conditioning: SimulationConditioningSummary;
+}

@@ -1,0 +1,43 @@
+{
+  "name": "nudagitty",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "vite --config apps/web/vite.config.ts --host 0.0.0.0",
+    "build": "npm --workspace @nudagitty/core run build && npm --workspace @nudagitty/analysis-worker run build && npm --workspace @nudagitty/sim-worker run build && npm --workspace @nudagitty/web run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "npm --workspace @nudagitty/web run test:e2e",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/d3-random": "^3.0.3",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.2.0",
+    "vitest": "^4.0.0"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.10.0",
+    "@codemirror/lang-javascript": "^6.2.0",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.38.0",
+    "@uiw/react-codemirror": "^4.25.0",
+    "d3-force": "^3.0.0",
+    "d3-random": "^3.0.1",
+    "elkjs": "^0.11.0",
+    "lucide-react": "^0.553.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
+}

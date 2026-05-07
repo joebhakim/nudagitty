@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@nudagitty/core": ["../../packages/core/src"],
+      "@nudagitty/analysis-worker": ["../../packages/analysis-worker/src"],
+      "@nudagitty/sim-worker": ["../../packages/sim-worker/src"]
+    }
+  },
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/analysis-worker" },
+    { "path": "../../packages/sim-worker" }
+  ],
+  "include": ["src", "tests", "vite.config.ts", "playwright.config.ts"]
+}

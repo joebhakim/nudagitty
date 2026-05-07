@@ -1,0 +1,17 @@
+{
+  "name": "@nudagitty/web",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@nudagitty/analysis-worker": "0.1.0",
+    "@nudagitty/core": "0.1.0",
+    "@nudagitty/sim-worker": "0.1.0"
+  }
+}
