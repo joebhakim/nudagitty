@@ -15,7 +15,7 @@ import {
   Trash2,
   Undo2
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EXAMPLES,
   addEdge,
@@ -75,7 +75,6 @@ import type {
   SimulationResult,
   SimulationSelectionCondition,
   SimulatedNodeState,
-  VariableInterventionModel,
   VariableMeasurementModel,
   VariableModel,
   VariableSimulationView,
@@ -88,6 +87,7 @@ type BibliographyTopic = "sem" | "nonlinear" | "probability" | "deep";
 type CanvasViewport = { cx: number; cy: number; zoom: number };
 type ScatterPair = { x: string; y: string };
 type ScatterPoint = { x: number; y: number; weight: number; index: number };
+type BinaryCell = { x: 0 | 1; y: 0 | 1; weight: number; count: number; percent: number };
 type DragState =
   | { kind: "node"; id: string; offset: Point }
   | { kind: "edge-control"; id: string }
@@ -145,15 +145,6 @@ const MEASUREMENT_MODELS: Array<[VariableMeasurementModel["kind"], string]> = [
   ["missing_prone", "missing-prone"]
 ];
 
-const INTERVENTION_MODELS: Array<[VariableInterventionModel["kind"], string]> = [
-  ["none", "none"],
-  ["hard_do", "hard do"],
-  ["soft_shift", "soft shift"],
-  ["stochastic", "stochastic"],
-  ["policy", "policy"],
-  ["manual_override", "manual override"]
-];
-
 const SIMULATION_VIEW_MODES: Array<[VariableSimulationView["mode"], string]> = [
   ["single_draw", "single draw"],
   ["expected_value", "expected value"],
@@ -161,6 +152,13 @@ const SIMULATION_VIEW_MODES: Array<[VariableSimulationView["mode"], string]> = [
   ["uncertainty_band", "uncertainty band"],
   ["causal_contrast", "causal contrast"]
 ];
+
+const PLANNED_CAUSAL_MODULES = [
+  { id: "hard_do", label: "Hard do" },
+  { id: "soft_shift", label: "Soft intervention" },
+  { id: "stochastic", label: "Stochastic assignment" },
+  { id: "policy", label: "Policy rule" }
+] as const;
 
 const BIBLIOGRAPHY: Array<{
   topic: BibliographyTopic;
@@ -930,6 +928,10 @@ function ScatterplotPanel(props: {
   const yNode = props.graph.nodes.find((node) => node.id === pair.y);
   const xLabel = xNode ? nodeDisplayName(xNode) : pair.x;
   const yLabel = yNode ? nodeDisplayName(yNode) : pair.y;
+  const binaryPair = xNode !== undefined
+    && yNode !== undefined
+    && normalizeVariableModel(xNode.variable).valueType === "binary"
+    && normalizeVariableModel(yNode.variable).valueType === "binary";
   const toX = (value: number) => margin.left + ((value - xDomain[0]) / (xDomain[1] - xDomain[0] || 1)) * plotWidth;
   const toY = (value: number) => margin.top + plotHeight - ((value - yDomain[0]) / (yDomain[1] - yDomain[0] || 1)) * plotHeight;
   const regression = stats && Number.isFinite(stats.slope) && Number.isFinite(stats.intercept)
@@ -968,60 +970,152 @@ function ScatterplotPanel(props: {
         </label>
       </div>
 
-      <svg
-        className="scatterplot-svg"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label={`Scatterplot of ${xLabel} and ${yLabel}`}
-      >
-        <rect className="scatter-plot-background" x={margin.left} y={margin.top} width={plotWidth} height={plotHeight} />
-        <line className="scatter-axis" x1={margin.left} y1={margin.top + plotHeight} x2={margin.left + plotWidth} y2={margin.top + plotHeight} />
-        <line className="scatter-axis" x1={margin.left} y1={margin.top} x2={margin.left} y2={margin.top + plotHeight} />
-        <text className="scatter-tick-label" x={margin.left} y={height - 17}>{formatValue(xDomain[0])}</text>
-        <text className="scatter-tick-label end" x={margin.left + plotWidth} y={height - 17}>{formatValue(xDomain[1])}</text>
-        <text className="scatter-tick-label y-start" x={margin.left - 7} y={margin.top + plotHeight}>{formatValue(yDomain[0])}</text>
-        <text className="scatter-tick-label y-end" x={margin.left - 7} y={margin.top + 4}>{formatValue(yDomain[1])}</text>
-        <text className="scatter-axis-label x" x={margin.left + plotWidth / 2} y={height - 3}>{abbreviateLabel(xLabel, 28)}</text>
-        <text className="scatter-axis-label y" x={12} y={margin.top + plotHeight / 2} transform={`rotate(-90 12 ${margin.top + plotHeight / 2})`}>{abbreviateLabel(yLabel, 24)}</text>
-        {points.map((point) => {
-          const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
-          return (
-            <circle
-              className="scatter-point"
-              key={point.index}
-              cx={toX(point.x)}
-              cy={toY(point.y)}
-              r={1.7 + normalizedWeight * 2.4}
-              style={{ opacity: 0.18 + normalizedWeight * 0.58 }}
-            />
-          );
-        })}
-        {regression && (
-          <line
-            className="scatter-regression"
-            x1={toX(regression.x1)}
-            y1={toY(regression.y1)}
-            x2={toX(regression.x2)}
-            y2={toY(regression.y2)}
-          />
-        )}
-      </svg>
-
-      {points.length === 0 ? (
-        <p className="muted">No finite paired samples are available for this variable pair.</p>
+      {binaryPair ? (
+        <BinaryPairView
+          points={points}
+          xLabel={xLabel}
+          yLabel={yLabel}
+          effectiveSampleSize={props.simulation.conditioning.effectiveSampleSize}
+        />
       ) : (
-        <div className="scatter-stats">
-          <span>draws {points.length}</span>
-          <span>corr {stats?.correlation === null || stats?.correlation === undefined ? "n/a" : formatValue(stats.correlation)}</span>
-          <span>x mean {stats ? formatValue(stats.meanX) : "n/a"}</span>
-          <span>y mean {stats ? formatValue(stats.meanY) : "n/a"}</span>
-          {props.simulation.conditioning.effectiveSampleSize !== null && <span>ESS {formatValue(props.simulation.conditioning.effectiveSampleSize)}</span>}
-        </div>
+        <>
+          <svg
+            className="scatterplot-svg"
+            viewBox={`0 0 ${width} ${height}`}
+            role="img"
+            aria-label={`Scatterplot of ${xLabel} and ${yLabel}`}
+          >
+            <rect className="scatter-plot-background" x={margin.left} y={margin.top} width={plotWidth} height={plotHeight} />
+            <line className="scatter-axis" x1={margin.left} y1={margin.top + plotHeight} x2={margin.left + plotWidth} y2={margin.top + plotHeight} />
+            <line className="scatter-axis" x1={margin.left} y1={margin.top} x2={margin.left} y2={margin.top + plotHeight} />
+            <text className="scatter-tick-label" x={margin.left} y={height - 17}>{formatValue(xDomain[0])}</text>
+            <text className="scatter-tick-label end" x={margin.left + plotWidth} y={height - 17}>{formatValue(xDomain[1])}</text>
+            <text className="scatter-tick-label y-start" x={margin.left - 7} y={margin.top + plotHeight}>{formatValue(yDomain[0])}</text>
+            <text className="scatter-tick-label y-end" x={margin.left - 7} y={margin.top + 4}>{formatValue(yDomain[1])}</text>
+            <text className="scatter-axis-label x" x={margin.left + plotWidth / 2} y={height - 3}>{abbreviateLabel(xLabel, 28)}</text>
+            <text className="scatter-axis-label y" x={12} y={margin.top + plotHeight / 2} transform={`rotate(-90 12 ${margin.top + plotHeight / 2})`}>{abbreviateLabel(yLabel, 24)}</text>
+            {points.map((point) => {
+              const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
+              return (
+                <circle
+                  className="scatter-point"
+                  key={point.index}
+                  cx={toX(point.x)}
+                  cy={toY(point.y)}
+                  r={1.7 + normalizedWeight * 2.4}
+                  style={{ opacity: 0.18 + normalizedWeight * 0.58 }}
+                />
+              );
+            })}
+            {regression && (
+              <line
+                className="scatter-regression"
+                x1={toX(regression.x1)}
+                y1={toY(regression.y1)}
+                x2={toX(regression.x2)}
+                y2={toY(regression.y2)}
+              />
+            )}
+          </svg>
+
+          {points.length === 0 ? (
+            <p className="muted">No finite paired samples are available for this variable pair.</p>
+          ) : (
+            <div className="scatter-stats">
+              <span>draws {points.length}</span>
+              <span>corr {stats?.correlation === null || stats?.correlation === undefined ? "n/a" : formatValue(stats.correlation)}</span>
+              <span>x mean {stats ? formatValue(stats.meanX) : "n/a"}</span>
+              <span>y mean {stats ? formatValue(stats.meanY) : "n/a"}</span>
+              {props.simulation.conditioning.effectiveSampleSize !== null && <span>ESS {formatValue(props.simulation.conditioning.effectiveSampleSize)}</span>}
+            </div>
+          )}
+        </>
       )}
 
       <div className="button-row">
         <button type="button" className="mini-button" onClick={() => props.onSelectNode(pair.x)}>edit x</button>
         <button type="button" className="mini-button" onClick={() => props.onSelectNode(pair.y)}>edit y</button>
+      </div>
+    </div>
+  );
+}
+
+function BinaryPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel: string; effectiveSampleSize: number | null }) {
+  const cells = binaryCells(props.points);
+  const totalWeight = cells.reduce((sum, cell) => sum + cell.weight, 0);
+  const maxWeight = Math.max(...cells.map((cell) => cell.weight), 1);
+  const cell = (x: 0 | 1, y: 0 | 1) => cells.find((candidate) => candidate.x === x && candidate.y === y) ?? { x, y, weight: 0, count: 0, percent: 0 };
+  const yPositive = cell(1, 1).weight + cell(0, 1).weight;
+  const yNegative = cell(1, 0).weight + cell(0, 0).weight;
+  const xPositive = cell(1, 1).weight + cell(1, 0).weight;
+  const xNegative = cell(0, 1).weight + cell(0, 0).weight;
+
+  if (props.points.length === 0 || totalWeight <= 0) {
+    return <p className="muted">No finite paired samples are available for this variable pair.</p>;
+  }
+
+  return (
+    <div className="binary-pair-view">
+      <div className="binary-summary-table" role="table" aria-label={`Binary table of ${props.xLabel} and ${props.yLabel}`}>
+        <div className="binary-table-row header" role="row">
+          <span role="columnheader">{abbreviateLabel(props.yLabel, 16)} \\ {abbreviateLabel(props.xLabel, 16)}</span>
+          <span role="columnheader">x=0</span>
+          <span role="columnheader">x=1</span>
+          <span role="columnheader">total</span>
+        </div>
+        {[1, 0].map((y) => (
+          <div className="binary-table-row" role="row" key={y}>
+            <span role="rowheader">y={y}</span>
+            {[0, 1].map((x) => {
+              const current = cell(x as 0 | 1, y as 0 | 1);
+              return <span role="cell" key={x}>{formatWeightedCount(current.weight)} <small>{formatPercent(current.percent)}</small></span>;
+            })}
+            <span role="cell">{formatWeightedCount(y === 1 ? yPositive : yNegative)}</span>
+          </div>
+        ))}
+        <div className="binary-table-row total" role="row">
+          <span role="rowheader">total</span>
+          <span role="cell">{formatWeightedCount(xNegative)}</span>
+          <span role="cell">{formatWeightedCount(xPositive)}</span>
+          <span role="cell">{formatWeightedCount(totalWeight)}</span>
+        </div>
+      </div>
+
+      <div className="confusion-matrix" role="img" aria-label={`Confusion matrix of ${props.xLabel} and ${props.yLabel}`}>
+        <div className="matrix-corner" />
+        <div className="matrix-axis-label">x=0</div>
+        <div className="matrix-axis-label">x=1</div>
+        {[1, 0].map((y) => (
+          <Fragment key={y}>
+            <div className="matrix-axis-label row">y={y}</div>
+            {[0, 1].map((x) => {
+              const current = cell(x as 0 | 1, y as 0 | 1);
+              const intensity = current.weight / maxWeight;
+              const agreement = x === y;
+              return (
+                <div
+                  className={agreement ? "matrix-cell agreement" : "matrix-cell disagreement"}
+                  key={x}
+                  style={{
+                    backgroundColor: agreement
+                      ? `rgba(35, 113, 111, ${0.12 + intensity * 0.68})`
+                      : `rgba(178, 69, 103, ${0.1 + intensity * 0.6})`
+                  }}
+                >
+                  <strong>{formatPercent(current.percent)}</strong>
+                  <span>{formatWeightedCount(current.weight)}</span>
+                </div>
+              );
+            })}
+          </Fragment>
+        ))}
+      </div>
+
+      <div className="scatter-stats">
+        <span>draws {props.points.length}</span>
+        <span>positive x {formatPercent(xPositive / totalWeight)}</span>
+        <span>positive y {formatPercent(yPositive / totalWeight)}</span>
+        {props.effectiveSampleSize !== null && <span>ESS {formatValue(props.effectiveSampleSize)}</span>}
       </div>
     </div>
   );
@@ -1057,16 +1151,7 @@ function SimulationPanel(props: {
         <button type="button" onClick={props.onClearOverrides} disabled={overrides.length === 0}>clear overrides</button>
         <button type="button" onClick={props.onClearSelections} disabled={selections.length === 0}>clear conditions</button>
       </div>
-      {props.simulation.conditioning.activeConditions.length > 0 && (
-        <div className="conditioning-summary">
-          <strong>Conditioned empirical samples</strong>
-          <span>{props.simulation.conditioning.acceptedSamples} / {props.simulation.conditioning.totalSamples}</span>
-          <span>method {props.simulation.conditioning.empiricalMethod}</span>
-          {props.simulation.conditioning.effectiveSampleSize !== null && <span>ESS {formatValue(props.simulation.conditioning.effectiveSampleSize)}</span>}
-          {props.simulation.conditioning.activeConditions.map((condition) => <span key={condition}>{condition}</span>)}
-          {props.simulation.conditioning.analytic && <span>{props.simulation.conditioning.analytic}</span>}
-        </div>
-      )}
+      <ConditioningMethodPanel simulation={props.simulation} />
       {props.simulation.diagnostics.map((message) => <p className="warning" key={message}>{message}</p>)}
       <div className="value-list">
         {nodes.map((node) => {
@@ -1135,6 +1220,30 @@ function SimulationPanel(props: {
   );
 }
 
+function ConditioningMethodPanel({ simulation }: { simulation: SimulationResult }) {
+  const conditioning = simulation.conditioning;
+  const active = conditioning.activeConditions.length > 0;
+  return (
+    <div className="conditioning-summary">
+      <strong>Inference Methods</strong>
+      {active ? (
+        <>
+          {conditioning.activeConditions.map((condition) => <span key={condition}>condition {condition}</span>)}
+          <span>empirical method {conditioning.empiricalMethod}</span>
+          <span>empirical draws {conditioning.acceptedSamples} / {conditioning.totalSamples}</span>
+          {conditioning.effectiveSampleSize !== null && <span>ESS {formatValue(conditioning.effectiveSampleSize)}</span>}
+          <span>analytic method {conditioning.analytic ?? "unavailable"}</span>
+        </>
+      ) : (
+        <>
+          <span>empirical method forward</span>
+          <span>analytic method inactive</span>
+        </>
+      )}
+    </div>
+  );
+}
+
 function VariablePanel(props: {
   node?: GraphNode;
   simulation: SimulationResult;
@@ -1193,75 +1302,89 @@ function VariablePanel(props: {
         />
       </label>
       {Object.hasOwn(props.document.simulation.overrides, node.id) && <button type="button" onClick={() => props.onOverride(node.id, null)}>release override</button>}
-      <div className="conditioning-editor">
-        <strong>Conditioning Filter</strong>
-        <p className="muted">Filters empirical samples; it does not change the structural equation.</p>
-        <label className="field">
-          <span>condition</span>
-          <select
-            value={condition?.operator ?? "at_least"}
-            onChange={(event) => updateCondition({
-              operator: event.target.value as SimulationSelectionCondition["operator"],
-              upper: event.target.value === "between" ? condition?.upper ?? value : null
-            })}
-          >
-            <option value="at_least">at least</option>
-            <option value="at_most">at most</option>
-            <option value="between">between</option>
-          </select>
-        </label>
-        <label className="field">
-          <span>sampling</span>
-          <select value={condition?.sampling ?? "auto"} onChange={(event) => updateCondition({ sampling: event.target.value as SimulationSelectionCondition["sampling"] })}>
-            <option value="auto">auto</option>
-            <option value="importance">importance</option>
-            <option value="rejection">rejection</option>
-          </select>
-        </label>
-        <div className="two-field-grid">
-          <NumberField
-            label={condition?.operator === "between" ? "lower" : "value"}
-            value={condition?.value ?? value}
-            onChange={(nextValue) => updateCondition({ value: nextValue, upper: condition?.operator === "between" ? condition.upper ?? nextValue : null })}
-          />
-          {condition?.operator === "between" && (
+      <div className="module-set">
+        <strong className="module-set-title">Causal Modules</strong>
+        <div className={`module-card conditioning-editor ${condition ? "active" : ""}`}>
+          <div className="module-card-header">
+            <strong>Conditioning filter</strong>
+            <span className={condition ? "module-badge active" : "module-badge"}>{condition ? "active" : "available"}</span>
+          </div>
+          <p className="muted">Observational selection, not a structural intervention.</p>
+          <label className="field">
+            <span>condition</span>
+            <select
+              value={condition?.operator ?? "at_least"}
+              onChange={(event) => updateCondition({
+                operator: event.target.value as SimulationSelectionCondition["operator"],
+                upper: event.target.value === "between" ? condition?.upper ?? value : null
+              })}
+            >
+              <option value="at_least">at least</option>
+              <option value="at_most">at most</option>
+              <option value="between">between</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>sampling</span>
+            <select value={condition?.sampling ?? "auto"} onChange={(event) => updateCondition({ sampling: event.target.value as SimulationSelectionCondition["sampling"] })}>
+              <option value="auto">auto</option>
+              <option value="importance">importance</option>
+              <option value="rejection">rejection</option>
+            </select>
+          </label>
+          <div className="two-field-grid">
             <NumberField
-              label="upper"
-              value={condition.upper ?? condition.value}
-              onChange={(upper) => updateCondition({ upper })}
+              label={condition?.operator === "between" ? "lower" : "value"}
+              value={condition?.value ?? value}
+              onChange={(nextValue) => updateCondition({ value: nextValue, upper: condition?.operator === "between" ? condition.upper ?? nextValue : null })}
             />
-          )}
-        </div>
-        <label className="field conditioning-range">
-          <span>{condition?.operator === "between" ? "lower slider" : "value slider"}</span>
-          <input
-            type="range"
-            min={sliderMin}
-            max={sliderMax}
-            step={sliderStep}
-            value={clamp(condition?.value ?? value, sliderMin, sliderMax)}
-            onChange={(event) => {
-              const nextValue = roundToStep(Number(event.target.value), sliderStep);
-              updateCondition({ value: nextValue, upper: condition?.operator === "between" ? condition.upper ?? nextValue : null });
-            }}
-          />
-        </label>
-        {condition?.operator === "between" && (
+            {condition?.operator === "between" && (
+              <NumberField
+                label="upper"
+                value={condition.upper ?? condition.value}
+                onChange={(upper) => updateCondition({ upper })}
+              />
+            )}
+          </div>
           <label className="field conditioning-range">
-            <span>upper slider</span>
+            <span>{condition?.operator === "between" ? "lower slider" : "value slider"}</span>
             <input
               type="range"
               min={sliderMin}
               max={sliderMax}
               step={sliderStep}
-              value={clamp(condition.upper ?? condition.value, sliderMin, sliderMax)}
-              onChange={(event) => updateCondition({ upper: roundToStep(Number(event.target.value), sliderStep) })}
+              value={clamp(condition?.value ?? value, sliderMin, sliderMax)}
+              onChange={(event) => {
+                const nextValue = roundToStep(Number(event.target.value), sliderStep);
+                updateCondition({ value: nextValue, upper: condition?.operator === "between" ? condition.upper ?? nextValue : null });
+              }}
             />
           </label>
-        )}
-        <div className="button-row">
-          {!condition && <button type="button" onClick={() => props.onSelectionCondition(node.id, { operator: "at_least", value, upper: null, sampling: "auto" })}>condition on current</button>}
-          {condition && <button type="button" onClick={() => props.onSelectionCondition(node.id, null)}>clear condition</button>}
+          {condition?.operator === "between" && (
+            <label className="field conditioning-range">
+              <span>upper slider</span>
+              <input
+                type="range"
+                min={sliderMin}
+                max={sliderMax}
+                step={sliderStep}
+                value={clamp(condition.upper ?? condition.value, sliderMin, sliderMax)}
+                onChange={(event) => updateCondition({ upper: roundToStep(Number(event.target.value), sliderStep) })}
+              />
+            </label>
+          )}
+          <div className="button-row">
+            {!condition && <button type="button" onClick={() => props.onSelectionCondition(node.id, { operator: "at_least", value, upper: null, sampling: "auto" })}>condition on current</button>}
+            {condition && <button type="button" onClick={() => props.onSelectionCondition(node.id, null)}>clear condition</button>}
+          </div>
+        </div>
+        <div className="planned-module-list">
+          {PLANNED_CAUSAL_MODULES.map((module) => (
+            <div className="module-card planned" aria-disabled="true" key={module.id} title="Planned module">
+              <span>{module.label}</span>
+              <span className="module-badge planned">planned</span>
+            </div>
+          ))}
         </div>
       </div>
       {isRoot && <DistributionEditor
@@ -1307,10 +1430,8 @@ function VariableModelPanel(props: {
   const value = props.simulation.values[node.id] ?? 0;
   const state = props.simulation.nodeStates[node.id];
   const parents = props.graph.edges.filter((edge) => edge.kind === "directed" && edge.target === node.id).map((edge) => edge.source);
-  const children = props.graph.edges.filter((edge) => edge.kind === "directed" && edge.source === node.id).map((edge) => edge.target);
   const update = (patch: Partial<VariableModel>) => props.onChange(node.id, normalizeVariableModel({ ...variable, ...patch }));
   const updateMeasurement = (patch: Partial<VariableMeasurementModel>) => update({ measurement: { ...variable.measurement, ...patch } });
-  const updateIntervention = (patch: Partial<VariableInterventionModel>) => update({ intervention: { ...variable.intervention, ...patch } });
   const updateSimulation = (patch: Partial<VariableSimulationView>) => update({ simulation: { ...variable.simulation, ...patch } });
   return (
     <div className="variable-model-panel">
@@ -1335,21 +1456,8 @@ function VariableModelPanel(props: {
             <input value={variable.unit} onChange={(event) => update({ unit: event.target.value })} />
           </label>
         </div>
-      </div>
-
-      <div className="variable-model-block">
-        <strong>Domain</strong>
-        <label className="field">
-          <span>categories</span>
-          <input value={listToText(variable.categories)} onChange={(event) => update({ categories: textToList(event.target.value) })} />
-        </label>
-        <label className="field">
-          <span>tags</span>
-          <input value={listToText(variable.tags)} onChange={(event) => update({ tags: textToList(event.target.value) })} />
-        </label>
         <div className="model-facts">
           <span>parents {parents.join(", ") || "none"}</span>
-          <span>children {children.join(", ") || "none"}</span>
         </div>
       </div>
 
@@ -1369,21 +1477,6 @@ function VariableModelPanel(props: {
           <NullableNumberField label="lower" value={variable.measurement.lowerLimit} onChange={(lowerLimit) => updateMeasurement({ lowerLimit })} />
           <NullableNumberField label="upper" value={variable.measurement.upperLimit} onChange={(upperLimit) => updateMeasurement({ upperLimit })} />
         </div>
-      </div>
-
-      <div className="variable-model-block">
-        <strong>Intervention</strong>
-        <label className="field">
-          <span>semantics</span>
-          <select value={variable.intervention.kind} onChange={(event) => updateIntervention({ kind: event.target.value as VariableInterventionModel["kind"] })}>
-            {INTERVENTION_MODELS.map(([id, label]) => <option value={id} key={id}>{label}</option>)}
-          </select>
-        </label>
-        <div className="two-field-grid">
-          <NumberField label="value" value={variable.intervention.value} onChange={(value) => updateIntervention({ value })} />
-          <NumberField label="shift" value={variable.intervention.shift} onChange={(shift) => updateIntervention({ shift })} />
-        </div>
-        <NumberField label="probability" value={variable.intervention.probability} min={0} max={1} step={0.05} onChange={(probability) => updateIntervention({ probability })} />
       </div>
 
       <div className="variable-model-block">
@@ -1829,14 +1922,6 @@ function List({ values, empty }: { values: string[]; empty: string }) {
   return <ul className="plain-list">{values.map((value) => <li key={value}>{value}</li>)}</ul>;
 }
 
-function listToText(values: string[]): string {
-  return values.join(", ");
-}
-
-function textToList(value: string): string[] {
-  return value.split(",").map((item) => item.trim()).filter(Boolean);
-}
-
 function roleSummary(roles: NodeRoleFlags): string {
   const labels = [
     roles.exposure ? "exposure" : "",
@@ -1891,6 +1976,25 @@ function scatterPoints(xState: SimulatedNodeState | undefined, yState: Simulated
     });
   }
   return points;
+}
+
+function binaryCells(points: ScatterPoint[]): BinaryCell[] {
+  const cells: BinaryCell[] = [
+    { x: 0, y: 0, weight: 0, count: 0, percent: 0 },
+    { x: 1, y: 0, weight: 0, count: 0, percent: 0 },
+    { x: 0, y: 1, weight: 0, count: 0, percent: 0 },
+    { x: 1, y: 1, weight: 0, count: 0, percent: 0 }
+  ];
+  for (const point of points) {
+    const x = coerceBinary(point.x) as 0 | 1;
+    const y = coerceBinary(point.y) as 0 | 1;
+    const cell = cells.find((candidate) => candidate.x === x && candidate.y === y);
+    if (!cell) continue;
+    cell.weight += point.weight;
+    cell.count += 1;
+  }
+  const totalWeight = cells.reduce((sum, cell) => sum + cell.weight, 0);
+  return cells.map((cell) => ({ ...cell, percent: totalWeight > 0 ? cell.weight / totalWeight : 0 }));
 }
 
 function scatterDomain(values: number[], state: SimulatedNodeState | undefined): [number, number] {
@@ -2272,6 +2376,16 @@ function formatValue(value: number): string {
 function formatSignedValue(value: number): string {
   const formatted = formatValue(Math.abs(value));
   return `${value >= 0 ? "+" : "-"}${formatted}`;
+}
+
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) return "0%";
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatWeightedCount(value: number): string {
+  if (!Number.isFinite(value)) return "0";
+  return Math.abs(value - Math.round(value)) < 1e-6 ? String(Math.round(value)) : formatValue(value);
 }
 
 function clamp(value: number, min: number, max: number): number {

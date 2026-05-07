@@ -14,19 +14,20 @@ test("loads the editor and creates a variable with the node tool", async ({ page
 
 test("connection function table stays in sync with the selected connection inspector", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("function Z to X").click();
+  await page.getByLabel("function Severity to Treatment").click();
   await page.getByRole("option", { name: /Hill \/ Emax/ }).click();
 
-  await expect(page.locator(".edge-panel")).toContainText("Z to X");
+  await expect(page.locator(".edge-panel")).toContainText("Severity to Treatment");
   await expect(page.locator(".edge-panel")).toContainText("Function: Hill / Emax");
   await expect(page.locator(".edge-panel")).toContainText("EC50");
-  await expect(page.locator(".mechanism-row.selected")).toContainText("Z to X");
+  await expect(page.locator(".mechanism-row.selected")).toContainText("Severity to Treatment");
 });
 
 test("selected variables expose a fuller variable model row", async ({ page }) => {
   await page.goto("/");
-  await page.locator("text.node-label").filter({ hasText: "Z" }).click({ force: true });
+  await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
   const row = page.locator(".variable-model-row");
+  const panel = page.locator(".variable-panel");
 
   await row.getByLabel("description").fill("Baseline confounder");
   await row.getByLabel("type").selectOption("count");
@@ -35,17 +36,24 @@ test("selected variables expose a fuller variable model row", async ({ page }) =
   await expect(row.getByLabel("description")).toHaveValue("Baseline confounder");
   await expect(row.getByLabel("type")).toHaveValue("count");
   await expect(row.getByLabel("model")).toHaveValue("noisy_proxy");
+  await expect(row).not.toContainText("Domain");
+  await expect(row).not.toContainText("Intervention");
+  await expect(panel).toContainText("Causal Modules");
+  await expect(panel).toContainText("Conditioning filter");
+  await expect(panel.locator(".planned-module-list")).toContainText("Hard do");
+  await expect(panel.locator(".planned-module-list")).toContainText("planned");
 });
 
 test("binary variables update simulation defaults", async ({ page }) => {
   await page.goto("/");
-  await page.locator("text.node-label").filter({ hasText: "Z" }).click({ force: true });
+  await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
   const row = page.locator(".variable-model-row");
 
   await row.getByLabel("type").selectOption("binary");
   await expect(page.getByLabel("root distribution")).toHaveValue("bernoulli");
 
-  await page.locator("text.node-label").filter({ hasText: "X" }).click({ force: true });
+  await page.getByLabel("Examples").selectOption("mediation-direct-total");
+  await page.locator("text.node-label").filter({ hasText: "Biomarker" }).click({ force: true });
   await row.getByLabel("type").selectOption("binary");
   await expect(page.getByLabel("combiner")).toHaveValue("bernoulli_logit");
 });
@@ -59,6 +67,20 @@ test("Galton example renders analytic and empirical node distributions", async (
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
   await expect(page.locator(".variable-model-row")).toContainText("linear Gaussian SEM");
   await expect(page.locator(".variable-model-row")).toContainText("Normal(69.0, 2.80)");
+});
+
+test("binary variable pairs render a table and colored confusion matrix", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Examples").selectOption("simpson-severity");
+
+  const panel = page.locator(".scatterplot-panel");
+  await expect(panel.getByLabel("x variable")).toHaveValue("Treatment");
+  await expect(panel.getByLabel("y variable")).toHaveValue("Recovery");
+  await expect(panel.locator(".binary-summary-table")).toBeVisible();
+  await expect(panel.locator(".confusion-matrix")).toBeVisible();
+  await expect(panel.locator(".matrix-cell.agreement").first()).toBeVisible();
+  await expect(panel).toContainText("positive x");
+  await expect(panel.locator(".scatter-point")).toHaveCount(0);
 });
 
 test("Galton example plots observed father and son height samples", async ({ page }) => {
@@ -92,7 +114,9 @@ test("conditioning a Galton variable is separate from overriding it", async ({ p
   });
 
   await expect(conditioning.getByLabel("sampling")).toHaveValue("importance");
+  await expect(page.locator(".conditioning-summary")).toContainText("Inference Methods");
   await expect(page.locator(".conditioning-summary")).toContainText("Father_height >= 72");
+  await expect(page.locator(".conditioning-summary")).toContainText("analytic method");
   await expect(page.locator(".conditioning-summary")).toContainText("analytic linear Gaussian");
   await expect(page.locator(".conditioning-summary")).toContainText(/\/ \d+/);
   await expect(page.locator(".variable-model-row")).toContainText("linear Gaussian moment match conditioned on Father_height >= 72");
