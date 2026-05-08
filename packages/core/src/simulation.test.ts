@@ -193,9 +193,17 @@ describe("SEM simulation", () => {
     const conditioningResult = runSimulation(conditioned.graph, conditioned.simulation);
 
     expect(interventionResult.values.Father_height).toBe(78);
+    expect(interventionResult.nodeStates.Father_height?.analytic?.note).toBe("hard do intervention");
     expect(interventionResult.values.Son_height).toBeCloseTo(baselineResult.values.Son_height ?? 0);
     expect(conditioningResult.nodeStates.Son_height?.analytic?.mean ?? 0).toBeCloseTo(70.6, 1);
     expect(conditioningResult.nodeStates.Son_height?.analytic?.note).toContain("linear Gaussian");
+    expect(conditioningResult.nodeStates.Father_height?.analytic?.density).toEqual({
+      kind: "truncated_normal",
+      mean: 69,
+      sd: 2.8,
+      lower: 72,
+      upper: null
+    });
     expect(conditioningResult.nodeStates.Son_height?.empirical.mean ?? 0).toBeGreaterThan(69);
     expect(conditioningResult.conditioning.acceptedSamples).toBeGreaterThan(0);
     expect(conditioningResult.conditioning.activeConditions).toEqual(["Father_height >= 72"]);

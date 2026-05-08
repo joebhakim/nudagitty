@@ -39,9 +39,30 @@ test("selected variables expose a fuller variable model row", async ({ page }) =
   await expect(row).not.toContainText("Domain");
   await expect(row).not.toContainText("Intervention");
   await expect(panel).toContainText("Causal Modules");
+  await expect(panel.locator(".hard-do-editor")).toContainText("Hard do intervention");
   await expect(panel).toContainText("Conditioning filter");
-  await expect(panel.locator(".planned-module-list")).toContainText("Hard do");
+  await expect(panel.locator(".planned-module-list")).not.toContainText("Hard do");
   await expect(panel.locator(".planned-module-list")).toContainText("planned");
+});
+
+test("hard do controls share one override state", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
+
+  const hardDo = page.locator(".hard-do-editor");
+  await expect(hardDo).toContainText("available");
+  await page.getByLabel("hard do Severity").evaluate((element) => {
+    if (!(element instanceof HTMLInputElement)) throw new Error("expected range input");
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(element, "2");
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  await expect(hardDo).toContainText("active");
+  await expect(hardDo.getByLabel("hard do value")).toHaveValue("2");
+  await hardDo.getByRole("button", { name: "release hard do" }).click();
+  await expect(hardDo).toContainText("available");
 });
 
 test("binary variables update simulation defaults", async ({ page }) => {

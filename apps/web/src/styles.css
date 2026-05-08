@@ -214,6 +214,7 @@ textarea {
 }
 
 .conditioning-editor,
+.hard-do-editor,
 .conditioning-summary {
   padding: 8px;
   border: 1px solid var(--line);
@@ -222,6 +223,7 @@ textarea {
 }
 
 .conditioning-editor strong,
+.hard-do-editor strong,
 .conditioning-summary strong {
   font-size: 12px;
   line-height: 16px;
@@ -405,6 +407,12 @@ textarea {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.value-row.intervened .value-name {
+  border-color: var(--bias);
+  background: #fbedf2;
+  color: var(--bias);
 }
 
 .value-name,

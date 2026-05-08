@@ -206,11 +206,15 @@ export interface SimulationSelectionCondition {
   sampling: SimulationSamplingMode;
 }
 
+export type SimulatedAnalyticDensity =
+  | { kind: "truncated_normal"; mean: number; sd: number; lower: number | null; upper: number | null };
+
 export interface SimulatedAnalyticDistribution {
   distribution: NodeDistribution;
   mean: number | null;
   variance: number | null;
   note: string;
+  density?: SimulatedAnalyticDensity;
 }
 
 export interface SimulatedEmpiricalDistribution {

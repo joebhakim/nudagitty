@@ -81,7 +81,7 @@ export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?
     if (Object.hasOwn(spec.overrides, id)) {
       const value = coerceVariableValue(spec.overrides[id] ?? 0, variable);
       values[id] = value;
-      analyticByNode.set(id, analyticConstant(value, "manual override"));
+      analyticByNode.set(id, analyticConstant(value, "hard do intervention"));
       continue;
     }
     const parents = directedParents(activeGraph, id);
@@ -786,17 +786,36 @@ function conditionLinearGaussianJoint(joint: LinearGaussianJoint, conditions: Ar
     const mean = unconditionalMean + slope * (truncated.mean - conditionMean);
     const variance = Math.max(0, residualVariance + slope * slope * truncated.variance);
     const distribution: NodeDistribution = variance <= VARIANCE_EPSILON ? { kind: "constant", value: mean } : { kind: "normal", mean, sd: Math.sqrt(variance) };
+    const density = index === conditionIndex ? truncatedNormalDensitySpec(conditionMean, conditionSd, condition, truncated.exact) : undefined;
     nodeAnalytics.set(id, {
       distribution,
       mean,
       variance,
-      note: truncated.exact ? `linear Gaussian conditioned on ${formatSelectionCondition(conditionId, condition)}` : `linear Gaussian moment match conditioned on ${formatSelectionCondition(conditionId, condition)}`
+      note: truncated.exact ? `linear Gaussian conditioned on ${formatSelectionCondition(conditionId, condition)}` : `linear Gaussian moment match conditioned on ${formatSelectionCondition(conditionId, condition)}`,
+      ...(density ? { density } : {})
     });
   }
 
   return {
     nodeAnalytics,
     note: `${truncated.exact ? "analytic linear Gaussian conditioning" : "analytic linear Gaussian moment-matched conditioning"}: ${formatSelectionCondition(conditionId, condition)}`
+  };
+}
+
+function truncatedNormalDensitySpec(
+  mean: number,
+  sd: number,
+  condition: SimulationSelectionCondition,
+  exact: boolean
+): SimulatedAnalyticDistribution["density"] | undefined {
+  if (exact || sd <= VARIANCE_EPSILON) return undefined;
+  const [lower, upper] = selectionBounds(condition);
+  return {
+    kind: "truncated_normal",
+    mean,
+    sd,
+    lower: Number.isFinite(lower) ? lower : null,
+    upper: Number.isFinite(upper) ? upper : null
   };
 }
 

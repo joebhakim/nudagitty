@@ -75,6 +75,7 @@ import type {
   SimulationResult,
   SimulationInferenceMode,
   SimulationSelectionCondition,
+  SimulatedAnalyticDistribution,
   SimulatedNodeState,
   VariableMeasurementModel,
   VariableModel,
@@ -178,7 +179,6 @@ const SIMULATION_VIEW_MODES: Array<[VariableSimulationView["mode"], string]> = [
 ];
 
 const PLANNED_CAUSAL_MODULES = [
-  { id: "hard_do", label: "Hard do" },
   { id: "soft_shift", label: "Soft intervention" },
   { id: "stochastic", label: "Stochastic assignment" },
   { id: "policy", label: "Policy rule" }
@@ -904,9 +904,9 @@ function NodeDistributionMiniPlot({ state }: { state?: SimulatedNodeState }) {
   const height = 32;
   const bins = histogram(samples, domain, 20, state.empirical.weights);
   const maxBin = Math.max(...bins, 1);
-  const analyticPath = state.analytic ? analyticDistributionPath(state.analytic.distribution, domain, width, height) : null;
+  const analyticPath = state.analytic ? analyticDistributionPath(state.analytic, domain, width, height) : null;
   const title = [
-    state.analytic ? `analytic ${distributionLabel(state.analytic.distribution)} (${state.analytic.note})` : "analytic unavailable",
+    state.analytic ? `analytic ${analyticDistributionLabel(state.analytic)} (${state.analytic.note})` : "analytic unavailable",
     `empirical n=${samples.length}`,
     state.empirical.mean !== null ? `sample mean ${formatValue(state.empirical.mean)}` : ""
   ].filter(Boolean).join("; ");
@@ -1178,31 +1178,36 @@ function SimulationPanel(props: {
       </div>
       <div className="button-row">
         <button type="button" onClick={props.onResample}><RefreshCw size={15} /> resample</button>
-        <button type="button" onClick={props.onClearOverrides} disabled={overrides.length === 0}>clear overrides</button>
+        <button type="button" onClick={props.onClearOverrides} disabled={overrides.length === 0}>clear hard do</button>
         <button type="button" onClick={props.onClearSelections} disabled={selections.length === 0}>clear conditions</button>
       </div>
       <ConditioningMethodPanel simulation={props.simulation} />
       {props.simulation.diagnostics.map((message) => <p className="warning" key={message}>{message}</p>)}
       <div className="value-list">
+        <strong>Hard do interventions</strong>
         {nodes.map((node) => {
           const value = props.simulation.values[node.id] ?? 0;
+          const state = props.simulation.nodeStates[node.id];
           const overridden = Object.hasOwn(props.document.simulation.overrides, node.id);
           const conditioned = Object.hasOwn(props.document.simulation.selections ?? {}, node.id);
           const changed = props.simulation.changedNodes.includes(node.id);
           const binary = normalizeVariableModel(node.variable).valueType === "binary";
+          const [sliderMin, sliderMax] = binary ? [0, 1] : conditioningSliderBounds(state, value);
+          const sliderStep = binary ? 1 : conditioningSliderStep(sliderMin, sliderMax);
           return (
-            <div className={`value-row ${changed ? "changed" : ""} ${conditioned ? "conditioned" : ""}`} key={node.id}>
+            <div className={`value-row ${changed ? "changed" : ""} ${conditioned ? "conditioned" : ""} ${overridden ? "intervened" : ""}`} key={node.id}>
               <button type="button" className="value-name" onClick={() => props.onSelectNode(node.id)}>{node.id}</button>
               <input
                 type="range"
-                min={binary ? "0" : "-10"}
-                max={binary ? "1" : "10"}
-                step={binary ? "1" : "0.1"}
-                value={binary ? coerceBinary(value) : clamp(value, -10, 10)}
-                onChange={(event) => props.onOverride(node.id, binary ? coerceBinary(Number(event.target.value)) : Number(event.target.value))}
+                aria-label={`hard do ${node.id}`}
+                min={sliderMin}
+                max={sliderMax}
+                step={sliderStep}
+                value={binary ? coerceBinary(value) : clamp(value, sliderMin, sliderMax)}
+                onChange={(event) => props.onOverride(node.id, binary ? coerceBinary(Number(event.target.value)) : roundToStep(Number(event.target.value), sliderStep))}
               />
               <span className={overridden ? "value-number overridden" : "value-number"}>{formatValue(value)}</span>
-              {overridden && <button type="button" className="mini-button" onClick={() => props.onOverride(node.id, null)}>free</button>}
+              {overridden && <button type="button" className="mini-button" onClick={() => props.onOverride(node.id, null)}>release</button>}
             </div>
           );
         })}
@@ -1297,6 +1302,8 @@ function VariablePanel(props: {
   const value = props.simulation.values[node.id] ?? 0;
   const binary = normalizeVariableModel(node.variable).valueType === "binary";
   const condition = props.document.simulation.selections[node.id];
+  const hardDoActive = Object.hasOwn(props.document.simulation.overrides, node.id);
+  const hardDoValue = props.document.simulation.overrides[node.id] ?? value;
   const state = props.simulation.nodeStates[node.id];
   const [sliderMin, sliderMax] = conditioningSliderBounds(state, condition?.value ?? value);
   const sliderStep = conditioningSliderStep(sliderMin, sliderMax);
@@ -1326,20 +1333,30 @@ function VariablePanel(props: {
         <button type="button" onClick={props.onRename}>rename</button>
         <button type="button" onClick={props.onDelete}>delete</button>
       </div>
-      <label className="field">
-        <span>value override</span>
-        <input
-          type="number"
-          value={props.document.simulation.overrides[node.id] ?? value}
-          min={binary ? 0 : undefined}
-          max={binary ? 1 : undefined}
-          step={binary ? 1 : 0.1}
-          onChange={(event) => props.onOverride(node.id, binary ? coerceBinary(Number(event.target.value)) : Number(event.target.value))}
-        />
-      </label>
-      {Object.hasOwn(props.document.simulation.overrides, node.id) && <button type="button" onClick={() => props.onOverride(node.id, null)}>release override</button>}
       <div className="module-set">
         <strong className="module-set-title">Causal Modules</strong>
+        <div className={`module-card hard-do-editor ${hardDoActive ? "active" : ""}`}>
+          <div className="module-card-header">
+            <strong>Hard do intervention</strong>
+            <span className={hardDoActive ? "module-badge active" : "module-badge"}>{hardDoActive ? "active" : "available"}</span>
+          </div>
+          <label className="field">
+            <span>fixed value</span>
+            <input
+              aria-label="hard do value"
+              type="number"
+              value={hardDoValue}
+              min={binary ? 0 : undefined}
+              max={binary ? 1 : undefined}
+              step={binary ? 1 : 0.1}
+              onChange={(event) => props.onOverride(node.id, binary ? coerceBinary(Number(event.target.value)) : Number(event.target.value))}
+            />
+          </label>
+          <div className="button-row">
+            {!hardDoActive && <button type="button" onClick={() => props.onOverride(node.id, value)}>fix current value</button>}
+            {hardDoActive && <button type="button" onClick={() => props.onOverride(node.id, null)}>release hard do</button>}
+          </div>
+        </div>
         <div className={`module-card conditioning-editor ${condition ? "active" : ""}`}>
           <div className="module-card-header">
             <strong>Conditioning filter</strong>
@@ -1528,7 +1545,7 @@ function VariableModelPanel(props: {
         <div className="model-facts">
           <span>roles {roleSummary(node.roles)}</span>
           <span>mechanism {parents.length === 0 ? "root distribution" : "structural equation"}</span>
-          <span>analytic {state?.analytic ? distributionLabel(state.analytic.distribution) : "unavailable"}</span>
+          <span>analytic {state?.analytic ? analyticDistributionLabel(state.analytic) : "unavailable"}</span>
           <span>analytic note {state?.analytic?.note ?? "empirical only"}</span>
           <span>empirical mean {state?.empirical.mean !== null && state?.empirical.mean !== undefined ? formatValue(state.empirical.mean) : "none"}</span>
         </div>
@@ -2178,9 +2195,9 @@ function distributionPlotDomain(state: SimulatedNodeState): [number, number] | n
   const candidates = state.empirical.samples.filter(Number.isFinite);
   if (state.empirical.min !== null) candidates.push(state.empirical.min);
   if (state.empirical.max !== null) candidates.push(state.empirical.max);
-  const analytic = state.analytic?.distribution;
+  const analytic = state.analytic;
   if (analytic) {
-    const bounds = analyticDistributionBounds(analytic, state.analytic?.mean ?? null, state.analytic?.variance ?? null);
+    const bounds = analyticDistributionBounds(analytic);
     if (bounds) candidates.push(bounds[0], bounds[1]);
   }
   if (candidates.length === 0) return null;
@@ -2195,7 +2212,15 @@ function distributionPlotDomain(state: SimulatedNodeState): [number, number] | n
   return [min - pad, max + pad];
 }
 
-function analyticDistributionBounds(distribution: NodeDistribution, mean: number | null, variance: number | null): [number, number] | null {
+function analyticDistributionBounds(analytic: SimulatedAnalyticDistribution): [number, number] | null {
+  if (analytic.density?.kind === "truncated_normal") {
+    const lower = analytic.density.lower ?? analytic.density.mean - 3.5 * analytic.density.sd;
+    const upper = analytic.density.upper ?? analytic.density.mean + 3.5 * analytic.density.sd;
+    return [lower, upper];
+  }
+  const distribution = analytic.distribution;
+  const mean = analytic.mean;
+  const variance = analytic.variance;
   if (distribution.kind === "constant") return [distribution.value - 1, distribution.value + 1];
   if (distribution.kind === "uniform") return [distribution.min, distribution.max];
   if (distribution.kind === "bernoulli" || distribution.kind === "beta") return [0, 1];
@@ -2224,7 +2249,8 @@ function histogram(samples: number[], domain: [number, number], binCount: number
   return bins;
 }
 
-function analyticDistributionPath(distribution: NodeDistribution, domain: [number, number], width: number, height: number): string | null {
+function analyticDistributionPath(analytic: SimulatedAnalyticDistribution, domain: [number, number], width: number, height: number): string | null {
+  const distribution = analytic.distribution;
   const [min, max] = domain;
   const span = max - min || 1;
   if (distribution.kind === "constant") {
@@ -2236,7 +2262,7 @@ function analyticDistributionPath(distribution: NodeDistribution, domain: [numbe
     const x1 = ((distribution.max - min) / span) * width;
     return `M ${trimNumber(Math.max(0, x0))} ${height - 5} L ${trimNumber(Math.min(width, x1))} ${height - 5}`;
   }
-  const density = analyticDensity(distribution);
+  const density = analyticDensity(analytic);
   if (!density) return null;
   const points = Array.from({ length: 36 }, (_, index) => {
     const t = index / 35;
@@ -2251,7 +2277,16 @@ function analyticDistributionPath(distribution: NodeDistribution, domain: [numbe
   }).join(" ");
 }
 
-function analyticDensity(distribution: NodeDistribution): ((value: number) => number) | null {
+function analyticDensity(analytic: SimulatedAnalyticDistribution): ((value: number) => number) | null {
+  const density = analytic.density;
+  if (density?.kind === "truncated_normal") {
+    return (value) => {
+      if (density.lower !== null && value < density.lower) return 0;
+      if (density.upper !== null && value > density.upper) return 0;
+      return normalDensity(value, density.mean, density.sd);
+    };
+  }
+  const distribution = analytic.distribution;
   if (distribution.kind === "normal") return (value) => normalDensity(value, distribution.mean, distribution.sd);
   if (distribution.kind === "lognormal") return (value) => value <= 0 ? 0 : normalDensity(Math.log(value), distribution.meanLog, distribution.sdLog) / value;
   if (distribution.kind === "laplace") return (value) => Math.exp(-Math.abs(value - distribution.mean) / distribution.scale) / (2 * distribution.scale);
@@ -2283,6 +2318,15 @@ function distributionLabel(distribution: NodeDistribution): string {
   if (distribution.kind === "student_t") return `Student-t(${formatValue(distribution.mean)}, ${formatValue(distribution.scale)}, ${formatValue(distribution.df)})`;
   if (distribution.kind === "gamma") return `Gamma(${formatValue(distribution.shape)}, ${formatValue(distribution.scale)})`;
   return `Exponential(${formatValue(distribution.rate)})`;
+}
+
+function analyticDistributionLabel(analytic: SimulatedAnalyticDistribution): string {
+  if (analytic.density?.kind === "truncated_normal") {
+    const lower = analytic.density.lower === null ? "-inf" : formatValue(analytic.density.lower);
+    const upper = analytic.density.upper === null ? "inf" : formatValue(analytic.density.upper);
+    return `truncated Normal(${formatValue(analytic.density.mean)}, ${formatValue(analytic.density.sd)}, ${lower}..${upper})`;
+  }
+  return distributionLabel(analytic.distribution);
 }
 
 function defaultDistribution(kind: NodeDistribution["kind"]): NodeDistribution {
