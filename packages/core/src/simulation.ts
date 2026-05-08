@@ -21,7 +21,7 @@ import type {
 export { createDistributionSampler, createSeededRandomSource, sampleDistribution } from "./distributions";
 
 const EMPIRICAL_SAMPLE_MIN = 80;
-const EMPIRICAL_SAMPLE_MAX = 320;
+const EMPIRICAL_SAMPLE_MAX = 5000;
 const VARIANCE_EPSILON = 1e-12;
 
 interface LinearGaussianJoint {

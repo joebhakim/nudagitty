@@ -228,17 +228,9 @@ textarea {
   gap: 8px;
 }
 
-.inline-link-button {
-  min-height: 0;
-  justify-content: flex-start;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--accent);
-}
-
 .conditioning-editor,
 .hard-do-editor,
+.draw-count-control,
 .conditioning-summary {
   padding: 8px;
   border: 1px solid var(--line);
@@ -248,11 +240,34 @@ textarea {
 
 .conditioning-editor strong,
 .hard-do-editor strong,
+.draw-count-control strong,
 .conditioning-summary strong {
   font-size: 12px;
   line-height: 16px;
   text-transform: uppercase;
   color: #3d464e;
+}
+
+.draw-count-control {
+  display: grid;
+  gap: 7px;
+}
+
+.draw-count-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.draw-count-head span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.draw-count-control input[type="range"] {
+  padding: 0;
 }
 
 .conditioning-summary {

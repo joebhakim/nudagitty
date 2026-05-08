@@ -5,7 +5,10 @@ test("loads the editor and creates a variable with the node tool", async ({ page
   await expect(page.getByText("Nudagitty")).toBeVisible();
   await expect(page.getByLabel("Editable causal graph")).toBeVisible();
   await expect(page.locator(".editor-column")).toContainText("Select a node or edge for editing.");
-  await expect(page.locator(".editor-column")).not.toContainText("Live Node Values");
+  await expect(page.locator("body")).not.toContainText("Live Node Values");
+  await expect(page.locator(".scenario-column").getByLabel("empirical draws", { exact: true })).toHaveValue("320");
+  await page.locator(".scenario-column").getByLabel("empirical draws", { exact: true }).fill("640");
+  await expect(page.locator(".scatterplot-panel")).toContainText("draws 640");
 
   await page.getByRole("button", { name: "Variable" }).click();
   await page.locator(".graph-canvas").click({ position: { x: 80, y: 320 } });

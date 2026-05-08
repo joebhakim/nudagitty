@@ -119,7 +119,7 @@ export function defaultVariableModel(): VariableModel {
     },
     simulation: {
       mode: "single_draw",
-      sampleSize: 1000
+      sampleSize: 320
     },
     tags: []
   };

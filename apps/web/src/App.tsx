@@ -98,6 +98,10 @@ const STORAGE_KEY = "nudagitty.document.v1";
 const BASE_VIEWBOX = { width: 1000, height: 700 };
 const DEFAULT_VIEWPORT: CanvasViewport = { cx: 0, cy: 0, zoom: 1 };
 const NODE_VIEW_MARGIN = { x: 100, top: 110, bottom: 130 };
+const EMPIRICAL_DRAW_MIN = 80;
+const EMPIRICAL_DRAW_DEFAULT = 320;
+const EMPIRICAL_DRAW_MAX = 5000;
+const EMPIRICAL_DRAW_STEP = 80;
 
 function graphViewportSignature(graph: GraphModel): string {
   const nodes = graph.nodes.map((node) => `${node.id}:${node.label}`).join("|");
@@ -550,6 +554,29 @@ export function App() {
     commit({ ...document, simulation: { ...document.simulation, selections: {} } });
   }, [commit, document]);
 
+  const updateEmpiricalDraws = useCallback((sampleSize: number) => {
+    const nextSampleSize = clampDrawCount(sampleSize);
+    commit({
+      ...document,
+      graph: {
+        ...document.graph,
+        nodes: document.graph.nodes.map((node) => {
+          const variable = normalizeVariableModel(node.variable);
+          return {
+            ...node,
+            variable: {
+              ...variable,
+              simulation: {
+                ...variable.simulation,
+                sampleSize: nextSampleSize
+              }
+            }
+          };
+        })
+      }
+    });
+  }, [commit, document]);
+
   const setSelectionCondition = useCallback((nodeId: string, condition: SimulationSelectionCondition | null) => {
     const selections = { ...(document.simulation.selections ?? {}) };
     if (condition === null) delete selections[nodeId];
@@ -597,15 +624,7 @@ export function App() {
               onResample={resample}
               onClearOverrides={clearOverrides}
               onClearSelections={clearSelections}
-            />
-          </Section>
-          <Section title="Live Node Values">
-            <LiveValuesPanel
-              graph={document.graph}
-              simulation={simulation}
-              overrides={document.simulation.overrides}
-              selections={document.simulation.selections}
-              onSelectNode={selectNode}
+              onEmpiricalDraws={updateEmpiricalDraws}
             />
           </Section>
           <Section title="Pairwise Output">
@@ -1192,10 +1211,12 @@ function ScenarioPanel(props: {
   onResample: () => void;
   onClearOverrides: () => void;
   onClearSelections: () => void;
+  onEmpiricalDraws: (sampleSize: number) => void;
 }) {
   const blocked = simulationBlocked(props.simulation);
   const overrides = Object.keys(props.document.simulation.overrides);
   const selections = Object.keys(props.document.simulation.selections ?? {});
+  const empiricalDraws = graphEmpiricalDraws(props.document.graph);
   return (
     <div className="simulation-panel">
       <div className="simulation-status">
@@ -1208,37 +1229,42 @@ function ScenarioPanel(props: {
         {overrides.length > 0 && <button type="button" onClick={props.onClearOverrides}>clear fixed values</button>}
         {selections.length > 0 && <button type="button" onClick={props.onClearSelections}>clear conditions</button>}
       </div>
+      <DrawCountControl value={empiricalDraws} onChange={props.onEmpiricalDraws} />
       <ConditioningMethodPanel simulation={props.simulation} />
       {props.simulation.diagnostics.map((message) => <p className="warning" key={message}>{message}</p>)}
     </div>
   );
 }
 
-function LiveValuesPanel(props: {
-  graph: GraphModel;
-  simulation: SimulationResult;
-  overrides: Record<string, number>;
-  selections: Record<string, SimulationSelectionCondition>;
-  onSelectNode: (id: string) => void;
-}) {
-  const nodes = [...props.graph.nodes].sort((a, b) => a.id.localeCompare(b.id));
-  if (nodes.length === 0) return <p className="muted">No variables yet.</p>;
+function DrawCountControl(props: { value: number; onChange: (sampleSize: number) => void }) {
+  const update = (value: number) => {
+    if (Number.isFinite(value)) props.onChange(clampDrawCount(value));
+  };
   return (
-    <table className="summary-table live-values-table">
-      <tbody>
-        {nodes.map((node) => {
-          const hardDo = Object.hasOwn(props.overrides, node.id);
-          const conditioned = Object.hasOwn(props.selections, node.id);
-          return (
-            <tr key={node.id}>
-              <td><button type="button" className="inline-link-button" onClick={() => props.onSelectNode(node.id)}>{node.id}</button></td>
-              <td>{formatValue(props.simulation.values[node.id] ?? 0)}</td>
-              <td>{hardDo ? "hard do" : conditioned ? "conditioned" : ""}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div className="draw-count-control">
+      <div className="draw-count-head">
+        <strong>Empirical draws</strong>
+        <span>{props.value.toLocaleString()} per run</span>
+      </div>
+      <input
+        aria-label="empirical draws"
+        type="number"
+        min={EMPIRICAL_DRAW_MIN}
+        max={EMPIRICAL_DRAW_MAX}
+        step={EMPIRICAL_DRAW_STEP}
+        value={props.value}
+        onChange={(event) => update(Number(event.target.value))}
+      />
+      <input
+        aria-label="empirical draws slider"
+        type="range"
+        min={EMPIRICAL_DRAW_MIN}
+        max={EMPIRICAL_DRAW_MAX}
+        step={EMPIRICAL_DRAW_STEP}
+        value={clamp(props.value, EMPIRICAL_DRAW_MIN, EMPIRICAL_DRAW_MAX)}
+        onChange={(event) => update(Number(event.target.value))}
+      />
+    </div>
   );
 }
 
@@ -2332,6 +2358,21 @@ function conditioningSliderStep(min: number, max: number): number {
   if (span <= 2) return 0.01;
   if (span <= 20) return 0.1;
   return 1;
+}
+
+function graphEmpiricalDraws(graph: GraphModel): number {
+  if (graph.nodes.length === 0) return EMPIRICAL_DRAW_DEFAULT;
+  const requested = graph.nodes.reduce((max, node) => {
+    const variable = normalizeVariableModel(node.variable);
+    return Math.max(max, variable.simulation.sampleSize);
+  }, EMPIRICAL_DRAW_MIN);
+  return clampDrawCount(requested);
+}
+
+function clampDrawCount(value: number): number {
+  if (!Number.isFinite(value)) return EMPIRICAL_DRAW_DEFAULT;
+  const stepped = Math.round(value / EMPIRICAL_DRAW_STEP) * EMPIRICAL_DRAW_STEP;
+  return Math.min(EMPIRICAL_DRAW_MAX, Math.max(EMPIRICAL_DRAW_MIN, stepped));
 }
 
 function roundToStep(value: number, step: number): number {
