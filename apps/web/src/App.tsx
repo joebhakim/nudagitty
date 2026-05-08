@@ -16,7 +16,7 @@ import {
   Undo2,
   X
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   EXAMPLES,
   addEdge,
@@ -89,6 +89,8 @@ type CanvasViewport = { cx: number; cy: number; zoom: number };
 type ScatterPair = { x: string; y: string };
 type ScatterPoint = { x: number; y: number; weight: number; index: number };
 type BinaryCell = { x: 0 | 1; y: 0 | 1; weight: number; count: number; percent: number };
+type ScreenPoint = { x: number; y: number };
+type VariableWindowTab = "model" | "interventions";
 type DragState =
   | { kind: "node"; id: string; offset: Point }
   | { kind: "edge-control"; id: string }
@@ -98,6 +100,8 @@ const STORAGE_KEY = "nudagitty.document.v1";
 const BASE_VIEWBOX = { width: 1000, height: 700 };
 const DEFAULT_VIEWPORT: CanvasViewport = { cx: 0, cy: 0, zoom: 1 };
 const NODE_VIEW_MARGIN = { x: 100, top: 110, bottom: 130 };
+const VARIABLE_WINDOW_WIDTH = 520;
+const VARIABLE_WINDOW_GUTTER = 18;
 
 function graphViewportSignature(graph: GraphModel): string {
   const nodes = graph.nodes.map((node) => `${node.id}:${node.label}`).join("|");
@@ -253,6 +257,7 @@ export function App() {
   const [simulation, setSimulation] = useState<SimulationResult>(() => runSimulation(document.graph, document.simulation));
   const [scatterPair, setScatterPair] = useState<ScatterPair>(() => defaultScatterPair(document.graph));
   const [variableWindowId, setVariableWindowId] = useState<string | null>(null);
+  const [variableWindowAnchor, setVariableWindowAnchor] = useState<ScreenPoint | null>(null);
 
   const [analysis, setAnalysis] = useState<AnalysisReport>(() => analyzeGraph(document.graph));
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
@@ -309,6 +314,7 @@ export function App() {
         redo();
       } else if (event.key === "Escape") {
         setVariableWindowId(null);
+        setVariableWindowAnchor(null);
       } else if (event.key === "Delete" || event.key.toLowerCase() === "d") {
         event.preventDefault();
         deleteSelection();
@@ -361,7 +367,10 @@ export function App() {
 
   const deleteNodeById = useCallback((nodeId: string) => {
     const graph = deleteNode(document.graph, nodeId);
-    if (variableWindowId === nodeId) setVariableWindowId(null);
+    if (variableWindowId === nodeId) {
+      setVariableWindowId(null);
+      setVariableWindowAnchor(null);
+    }
     setSelection(null);
     replaceGraph(graph);
   }, [document.graph, replaceGraph, variableWindowId]);
@@ -402,12 +411,16 @@ export function App() {
     const graph = addNode(document.graph, createNode(id, point));
     setSelection({ kind: "node", id });
     setVariableWindowId(id);
+    setVariableWindowAnchor(null);
     replaceGraph(graph);
   }, [document.graph, replaceGraph]);
 
-  const selectNode = useCallback((id: string, openWindow = false) => {
+  const selectNode = useCallback((id: string, openWindow = false, anchor: ScreenPoint | null = null) => {
     setSelection({ kind: "node", id });
-    if (openWindow) setVariableWindowId(id);
+    if (openWindow) {
+      setVariableWindowId(id);
+      setVariableWindowAnchor(anchor);
+    }
   }, []);
 
   const createOrSelectEdge = useCallback((target: string) => {
@@ -442,6 +455,7 @@ export function App() {
     commit(document);
     setSelection(null);
     setVariableWindowId(null);
+    setVariableWindowAnchor(null);
   }, [commit]);
 
   const updateNodeMechanism = useCallback((nodeId: string, patch: Partial<NodeMechanism>) => {
@@ -580,6 +594,7 @@ export function App() {
             commit(emptyDocument());
             setSelection(null);
             setVariableWindowId(null);
+            setVariableWindowAnchor(null);
           }}><FilePlus2 size={18} /></IconButton>
           <select aria-label="Examples" onChange={(event) => loadExample(event.target.value)} defaultValue="">
             <option value="" disabled>Examples</option>
@@ -599,7 +614,7 @@ export function App() {
               node={selectedNode}
               edge={selectedEdge}
               simulation={simulation}
-              onOpenVariable={(id) => setVariableWindowId(id)}
+              onOpenVariable={(id) => selectNode(id, true)}
             />
           </Section>
           <Section title="Connection Functions">
@@ -633,7 +648,7 @@ export function App() {
           onSelect={setSelection}
           onAddNode={addNodeAt}
           onMoveNode={(id, position) => replaceGraph(updateNode(document.graph, id, { position }))}
-          onNodeClick={(id) => tool === "edge" ? createOrSelectEdge(id) : selectNode(id, true)}
+          onNodeClick={(id, anchor) => tool === "edge" ? createOrSelectEdge(id) : selectNode(id, true, anchor)}
           onEdgeControl={(edge) => replaceGraph(upsertEdge(document.graph, edge))}
         />
 
@@ -641,12 +656,18 @@ export function App() {
           node={variableWindowNode}
           simulation={simulation}
           document={document}
-          onClose={() => setVariableWindowId(null)}
+          anchor={variableWindowAnchor}
+          onClose={() => {
+            setVariableWindowId(null);
+            setVariableWindowAnchor(null);
+          }}
           onToggleRole={toggleRole}
           onRename={renameNodeById}
           onDelete={deleteNodeById}
           onMechanism={updateNodeMechanism}
           onVariableChange={updateVariableModel}
+          onOverride={setOverride}
+          onSelectionCondition={setSelectionCondition}
         />}
 
         <aside className="side-panel scenario-column">
@@ -766,7 +787,7 @@ function GraphCanvas(props: {
   onSelect: (selection: Selection) => void;
   onAddNode: (point: Point) => void;
   onMoveNode: (id: string, position: Point) => void;
-  onNodeClick: (id: string) => void;
+  onNodeClick: (id: string, anchor: ScreenPoint) => void;
   onEdgeControl: (edge: GraphEdge) => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -922,7 +943,7 @@ function GraphCanvas(props: {
                   event.stopPropagation();
                   const point = svgPoint(event);
                   setDrag({ kind: "node", id: node.id, offset: { x: point.x - node.position.x, y: point.y - node.position.y } });
-                  props.onNodeClick(node.id);
+                  props.onNodeClick(node.id, { x: event.clientX, y: event.clientY });
                 }}
               >
                 <circle r={node.roles.exposure || node.roles.outcome ? 25 : 21} />
@@ -930,7 +951,7 @@ function GraphCanvas(props: {
                 {node.roles.selected && <path className="selected-mark" d="M -20 24 L 0 34 L 20 24" />}
                 <text className="node-label" y="4">{node.label}</text>
                 <NodeDistributionMiniPlot state={state} />
-                {typeof value === "number" && Number.isFinite(value) && <text className="node-value" y="74">{formatValue(value)}</text>}
+                <NodeDistributionAnnotation state={state} value={value} />
               </g>
             );
           })}
@@ -983,6 +1004,20 @@ function NodeDistributionMiniPlot({ state }: { state?: SimulatedNodeState }) {
         );
       })}
       {analyticPath && <path className="distribution-analytic" d={analyticPath} />}
+    </g>
+  );
+}
+
+function NodeDistributionAnnotation({ state, value }: { state?: SimulatedNodeState; value: number | undefined }) {
+  const lines = nodeDistributionAnnotationLines(state, value);
+  if (lines.length === 0) return null;
+  const title = nodeDistributionFullSummary(state, value);
+  return (
+    <g className="node-distribution-annotation" aria-hidden="true">
+      <title>{title}</title>
+      {lines.map((line, index) => (
+        <text key={line} className={index === 0 ? "node-value" : "node-distribution-label"} y={74 + (index * 13)}>{line}</text>
+      ))}
     </g>
   );
 }
@@ -1567,13 +1602,17 @@ function VariableWindow(props: {
   node: GraphNode;
   simulation: SimulationResult;
   document: GraphDocument;
+  anchor: ScreenPoint | null;
   onClose: () => void;
   onToggleRole: (id: string, role: keyof NodeRoleFlags) => void;
   onRename: (id: string) => void;
   onDelete: (id: string) => void;
   onMechanism: (id: string, patch: Partial<NodeMechanism>) => void;
   onVariableChange: (nodeId: string, variable: VariableModel) => void;
+  onOverride: (id: string, value: number | null) => void;
+  onSelectionCondition: (nodeId: string, condition: SimulationSelectionCondition | null) => void;
 }) {
+  const [tab, setTab] = useState<VariableWindowTab>("model");
   const node = props.node;
   const variable = normalizeVariableModel(node.variable);
   const mechanism = normalizeNodeMechanism(props.document.simulation.nodes[node.id]);
@@ -1583,9 +1622,14 @@ function VariableWindow(props: {
   const isRoot = parentIds.length === 0;
   const inferredValueType = inferValueTypeFromMechanism(isRoot, mechanism, variable.valueType);
   const updateVariable = (patch: Partial<VariableModel>) => props.onVariableChange(node.id, normalizeVariableModel({ ...variable, ...patch }));
+  const windowStyle = variableWindowStyle(props.anchor);
+
+  useEffect(() => {
+    setTab("model");
+  }, [node.id]);
 
   return (
-    <div className="variable-window" role="dialog" aria-label={`Variable ${node.id}`}>
+    <div className="variable-window" role="dialog" aria-label={`Variable ${node.id}`} style={windowStyle}>
       <div className="variable-window-header">
         <div>
           <span>Variable</span>
@@ -1600,60 +1644,74 @@ function VariableWindow(props: {
           <span>{formatValue(value)}</span>
         </div>
 
-        <div className="variable-window-grid">
-          <div className="variable-window-block">
-            <strong>Roles</strong>
-            <Checkbox label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
-            <Checkbox label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
-            <Checkbox label="adjusted" checked={node.roles.adjusted} onChange={() => props.onToggleRole(node.id, "adjusted")} />
-            <Checkbox label="selected" checked={node.roles.selected} onChange={() => props.onToggleRole(node.id, "selected")} />
-            <Checkbox label="unobserved" checked={node.roles.latent} onChange={() => props.onToggleRole(node.id, "latent")} />
-          </div>
-
-          <div className="variable-window-block">
-            <div className="variable-window-block-title">
-              <strong>Distribution</strong>
-              <span className="variable-pill">{valueTypeLabel(inferredValueType)}</span>
-            </div>
-            {isRoot && <DistributionEditor
-              label="root distribution"
-              distribution={mechanism.distribution}
-              onChange={(distribution) => props.onMechanism(node.id, { distribution })}
-            />}
-            {!isRoot && <>
-              <label className="field">
-                <span>combiner</span>
-                <select value={mechanism.combiner} onChange={(event) => props.onMechanism(node.id, { combiner: event.target.value as NodeCombinerKind })}>
-                  {NODE_COMBINERS.map((item) => <option value={item.kind} key={item.kind}>{item.label}</option>)}
-                </select>
-              </label>
-              <DistributionEditor
-                label="noise"
-                distribution={mechanism.noise}
-                onChange={(noise) => props.onMechanism(node.id, { noise })}
-              />
-            </>}
-            <label className="field">
-              <span>intercept</span>
-              <input type="number" value={mechanism.intercept} step="0.1" onChange={(event) => props.onMechanism(node.id, { intercept: Number(event.target.value) })} />
-            </label>
-          </div>
+        <div className="variable-tabs" role="tablist" aria-label="Variable sections">
+          <button type="button" role="tab" aria-selected={tab === "model"} className={tab === "model" ? "active" : ""} onClick={() => setTab("model")}>model</button>
+          <button type="button" role="tab" aria-selected={tab === "interventions"} className={tab === "interventions" ? "active" : ""} onClick={() => setTab("interventions")}>interventions</button>
         </div>
 
-        {!isRoot && parentIds.length >= 2 && <details className="variable-window-details">
-          <summary>Interactions</summary>
-          <InteractionEditor
-            nodeId={node.id}
-            parentIds={parentIds}
-            interactions={mechanism.interactions}
-            onChange={(interactions) => props.onMechanism(node.id, { interactions })}
-          />
-        </details>}
+        {tab === "model" && <div className="variable-tab-panel" role="tabpanel">
+          <div className="variable-window-grid">
+            <div className="variable-window-block">
+              <strong>Roles</strong>
+              <div className="role-toggle-grid">
+                <RoleToggle label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
+                <RoleToggle label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
+                <RoleToggle label="adjusted" checked={node.roles.adjusted} onChange={() => props.onToggleRole(node.id, "adjusted")} />
+                <RoleToggle label="selected" checked={node.roles.selected} onChange={() => props.onToggleRole(node.id, "selected")} />
+                <RoleToggle label="unobserved" checked={node.roles.latent} onChange={() => props.onToggleRole(node.id, "latent")} />
+              </div>
+            </div>
 
-        <details className="variable-window-details">
-          <summary>Description</summary>
-          <textarea aria-label="description" value={variable.description} rows={3} onChange={(event) => updateVariable({ description: event.target.value })} />
-        </details>
+            <div className="variable-window-block">
+              <div className="variable-window-block-title">
+                <strong>Distribution</strong>
+                <span className="variable-pill">{valueTypeLabel(inferredValueType)}</span>
+              </div>
+              {isRoot && <DistributionEditor
+                label="root distribution"
+                distribution={mechanism.distribution}
+                onChange={(distribution) => props.onMechanism(node.id, { distribution })}
+              />}
+              {!isRoot && <>
+                <label className="field">
+                  <span>combiner</span>
+                  <select value={mechanism.combiner} onChange={(event) => props.onMechanism(node.id, { combiner: event.target.value as NodeCombinerKind })}>
+                    {NODE_COMBINERS.map((item) => <option value={item.kind} key={item.kind}>{item.label}</option>)}
+                  </select>
+                </label>
+                <DistributionEditor
+                  label="noise"
+                  distribution={mechanism.noise}
+                  onChange={(noise) => props.onMechanism(node.id, { noise })}
+                />
+              </>}
+              <label className="field">
+                <span>intercept</span>
+                <input type="number" value={mechanism.intercept} step="0.1" onChange={(event) => props.onMechanism(node.id, { intercept: Number(event.target.value) })} />
+              </label>
+            </div>
+          </div>
+
+          {!isRoot && parentIds.length >= 2 && <details className="variable-window-details">
+            <summary>Interactions</summary>
+            <InteractionEditor
+              nodeId={node.id}
+              parentIds={parentIds}
+              interactions={mechanism.interactions}
+              onChange={(interactions) => props.onMechanism(node.id, { interactions })}
+            />
+          </details>}
+
+          <details className="variable-window-details">
+            <summary>Description</summary>
+            <textarea aria-label="description" value={variable.description} rows={3} onChange={(event) => updateVariable({ description: event.target.value })} />
+          </details>
+        </div>}
+
+        {tab === "interventions" && <div className="variable-tab-panel intervention-tab-panel" role="tabpanel">
+          <HardDoEditor node={node} document={props.document} simulation={props.simulation} onOverride={props.onOverride} />
+          <ConditioningEditor node={node} document={props.document} simulation={props.simulation} onSelectionCondition={props.onSelectionCondition} />
+        </div>}
 
         <div className="model-facts">
           <span>parents {parentIds.join(", ") || "none"}</span>
@@ -1958,6 +2016,7 @@ function DistributionEditor(props: { label: string; distribution: NodeDistributi
         </select>
       </label>
       {distribution.kind === "constant" && <SliderNumberField
+        key="constant-value"
         label="value"
         value={distribution.value}
         min={distribution.value - 10}
@@ -1967,6 +2026,7 @@ function DistributionEditor(props: { label: string; distribution: NodeDistributi
       />}
       {distribution.kind === "normal" && <>
         <SliderNumberField
+          key="normal-mean"
           label="mean"
           value={distribution.mean}
           min={distribution.mean - 10}
@@ -1975,6 +2035,7 @@ function DistributionEditor(props: { label: string; distribution: NodeDistributi
           onChange={(mean) => props.onChange({ ...distribution, mean })}
         />
         <SliderNumberField
+          key="normal-sd"
           label="sd"
           value={distribution.sd}
           min={0.001}
@@ -1991,7 +2052,7 @@ function DistributionEditor(props: { label: string; distribution: NodeDistributi
         <NumberField label="min" value={distribution.min} onChange={(min) => props.onChange({ ...distribution, min })} />
         <NumberField label="max" value={distribution.max} onChange={(max) => props.onChange({ ...distribution, max })} />
       </>}
-      {distribution.kind === "bernoulli" && <SliderNumberField label="p" value={distribution.p} min={0} max={1} step={0.01} onChange={(p) => props.onChange({ ...distribution, p })} />}
+      {distribution.kind === "bernoulli" && <SliderNumberField key="bernoulli-p" label="p" value={distribution.p} min={0} max={1} step={0.01} onChange={(p) => props.onChange({ ...distribution, p })} />}
       {distribution.kind === "poisson" && <NumberField label="lambda" value={distribution.lambda} min={0.001} onChange={(lambda) => props.onChange({ ...distribution, lambda })} />}
       {distribution.kind === "beta" && <>
         <NumberField label="alpha" value={distribution.alpha} min={0.001} onChange={(alpha) => props.onChange({ ...distribution, alpha })} />
@@ -2088,6 +2149,15 @@ function Checkbox({ label, checked, onChange }: { label: string; checked: boolea
   return <label className="check-row"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><span>{label}</span></label>;
 }
 
+function RoleToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+  return (
+    <label className={checked ? "role-toggle active" : "role-toggle"}>
+      <input type="checkbox" checked={checked} onChange={onChange} />
+      <span>{label}</span>
+    </label>
+  );
+}
+
 function RadioGroup({ value, options, onChange }: { value: string; options: Array<[string, string]>; onChange: (value: string) => void }) {
   return <div>{options.map(([id, label]) => <label className="check-row" key={id}><input type="radio" checked={value === id} onChange={() => onChange(id)} /><span>{label}</span></label>)}</div>;
 }
@@ -2097,10 +2167,15 @@ function NumberField({ label, value, min, max, step = 0.1, onChange }: { label: 
 }
 
 function SliderNumberField({ label, value, min, max, step = 0.1, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (value: number) => void }) {
-  const safeMin = Math.min(min, max);
-  const safeMax = Math.max(min, max);
-  const sliderValue = clamp(value, safeMin, safeMax);
-  const update = (next: number) => onChange(roundToStep(clamp(next, safeMin, safeMax), step));
+  const [range, setRange] = useState(() => sliderRange(min, max, value));
+  useEffect(() => {
+    setRange((current) => value < current.min || value > current.max ? sliderRange(min, max, value) : current);
+  }, [max, min, value]);
+  const sliderValue = clamp(value, range.min, range.max);
+  const updateNumber = (next: number) => {
+    if (Number.isFinite(next)) onChange(roundToStep(next, step));
+  };
+  const updateSlider = (next: number) => onChange(roundToStep(clamp(next, range.min, range.max), step));
   return (
     <div className="slider-number-field">
       <div className="slider-number-head">
@@ -2109,23 +2184,41 @@ function SliderNumberField({ label, value, min, max, step = 0.1, onChange }: { l
           aria-label={label}
           type="number"
           value={value}
-          min={safeMin}
-          max={safeMax}
+          min={range.min}
+          max={range.max}
           step={step}
-          onChange={(event) => update(Number(event.target.value))}
+          onChange={(event) => updateNumber(Number(event.target.value))}
         />
       </div>
       <input
         type="range"
         aria-label={`${label} slider`}
-        min={safeMin}
-        max={safeMax}
+        min={range.min}
+        max={range.max}
         step={step}
         value={sliderValue}
-        onChange={(event) => update(Number(event.target.value))}
+        onChange={(event) => updateSlider(Number(event.target.value))}
       />
     </div>
   );
+}
+
+function sliderRange(min: number, max: number, value: number): { min: number; max: number } {
+  let safeMin = Math.min(min, max);
+  let safeMax = Math.max(min, max);
+  if (!Number.isFinite(safeMin) || !Number.isFinite(safeMax) || Math.abs(safeMax - safeMin) < 1e-9) {
+    safeMin = Number.isFinite(value) ? value - 1 : -1;
+    safeMax = Number.isFinite(value) ? value + 1 : 1;
+  }
+  if (Number.isFinite(value)) {
+    if (value < safeMin) safeMin = value;
+    if (value > safeMax) safeMax = value;
+  }
+  if (Math.abs(safeMax - safeMin) < 1e-9) {
+    safeMin -= 1;
+    safeMax += 1;
+  }
+  return { min: safeMin, max: safeMax };
 }
 
 function List({ values, empty }: { values: string[]; empty: string }) {
@@ -2452,6 +2545,52 @@ function normalDensity(value: number, mean: number, sd: number): number {
   return Math.exp(-0.5 * z * z) / (cleanSd * Math.sqrt(2 * Math.PI));
 }
 
+function nodeDistributionAnnotationLines(state: SimulatedNodeState | undefined, value: number | undefined): string[] {
+  const lines: string[] = [];
+  if (typeof value === "number" && Number.isFinite(value)) lines.push(`draw ${formatValue(value)}`);
+  const moment = nodeMomentLabel(state);
+  if (moment) lines.push(moment);
+  const params = state?.analytic ? distributionParameterLabel(state.analytic.distribution) : null;
+  if (params) lines.push(params);
+  return lines.map((line) => compactSvgText(line, 28)).slice(0, 3);
+}
+
+function nodeDistributionFullSummary(state: SimulatedNodeState | undefined, value: number | undefined): string {
+  return [
+    typeof value === "number" && Number.isFinite(value) ? `chosen draw ${formatValue(value)}` : "",
+    nodeMomentLabel(state),
+    state?.analytic ? distributionParameterLabel(state.analytic.distribution) : "",
+    state?.analytic ? `analytic ${analyticDistributionLabel(state.analytic)}` : "",
+    state?.empirical.effectiveSampleSize !== null && state?.empirical.effectiveSampleSize !== undefined ? `ESS ${formatValue(state.empirical.effectiveSampleSize)}` : ""
+  ].filter(Boolean).join("; ");
+}
+
+function nodeMomentLabel(state: SimulatedNodeState | undefined): string {
+  const mean = state?.analytic?.mean ?? state?.empirical.mean;
+  const variance = state?.analytic?.variance ?? state?.empirical.variance;
+  if (mean === null || mean === undefined || !Number.isFinite(mean)) return "";
+  const sd = variance !== null && variance !== undefined && Number.isFinite(variance) ? Math.sqrt(Math.max(0, variance)) : null;
+  return sd === null ? `mean ${formatValue(mean)}` : `mean ${formatValue(mean)} sd ${formatValue(sd)}`;
+}
+
+function distributionParameterLabel(distribution: NodeDistribution): string {
+  if (distribution.kind === "constant") return `Constant value=${formatValue(distribution.value)}`;
+  if (distribution.kind === "normal") return `Normal mean=${formatValue(distribution.mean)} sd=${formatValue(distribution.sd)}`;
+  if (distribution.kind === "lognormal") return `Lognormal logmean=${formatValue(distribution.meanLog)} logsd=${formatValue(distribution.sdLog)}`;
+  if (distribution.kind === "uniform") return `Uniform min=${formatValue(distribution.min)} max=${formatValue(distribution.max)}`;
+  if (distribution.kind === "bernoulli") return `Bernoulli p=${formatValue(distribution.p)}`;
+  if (distribution.kind === "poisson") return `Poisson lambda=${formatValue(distribution.lambda)}`;
+  if (distribution.kind === "beta") return `Beta alpha=${formatValue(distribution.alpha)} beta=${formatValue(distribution.beta)}`;
+  if (distribution.kind === "laplace") return `Laplace mean=${formatValue(distribution.mean)} scale=${formatValue(distribution.scale)}`;
+  if (distribution.kind === "student_t") return `Student-t mean=${formatValue(distribution.mean)} scale=${formatValue(distribution.scale)} df=${formatValue(distribution.df)}`;
+  if (distribution.kind === "gamma") return `Gamma shape=${formatValue(distribution.shape)} scale=${formatValue(distribution.scale)}`;
+  return `Exponential rate=${formatValue(distribution.rate)}`;
+}
+
+function compactSvgText(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
 function distributionLabel(distribution: NodeDistribution): string {
   if (distribution.kind === "constant") return `constant ${formatValue(distribution.value)}`;
   if (distribution.kind === "normal") return `Normal(${formatValue(distribution.mean)}, ${formatValue(distribution.sd)})`;
@@ -2496,6 +2635,39 @@ function valueTypeFromDistribution(distribution: NodeDistribution, fallback: Var
 
 function valueTypeLabel(valueType: VariableModel["valueType"]): string {
   return VARIABLE_TYPES.find(([id]) => id === valueType)?.[1] ?? valueType;
+}
+
+function variableWindowStyle(anchor: ScreenPoint | null): CSSProperties {
+  if (!anchor || typeof window === "undefined") return {};
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const mobile = viewportWidth <= 700;
+  const width = Math.min(VARIABLE_WINDOW_WIDTH, viewportWidth - (VARIABLE_WINDOW_GUTTER * 2));
+  const topMin = mobile ? 92 : 68;
+  if (mobile) {
+    return {
+      left: VARIABLE_WINDOW_GUTTER,
+      top: topMin,
+      width,
+      maxHeight: Math.max(260, viewportHeight - topMin - VARIABLE_WINDOW_GUTTER),
+      transform: "none"
+    };
+  }
+  const rightCandidate = anchor.x + VARIABLE_WINDOW_GUTTER;
+  const leftCandidate = anchor.x - width - VARIABLE_WINDOW_GUTTER;
+  const left = rightCandidate + width <= viewportWidth - VARIABLE_WINDOW_GUTTER
+    ? rightCandidate
+    : leftCandidate >= VARIABLE_WINDOW_GUTTER
+      ? leftCandidate
+      : clamp(anchor.x - width / 2, VARIABLE_WINDOW_GUTTER, viewportWidth - width - VARIABLE_WINDOW_GUTTER);
+  const top = clamp(anchor.y - 82, topMin, Math.max(topMin, viewportHeight - 260));
+  return {
+    left,
+    top,
+    width,
+    maxHeight: Math.max(260, viewportHeight - top - VARIABLE_WINDOW_GUTTER),
+    transform: "none"
+  };
 }
 
 function defaultDistribution(kind: NodeDistribution["kind"]): NodeDistribution {

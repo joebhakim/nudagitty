@@ -468,9 +468,39 @@ textarea {
   padding: 12px;
 }
 
+.variable-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.variable-tabs button {
+  min-height: 30px;
+  background: #f8faf9;
+  text-transform: uppercase;
+  color: #4f5b65;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.variable-tabs button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.variable-tab-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.intervention-tab-panel {
+  align-items: start;
+}
+
 .variable-window-grid {
   display: grid;
-  grid-template-columns: minmax(150px, 0.75fr) minmax(240px, 1.25fr);
+  grid-template-columns: minmax(135px, 0.55fr) minmax(280px, 1.45fr);
   gap: 10px;
 }
 
@@ -518,6 +548,46 @@ textarea {
   line-height: 16px;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.role-toggle-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
+
+.role-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 26px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: #3d464e;
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.role-toggle input {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.role-toggle span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.role-toggle.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .slider-number-field {
@@ -1241,6 +1311,18 @@ marker path {
   text-anchor: middle;
   font-size: 11px;
   fill: var(--accent);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.node-distribution-label {
+  text-anchor: middle;
+  font-size: 9px;
+  fill: #4f5b65;
+  pointer-events: none;
+}
+
+.node-distribution-annotation {
   pointer-events: none;
 }
 

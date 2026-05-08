@@ -38,6 +38,9 @@ test("selected variables open a compact variable window", async ({ page }) => {
   await expect(variableWindow.getByLabel("description")).toHaveValue("Baseline confounder");
   await expect(variableWindow.getByLabel("type")).toHaveCount(0);
   await expect(variableWindow.getByLabel("unit")).toHaveCount(0);
+  await variableWindow.getByRole("tab", { name: "interventions" }).click();
+  await expect(variableWindow.locator(".hard-do-editor")).toContainText("Hard do intervention");
+  await expect(variableWindow.locator(".conditioning-editor")).toContainText("Conditioning filter");
   await expect(page.locator(".model-panel")).not.toContainText("Domain");
   await expect(page.locator(".model-panel")).not.toContainText("Measurement");
   await expect(page.locator(".model-panel")).not.toContainText("Intervention");
@@ -90,6 +93,9 @@ test("Galton example renders analytic and empirical node distributions", async (
 
   await expect(page.locator("text.node-label").filter({ hasText: "father height" })).toBeVisible();
   await expect(page.locator(".node-distribution-plot")).toHaveCount(6);
+  await expect(page.locator(".node-distribution-annotation").first()).toContainText("draw");
+  await expect(page.locator(".node-distribution-annotation").first()).toContainText("mean");
+  await expect(page.locator(".node-distribution-annotation").first()).toContainText("sd");
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
   await expect(page.locator(".variable-window")).toContainText("linear Gaussian SEM");
   await expect(page.locator(".variable-window")).toContainText("Normal(69.0, 2.80)");
