@@ -4,6 +4,8 @@ test("loads the editor and creates a variable with the node tool", async ({ page
   await page.goto("/");
   await expect(page.getByText("Nudagitty")).toBeVisible();
   await expect(page.getByLabel("Editable causal graph")).toBeVisible();
+  await expect(page.locator(".editor-column")).toContainText("Select a node or edge for editing.");
+  await expect(page.locator(".editor-column")).not.toContainText("Live Node Values");
 
   await page.getByRole("button", { name: "Variable" }).click();
   await page.locator(".graph-canvas").click({ position: { x: 80, y: 320 } });
@@ -12,61 +14,59 @@ test("loads the editor and creates a variable with the node tool", async ({ page
   await expect(page.locator(".cm-content")).toContainText("V");
 });
 
-test("connection list opens a compact connection window", async ({ page }) => {
+test("selected connections populate the editor column", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Severity to Treatment" }).click();
-  const connectionWindow = page.getByRole("dialog", { name: "Connection Severity to Treatment" });
+  await page.locator(".edge-hit").first().dispatchEvent("pointerdown");
+  const editor = page.locator(".editor-column");
 
-  await expect(connectionWindow).toBeVisible();
-  await connectionWindow.getByLabel("function Severity to Treatment").click();
+  await expect(editor).toContainText("Connection");
+  await expect(editor).toContainText("Severity to Treatment");
+  await editor.getByLabel("function Severity to Treatment").click();
   await page.getByRole("option", { name: /Hill \/ Emax/ }).click();
 
-  await expect(connectionWindow.locator(".edge-panel")).toContainText("EC50");
-  await expect(connectionWindow.getByLabel("function Severity to Treatment")).toContainText("Hill / Emax");
-  await expect(page.locator(".mechanism-row.selected")).toContainText("Severity to Treatment");
-  await expect(page.locator(".model-panel")).not.toContainText("Connection Detail");
+  await expect(editor.locator(".edge-panel")).toContainText("EC50");
+  await expect(editor.getByLabel("function Severity to Treatment")).toContainText("Hill / Emax");
+  await expect(page.locator("body")).not.toContainText("Connection Functions");
+  await expect(page.locator("body")).not.toContainText("Connection Detail");
 });
 
-test("selected variables open a compact variable window", async ({ page }) => {
+test("selected variables populate the editor column", async ({ page }) => {
   await page.goto("/");
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
-  const variableWindow = page.getByRole("dialog", { name: "Variable Severity" });
+  const variableEditor = page.locator(".editor-column");
   const scenario = page.locator(".scenario-column");
 
-  await expect(variableWindow).toBeVisible();
-  await expect(variableWindow).toContainText("Roles");
-  await expect(variableWindow).toContainText("Distribution");
-  await variableWindow.getByText("Description").click();
-  await variableWindow.getByLabel("description").fill("Baseline confounder");
+  await expect(variableEditor).toContainText("Variable");
+  await expect(variableEditor).toContainText("Severity");
+  await expect(variableEditor).toContainText("Roles");
+  await expect(variableEditor).toContainText("Distribution");
+  await variableEditor.getByText("Description").click();
+  await variableEditor.getByLabel("description").fill("Baseline confounder");
 
-  await expect(variableWindow.getByLabel("description")).toHaveValue("Baseline confounder");
-  await expect(variableWindow.getByLabel("type")).toHaveCount(0);
-  await expect(variableWindow.getByLabel("unit")).toHaveCount(0);
-  await variableWindow.getByRole("tab", { name: "interventions" }).click();
-  await expect(variableWindow.locator(".hard-do-editor")).toContainText("Hard do intervention");
-  await expect(variableWindow.locator(".conditioning-editor")).toContainText("Conditioning filter");
-  await expect(page.locator(".model-panel")).not.toContainText("Domain");
-  await expect(page.locator(".model-panel")).not.toContainText("Measurement");
-  await expect(page.locator(".model-panel")).not.toContainText("Intervention");
-  await expect(scenario.locator(".hard-do-editor")).toContainText("Hard do intervention");
-  await expect(scenario).toContainText("Conditioning filter");
-  await expect(scenario.locator(".planned-module-list")).not.toContainText("Hard do");
-  await expect(scenario.locator(".planned-module-list")).toContainText("planned");
+  await expect(variableEditor.getByLabel("description")).toHaveValue("Baseline confounder");
+  await expect(variableEditor.getByLabel("type")).toHaveCount(0);
+  await expect(variableEditor.getByLabel("unit")).toHaveCount(0);
+  await variableEditor.getByRole("tab", { name: "interventions" }).click();
+  await expect(variableEditor.locator(".hard-do-editor")).toContainText("Hard do intervention");
+  await expect(variableEditor.locator(".conditioning-editor")).toContainText("Conditioning filter");
+  await expect(page.locator("body")).not.toContainText("Model Inspector");
+  await expect(page.locator("body")).not.toContainText("Connection Functions");
+  await expect(variableEditor).not.toContainText("Measurement");
+  await expect(variableEditor.locator(".planned-module-list")).toContainText("planned");
+  await expect(scenario.locator(".hard-do-editor")).toHaveCount(0);
+  await expect(scenario.locator(".conditioning-editor")).toHaveCount(0);
+  await expect(scenario.locator(".planned-module-list")).toHaveCount(0);
 });
 
 test("hard do controls share one override state", async ({ page }) => {
   await page.goto("/");
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
 
-  const hardDo = page.locator(".hard-do-editor");
+  const editor = page.locator(".editor-column");
+  await editor.getByRole("tab", { name: "interventions" }).click();
+  const hardDo = editor.locator(".hard-do-editor");
   await expect(hardDo).toContainText("available");
-  await page.getByLabel("hard do Severity").evaluate((element) => {
-    if (!(element instanceof HTMLInputElement)) throw new Error("expected range input");
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-    setter?.call(element, "2");
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await hardDo.getByLabel("hard do value").fill("2");
 
   await expect(hardDo).toContainText("active");
   await expect(hardDo.getByLabel("hard do value")).toHaveValue("2");
@@ -77,18 +77,18 @@ test("hard do controls share one override state", async ({ page }) => {
 test("binary variables update simulation defaults", async ({ page }) => {
   await page.goto("/");
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
-  const variableWindow = page.locator(".variable-window");
+  const variableEditor = page.locator(".editor-column");
 
-  await variableWindow.getByLabel("root distribution").selectOption("bernoulli");
-  await expect(variableWindow.getByLabel("root distribution")).toHaveValue("bernoulli");
-  await expect(variableWindow).toContainText("binary");
-  await expect(variableWindow.getByLabel("p slider")).toBeVisible();
+  await variableEditor.getByLabel("root distribution").selectOption("bernoulli");
+  await expect(variableEditor.getByLabel("root distribution")).toHaveValue("bernoulli");
+  await expect(variableEditor).toContainText("binary");
+  await expect(variableEditor.getByLabel("p slider")).toBeVisible();
 
   await page.getByLabel("Examples").selectOption("mediation-direct-total");
   await page.locator("text.node-label").filter({ hasText: "Biomarker" }).click({ force: true });
-  await variableWindow.getByLabel("combiner").selectOption("bernoulli_logit");
-  await expect(variableWindow.getByLabel("combiner")).toHaveValue("bernoulli_logit");
-  await expect(variableWindow).toContainText("binary");
+  await variableEditor.getByLabel("combiner").selectOption("bernoulli_logit");
+  await expect(variableEditor.getByLabel("combiner")).toHaveValue("bernoulli_logit");
+  await expect(variableEditor).toContainText("binary");
 });
 
 test("Galton example renders analytic and empirical node distributions", async ({ page }) => {
@@ -101,8 +101,8 @@ test("Galton example renders analytic and empirical node distributions", async (
   await expect(page.locator(".node-distribution-annotation").first()).toContainText("mean");
   await expect(page.locator(".node-distribution-annotation").first()).toContainText("sd");
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
-  await expect(page.locator(".variable-window")).toContainText("linear Gaussian SEM");
-  await expect(page.locator(".variable-window")).toContainText("Normal(69.0, 2.80)");
+  await expect(page.locator(".editor-column")).toContainText("linear Gaussian SEM");
+  await expect(page.locator(".editor-column")).toContainText("Normal(69.0, 2.80)");
 });
 
 test("binary variable pairs render a table and colored confusion matrix", async ({ page }) => {
@@ -138,7 +138,8 @@ test("conditioning a Galton variable is separate from overriding it", async ({ p
   await page.getByLabel("Examples").selectOption("galton-regression");
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
 
-  const conditioning = page.locator(".conditioning-editor");
+  await page.locator(".editor-column").getByRole("tab", { name: "interventions" }).click();
+  const conditioning = page.locator(".editor-column").locator(".conditioning-editor");
   await conditioning.getByRole("button", { name: "condition on current" }).click();
   await conditioning.getByLabel("inference method").selectOption("analytic");
   await conditioning.getByRole("spinbutton", { name: "value" }).fill("72");
@@ -156,7 +157,7 @@ test("conditioning a Galton variable is separate from overriding it", async ({ p
   await expect(page.locator(".conditioning-summary")).toContainText("active analytic");
   await expect(page.locator(".conditioning-summary")).toContainText("linear Gaussian");
   await expect(page.locator(".conditioning-summary")).toContainText(/\/ \d+/);
-  await expect(page.locator(".variable-window")).toContainText("linear Gaussian moment match conditioned on Father_height >= 72");
+  await expect(page.locator(".editor-column")).toContainText("linear Gaussian moment match conditioned on Father_height >= 72");
 });
 
 test("inference selector switches Galton conditioning between rejection and importance", async ({ page }) => {
@@ -164,7 +165,8 @@ test("inference selector switches Galton conditioning between rejection and impo
   await page.getByLabel("Examples").selectOption("galton-regression");
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
 
-  const conditioning = page.locator(".conditioning-editor");
+  await page.locator(".editor-column").getByRole("tab", { name: "interventions" }).click();
+  const conditioning = page.locator(".editor-column").locator(".conditioning-editor");
   await conditioning.getByRole("button", { name: "condition on current" }).click();
   await conditioning.getByRole("spinbutton", { name: "value" }).fill("72");
   await conditioning.getByLabel("inference method").selectOption("rejection");

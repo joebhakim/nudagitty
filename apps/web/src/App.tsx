@@ -13,10 +13,9 @@ import {
   Share2,
   Sigma,
   Trash2,
-  Undo2,
-  X
+  Undo2
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EXAMPLES,
   addEdge,
@@ -89,8 +88,7 @@ type CanvasViewport = { cx: number; cy: number; zoom: number };
 type ScatterPair = { x: string; y: string };
 type ScatterPoint = { x: number; y: number; weight: number; index: number };
 type BinaryCell = { x: 0 | 1; y: 0 | 1; weight: number; count: number; percent: number };
-type ScreenPoint = { x: number; y: number };
-type VariableWindowTab = "model" | "interventions";
+type VariableEditorTab = "model" | "interventions";
 type DragState =
   | { kind: "node"; id: string; offset: Point }
   | { kind: "edge-control"; id: string }
@@ -100,8 +98,6 @@ const STORAGE_KEY = "nudagitty.document.v1";
 const BASE_VIEWBOX = { width: 1000, height: 700 };
 const DEFAULT_VIEWPORT: CanvasViewport = { cx: 0, cy: 0, zoom: 1 };
 const NODE_VIEW_MARGIN = { x: 100, top: 110, bottom: 130 };
-const VARIABLE_WINDOW_WIDTH = 520;
-const VARIABLE_WINDOW_GUTTER = 18;
 
 function graphViewportSignature(graph: GraphModel): string {
   const nodes = graph.nodes.map((node) => `${node.id}:${node.label}`).join("|");
@@ -256,17 +252,11 @@ export function App() {
   const [modelDirty, setModelDirty] = useState(false);
   const [simulation, setSimulation] = useState<SimulationResult>(() => runSimulation(document.graph, document.simulation));
   const [scatterPair, setScatterPair] = useState<ScatterPair>(() => defaultScatterPair(document.graph));
-  const [variableWindowId, setVariableWindowId] = useState<string | null>(null);
-  const [variableWindowAnchor, setVariableWindowAnchor] = useState<ScreenPoint | null>(null);
-  const [edgeWindowId, setEdgeWindowId] = useState<string | null>(null);
-  const [edgeWindowAnchor, setEdgeWindowAnchor] = useState<ScreenPoint | null>(null);
 
   const [analysis, setAnalysis] = useState<AnalysisReport>(() => analyzeGraph(document.graph));
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
   const selectedNode = selection?.kind === "node" ? findNode(document.graph, selection.id) : undefined;
   const selectedEdge = selection?.kind === "edge" ? findEdge(document.graph, selection.id) : undefined;
-  const variableWindowNode = variableWindowId ? findNode(document.graph, variableWindowId) : undefined;
-  const edgeWindowEdge = edgeWindowId ? findEdge(document.graph, edgeWindowId) : undefined;
   const highlightedEdges = useMemo(() => computeHighlightedEdges(document.graph, analysis, showCausal, showBiasing), [analysis, document.graph, showBiasing, showCausal]);
   const ancestorIds = useMemo(() => showAncestors ? new Set(analysis.causalPaths.flat()) : new Set<string>(), [analysis.causalPaths, showAncestors]);
 
@@ -287,14 +277,6 @@ export function App() {
   useEffect(() => {
     setScatterPair((pair) => reconcileScatterPair(document.graph, pair));
   }, [document.graph]);
-
-  useEffect(() => {
-    if (variableWindowId && !findNode(document.graph, variableWindowId)) setVariableWindowId(null);
-  }, [document.graph, variableWindowId]);
-
-  useEffect(() => {
-    if (edgeWindowId && !findEdge(document.graph, edgeWindowId)) setEdgeWindowId(null);
-  }, [document.graph, edgeWindowId]);
 
   const commit = useCallback((next: GraphDocument) => {
     setHistory((items) => [...items.slice(-80), cloneDocument(document)]);
@@ -320,10 +302,7 @@ export function App() {
         event.preventDefault();
         redo();
       } else if (event.key === "Escape") {
-        setVariableWindowId(null);
-        setVariableWindowAnchor(null);
-        setEdgeWindowId(null);
-        setEdgeWindowAnchor(null);
+        setSelection(null);
       } else if (event.key === "Delete" || event.key.toLowerCase() === "d") {
         event.preventDefault();
         deleteSelection();
@@ -376,22 +355,14 @@ export function App() {
 
   const deleteNodeById = useCallback((nodeId: string) => {
     const graph = deleteNode(document.graph, nodeId);
-    if (variableWindowId === nodeId) {
-      setVariableWindowId(null);
-      setVariableWindowAnchor(null);
-    }
     setSelection(null);
     replaceGraph(graph);
-  }, [document.graph, replaceGraph, variableWindowId]);
+  }, [document.graph, replaceGraph]);
 
   const deleteEdgeById = useCallback((edgeId: string) => {
-    if (edgeWindowId === edgeId) {
-      setEdgeWindowId(null);
-      setEdgeWindowAnchor(null);
-    }
     setSelection(null);
     replaceGraph(deleteEdge(document.graph, edgeId));
-  }, [document.graph, edgeWindowId, replaceGraph]);
+  }, [document.graph, replaceGraph]);
 
   const deleteSelection = useCallback(() => {
     if (!selection) return;
@@ -414,9 +385,8 @@ export function App() {
     const graph = renameNode(document.graph, nodeId, nextId);
     const renamed = graph.nodes.find((node) => node.label === nextId || node.id === nextId);
     setSelection((current) => current?.kind === "node" && current.id === nodeId ? (renamed ? { kind: "node", id: renamed.id } : null) : current);
-    if (variableWindowId === nodeId) setVariableWindowId(renamed?.id ?? null);
     replaceGraph(graph);
-  }, [document.graph, replaceGraph, variableWindowId]);
+  }, [document.graph, replaceGraph]);
 
   const renameSelectedNode = useCallback(() => {
     if (selection?.kind !== "node") return;
@@ -427,29 +397,15 @@ export function App() {
     const id = createNewNodeId(document.graph);
     const graph = addNode(document.graph, createNode(id, point));
     setSelection({ kind: "node", id });
-    setVariableWindowId(id);
-    setVariableWindowAnchor(null);
     replaceGraph(graph);
   }, [document.graph, replaceGraph]);
 
-  const selectNode = useCallback((id: string, openWindow = false, anchor: ScreenPoint | null = null) => {
+  const selectNode = useCallback((id: string) => {
     setSelection({ kind: "node", id });
-    if (openWindow) {
-      setVariableWindowId(id);
-      setVariableWindowAnchor(anchor);
-      setEdgeWindowId(null);
-      setEdgeWindowAnchor(null);
-    }
   }, []);
 
-  const selectEdge = useCallback((id: string, anchor: ScreenPoint | null = null, openWindow = true) => {
+  const selectEdge = useCallback((id: string) => {
     setSelection({ kind: "edge", id });
-    if (openWindow) {
-      setEdgeWindowId(id);
-      setEdgeWindowAnchor(anchor);
-      setVariableWindowId(null);
-      setVariableWindowAnchor(null);
-    }
   }, []);
 
   const createOrSelectEdge = useCallback((target: string) => {
@@ -463,7 +419,7 @@ export function App() {
     }
     const id = edgeId(edgeSource, target, "directed");
     const graph = addEdge(document.graph, edgeSource, target, "directed");
-    selectEdge(id, null, true);
+    selectEdge(id);
     setEdgeSource(null);
     replaceGraph(graph);
   }, [document.graph, edgeSource, replaceGraph, selectEdge]);
@@ -483,10 +439,6 @@ export function App() {
     if (!document) return;
     commit(document);
     setSelection(null);
-    setVariableWindowId(null);
-    setVariableWindowAnchor(null);
-    setEdgeWindowId(null);
-    setEdgeWindowAnchor(null);
   }, [commit]);
 
   const updateNodeMechanism = useCallback((nodeId: string, patch: Partial<NodeMechanism>) => {
@@ -624,10 +576,6 @@ export function App() {
           <IconButton label="New" onClick={() => {
             commit(emptyDocument());
             setSelection(null);
-            setVariableWindowId(null);
-            setVariableWindowAnchor(null);
-            setEdgeWindowId(null);
-            setEdgeWindowAnchor(null);
           }}><FilePlus2 size={18} /></IconButton>
           <select aria-label="Examples" onChange={(event) => loadExample(event.target.value)} defaultValue="">
             <option value="" disabled>Examples</option>
@@ -641,23 +589,32 @@ export function App() {
       </header>
 
       <main className="workspace">
-        <aside className="side-panel model-panel">
-          <Section title="Model Inspector">
-            <VariablePanel
-              node={selectedNode}
-              edge={selectedEdge}
-              simulation={simulation}
-              onOpenVariable={(id) => selectNode(id, true)}
-              onOpenEdge={(id) => selectEdge(id)}
-            />
-          </Section>
-          <Section title="Connection Functions">
-            <ConnectionListPanel
+        <aside className="side-panel scenario-column">
+          <Section title="Scenario Builder">
+            <ScenarioPanel
               document={document}
               simulation={simulation}
-              selectedEdgeId={selection?.kind === "edge" ? selection.id : null}
-              onSelectEdge={(id) => selectEdge(id)}
-              onEnabled={updateEdgeEnabled}
+              onResample={resample}
+              onClearOverrides={clearOverrides}
+              onClearSelections={clearSelections}
+            />
+          </Section>
+          <Section title="Live Node Values">
+            <LiveValuesPanel
+              graph={document.graph}
+              simulation={simulation}
+              overrides={document.simulation.overrides}
+              selections={document.simulation.selections}
+              onSelectNode={selectNode}
+            />
+          </Section>
+          <Section title="Pairwise Output">
+            <ScatterplotPanel
+              graph={document.graph}
+              simulation={simulation}
+              pair={scatterPair}
+              onPair={setScatterPair}
+              onSelectNode={selectNode}
             />
           </Section>
         </aside>
@@ -676,86 +633,30 @@ export function App() {
           onSelect={setSelection}
           onAddNode={addNodeAt}
           onMoveNode={(id, position) => replaceGraph(updateNode(document.graph, id, { position }))}
-          onNodeClick={(id, anchor) => tool === "edge" ? createOrSelectEdge(id) : selectNode(id, true, anchor)}
-          onEdgeClick={(id, anchor) => selectEdge(id, anchor)}
+          onNodeClick={(id) => tool === "edge" ? createOrSelectEdge(id) : selectNode(id)}
+          onEdgeClick={selectEdge}
           onEdgeControl={(edge) => replaceGraph(upsertEdge(document.graph, edge))}
         />
 
-        {variableWindowNode && <VariableWindow
-          node={variableWindowNode}
-          simulation={simulation}
-          document={document}
-          anchor={variableWindowAnchor}
-          onClose={() => {
-            setVariableWindowId(null);
-            setVariableWindowAnchor(null);
-          }}
-          onToggleRole={toggleRole}
-          onRename={renameNodeById}
-          onDelete={deleteNodeById}
-          onMechanism={updateNodeMechanism}
-          onVariableChange={updateVariableModel}
-          onOverride={setOverride}
-          onSelectionCondition={setSelectionCondition}
-        />}
-
-        {edgeWindowEdge && <EdgeWindow
-          edge={edgeWindowEdge}
-          simulation={simulation}
-          document={document}
-          anchor={edgeWindowAnchor}
-          onClose={() => {
-            setEdgeWindowId(null);
-            setEdgeWindowAnchor(null);
-          }}
-          onCoefficient={updateEdgeCoefficient}
-          onEnabled={updateEdgeEnabled}
-          onMechanism={updateEdgeMechanism}
-          onDelete={deleteEdgeById}
-        />}
-
-        <aside className="side-panel scenario-column">
-          <Section title="Scenario Builder">
-            <ScenarioPanel
-              node={selectedNode}
-              document={document}
-              simulation={simulation}
-              onResample={resample}
-              onClearOverrides={clearOverrides}
-              onClearSelections={clearSelections}
-              onOverride={setOverride}
-              onSelectionCondition={setSelectionCondition}
-              onSelectNode={(id) => selectNode(id, true)}
-            />
-          </Section>
+        <aside className="side-panel editor-column" aria-label="Selection editor">
+          <SelectionEditor
+            node={selectedNode}
+            edge={selectedEdge}
+            simulation={simulation}
+            document={document}
+            onToggleRole={toggleRole}
+            onRename={renameNodeById}
+            onDeleteNode={deleteNodeById}
+            onNodeMechanism={updateNodeMechanism}
+            onVariableChange={updateVariableModel}
+            onOverride={setOverride}
+            onSelectionCondition={setSelectionCondition}
+            onCoefficient={updateEdgeCoefficient}
+            onEdgeEnabled={updateEdgeEnabled}
+            onEdgeMechanism={updateEdgeMechanism}
+            onDeleteEdge={deleteEdgeById}
+          />
         </aside>
-
-        <section className="results-dock">
-          <Section title="Results">
-            <div className="results-grid">
-              <div className="results-block">
-                <h3>Live Node Values</h3>
-                <LiveValuesPanel
-                  graph={document.graph}
-                  simulation={simulation}
-                  overrides={document.simulation.overrides}
-                  selections={document.simulation.selections}
-                  onSelectNode={(id) => selectNode(id, true)}
-                />
-              </div>
-              <div className="results-block">
-                <h3>Pairwise Output</h3>
-                <ScatterplotPanel
-                  graph={document.graph}
-                  simulation={simulation}
-                  pair={scatterPair}
-                  onPair={setScatterPair}
-                  onSelectNode={(id) => selectNode(id, true)}
-                />
-              </div>
-            </div>
-          </Section>
-        </section>
 
         <section className="advanced-drawer">
           <details>
@@ -831,8 +732,8 @@ function GraphCanvas(props: {
   onSelect: (selection: Selection) => void;
   onAddNode: (point: Point) => void;
   onMoveNode: (id: string, position: Point) => void;
-  onNodeClick: (id: string, anchor: ScreenPoint) => void;
-  onEdgeClick: (id: string, anchor: ScreenPoint) => void;
+  onNodeClick: (id: string) => void;
+  onEdgeClick: (id: string) => void;
   onEdgeControl: (edge: GraphEdge) => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -945,7 +846,7 @@ function GraphCanvas(props: {
                   className="edge-hit"
                   onPointerDown={(event) => {
                     event.stopPropagation();
-                    props.onEdgeClick(edge.id, { x: event.clientX, y: event.clientY });
+                    props.onEdgeClick(edge.id);
                   }}
                 />
                 <path
@@ -988,7 +889,7 @@ function GraphCanvas(props: {
                   event.stopPropagation();
                   const point = svgPoint(event);
                   setDrag({ kind: "node", id: node.id, offset: { x: point.x - node.position.x, y: point.y - node.position.y } });
-                  props.onNodeClick(node.id, { x: event.clientX, y: event.clientY });
+                  props.onNodeClick(node.id);
                 }}
               >
                 <circle r={node.roles.exposure || node.roles.outcome ? 25 : 21} />
@@ -1286,20 +1187,15 @@ function BinaryPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel:
 }
 
 function ScenarioPanel(props: {
-  node?: GraphNode;
   document: GraphDocument;
   simulation: SimulationResult;
   onResample: () => void;
   onClearOverrides: () => void;
   onClearSelections: () => void;
-  onOverride: (id: string, value: number | null) => void;
-  onSelectionCondition: (id: string, condition: SimulationSelectionCondition | null) => void;
-  onSelectNode: (id: string) => void;
 }) {
   const blocked = simulationBlocked(props.simulation);
   const overrides = Object.keys(props.document.simulation.overrides);
   const selections = Object.keys(props.document.simulation.selections ?? {});
-  const nodes = [...props.document.graph.nodes].sort((a, b) => a.id.localeCompare(b.id));
   return (
     <div className="simulation-panel">
       <div className="simulation-status">
@@ -1309,107 +1205,12 @@ function ScenarioPanel(props: {
       </div>
       <div className="button-row">
         <button type="button" onClick={props.onResample}><RefreshCw size={15} /> resample</button>
-        <button type="button" onClick={props.onClearOverrides} disabled={overrides.length === 0}>clear hard do</button>
-        <button type="button" onClick={props.onClearSelections} disabled={selections.length === 0}>clear conditions</button>
+        {overrides.length > 0 && <button type="button" onClick={props.onClearOverrides}>clear fixed values</button>}
+        {selections.length > 0 && <button type="button" onClick={props.onClearSelections}>clear conditions</button>}
       </div>
       <ConditioningMethodPanel simulation={props.simulation} />
       {props.simulation.diagnostics.map((message) => <p className="warning" key={message}>{message}</p>)}
-      <div className="scenario-group">
-        <strong>Interventions</strong>
-        {props.node
-          ? <HardDoEditor node={props.node} document={props.document} simulation={props.simulation} onOverride={props.onOverride} />
-          : <p className="muted">Select a variable to configure a hard-do intervention.</p>}
-        <div className="planned-module-list">
-          {PLANNED_CAUSAL_MODULES.map((module) => (
-            <div className="module-card planned" aria-disabled="true" key={module.id} title="Planned module">
-              <span>{module.label}</span>
-              <span className="module-badge planned">planned</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="scenario-group">
-        <strong>Conditioning / Selection</strong>
-        {props.node
-          ? <ConditioningEditor node={props.node} document={props.document} simulation={props.simulation} onSelectionCondition={props.onSelectionCondition} />
-          : <p className="muted">Select a variable to condition or select observations.</p>}
-      </div>
-      <div className="value-list">
-        <strong>Hard do quick controls</strong>
-        {nodes.map((node) => {
-          const value = props.simulation.values[node.id] ?? 0;
-          const state = props.simulation.nodeStates[node.id];
-          const overridden = Object.hasOwn(props.document.simulation.overrides, node.id);
-          const conditioned = Object.hasOwn(props.document.simulation.selections ?? {}, node.id);
-          const changed = props.simulation.changedNodes.includes(node.id);
-          const binary = normalizeVariableModel(node.variable).valueType === "binary";
-          const [sliderMin, sliderMax] = binary ? [0, 1] : conditioningSliderBounds(state, value);
-          const sliderStep = binary ? 1 : conditioningSliderStep(sliderMin, sliderMax);
-          return (
-            <div className={`value-row ${changed ? "changed" : ""} ${conditioned ? "conditioned" : ""} ${overridden ? "intervened" : ""}`} key={node.id}>
-              <button type="button" className="value-name" onClick={() => props.onSelectNode(node.id)}>{node.id}</button>
-              <input
-                type="range"
-                aria-label={`hard do ${node.id}`}
-                min={sliderMin}
-                max={sliderMax}
-                step={sliderStep}
-                value={binary ? coerceBinary(value) : clamp(value, sliderMin, sliderMax)}
-                onChange={(event) => props.onOverride(node.id, binary ? coerceBinary(Number(event.target.value)) : roundToStep(Number(event.target.value), sliderStep))}
-              />
-              <span className={overridden ? "value-number overridden" : "value-number"}>{formatValue(value)}</span>
-              {overridden && <button type="button" className="mini-button" onClick={() => props.onOverride(node.id, null)}>release</button>}
-            </div>
-          );
-        })}
-      </div>
     </div>
-  );
-}
-
-function ConnectionListPanel(props: {
-  document: GraphDocument;
-  simulation: SimulationResult;
-  selectedEdgeId: string | null;
-  onSelectEdge: (id: string) => void;
-  onEnabled: (edge: GraphEdge, enabled: boolean) => void;
-}) {
-  const directedEdges = props.document.graph.edges.filter((edge) => edge.kind === "directed");
-  if (directedEdges.length === 0) return <p className="muted">Add directed connections to configure structural functions.</p>;
-  return (
-      <div className="mechanism-list">
-        <div className="mechanism-header" aria-hidden="true">
-          <span>on</span>
-          <span>connection</span>
-          <span>function</span>
-          <span>value</span>
-        </div>
-        {directedEdges.map((edge) => {
-          const mechanism = normalizeEdgeMechanism(props.document.simulation.edges[edge.id]);
-          const contribution = props.simulation.contributions[edge.id] ?? 0;
-          const selected = props.selectedEdgeId === edge.id;
-          return (
-            <div className={`mechanism-row ${selected ? "selected" : ""}`} key={edge.id}>
-              <label className="edge-enabled" title="Enable this edge in simulation">
-                <input
-                  type="checkbox"
-                  checked={mechanism.enabled}
-                  onChange={(event) => {
-                    props.onSelectEdge(edge.id);
-                    props.onEnabled(edge, event.target.checked);
-                  }}
-                />
-              </label>
-              <button type="button" className="mechanism-name" onClick={() => props.onSelectEdge(edge.id)}>{edge.source} to {edge.target}</button>
-              <button type="button" className="mechanism-function-summary" onClick={() => props.onSelectEdge(edge.id)} title={mechanismDescription(mechanism.kind)}>
-                <FunctionGlyph kind={mechanism.kind} />
-                <span>{mechanismLabel(mechanism.kind)}</span>
-              </button>
-              <span className={contribution >= 0 ? "mechanism-contribution positive" : "mechanism-contribution negative"}>{formatSignedValue(contribution)}</span>
-            </div>
-          );
-        })}
-      </div>
   );
 }
 
@@ -1606,45 +1407,55 @@ function ConditioningMethodPanel({ simulation }: { simulation: SimulationResult 
   );
 }
 
-function VariablePanel(props: {
+function SelectionEditor(props: {
   node?: GraphNode;
   edge?: GraphEdge;
   simulation: SimulationResult;
-  onOpenVariable: (id: string) => void;
-  onOpenEdge: (id: string) => void;
+  document: GraphDocument;
+  onToggleRole: (id: string, role: keyof NodeRoleFlags) => void;
+  onRename: (id: string) => void;
+  onDeleteNode: (id: string) => void;
+  onNodeMechanism: (id: string, patch: Partial<NodeMechanism>) => void;
+  onVariableChange: (nodeId: string, variable: VariableModel) => void;
+  onOverride: (id: string, value: number | null) => void;
+  onSelectionCondition: (nodeId: string, condition: SimulationSelectionCondition | null) => void;
+  onCoefficient: (edge: GraphEdge, coefficient: number) => void;
+  onEdgeEnabled: (edge: GraphEdge, enabled: boolean) => void;
+  onEdgeMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
+  onDeleteEdge: (edgeId: string) => void;
 }) {
-  if (!props.node && props.edge) {
-    const edge = props.edge;
-    return (
-      <div className="selection-panel">
-        <div className="value-card">
-          <strong>{edge.source} to {edge.target}</strong>
-          <span>connection</span>
-        </div>
-        <button type="button" onClick={() => props.onOpenEdge(edge.id)}>open connection window</button>
-      </div>
-    );
-  }
-  if (!props.node) return <p className="muted">Click a variable to open its compact editor window.</p>;
-  const node = props.node;
-  const value = props.simulation.values[node.id] ?? 0;
+  if (props.node) return <VariableEditor
+    node={props.node}
+    simulation={props.simulation}
+    document={props.document}
+    onToggleRole={props.onToggleRole}
+    onRename={props.onRename}
+    onDelete={props.onDeleteNode}
+    onMechanism={props.onNodeMechanism}
+    onVariableChange={props.onVariableChange}
+    onOverride={props.onOverride}
+    onSelectionCondition={props.onSelectionCondition}
+  />;
+  if (props.edge) return <EdgeEditor
+    edge={props.edge}
+    simulation={props.simulation}
+    document={props.document}
+    onCoefficient={props.onCoefficient}
+    onEnabled={props.onEdgeEnabled}
+    onMechanism={props.onEdgeMechanism}
+    onDelete={props.onDeleteEdge}
+  />;
   return (
-    <div className="selection-panel">
-      <div className="value-card">
-        <strong>{node.id}</strong>
-        <span>{formatValue(value)}</span>
-      </div>
-      <button type="button" onClick={() => props.onOpenVariable(node.id)}>open variable window</button>
+    <div className="selection-empty-state">
+      <p>Select a node or edge for editing.</p>
     </div>
   );
 }
 
-function VariableWindow(props: {
+function VariableEditor(props: {
   node: GraphNode;
   simulation: SimulationResult;
   document: GraphDocument;
-  anchor: ScreenPoint | null;
-  onClose: () => void;
   onToggleRole: (id: string, role: keyof NodeRoleFlags) => void;
   onRename: (id: string) => void;
   onDelete: (id: string) => void;
@@ -1653,7 +1464,7 @@ function VariableWindow(props: {
   onOverride: (id: string, value: number | null) => void;
   onSelectionCondition: (nodeId: string, condition: SimulationSelectionCondition | null) => void;
 }) {
-  const [tab, setTab] = useState<VariableWindowTab>("model");
+  const [tab, setTab] = useState<VariableEditorTab>("model");
   const node = props.node;
   const variable = normalizeVariableModel(node.variable);
   const mechanism = normalizeNodeMechanism(props.document.simulation.nodes[node.id]);
@@ -1663,23 +1474,21 @@ function VariableWindow(props: {
   const isRoot = parentIds.length === 0;
   const inferredValueType = inferValueTypeFromMechanism(isRoot, mechanism, variable.valueType);
   const updateVariable = (patch: Partial<VariableModel>) => props.onVariableChange(node.id, normalizeVariableModel({ ...variable, ...patch }));
-  const windowStyle = variableWindowStyle(props.anchor);
 
   useEffect(() => {
     setTab("model");
   }, [node.id]);
 
   return (
-    <div className="variable-window" role="dialog" aria-label={`Variable ${node.id}`} style={windowStyle}>
-      <div className="variable-window-header">
+    <div className="selection-editor" aria-label={`Variable ${node.id}`}>
+      <div className="selection-editor-header">
         <div>
           <span>Variable</span>
           <strong>{node.id}</strong>
         </div>
-        <button type="button" className="window-close-button" aria-label="Close variable window" onClick={props.onClose}><X size={17} /></button>
       </div>
 
-      <div className="variable-window-body">
+      <div className="selection-editor-body">
         <div className="value-card">
           <strong>current value</strong>
           <span>{formatValue(value)}</span>
@@ -1691,8 +1500,8 @@ function VariableWindow(props: {
         </div>
 
         {tab === "model" && <div className="variable-tab-panel" role="tabpanel">
-          <div className="variable-window-grid">
-            <div className="variable-window-block">
+          <div className="selection-editor-grid">
+            <div className="selection-editor-block">
               <strong>Roles</strong>
               <div className="role-toggle-grid">
                 <RoleToggle label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
@@ -1703,8 +1512,8 @@ function VariableWindow(props: {
               </div>
             </div>
 
-            <div className="variable-window-block">
-              <div className="variable-window-block-title">
+            <div className="selection-editor-block">
+              <div className="selection-editor-block-title">
                 <strong>Distribution</strong>
                 <span className="variable-pill">{valueTypeLabel(inferredValueType)}</span>
               </div>
@@ -1733,7 +1542,7 @@ function VariableWindow(props: {
             </div>
           </div>
 
-          {!isRoot && parentIds.length >= 2 && <details className="variable-window-details">
+          {!isRoot && parentIds.length >= 2 && <details className="selection-editor-details">
             <summary>Interactions</summary>
             <InteractionEditor
               nodeId={node.id}
@@ -1743,7 +1552,7 @@ function VariableWindow(props: {
             />
           </details>}
 
-          <details className="variable-window-details">
+          <details className="selection-editor-details">
             <summary>Description</summary>
             <textarea aria-label="description" value={variable.description} rows={3} onChange={(event) => updateVariable({ description: event.target.value })} />
           </details>
@@ -1752,6 +1561,7 @@ function VariableWindow(props: {
         {tab === "interventions" && <div className="variable-tab-panel intervention-tab-panel" role="tabpanel">
           <HardDoEditor node={node} document={props.document} simulation={props.simulation} onOverride={props.onOverride} />
           <ConditioningEditor node={node} document={props.document} simulation={props.simulation} onSelectionCondition={props.onSelectionCondition} />
+          <PlannedModuleSet />
         </div>}
 
         <div className="model-facts">
@@ -1770,12 +1580,26 @@ function VariableWindow(props: {
   );
 }
 
-function EdgeWindow(props: {
+function PlannedModuleSet() {
+  return (
+    <div className="module-set">
+      <strong className="module-set-title">Planned intervention modules</strong>
+      <div className="planned-module-list">
+        {PLANNED_CAUSAL_MODULES.map((module) => (
+          <div className="module-card planned" aria-disabled="true" key={module.id} title="Planned module">
+            <span>{module.label}</span>
+            <span className="module-badge planned">planned</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EdgeEditor(props: {
   edge: GraphEdge;
   document: GraphDocument;
   simulation: SimulationResult;
-  anchor: ScreenPoint | null;
-  onClose: () => void;
   onCoefficient: (edge: GraphEdge, coefficient: number) => void;
   onEnabled: (edge: GraphEdge, enabled: boolean) => void;
   onMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
@@ -1783,15 +1607,14 @@ function EdgeWindow(props: {
 }) {
   const contribution = props.simulation.contributions[props.edge.id] ?? 0;
   return (
-    <div className="variable-window connection-window" role="dialog" aria-label={`Connection ${props.edge.source} to ${props.edge.target}`} style={variableWindowStyle(props.anchor)}>
-      <div className="variable-window-header">
+    <div className="selection-editor connection-editor" aria-label={`Connection ${props.edge.source} to ${props.edge.target}`}>
+      <div className="selection-editor-header">
         <div>
           <span>Connection</span>
           <strong>{props.edge.source} to {props.edge.target}</strong>
         </div>
-        <button type="button" className="window-close-button" aria-label="Close connection window" onClick={props.onClose}><X size={17} /></button>
       </div>
-      <div className="variable-window-body">
+      <div className="selection-editor-body">
         <div className="value-card">
           <strong>current contribution</strong>
           <span className={contribution >= 0 ? "positive" : "negative"}>{formatSignedValue(contribution)}</span>
@@ -2722,39 +2545,6 @@ function valueTypeFromDistribution(distribution: NodeDistribution, fallback: Var
 
 function valueTypeLabel(valueType: VariableModel["valueType"]): string {
   return VARIABLE_TYPES.find(([id]) => id === valueType)?.[1] ?? valueType;
-}
-
-function variableWindowStyle(anchor: ScreenPoint | null): CSSProperties {
-  if (!anchor || typeof window === "undefined") return {};
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const mobile = viewportWidth <= 700;
-  const width = Math.min(VARIABLE_WINDOW_WIDTH, viewportWidth - (VARIABLE_WINDOW_GUTTER * 2));
-  const topMin = mobile ? 92 : 68;
-  if (mobile) {
-    return {
-      left: VARIABLE_WINDOW_GUTTER,
-      top: topMin,
-      width,
-      maxHeight: Math.max(260, viewportHeight - topMin - VARIABLE_WINDOW_GUTTER),
-      transform: "none"
-    };
-  }
-  const rightCandidate = anchor.x + VARIABLE_WINDOW_GUTTER;
-  const leftCandidate = anchor.x - width - VARIABLE_WINDOW_GUTTER;
-  const left = rightCandidate + width <= viewportWidth - VARIABLE_WINDOW_GUTTER
-    ? rightCandidate
-    : leftCandidate >= VARIABLE_WINDOW_GUTTER
-      ? leftCandidate
-      : clamp(anchor.x - width / 2, VARIABLE_WINDOW_GUTTER, viewportWidth - width - VARIABLE_WINDOW_GUTTER);
-  const top = clamp(anchor.y - 82, topMin, Math.max(topMin, viewportHeight - 260));
-  return {
-    left,
-    top,
-    width,
-    maxHeight: Math.max(260, viewportHeight - top - VARIABLE_WINDOW_GUTTER),
-    transform: "none"
-  };
 }
 
 function defaultDistribution(kind: NodeDistribution["kind"]): NodeDistribution {
