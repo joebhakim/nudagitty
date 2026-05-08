@@ -92,7 +92,9 @@ type VariableEditorTab = "model" | "interventions";
 type DragState =
   | { kind: "node"; id: string; offset: Point }
   | { kind: "edge-control"; id: string }
+  | { kind: "pan"; pointerId: number; lastPoint: Point; moved: boolean }
   | null;
+type PointerScreenPoint = { clientX: number; clientY: number };
 
 const STORAGE_KEY = "nudagitty.document.v1";
 const BASE_VIEWBOX = { width: 1000, height: 700 };
@@ -757,6 +759,8 @@ function GraphCanvas(props: {
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [drag, setDrag] = useState<DragState>(null);
+  const activePointersRef = useRef(new Map<number, PointerScreenPoint>());
+  const pinchRef = useRef<{ distance: number; center: PointerScreenPoint } | null>(null);
   const viewportSignature = useMemo(() => graphViewportSignature(props.graph), [props.graph.nodes, props.graph.edges]);
   const fittedViewport = useMemo(() => fitViewportToGraph(props.graph), [viewportSignature]);
   const [viewport, setViewport] = useState<CanvasViewport>(() => fitViewportToGraph(props.graph));
@@ -768,17 +772,21 @@ function GraphCanvas(props: {
     setViewport(fittedViewport);
   }, [fittedViewport]);
 
-  const svgPoint = useCallback((event: React.PointerEvent | React.MouseEvent | React.WheelEvent): Point => {
+  const clientPointToSvgPoint = useCallback((clientX: number, clientY: number): Point => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const point = svg.createSVGPoint();
-    point.x = event.clientX;
-    point.y = event.clientY;
+    point.x = clientX;
+    point.y = clientY;
     const matrix = svg.getScreenCTM();
     if (!matrix) return { x: 0, y: 0 };
     const mapped = point.matrixTransform(matrix.inverse());
     return { x: mapped.x, y: mapped.y };
   }, []);
+
+  const svgPoint = useCallback((event: React.PointerEvent | React.MouseEvent | React.WheelEvent): Point => (
+    clientPointToSvgPoint(event.clientX, event.clientY)
+  ), [clientPointToSvgPoint]);
 
   const zoomBy = useCallback((factor: number, anchor?: Point) => {
     setViewport((current) => {
@@ -798,16 +806,64 @@ function GraphCanvas(props: {
     });
   }, []);
 
+  const panBy = useCallback((dx: number, dy: number) => {
+    if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return;
+    setViewport((current) => ({ ...current, cx: current.cx - dx, cy: current.cy - dy }));
+  }, []);
+
+  const screenDistance = useCallback((a: PointerScreenPoint, b: PointerScreenPoint): number => (
+    Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+  ), []);
+
+  const screenCenter = useCallback((a: PointerScreenPoint, b: PointerScreenPoint): PointerScreenPoint => ({
+    clientX: (a.clientX + b.clientX) / 2,
+    clientY: (a.clientY + b.clientY) / 2
+  }), []);
+
+  const resetGesture = useCallback((pointerId?: number) => {
+    if (pointerId !== undefined) activePointersRef.current.delete(pointerId);
+    if (activePointersRef.current.size < 2) pinchRef.current = null;
+    setDrag((current) => {
+      if (pointerId === undefined) return null;
+      return current?.kind === "pan" && current.pointerId === pointerId ? null : current;
+    });
+  }, []);
+
   const onPointerMove = useCallback((event: React.PointerEvent) => {
+    if (activePointersRef.current.has(event.pointerId)) {
+      activePointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    }
+    if (activePointersRef.current.size >= 2) {
+      const [first, second] = Array.from(activePointersRef.current.values());
+      if (first && second) {
+        const nextCenter = screenCenter(first, second);
+        const nextDistance = screenDistance(first, second);
+        const previous = pinchRef.current;
+        if (previous && previous.distance > 0 && nextDistance > 0) {
+          const previousCenterPoint = clientPointToSvgPoint(previous.center.clientX, previous.center.clientY);
+          const nextCenterPoint = clientPointToSvgPoint(nextCenter.clientX, nextCenter.clientY);
+          panBy(nextCenterPoint.x - previousCenterPoint.x, nextCenterPoint.y - previousCenterPoint.y);
+          zoomBy(nextDistance / previous.distance, nextCenterPoint);
+        }
+        pinchRef.current = { distance: nextDistance, center: nextCenter };
+        setDrag(null);
+      }
+      return;
+    }
     if (!drag) return;
     const point = svgPoint(event);
     if (drag.kind === "node") {
       props.onMoveNode(drag.id, { x: point.x - drag.offset.x, y: point.y - drag.offset.y });
-    } else {
+    } else if (drag.kind === "edge-control") {
       const edge = props.sourceGraph.edges.find((candidate) => candidate.id === drag.id);
       if (edge) props.onEdgeControl({ ...edge, control: point });
+    } else {
+      const dx = point.x - drag.lastPoint.x;
+      const dy = point.y - drag.lastPoint.y;
+      panBy(dx, dy);
+      setDrag({ ...drag, lastPoint: point, moved: drag.moved || Math.hypot(dx, dy) > 2 });
     }
-  }, [drag, props, svgPoint]);
+  }, [clientPointToSvgPoint, drag, panBy, props, screenCenter, screenDistance, svgPoint, zoomBy]);
 
   const nodesById = useMemo(() => new Map(props.graph.nodes.map((node) => [node.id, node])), [props.graph.nodes]);
 
@@ -815,7 +871,7 @@ function GraphCanvas(props: {
     <section className="canvas-shell" aria-label="Graph editor">
       <svg
         ref={svgRef}
-        className="graph-canvas"
+        className={drag?.kind === "pan" ? "graph-canvas panning" : "graph-canvas"}
         role="img"
         aria-label="Editable causal graph"
         viewBox={viewBox}
@@ -825,16 +881,37 @@ function GraphCanvas(props: {
           zoomBy(event.deltaY < 0 ? 1.12 : 1 / 1.12, svgPoint(event));
         }}
         onPointerMove={onPointerMove}
-        onPointerUp={() => setDrag(null)}
+        onPointerUp={(event) => {
+          if (drag?.kind === "pan" && drag.pointerId === event.pointerId && !drag.moved && props.tool === "node") {
+            props.onAddNode(svgPoint(event));
+          } else if (drag?.kind === "node" || drag?.kind === "edge-control") {
+            setDrag(null);
+          }
+          resetGesture(event.pointerId);
+        }}
+        onPointerCancel={(event) => resetGesture(event.pointerId)}
+        onLostPointerCapture={(event) => resetGesture(event.pointerId)}
         onDoubleClick={(event) => {
-          if (props.tool === "edge") return;
+          if (props.tool !== "select") return;
           props.onAddNode(svgPoint(event));
         }}
         onPointerDown={(event) => {
           const target = event.target as Element;
           if (event.target === svgRef.current || target.classList.contains("canvas-grid")) {
+            try {
+              event.currentTarget.setPointerCapture(event.pointerId);
+            } catch {
+              // Some synthetic or browser-translated touch events cannot be captured.
+            }
+            activePointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+            if (activePointersRef.current.size >= 2) {
+              const [first, second] = Array.from(activePointersRef.current.values());
+              if (first && second) pinchRef.current = { distance: screenDistance(first, second), center: screenCenter(first, second) };
+              setDrag(null);
+              return;
+            }
             props.onSelect(null);
-            if (props.tool === "node") props.onAddNode(svgPoint(event));
+            setDrag({ kind: "pan", pointerId: event.pointerId, lastPoint: svgPoint(event), moved: false });
           }
         }}
       >

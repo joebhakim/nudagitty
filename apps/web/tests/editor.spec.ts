@@ -205,6 +205,59 @@ test("canvas zoom controls keep distribution plots visible", async ({ page }) =>
   expect(firstPlot?.height ?? 0).toBeGreaterThan(8);
 });
 
+test("canvas background drag pans the desktop viewport", async ({ page }) => {
+  await page.goto("/");
+
+  const canvas = page.locator(".graph-canvas");
+  const before = await canvas.getAttribute("viewBox");
+  const nodeCount = await page.locator(".node").count();
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) return;
+
+  await page.mouse.move(box.x + 80, box.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 170, box.y + 130, { steps: 6 });
+  await page.mouse.up();
+
+  await expect(canvas).not.toHaveAttribute("viewBox", before ?? "");
+  await expect(page.locator(".node")).toHaveCount(nodeCount);
+});
+
+test("mobile pinch zoom changes the canvas viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const canvas = page.locator(".graph-canvas");
+  const before = await canvas.getAttribute("viewBox");
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) return;
+
+  await page.locator(".canvas-grid").evaluate((element, box) => {
+    const dispatch = (type: string, pointerId: number, clientX: number, clientY: number) => {
+      element.dispatchEvent(new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        pointerId,
+        pointerType: "touch",
+        clientX,
+        clientY
+      }));
+    };
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    dispatch("pointerdown", 21, cx - 36, cy);
+    dispatch("pointerdown", 22, cx + 36, cy);
+    dispatch("pointermove", 21, cx - 78, cy - 10);
+    dispatch("pointermove", 22, cx + 78, cy + 10);
+    dispatch("pointerup", 21, cx - 78, cy - 10);
+    dispatch("pointerup", 22, cx + 78, cy + 10);
+  }, box);
+
+  await expect(canvas).not.toHaveAttribute("viewBox", before ?? "");
+});
+
 test("mobile layout avoids horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
