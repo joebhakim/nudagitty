@@ -724,21 +724,36 @@ textarea {
   padding: 3px 5px;
 }
 
-.connection-function-summary {
+.mechanism-function-summary {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   align-items: center;
+  justify-content: stretch;
   gap: 6px;
+  width: 100%;
   min-width: 0;
-}
-
-.connection-function-summary {
-  padding: 7px 8px;
+  min-height: 30px;
+  padding: 2px 6px 2px 2px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #f8faf9;
   color: #394149;
   font-size: 13px;
+  text-align: left;
+}
+
+.mechanism-function-summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.value-card span.negative {
+  color: var(--bias);
+}
+
+.value-card span.positive {
+  color: var(--causal);
 }
 
 .function-picker {

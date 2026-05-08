@@ -258,12 +258,15 @@ export function App() {
   const [scatterPair, setScatterPair] = useState<ScatterPair>(() => defaultScatterPair(document.graph));
   const [variableWindowId, setVariableWindowId] = useState<string | null>(null);
   const [variableWindowAnchor, setVariableWindowAnchor] = useState<ScreenPoint | null>(null);
+  const [edgeWindowId, setEdgeWindowId] = useState<string | null>(null);
+  const [edgeWindowAnchor, setEdgeWindowAnchor] = useState<ScreenPoint | null>(null);
 
   const [analysis, setAnalysis] = useState<AnalysisReport>(() => analyzeGraph(document.graph));
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
   const selectedNode = selection?.kind === "node" ? findNode(document.graph, selection.id) : undefined;
   const selectedEdge = selection?.kind === "edge" ? findEdge(document.graph, selection.id) : undefined;
   const variableWindowNode = variableWindowId ? findNode(document.graph, variableWindowId) : undefined;
+  const edgeWindowEdge = edgeWindowId ? findEdge(document.graph, edgeWindowId) : undefined;
   const highlightedEdges = useMemo(() => computeHighlightedEdges(document.graph, analysis, showCausal, showBiasing), [analysis, document.graph, showBiasing, showCausal]);
   const ancestorIds = useMemo(() => showAncestors ? new Set(analysis.causalPaths.flat()) : new Set<string>(), [analysis.causalPaths, showAncestors]);
 
@@ -288,6 +291,10 @@ export function App() {
   useEffect(() => {
     if (variableWindowId && !findNode(document.graph, variableWindowId)) setVariableWindowId(null);
   }, [document.graph, variableWindowId]);
+
+  useEffect(() => {
+    if (edgeWindowId && !findEdge(document.graph, edgeWindowId)) setEdgeWindowId(null);
+  }, [document.graph, edgeWindowId]);
 
   const commit = useCallback((next: GraphDocument) => {
     setHistory((items) => [...items.slice(-80), cloneDocument(document)]);
@@ -315,6 +322,8 @@ export function App() {
       } else if (event.key === "Escape") {
         setVariableWindowId(null);
         setVariableWindowAnchor(null);
+        setEdgeWindowId(null);
+        setEdgeWindowAnchor(null);
       } else if (event.key === "Delete" || event.key.toLowerCase() === "d") {
         event.preventDefault();
         deleteSelection();
@@ -375,15 +384,23 @@ export function App() {
     replaceGraph(graph);
   }, [document.graph, replaceGraph, variableWindowId]);
 
+  const deleteEdgeById = useCallback((edgeId: string) => {
+    if (edgeWindowId === edgeId) {
+      setEdgeWindowId(null);
+      setEdgeWindowAnchor(null);
+    }
+    setSelection(null);
+    replaceGraph(deleteEdge(document.graph, edgeId));
+  }, [document.graph, edgeWindowId, replaceGraph]);
+
   const deleteSelection = useCallback(() => {
     if (!selection) return;
     if (selection.kind === "node") {
       deleteNodeById(selection.id);
       return;
     }
-    setSelection(null);
-    replaceGraph(deleteEdge(document.graph, selection.id));
-  }, [deleteNodeById, document.graph, replaceGraph, selection]);
+    deleteEdgeById(selection.id);
+  }, [deleteEdgeById, deleteNodeById, selection]);
 
   const toggleRole = useCallback((nodeId: string, role: keyof NodeRoleFlags) => {
     const node = findNode(document.graph, nodeId);
@@ -420,6 +437,18 @@ export function App() {
     if (openWindow) {
       setVariableWindowId(id);
       setVariableWindowAnchor(anchor);
+      setEdgeWindowId(null);
+      setEdgeWindowAnchor(null);
+    }
+  }, []);
+
+  const selectEdge = useCallback((id: string, anchor: ScreenPoint | null = null, openWindow = true) => {
+    setSelection({ kind: "edge", id });
+    if (openWindow) {
+      setEdgeWindowId(id);
+      setEdgeWindowAnchor(anchor);
+      setVariableWindowId(null);
+      setVariableWindowAnchor(null);
     }
   }, []);
 
@@ -434,10 +463,10 @@ export function App() {
     }
     const id = edgeId(edgeSource, target, "directed");
     const graph = addEdge(document.graph, edgeSource, target, "directed");
-    setSelection({ kind: "edge", id });
+    selectEdge(id, null, true);
     setEdgeSource(null);
     replaceGraph(graph);
-  }, [document.graph, edgeSource, replaceGraph]);
+  }, [document.graph, edgeSource, replaceGraph, selectEdge]);
 
   const updateModelFromText = useCallback(() => {
     const parsed = parseModel(modelText, document.title);
@@ -456,6 +485,8 @@ export function App() {
     setSelection(null);
     setVariableWindowId(null);
     setVariableWindowAnchor(null);
+    setEdgeWindowId(null);
+    setEdgeWindowAnchor(null);
   }, [commit]);
 
   const updateNodeMechanism = useCallback((nodeId: string, patch: Partial<NodeMechanism>) => {
@@ -595,6 +626,8 @@ export function App() {
             setSelection(null);
             setVariableWindowId(null);
             setVariableWindowAnchor(null);
+            setEdgeWindowId(null);
+            setEdgeWindowAnchor(null);
           }}><FilePlus2 size={18} /></IconButton>
           <select aria-label="Examples" onChange={(event) => loadExample(event.target.value)} defaultValue="">
             <option value="" disabled>Examples</option>
@@ -615,6 +648,7 @@ export function App() {
               edge={selectedEdge}
               simulation={simulation}
               onOpenVariable={(id) => selectNode(id, true)}
+              onOpenEdge={(id) => selectEdge(id)}
             />
           </Section>
           <Section title="Connection Functions">
@@ -622,15 +656,9 @@ export function App() {
               document={document}
               simulation={simulation}
               selectedEdgeId={selection?.kind === "edge" ? selection.id : null}
-              onSelectEdge={(id) => setSelection({ kind: "edge", id })}
+              onSelectEdge={(id) => selectEdge(id)}
               onEnabled={updateEdgeEnabled}
-              onMechanism={updateEdgeMechanism}
             />
-          </Section>
-          <Section title="Connection Detail">
-            {selectedEdge
-              ? <EdgePanel edge={selectedEdge} document={document} onCoefficient={updateEdgeCoefficient} onEnabled={updateEdgeEnabled} onMechanism={updateEdgeMechanism} simulation={simulation} />
-              : <p className="muted">Select a connection to edit its simulation function.</p>}
           </Section>
         </aside>
 
@@ -649,6 +677,7 @@ export function App() {
           onAddNode={addNodeAt}
           onMoveNode={(id, position) => replaceGraph(updateNode(document.graph, id, { position }))}
           onNodeClick={(id, anchor) => tool === "edge" ? createOrSelectEdge(id) : selectNode(id, true, anchor)}
+          onEdgeClick={(id, anchor) => selectEdge(id, anchor)}
           onEdgeControl={(edge) => replaceGraph(upsertEdge(document.graph, edge))}
         />
 
@@ -668,6 +697,21 @@ export function App() {
           onVariableChange={updateVariableModel}
           onOverride={setOverride}
           onSelectionCondition={setSelectionCondition}
+        />}
+
+        {edgeWindowEdge && <EdgeWindow
+          edge={edgeWindowEdge}
+          simulation={simulation}
+          document={document}
+          anchor={edgeWindowAnchor}
+          onClose={() => {
+            setEdgeWindowId(null);
+            setEdgeWindowAnchor(null);
+          }}
+          onCoefficient={updateEdgeCoefficient}
+          onEnabled={updateEdgeEnabled}
+          onMechanism={updateEdgeMechanism}
+          onDelete={deleteEdgeById}
         />}
 
         <aside className="side-panel scenario-column">
@@ -788,6 +832,7 @@ function GraphCanvas(props: {
   onAddNode: (point: Point) => void;
   onMoveNode: (id: string, position: Point) => void;
   onNodeClick: (id: string, anchor: ScreenPoint) => void;
+  onEdgeClick: (id: string, anchor: ScreenPoint) => void;
   onEdgeControl: (edge: GraphEdge) => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -900,7 +945,7 @@ function GraphCanvas(props: {
                   className="edge-hit"
                   onPointerDown={(event) => {
                     event.stopPropagation();
-                    props.onSelect({ kind: "edge", id: edge.id });
+                    props.onEdgeClick(edge.id, { x: event.clientX, y: event.clientY });
                   }}
                 />
                 <path
@@ -1328,7 +1373,6 @@ function ConnectionListPanel(props: {
   selectedEdgeId: string | null;
   onSelectEdge: (id: string) => void;
   onEnabled: (edge: GraphEdge, enabled: boolean) => void;
-  onMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
 }) {
   const directedEdges = props.document.graph.edges.filter((edge) => edge.kind === "directed");
   if (directedEdges.length === 0) return <p className="muted">Add directed connections to configure structural functions.</p>;
@@ -1357,15 +1401,10 @@ function ConnectionListPanel(props: {
                 />
               </label>
               <button type="button" className="mechanism-name" onClick={() => props.onSelectEdge(edge.id)}>{edge.source} to {edge.target}</button>
-              <FunctionPicker
-                label={`function ${edge.source} to ${edge.target}`}
-                value={mechanism.kind}
-                onOpen={() => props.onSelectEdge(edge.id)}
-                onChange={(kind) => {
-                  props.onSelectEdge(edge.id);
-                  props.onMechanism(edge, defaultEdgeMechanism(kind));
-                }}
-              />
+              <button type="button" className="mechanism-function-summary" onClick={() => props.onSelectEdge(edge.id)} title={mechanismDescription(mechanism.kind)}>
+                <FunctionGlyph kind={mechanism.kind} />
+                <span>{mechanismLabel(mechanism.kind)}</span>
+              </button>
               <span className={contribution >= 0 ? "mechanism-contribution positive" : "mechanism-contribution negative"}>{formatSignedValue(contribution)}</span>
             </div>
           );
@@ -1572,15 +1611,17 @@ function VariablePanel(props: {
   edge?: GraphEdge;
   simulation: SimulationResult;
   onOpenVariable: (id: string) => void;
+  onOpenEdge: (id: string) => void;
 }) {
   if (!props.node && props.edge) {
+    const edge = props.edge;
     return (
       <div className="selection-panel">
         <div className="value-card">
-          <strong>{props.edge.source} to {props.edge.target}</strong>
+          <strong>{edge.source} to {edge.target}</strong>
           <span>connection</span>
         </div>
-        <p className="muted">Use Connection Detail below for the selected structural function.</p>
+        <button type="button" onClick={() => props.onOpenEdge(edge.id)}>open connection window</button>
       </div>
     );
   }
@@ -1729,6 +1770,48 @@ function VariableWindow(props: {
   );
 }
 
+function EdgeWindow(props: {
+  edge: GraphEdge;
+  document: GraphDocument;
+  simulation: SimulationResult;
+  anchor: ScreenPoint | null;
+  onClose: () => void;
+  onCoefficient: (edge: GraphEdge, coefficient: number) => void;
+  onEnabled: (edge: GraphEdge, enabled: boolean) => void;
+  onMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
+  onDelete: (edgeId: string) => void;
+}) {
+  const contribution = props.simulation.contributions[props.edge.id] ?? 0;
+  return (
+    <div className="variable-window connection-window" role="dialog" aria-label={`Connection ${props.edge.source} to ${props.edge.target}`} style={variableWindowStyle(props.anchor)}>
+      <div className="variable-window-header">
+        <div>
+          <span>Connection</span>
+          <strong>{props.edge.source} to {props.edge.target}</strong>
+        </div>
+        <button type="button" className="window-close-button" aria-label="Close connection window" onClick={props.onClose}><X size={17} /></button>
+      </div>
+      <div className="variable-window-body">
+        <div className="value-card">
+          <strong>current contribution</strong>
+          <span className={contribution >= 0 ? "positive" : "negative"}>{formatSignedValue(contribution)}</span>
+        </div>
+        <EdgePanel
+          edge={props.edge}
+          document={props.document}
+          simulation={props.simulation}
+          onCoefficient={props.onCoefficient}
+          onEnabled={props.onEnabled}
+          onMechanism={props.onMechanism}
+        />
+        <div className="button-row">
+          <button type="button" onClick={() => props.onDelete(props.edge.id)}>delete</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EdgePanel(props: {
   edge: GraphEdge;
   document: GraphDocument;
@@ -1741,11 +1824,15 @@ function EdgePanel(props: {
   const contribution = props.simulation.contributions[props.edge.id] ?? 0;
   return (
     <div className="edge-panel">
-      <p><strong>{props.edge.source}</strong> to <strong>{props.edge.target}</strong></p>
       <Checkbox label="enabled in simulation" checked={mechanism.enabled} onChange={(enabled) => props.onEnabled(props.edge, enabled)} />
-      <div className="connection-function-summary" title={mechanismDescription(mechanism.kind)}>
-        <FunctionGlyph kind={mechanism.kind} />
-        <span>Function: {mechanismLabel(mechanism.kind)}</span>
+      <div className="field">
+        <span>function</span>
+        <FunctionPicker
+          label={`function ${props.edge.source} to ${props.edge.target}`}
+          value={mechanism.kind}
+          onOpen={() => undefined}
+          onChange={(kind) => props.onMechanism(props.edge, defaultEdgeMechanism(kind))}
+        />
       </div>
       <EdgeMechanismFields edge={props.edge} mechanism={mechanism} onMechanism={props.onMechanism} />
       {mechanism.kind === "linear" && (

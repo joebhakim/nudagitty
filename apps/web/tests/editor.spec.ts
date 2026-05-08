@@ -12,15 +12,19 @@ test("loads the editor and creates a variable with the node tool", async ({ page
   await expect(page.locator(".cm-content")).toContainText("V");
 });
 
-test("connection function table stays in sync with the selected connection inspector", async ({ page }) => {
+test("connection list opens a compact connection window", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("function Severity to Treatment").click();
+  await page.getByRole("button", { name: "Severity to Treatment" }).click();
+  const connectionWindow = page.getByRole("dialog", { name: "Connection Severity to Treatment" });
+
+  await expect(connectionWindow).toBeVisible();
+  await connectionWindow.getByLabel("function Severity to Treatment").click();
   await page.getByRole("option", { name: /Hill \/ Emax/ }).click();
 
-  await expect(page.locator(".edge-panel")).toContainText("Severity to Treatment");
-  await expect(page.locator(".edge-panel")).toContainText("Function: Hill / Emax");
-  await expect(page.locator(".edge-panel")).toContainText("EC50");
+  await expect(connectionWindow.locator(".edge-panel")).toContainText("EC50");
+  await expect(connectionWindow.getByLabel("function Severity to Treatment")).toContainText("Hill / Emax");
   await expect(page.locator(".mechanism-row.selected")).toContainText("Severity to Treatment");
+  await expect(page.locator(".model-panel")).not.toContainText("Connection Detail");
 });
 
 test("selected variables open a compact variable window", async ({ page }) => {
