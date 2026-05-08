@@ -13,7 +13,8 @@ import {
   Share2,
   Sigma,
   Trash2,
-  Undo2
+  Undo2,
+  X
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -77,9 +78,7 @@ import type {
   SimulationSelectionCondition,
   SimulatedAnalyticDistribution,
   SimulatedNodeState,
-  VariableMeasurementModel,
   VariableModel,
-  VariableSimulationView,
   ViewMode
 } from "@nudagitty/core";
 
@@ -159,23 +158,6 @@ const VARIABLE_TYPES: Array<[VariableModel["valueType"], string]> = [
   ["text", "text"],
   ["embedding", "embedding"],
   ["distributional", "distributional"]
-];
-
-const MEASUREMENT_MODELS: Array<[VariableMeasurementModel["kind"], string]> = [
-  ["observed", "observed"],
-  ["noisy_proxy", "noisy proxy"],
-  ["latent_construct", "latent construct"],
-  ["censored", "censored"],
-  ["rounded", "rounded"],
-  ["missing_prone", "missing-prone"]
-];
-
-const SIMULATION_VIEW_MODES: Array<[VariableSimulationView["mode"], string]> = [
-  ["single_draw", "single draw"],
-  ["expected_value", "expected value"],
-  ["population_mean", "population mean"],
-  ["uncertainty_band", "uncertainty band"],
-  ["causal_contrast", "causal contrast"]
 ];
 
 const PLANNED_CAUSAL_MODULES = [
@@ -270,11 +252,13 @@ export function App() {
   const [modelDirty, setModelDirty] = useState(false);
   const [simulation, setSimulation] = useState<SimulationResult>(() => runSimulation(document.graph, document.simulation));
   const [scatterPair, setScatterPair] = useState<ScatterPair>(() => defaultScatterPair(document.graph));
+  const [variableWindowId, setVariableWindowId] = useState<string | null>(null);
 
   const [analysis, setAnalysis] = useState<AnalysisReport>(() => analyzeGraph(document.graph));
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
   const selectedNode = selection?.kind === "node" ? findNode(document.graph, selection.id) : undefined;
   const selectedEdge = selection?.kind === "edge" ? findEdge(document.graph, selection.id) : undefined;
+  const variableWindowNode = variableWindowId ? findNode(document.graph, variableWindowId) : undefined;
   const highlightedEdges = useMemo(() => computeHighlightedEdges(document.graph, analysis, showCausal, showBiasing), [analysis, document.graph, showBiasing, showCausal]);
   const ancestorIds = useMemo(() => showAncestors ? new Set(analysis.causalPaths.flat()) : new Set<string>(), [analysis.causalPaths, showAncestors]);
 
@@ -295,6 +279,10 @@ export function App() {
   useEffect(() => {
     setScatterPair((pair) => reconcileScatterPair(document.graph, pair));
   }, [document.graph]);
+
+  useEffect(() => {
+    if (variableWindowId && !findNode(document.graph, variableWindowId)) setVariableWindowId(null);
+  }, [document.graph, variableWindowId]);
 
   const commit = useCallback((next: GraphDocument) => {
     setHistory((items) => [...items.slice(-80), cloneDocument(document)]);
@@ -319,6 +307,8 @@ export function App() {
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "y") {
         event.preventDefault();
         redo();
+      } else if (event.key === "Escape") {
+        setVariableWindowId(null);
       } else if (event.key === "Delete" || event.key.toLowerCase() === "d") {
         event.preventDefault();
         deleteSelection();
@@ -369,12 +359,22 @@ export function App() {
     commit(withGraph(document, graph));
   }, [commit, document]);
 
-  const deleteSelection = useCallback(() => {
-    if (!selection) return;
-    const graph = selection.kind === "node" ? deleteNode(document.graph, selection.id) : deleteEdge(document.graph, selection.id);
+  const deleteNodeById = useCallback((nodeId: string) => {
+    const graph = deleteNode(document.graph, nodeId);
+    if (variableWindowId === nodeId) setVariableWindowId(null);
     setSelection(null);
     replaceGraph(graph);
-  }, [document.graph, replaceGraph, selection]);
+  }, [document.graph, replaceGraph, variableWindowId]);
+
+  const deleteSelection = useCallback(() => {
+    if (!selection) return;
+    if (selection.kind === "node") {
+      deleteNodeById(selection.id);
+      return;
+    }
+    setSelection(null);
+    replaceGraph(deleteEdge(document.graph, selection.id));
+  }, [deleteNodeById, document.graph, replaceGraph, selection]);
 
   const toggleRole = useCallback((nodeId: string, role: keyof NodeRoleFlags) => {
     const node = findNode(document.graph, nodeId);
@@ -382,22 +382,33 @@ export function App() {
     replaceGraph(setNodeRole(document.graph, nodeId, role, !node.roles[role]));
   }, [document.graph, replaceGraph]);
 
+  const renameNodeById = useCallback((nodeId: string) => {
+    const nextId = window.prompt("Rename variable", nodeId);
+    if (!nextId) return;
+    const graph = renameNode(document.graph, nodeId, nextId);
+    const renamed = graph.nodes.find((node) => node.label === nextId || node.id === nextId);
+    setSelection((current) => current?.kind === "node" && current.id === nodeId ? (renamed ? { kind: "node", id: renamed.id } : null) : current);
+    if (variableWindowId === nodeId) setVariableWindowId(renamed?.id ?? null);
+    replaceGraph(graph);
+  }, [document.graph, replaceGraph, variableWindowId]);
+
   const renameSelectedNode = useCallback(() => {
     if (selection?.kind !== "node") return;
-    const nextId = window.prompt("Rename variable", selection.id);
-    if (!nextId) return;
-    const graph = renameNode(document.graph, selection.id, nextId);
-    const renamed = graph.nodes.find((node) => node.label === nextId || node.id === nextId);
-    setSelection(renamed ? { kind: "node", id: renamed.id } : null);
-    replaceGraph(graph);
-  }, [document.graph, replaceGraph, selection]);
+    renameNodeById(selection.id);
+  }, [renameNodeById, selection]);
 
   const addNodeAt = useCallback((point: Point) => {
     const id = createNewNodeId(document.graph);
     const graph = addNode(document.graph, createNode(id, point));
     setSelection({ kind: "node", id });
+    setVariableWindowId(id);
     replaceGraph(graph);
   }, [document.graph, replaceGraph]);
+
+  const selectNode = useCallback((id: string, openWindow = false) => {
+    setSelection({ kind: "node", id });
+    if (openWindow) setVariableWindowId(id);
+  }, []);
 
   const createOrSelectEdge = useCallback((target: string) => {
     if (!edgeSource) {
@@ -430,18 +441,34 @@ export function App() {
     if (!document) return;
     commit(document);
     setSelection(null);
+    setVariableWindowId(null);
   }, [commit]);
 
   const updateNodeMechanism = useCallback((nodeId: string, patch: Partial<NodeMechanism>) => {
     const current = normalizeNodeMechanism(document.simulation.nodes[nodeId]);
+    const nextMechanism = normalizeNodeMechanism({ ...current, ...patch });
+    const currentNode = findNode(document.graph, nodeId);
+    const isRoot = document.graph.edges.every((edge) => edge.kind !== "directed" || edge.target !== nodeId);
+    const graph = currentNode && ("distribution" in patch || "noise" in patch || "combiner" in patch)
+      ? updateNode(document.graph, nodeId, {
+        variable: normalizeVariableModel({
+          ...normalizeVariableModel(currentNode.variable),
+          valueType: inferValueTypeFromMechanism(isRoot, nextMechanism, normalizeVariableModel(currentNode.variable).valueType)
+        })
+      })
+      : document.graph;
+    const overrides = { ...document.simulation.overrides };
+    const nextVariable = normalizeVariableModel(findNode(graph, nodeId)?.variable);
+    if (nextVariable.valueType === "binary" && Object.hasOwn(overrides, nodeId)) overrides[nodeId] = coerceBinary(overrides[nodeId] ?? 0);
     commit({
-      ...document,
+      ...withGraph(document, graph),
       simulation: {
         ...document.simulation,
         nodes: {
           ...document.simulation.nodes,
-          [nodeId]: { ...current, ...patch }
-        }
+          [nodeId]: nextMechanism
+        },
+        overrides
       }
     });
   }, [commit, document]);
@@ -549,7 +576,11 @@ export function App() {
           <IconButton label="Redo" onClick={redo} disabled={future.length === 0}><Redo2 size={18} /></IconButton>
         </div>
         <div className="toolbar" aria-label="Model actions">
-          <IconButton label="New" onClick={() => commit(emptyDocument())}><FilePlus2 size={18} /></IconButton>
+          <IconButton label="New" onClick={() => {
+            commit(emptyDocument());
+            setSelection(null);
+            setVariableWindowId(null);
+          }}><FilePlus2 size={18} /></IconButton>
           <select aria-label="Examples" onChange={(event) => loadExample(event.target.value)} defaultValue="">
             <option value="" disabled>Examples</option>
             {EXAMPLES.map((example) => <option key={example.id} value={example.id}>{example.title}</option>)}
@@ -566,21 +597,9 @@ export function App() {
           <Section title="Model Inspector">
             <VariablePanel
               node={selectedNode}
+              edge={selectedEdge}
               simulation={simulation}
-              document={document}
-              onToggleRole={toggleRole}
-              onRename={renameSelectedNode}
-              onDelete={deleteSelection}
-              onMechanism={updateNodeMechanism}
-            />
-          </Section>
-          <Section title="Structural Model">
-            <VariableModelPanel
-              node={selectedNode}
-              simulation={simulation}
-              graph={document.graph}
-              showMeasurement={false}
-              onChange={updateVariableModel}
+              onOpenVariable={(id) => setVariableWindowId(id)}
             />
           </Section>
           <Section title="Connection Functions">
@@ -614,9 +633,21 @@ export function App() {
           onSelect={setSelection}
           onAddNode={addNodeAt}
           onMoveNode={(id, position) => replaceGraph(updateNode(document.graph, id, { position }))}
-          onNodeClick={(id) => tool === "edge" ? createOrSelectEdge(id) : setSelection({ kind: "node", id })}
+          onNodeClick={(id) => tool === "edge" ? createOrSelectEdge(id) : selectNode(id, true)}
           onEdgeControl={(edge) => replaceGraph(upsertEdge(document.graph, edge))}
         />
+
+        {variableWindowNode && <VariableWindow
+          node={variableWindowNode}
+          simulation={simulation}
+          document={document}
+          onClose={() => setVariableWindowId(null)}
+          onToggleRole={toggleRole}
+          onRename={renameNodeById}
+          onDelete={deleteNodeById}
+          onMechanism={updateNodeMechanism}
+          onVariableChange={updateVariableModel}
+        />}
 
         <aside className="side-panel scenario-column">
           <Section title="Scenario Builder">
@@ -629,7 +660,7 @@ export function App() {
               onClearSelections={clearSelections}
               onOverride={setOverride}
               onSelectionCondition={setSelectionCondition}
-              onSelectNode={(id) => setSelection({ kind: "node", id })}
+              onSelectNode={(id) => selectNode(id, true)}
             />
           </Section>
         </aside>
@@ -644,7 +675,7 @@ export function App() {
                   simulation={simulation}
                   overrides={document.simulation.overrides}
                   selections={document.simulation.selections}
-                  onSelectNode={(id) => setSelection({ kind: "node", id })}
+                  onSelectNode={(id) => selectNode(id, true)}
                 />
               </div>
               <div className="results-block">
@@ -654,7 +685,7 @@ export function App() {
                   simulation={simulation}
                   pair={scatterPair}
                   onPair={setScatterPair}
-                  onSelectNode={(id) => setSelection({ kind: "node", id })}
+                  onSelectNode={(id) => selectNode(id, true)}
                 />
               </div>
             </div>
@@ -1503,142 +1534,137 @@ function ConditioningMethodPanel({ simulation }: { simulation: SimulationResult 
 
 function VariablePanel(props: {
   node?: GraphNode;
+  edge?: GraphEdge;
   simulation: SimulationResult;
-  document: GraphDocument;
-  onToggleRole: (id: string, role: keyof NodeRoleFlags) => void;
-  onRename: () => void;
-  onDelete: () => void;
-  onMechanism: (id: string, patch: Partial<NodeMechanism>) => void;
+  onOpenVariable: (id: string) => void;
 }) {
-  if (!props.node) return <p className="muted">Select a variable to edit roles, value, and simulation settings.</p>;
+  if (!props.node && props.edge) {
+    return (
+      <div className="selection-panel">
+        <div className="value-card">
+          <strong>{props.edge.source} to {props.edge.target}</strong>
+          <span>connection</span>
+        </div>
+        <p className="muted">Use Connection Detail below for the selected structural function.</p>
+      </div>
+    );
+  }
+  if (!props.node) return <p className="muted">Click a variable to open its compact editor window.</p>;
   const node = props.node;
-  const mechanism = normalizeNodeMechanism(props.document.simulation.nodes[node.id]);
   const value = props.simulation.values[node.id] ?? 0;
-  const parentIds = props.document.graph.edges.filter((edge) => edge.kind === "directed" && edge.target === node.id).map((edge) => edge.source);
-  const isRoot = parentIds.length === 0;
   return (
-    <div className="variable-panel">
+    <div className="selection-panel">
       <div className="value-card">
         <strong>{node.id}</strong>
         <span>{formatValue(value)}</span>
       </div>
-      <Checkbox label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
-      <Checkbox label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
-      <Checkbox label="adjusted" checked={node.roles.adjusted} onChange={() => props.onToggleRole(node.id, "adjusted")} />
-      <Checkbox label="selected" checked={node.roles.selected} onChange={() => props.onToggleRole(node.id, "selected")} />
-      <Checkbox label="unobserved" checked={node.roles.latent} onChange={() => props.onToggleRole(node.id, "latent")} />
-      <div className="button-row">
-        <button type="button" onClick={props.onRename}>rename</button>
-        <button type="button" onClick={props.onDelete}>delete</button>
-      </div>
-      {isRoot && <DistributionEditor
-        label="root distribution"
-        distribution={mechanism.distribution}
-        onChange={(distribution) => props.onMechanism(node.id, { distribution })}
-      />}
-      {!isRoot && <label className="field">
-        <span>combiner</span>
-        <select value={mechanism.combiner} onChange={(event) => props.onMechanism(node.id, { combiner: event.target.value as NodeCombinerKind })}>
-          {NODE_COMBINERS.map((item) => <option value={item.kind} key={item.kind}>{item.label}</option>)}
-        </select>
-      </label>}
-      <label className="field">
-        <span>intercept</span>
-        <input type="number" value={mechanism.intercept} step="0.1" onChange={(event) => props.onMechanism(node.id, { intercept: Number(event.target.value) })} />
-      </label>
-      {!isRoot && <DistributionEditor
-        label="noise"
-        distribution={mechanism.noise}
-        onChange={(noise) => props.onMechanism(node.id, { noise })}
-      />}
-      {!isRoot && parentIds.length >= 2 && <InteractionEditor
-        nodeId={node.id}
-        parentIds={parentIds}
-        interactions={mechanism.interactions}
-        onChange={(interactions) => props.onMechanism(node.id, { interactions })}
-      />}
-      {!isRoot && <p className="muted">Parents: {parentIds.join(", ")}</p>}
+      <button type="button" onClick={() => props.onOpenVariable(node.id)}>open variable window</button>
     </div>
   );
 }
 
-function VariableModelPanel(props: {
-  node?: GraphNode;
+function VariableWindow(props: {
+  node: GraphNode;
   simulation: SimulationResult;
-  graph: GraphModel;
-  showMeasurement?: boolean;
-  onChange: (nodeId: string, variable: VariableModel) => void;
+  document: GraphDocument;
+  onClose: () => void;
+  onToggleRole: (id: string, role: keyof NodeRoleFlags) => void;
+  onRename: (id: string) => void;
+  onDelete: (id: string) => void;
+  onMechanism: (id: string, patch: Partial<NodeMechanism>) => void;
+  onVariableChange: (nodeId: string, variable: VariableModel) => void;
 }) {
-  if (!props.node) return <p className="muted">Select a variable.</p>;
   const node = props.node;
   const variable = normalizeVariableModel(node.variable);
+  const mechanism = normalizeNodeMechanism(props.document.simulation.nodes[node.id]);
   const value = props.simulation.values[node.id] ?? 0;
   const state = props.simulation.nodeStates[node.id];
-  const parents = props.graph.edges.filter((edge) => edge.kind === "directed" && edge.target === node.id).map((edge) => edge.source);
-  const update = (patch: Partial<VariableModel>) => props.onChange(node.id, normalizeVariableModel({ ...variable, ...patch }));
-  const updateMeasurement = (patch: Partial<VariableMeasurementModel>) => update({ measurement: { ...variable.measurement, ...patch } });
-  const updateSimulation = (patch: Partial<VariableSimulationView>) => update({ simulation: { ...variable.simulation, ...patch } });
+  const parentIds = props.document.graph.edges.filter((edge) => edge.kind === "directed" && edge.target === node.id).map((edge) => edge.source);
+  const isRoot = parentIds.length === 0;
+  const inferredValueType = inferValueTypeFromMechanism(isRoot, mechanism, variable.valueType);
+  const updateVariable = (patch: Partial<VariableModel>) => props.onVariableChange(node.id, normalizeVariableModel({ ...variable, ...patch }));
+
   return (
-    <div className="variable-model-panel">
-      <div className="variable-model-block identity-block">
-        <div className="value-card">
+    <div className="variable-window" role="dialog" aria-label={`Variable ${node.id}`}>
+      <div className="variable-window-header">
+        <div>
+          <span>Variable</span>
           <strong>{node.id}</strong>
-          <span>{formatValue(value)}</span>
         </div>
-        <label className="field">
-          <span>description</span>
-          <textarea value={variable.description} rows={3} onChange={(event) => update({ description: event.target.value })} />
-        </label>
-        <div className="two-field-grid">
-          <label className="field">
-            <span>type</span>
-            <select value={variable.valueType} onChange={(event) => update({ valueType: event.target.value as VariableModel["valueType"] })}>
-              {VARIABLE_TYPES.map(([id, label]) => <option value={id} key={id}>{label}</option>)}
-            </select>
-          </label>
-          <label className="field">
-            <span>unit</span>
-            <input value={variable.unit} onChange={(event) => update({ unit: event.target.value })} />
-          </label>
-        </div>
-        <div className="model-facts">
-          <span>parents {parents.join(", ") || "none"}</span>
-        </div>
+        <button type="button" className="window-close-button" aria-label="Close variable window" onClick={props.onClose}><X size={17} /></button>
       </div>
 
-      {props.showMeasurement !== false && <div className="variable-model-block">
-        <strong>Measurement</strong>
-        <label className="field">
-          <span>model</span>
-          <select value={variable.measurement.kind} onChange={(event) => updateMeasurement({ kind: event.target.value as VariableMeasurementModel["kind"] })}>
-            {MEASUREMENT_MODELS.map(([id, label]) => <option value={id} key={id}>{label}</option>)}
-          </select>
-        </label>
-        <div className="two-field-grid">
-          <NumberField label="error sd" value={variable.measurement.errorSd} min={0} onChange={(errorSd) => updateMeasurement({ errorSd })} />
-          <NumberField label="missing" value={variable.measurement.missingRate} min={0} max={1} step={0.05} onChange={(missingRate) => updateMeasurement({ missingRate })} />
+      <div className="variable-window-body">
+        <div className="value-card">
+          <strong>current value</strong>
+          <span>{formatValue(value)}</span>
         </div>
-        <div className="two-field-grid">
-          <NullableNumberField label="lower" value={variable.measurement.lowerLimit} onChange={(lowerLimit) => updateMeasurement({ lowerLimit })} />
-          <NullableNumberField label="upper" value={variable.measurement.upperLimit} onChange={(upperLimit) => updateMeasurement({ upperLimit })} />
-        </div>
-      </div>}
 
-      <div className="variable-model-block">
-        <strong>Simulation View</strong>
-        <label className="field">
-          <span>mode</span>
-          <select value={variable.simulation.mode} onChange={(event) => updateSimulation({ mode: event.target.value as VariableSimulationView["mode"] })}>
-            {SIMULATION_VIEW_MODES.map(([id, label]) => <option value={id} key={id}>{label}</option>)}
-          </select>
-        </label>
-        <NumberField label="sample size" value={variable.simulation.sampleSize} min={1} step={100} onChange={(sampleSize) => updateSimulation({ sampleSize })} />
+        <div className="variable-window-grid">
+          <div className="variable-window-block">
+            <strong>Roles</strong>
+            <Checkbox label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
+            <Checkbox label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
+            <Checkbox label="adjusted" checked={node.roles.adjusted} onChange={() => props.onToggleRole(node.id, "adjusted")} />
+            <Checkbox label="selected" checked={node.roles.selected} onChange={() => props.onToggleRole(node.id, "selected")} />
+            <Checkbox label="unobserved" checked={node.roles.latent} onChange={() => props.onToggleRole(node.id, "latent")} />
+          </div>
+
+          <div className="variable-window-block">
+            <div className="variable-window-block-title">
+              <strong>Distribution</strong>
+              <span className="variable-pill">{valueTypeLabel(inferredValueType)}</span>
+            </div>
+            {isRoot && <DistributionEditor
+              label="root distribution"
+              distribution={mechanism.distribution}
+              onChange={(distribution) => props.onMechanism(node.id, { distribution })}
+            />}
+            {!isRoot && <>
+              <label className="field">
+                <span>combiner</span>
+                <select value={mechanism.combiner} onChange={(event) => props.onMechanism(node.id, { combiner: event.target.value as NodeCombinerKind })}>
+                  {NODE_COMBINERS.map((item) => <option value={item.kind} key={item.kind}>{item.label}</option>)}
+                </select>
+              </label>
+              <DistributionEditor
+                label="noise"
+                distribution={mechanism.noise}
+                onChange={(noise) => props.onMechanism(node.id, { noise })}
+              />
+            </>}
+            <label className="field">
+              <span>intercept</span>
+              <input type="number" value={mechanism.intercept} step="0.1" onChange={(event) => props.onMechanism(node.id, { intercept: Number(event.target.value) })} />
+            </label>
+          </div>
+        </div>
+
+        {!isRoot && parentIds.length >= 2 && <details className="variable-window-details">
+          <summary>Interactions</summary>
+          <InteractionEditor
+            nodeId={node.id}
+            parentIds={parentIds}
+            interactions={mechanism.interactions}
+            onChange={(interactions) => props.onMechanism(node.id, { interactions })}
+          />
+        </details>}
+
+        <details className="variable-window-details">
+          <summary>Description</summary>
+          <textarea aria-label="description" value={variable.description} rows={3} onChange={(event) => updateVariable({ description: event.target.value })} />
+        </details>
+
         <div className="model-facts">
-          <span>roles {roleSummary(node.roles)}</span>
-          <span>mechanism {parents.length === 0 ? "root distribution" : "structural equation"}</span>
+          <span>parents {parentIds.join(", ") || "none"}</span>
           <span>analytic {state?.analytic ? analyticDistributionLabel(state.analytic) : "unavailable"}</span>
           <span>analytic note {state?.analytic?.note ?? "empirical only"}</span>
           <span>empirical mean {state?.empirical.mean !== null && state?.empirical.mean !== undefined ? formatValue(state.empirical.mean) : "none"}</span>
+        </div>
+
+        <div className="button-row">
+          <button type="button" onClick={() => props.onRename(node.id)}>rename</button>
+          <button type="button" onClick={() => props.onDelete(node.id)}>delete</button>
         </div>
       </div>
     </div>
@@ -1931,10 +1957,31 @@ function DistributionEditor(props: { label: string; distribution: NodeDistributi
           <option value="exponential">exponential</option>
         </select>
       </label>
-      {distribution.kind === "constant" && <NumberField label="value" value={distribution.value} onChange={(value) => props.onChange({ ...distribution, value })} />}
+      {distribution.kind === "constant" && <SliderNumberField
+        label="value"
+        value={distribution.value}
+        min={distribution.value - 10}
+        max={distribution.value + 10}
+        step={0.1}
+        onChange={(value) => props.onChange({ ...distribution, value })}
+      />}
       {distribution.kind === "normal" && <>
-        <NumberField label="mean" value={distribution.mean} onChange={(mean) => props.onChange({ ...distribution, mean })} />
-        <NumberField label="sd" value={distribution.sd} min={0} onChange={(sd) => props.onChange({ ...distribution, sd })} />
+        <SliderNumberField
+          label="mean"
+          value={distribution.mean}
+          min={distribution.mean - 10}
+          max={distribution.mean + 10}
+          step={0.1}
+          onChange={(mean) => props.onChange({ ...distribution, mean })}
+        />
+        <SliderNumberField
+          label="sd"
+          value={distribution.sd}
+          min={0.001}
+          max={Math.max(10, distribution.sd * 3)}
+          step={0.1}
+          onChange={(sd) => props.onChange({ ...distribution, sd })}
+        />
       </>}
       {distribution.kind === "lognormal" && <>
         <NumberField label="log mean" value={distribution.meanLog} onChange={(meanLog) => props.onChange({ ...distribution, meanLog })} />
@@ -1944,7 +1991,7 @@ function DistributionEditor(props: { label: string; distribution: NodeDistributi
         <NumberField label="min" value={distribution.min} onChange={(min) => props.onChange({ ...distribution, min })} />
         <NumberField label="max" value={distribution.max} onChange={(max) => props.onChange({ ...distribution, max })} />
       </>}
-      {distribution.kind === "bernoulli" && <NumberField label="p" value={distribution.p} min={0} max={1} step={0.05} onChange={(p) => props.onChange({ ...distribution, p })} />}
+      {distribution.kind === "bernoulli" && <SliderNumberField label="p" value={distribution.p} min={0} max={1} step={0.01} onChange={(p) => props.onChange({ ...distribution, p })} />}
       {distribution.kind === "poisson" && <NumberField label="lambda" value={distribution.lambda} min={0.001} onChange={(lambda) => props.onChange({ ...distribution, lambda })} />}
       {distribution.kind === "beta" && <>
         <NumberField label="alpha" value={distribution.alpha} min={0.001} onChange={(alpha) => props.onChange({ ...distribution, alpha })} />
@@ -2049,33 +2096,41 @@ function NumberField({ label, value, min, max, step = 0.1, onChange }: { label: 
   return <label className="field"><span>{label}</span><input type="number" value={value} min={min} max={max} step={step} onChange={(event) => onChange(Number(event.target.value))} /></label>;
 }
 
-function NullableNumberField({ label, value, onChange }: { label: string; value: number | null; onChange: (value: number | null) => void }) {
+function SliderNumberField({ label, value, min, max, step = 0.1, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (value: number) => void }) {
+  const safeMin = Math.min(min, max);
+  const safeMax = Math.max(min, max);
+  const sliderValue = clamp(value, safeMin, safeMax);
+  const update = (next: number) => onChange(roundToStep(clamp(next, safeMin, safeMax), step));
   return (
-    <label className="field">
-      <span>{label}</span>
+    <div className="slider-number-field">
+      <div className="slider-number-head">
+        <span>{label}</span>
+        <input
+          aria-label={label}
+          type="number"
+          value={value}
+          min={safeMin}
+          max={safeMax}
+          step={step}
+          onChange={(event) => update(Number(event.target.value))}
+        />
+      </div>
       <input
-        type="number"
-        value={value ?? ""}
-        onChange={(event) => onChange(event.target.value.trim() === "" ? null : Number(event.target.value))}
+        type="range"
+        aria-label={`${label} slider`}
+        min={safeMin}
+        max={safeMax}
+        step={step}
+        value={sliderValue}
+        onChange={(event) => update(Number(event.target.value))}
       />
-    </label>
+    </div>
   );
 }
 
 function List({ values, empty }: { values: string[]; empty: string }) {
   if (values.length === 0) return empty ? <p className="muted">{empty}</p> : null;
   return <ul className="plain-list">{values.map((value) => <li key={value}>{value}</li>)}</ul>;
-}
-
-function roleSummary(roles: NodeRoleFlags): string {
-  const labels = [
-    roles.exposure ? "exposure" : "",
-    roles.outcome ? "outcome" : "",
-    roles.adjusted ? "adjusted" : "",
-    roles.selected ? "selected" : "",
-    roles.latent ? "latent" : ""
-  ].filter(Boolean);
-  return labels.join(", ") || "none";
 }
 
 function defaultScatterPair(graph: GraphModel): ScatterPair {
@@ -2418,6 +2473,29 @@ function analyticDistributionLabel(analytic: SimulatedAnalyticDistribution): str
     return `truncated Normal(${formatValue(analytic.density.mean)}, ${formatValue(analytic.density.sd)}, ${lower}..${upper})`;
   }
   return distributionLabel(analytic.distribution);
+}
+
+function inferValueTypeFromMechanism(isRoot: boolean, mechanism: NodeMechanism, fallback: VariableModel["valueType"]): VariableModel["valueType"] {
+  if (!isRoot) {
+    if (mechanism.combiner === "bernoulli_logit" || mechanism.combiner === "noisy_or") return "binary";
+    if (mechanism.combiner === "poisson_log") return "count";
+    if (mechanism.combiner === "gamma_log" || mechanism.combiner === "positive_softplus") return "positive";
+    if (mechanism.combiner === "bounded_logistic") return "proportion";
+  }
+  return valueTypeFromDistribution(isRoot ? mechanism.distribution : mechanism.noise, fallback);
+}
+
+function valueTypeFromDistribution(distribution: NodeDistribution, fallback: VariableModel["valueType"]): VariableModel["valueType"] {
+  if (distribution.kind === "bernoulli") return "binary";
+  if (distribution.kind === "poisson") return "count";
+  if (distribution.kind === "beta") return "proportion";
+  if (distribution.kind === "gamma" || distribution.kind === "exponential" || distribution.kind === "lognormal") return "positive";
+  if (distribution.kind === "normal" || distribution.kind === "uniform" || distribution.kind === "laplace" || distribution.kind === "student_t") return "continuous";
+  return fallback;
+}
+
+function valueTypeLabel(valueType: VariableModel["valueType"]): string {
+  return VARIABLE_TYPES.find(([id]) => id === valueType)?.[1] ?? valueType;
 }
 
 function defaultDistribution(kind: NodeDistribution["kind"]): NodeDistribution {
