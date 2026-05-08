@@ -562,8 +562,8 @@ export function App() {
       </header>
 
       <main className="workspace">
-        <aside className="side-panel left-panel">
-          <Section title="Variable">
+        <aside className="side-panel model-panel">
+          <Section title="Model Inspector">
             <VariablePanel
               node={selectedNode}
               simulation={simulation}
@@ -572,22 +572,31 @@ export function App() {
               onRename={renameSelectedNode}
               onDelete={deleteSelection}
               onMechanism={updateNodeMechanism}
-              onOverride={setOverride}
-              onSelectionCondition={setSelectionCondition}
             />
           </Section>
-          <Section title="View Mode">
-            <RadioGroup value={viewMode} options={[
-              ["normal", "normal"],
-              ["moral", "moral graph"],
-              ["correlation", "correlation graph"],
-              ["equivalence", "equivalence class"]
-            ]} onChange={(value) => setViewMode(value as ViewMode)} />
+          <Section title="Structural Model">
+            <VariableModelPanel
+              node={selectedNode}
+              simulation={simulation}
+              graph={document.graph}
+              showMeasurement={false}
+              onChange={updateVariableModel}
+            />
           </Section>
-          <Section title="Coloring">
-            <Checkbox label="causal paths" checked={showCausal} onChange={setShowCausal} />
-            <Checkbox label="biasing paths" checked={showBiasing} onChange={setShowBiasing} />
-            <Checkbox label="ancestral structure" checked={showAncestors} onChange={setShowAncestors} />
+          <Section title="Connection Functions">
+            <ConnectionListPanel
+              document={document}
+              simulation={simulation}
+              selectedEdgeId={selection?.kind === "edge" ? selection.id : null}
+              onSelectEdge={(id) => setSelection({ kind: "edge", id })}
+              onEnabled={updateEdgeEnabled}
+              onMechanism={updateEdgeMechanism}
+            />
+          </Section>
+          <Section title="Connection Detail">
+            {selectedEdge
+              ? <EdgePanel edge={selectedEdge} document={document} onCoefficient={updateEdgeCoefficient} onEnabled={updateEdgeEnabled} onMechanism={updateEdgeMechanism} simulation={simulation} />
+              : <p className="muted">Select a connection to edit its simulation function.</p>}
           </Section>
         </aside>
 
@@ -609,89 +618,103 @@ export function App() {
           onEdgeControl={(edge) => replaceGraph(upsertEdge(document.graph, edge))}
         />
 
-        <aside className="side-panel simulation-column">
-          <Section title="Simulation">
-            <SimulationPanel
+        <aside className="side-panel scenario-column">
+          <Section title="Scenario Builder">
+            <ScenarioPanel
+              node={selectedNode}
               document={document}
               simulation={simulation}
-              selectedEdgeId={selection?.kind === "edge" ? selection.id : null}
               onResample={resample}
               onClearOverrides={clearOverrides}
               onClearSelections={clearSelections}
               onOverride={setOverride}
-              onSelectNode={(id) => setSelection({ kind: "node", id })}
-              onSelectEdge={(id) => setSelection({ kind: "edge", id })}
-              onCoefficient={updateEdgeCoefficient}
-              onEnabled={updateEdgeEnabled}
-              onMechanism={updateEdgeMechanism}
-            />
-          </Section>
-          <Section title="Connection">
-            {selectedEdge
-              ? <EdgePanel edge={selectedEdge} document={document} onCoefficient={updateEdgeCoefficient} onEnabled={updateEdgeEnabled} onMechanism={updateEdgeMechanism} simulation={simulation} />
-              : <p className="muted">Select a connection to edit its simulation function.</p>}
-          </Section>
-        </aside>
-
-        <aside className="side-panel scatter-panel">
-          <Section title="Scatterplot">
-            <ScatterplotPanel
-              graph={document.graph}
-              simulation={simulation}
-              pair={scatterPair}
-              onPair={setScatterPair}
+              onSelectionCondition={setSelectionCondition}
               onSelectNode={(id) => setSelection({ kind: "node", id })}
             />
           </Section>
         </aside>
 
-        <aside className="side-panel right-panel">
-          <Section title="Causal Effect Identification">
-            <select value={effectKind} onChange={(event) => setEffectKind(event.target.value as EffectKind)}>
-              <option value="total">Adjustment (total effect)</option>
-              <option value="direct">Adjustment (direct effect)</option>
-              <option value="causalOdds">Adjustment (causal odds ratio)</option>
-              <option value="instrument">Instrumental variable</option>
-            </select>
-            <EffectPanel effectKind={effectKind} analysis={analysis} />
+        <section className="results-dock">
+          <Section title="Results">
+            <div className="results-grid">
+              <div className="results-block">
+                <h3>Live Node Values</h3>
+                <LiveValuesPanel
+                  graph={document.graph}
+                  simulation={simulation}
+                  overrides={document.simulation.overrides}
+                  selections={document.simulation.selections}
+                  onSelectNode={(id) => setSelection({ kind: "node", id })}
+                />
+              </div>
+              <div className="results-block">
+                <h3>Pairwise Output</h3>
+                <ScatterplotPanel
+                  graph={document.graph}
+                  simulation={simulation}
+                  pair={scatterPair}
+                  onPair={setScatterPair}
+                  onSelectNode={(id) => setSelection({ kind: "node", id })}
+                />
+              </div>
+            </div>
           </Section>
-          <Section title="Testable Implications">
-            <ImplicationPanel analysis={analysis} />
-          </Section>
-          <Section title="Model Code">
-            <CodeMirror
-              value={modelText}
-              height="220px"
-              basicSetup={{ lineNumbers: false, foldGutter: false }}
-              onChange={(value) => {
-                setModelText(value);
-                setModelDirty(value !== serializeModel(document));
-              }}
-            />
-            {modelDirty && <button type="button" onClick={updateModelFromText}><Braces size={15} /> Update DAG</button>}
-          </Section>
-          <Section title="Summary">
-            <SummaryPanel analysis={analysis} />
-          </Section>
-          <Section title="Bibliography">
-            <BibliographyPanel topic={bibliographyTopic} onTopic={setBibliographyTopic} />
-          </Section>
-          <Section title="Export">
-            <button type="button" onClick={() => downloadText("nudagitty-model.dagitty", serializeModel(document))}><Download size={15} /> model code</button>
-            <button type="button" onClick={() => downloadText("nudagitty-model.tex", tikzDocument(document.graph))}><Download size={15} /> TikZ</button>
-            <button type="button" onClick={() => exportBitmap("jpeg")}><Camera size={15} /> JPEG</button>
-          </Section>
-        </aside>
+        </section>
 
-        <section className="variable-model-row">
-          <Section title="Variable Model">
-            <VariableModelPanel
-              node={selectedNode}
-              simulation={simulation}
-              graph={document.graph}
-              onChange={updateVariableModel}
-            />
-          </Section>
+        <section className="advanced-drawer">
+          <details>
+            <summary>Advanced diagnostics and artifacts</summary>
+            <div className="advanced-grid">
+              <Section title="View Mode">
+                <RadioGroup value={viewMode} options={[
+                  ["normal", "normal"],
+                  ["moral", "moral graph"],
+                  ["correlation", "correlation graph"],
+                  ["equivalence", "equivalence class"]
+                ]} onChange={(value) => setViewMode(value as ViewMode)} />
+              </Section>
+              <Section title="Coloring">
+                <Checkbox label="causal paths" checked={showCausal} onChange={setShowCausal} />
+                <Checkbox label="biasing paths" checked={showBiasing} onChange={setShowBiasing} />
+                <Checkbox label="ancestral structure" checked={showAncestors} onChange={setShowAncestors} />
+              </Section>
+              <Section title="Causal Effect Identification">
+                <select value={effectKind} onChange={(event) => setEffectKind(event.target.value as EffectKind)}>
+                  <option value="total">Adjustment (total effect)</option>
+                  <option value="direct">Adjustment (direct effect)</option>
+                  <option value="causalOdds">Adjustment (causal odds ratio)</option>
+                  <option value="instrument">Instrumental variable</option>
+                </select>
+                <EffectPanel effectKind={effectKind} analysis={analysis} />
+              </Section>
+              <Section title="Testable Implications">
+                <ImplicationPanel analysis={analysis} />
+              </Section>
+              <Section title="Model Code">
+                <CodeMirror
+                  value={modelText}
+                  height="220px"
+                  basicSetup={{ lineNumbers: false, foldGutter: false }}
+                  onChange={(value) => {
+                    setModelText(value);
+                    setModelDirty(value !== serializeModel(document));
+                  }}
+                />
+                {modelDirty && <button type="button" onClick={updateModelFromText}><Braces size={15} /> Update DAG</button>}
+              </Section>
+              <Section title="Summary">
+                <SummaryPanel analysis={analysis} />
+              </Section>
+              <Section title="Bibliography">
+                <BibliographyPanel topic={bibliographyTopic} onTopic={setBibliographyTopic} />
+              </Section>
+              <Section title="Export">
+                <button type="button" onClick={() => downloadText("nudagitty-model.dagitty", serializeModel(document))}><Download size={15} /> model code</button>
+                <button type="button" onClick={() => downloadText("nudagitty-model.tex", tikzDocument(document.graph))}><Download size={15} /> TikZ</button>
+                <button type="button" onClick={() => exportBitmap("jpeg")}><Camera size={15} /> JPEG</button>
+              </Section>
+            </div>
+          </details>
         </section>
       </main>
     </div>
@@ -1151,19 +1174,16 @@ function BinaryPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel:
   );
 }
 
-function SimulationPanel(props: {
+function ScenarioPanel(props: {
+  node?: GraphNode;
   document: GraphDocument;
   simulation: SimulationResult;
-  selectedEdgeId: string | null;
   onResample: () => void;
   onClearOverrides: () => void;
   onClearSelections: () => void;
   onOverride: (id: string, value: number | null) => void;
+  onSelectionCondition: (id: string, condition: SimulationSelectionCondition | null) => void;
   onSelectNode: (id: string) => void;
-  onSelectEdge: (id: string) => void;
-  onCoefficient: (edge: GraphEdge, coefficient: number) => void;
-  onEnabled: (edge: GraphEdge, enabled: boolean) => void;
-  onMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
 }) {
   const blocked = simulationBlocked(props.simulation);
   const overrides = Object.keys(props.document.simulation.overrides);
@@ -1183,8 +1203,28 @@ function SimulationPanel(props: {
       </div>
       <ConditioningMethodPanel simulation={props.simulation} />
       {props.simulation.diagnostics.map((message) => <p className="warning" key={message}>{message}</p>)}
+      <div className="scenario-group">
+        <strong>Interventions</strong>
+        {props.node
+          ? <HardDoEditor node={props.node} document={props.document} simulation={props.simulation} onOverride={props.onOverride} />
+          : <p className="muted">Select a variable to configure a hard-do intervention.</p>}
+        <div className="planned-module-list">
+          {PLANNED_CAUSAL_MODULES.map((module) => (
+            <div className="module-card planned" aria-disabled="true" key={module.id} title="Planned module">
+              <span>{module.label}</span>
+              <span className="module-badge planned">planned</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="scenario-group">
+        <strong>Conditioning / Selection</strong>
+        {props.node
+          ? <ConditioningEditor node={props.node} document={props.document} simulation={props.simulation} onSelectionCondition={props.onSelectionCondition} />
+          : <p className="muted">Select a variable to condition or select observations.</p>}
+      </div>
       <div className="value-list">
-        <strong>Hard do interventions</strong>
+        <strong>Hard do quick controls</strong>
         {nodes.map((node) => {
           const value = props.simulation.values[node.id] ?? 0;
           const state = props.simulation.nodeStates[node.id];
@@ -1212,15 +1252,29 @@ function SimulationPanel(props: {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function ConnectionListPanel(props: {
+  document: GraphDocument;
+  simulation: SimulationResult;
+  selectedEdgeId: string | null;
+  onSelectEdge: (id: string) => void;
+  onEnabled: (edge: GraphEdge, enabled: boolean) => void;
+  onMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
+}) {
+  const directedEdges = props.document.graph.edges.filter((edge) => edge.kind === "directed");
+  if (directedEdges.length === 0) return <p className="muted">Add directed connections to configure structural functions.</p>;
+  return (
       <div className="mechanism-list">
-        <strong>Connections</strong>
         <div className="mechanism-header" aria-hidden="true">
           <span>on</span>
           <span>connection</span>
           <span>function</span>
           <span>value</span>
         </div>
-        {props.document.graph.edges.filter((edge) => edge.kind === "directed").map((edge) => {
+        {directedEdges.map((edge) => {
           const mechanism = normalizeEdgeMechanism(props.document.simulation.edges[edge.id]);
           const contribution = props.simulation.contributions[edge.id] ?? 0;
           const selected = props.selectedEdgeId === edge.id;
@@ -1250,6 +1304,168 @@ function SimulationPanel(props: {
             </div>
           );
         })}
+      </div>
+  );
+}
+
+function LiveValuesPanel(props: {
+  graph: GraphModel;
+  simulation: SimulationResult;
+  overrides: Record<string, number>;
+  selections: Record<string, SimulationSelectionCondition>;
+  onSelectNode: (id: string) => void;
+}) {
+  const nodes = [...props.graph.nodes].sort((a, b) => a.id.localeCompare(b.id));
+  if (nodes.length === 0) return <p className="muted">No variables yet.</p>;
+  return (
+    <table className="summary-table live-values-table">
+      <tbody>
+        {nodes.map((node) => {
+          const hardDo = Object.hasOwn(props.overrides, node.id);
+          const conditioned = Object.hasOwn(props.selections, node.id);
+          return (
+            <tr key={node.id}>
+              <td><button type="button" className="inline-link-button" onClick={() => props.onSelectNode(node.id)}>{node.id}</button></td>
+              <td>{formatValue(props.simulation.values[node.id] ?? 0)}</td>
+              <td>{hardDo ? "hard do" : conditioned ? "conditioned" : ""}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function HardDoEditor(props: {
+  node: GraphNode;
+  document: GraphDocument;
+  simulation: SimulationResult;
+  onOverride: (id: string, value: number | null) => void;
+}) {
+  const value = props.simulation.values[props.node.id] ?? 0;
+  const binary = normalizeVariableModel(props.node.variable).valueType === "binary";
+  const hardDoActive = Object.hasOwn(props.document.simulation.overrides, props.node.id);
+  const hardDoValue = props.document.simulation.overrides[props.node.id] ?? value;
+  return (
+    <div className={`module-card hard-do-editor ${hardDoActive ? "active" : ""}`}>
+      <div className="module-card-header">
+        <strong>Hard do intervention</strong>
+        <span className={hardDoActive ? "module-badge active" : "module-badge"}>{hardDoActive ? "active" : "available"}</span>
+      </div>
+      <label className="field">
+        <span>fixed value</span>
+        <input
+          aria-label="hard do value"
+          type="number"
+          value={hardDoValue}
+          min={binary ? 0 : undefined}
+          max={binary ? 1 : undefined}
+          step={binary ? 1 : 0.1}
+          onChange={(event) => props.onOverride(props.node.id, binary ? coerceBinary(Number(event.target.value)) : Number(event.target.value))}
+        />
+      </label>
+      <div className="button-row">
+        {!hardDoActive && <button type="button" onClick={() => props.onOverride(props.node.id, value)}>fix current value</button>}
+        {hardDoActive && <button type="button" onClick={() => props.onOverride(props.node.id, null)}>release hard do</button>}
+      </div>
+    </div>
+  );
+}
+
+function ConditioningEditor(props: {
+  node: GraphNode;
+  document: GraphDocument;
+  simulation: SimulationResult;
+  onSelectionCondition: (id: string, condition: SimulationSelectionCondition | null) => void;
+}) {
+  const value = props.simulation.values[props.node.id] ?? 0;
+  const condition = props.document.simulation.selections[props.node.id];
+  const state = props.simulation.nodeStates[props.node.id];
+  const [sliderMin, sliderMax] = conditioningSliderBounds(state, condition?.value ?? value);
+  const sliderStep = conditioningSliderStep(sliderMin, sliderMax);
+  const updateCondition = (patch: Partial<SimulationSelectionCondition>) => {
+    props.onSelectionCondition(props.node.id, {
+      operator: condition?.operator ?? "at_least",
+      value: condition?.value ?? value,
+      upper: condition?.upper ?? null,
+      sampling: condition?.sampling ?? "auto",
+      ...patch
+    });
+  };
+  return (
+    <div className={`module-card conditioning-editor ${condition ? "active" : ""}`}>
+      <div className="module-card-header">
+        <strong>Conditioning filter</strong>
+        <span className={condition ? "module-badge active" : "module-badge"}>{condition ? "active" : "available"}</span>
+      </div>
+      <p className="muted">Observational selection, not a structural intervention.</p>
+      <label className="field">
+        <span>condition</span>
+        <select
+          value={condition?.operator ?? "at_least"}
+          onChange={(event) => updateCondition({
+            operator: event.target.value as SimulationSelectionCondition["operator"],
+            upper: event.target.value === "between" ? condition?.upper ?? value : null
+          })}
+        >
+          <option value="at_least">at least</option>
+          <option value="at_most">at most</option>
+          <option value="between">between</option>
+        </select>
+      </label>
+      <label className="field">
+        <span>inference method</span>
+        <select aria-label="inference method" value={condition?.sampling ?? "auto"} onChange={(event) => updateCondition({ sampling: event.target.value as SimulationSelectionCondition["sampling"] })}>
+          <option value="auto">auto</option>
+          <option value="analytic">analytic</option>
+          <option value="importance">importance sampling</option>
+          <option value="rejection">rejection sampling</option>
+        </select>
+      </label>
+      <div className="two-field-grid">
+        <NumberField
+          label={condition?.operator === "between" ? "lower" : "value"}
+          value={condition?.value ?? value}
+          onChange={(nextValue) => updateCondition({ value: nextValue, upper: condition?.operator === "between" ? condition.upper ?? nextValue : null })}
+        />
+        {condition?.operator === "between" && (
+          <NumberField
+            label="upper"
+            value={condition.upper ?? condition.value}
+            onChange={(upper) => updateCondition({ upper })}
+          />
+        )}
+      </div>
+      <label className="field conditioning-range">
+        <span>{condition?.operator === "between" ? "lower slider" : "value slider"}</span>
+        <input
+          type="range"
+          min={sliderMin}
+          max={sliderMax}
+          step={sliderStep}
+          value={clamp(condition?.value ?? value, sliderMin, sliderMax)}
+          onChange={(event) => {
+            const nextValue = roundToStep(Number(event.target.value), sliderStep);
+            updateCondition({ value: nextValue, upper: condition?.operator === "between" ? condition.upper ?? nextValue : null });
+          }}
+        />
+      </label>
+      {condition?.operator === "between" && (
+        <label className="field conditioning-range">
+          <span>upper slider</span>
+          <input
+            type="range"
+            min={sliderMin}
+            max={sliderMax}
+            step={sliderStep}
+            value={clamp(condition.upper ?? condition.value, sliderMin, sliderMax)}
+            onChange={(event) => updateCondition({ upper: roundToStep(Number(event.target.value), sliderStep) })}
+          />
+        </label>
+      )}
+      <div className="button-row">
+        {!condition && <button type="button" onClick={() => props.onSelectionCondition(props.node.id, { operator: "at_least", value, upper: null, sampling: "auto" })}>condition on current</button>}
+        {condition && <button type="button" onClick={() => props.onSelectionCondition(props.node.id, null)}>clear condition</button>}
       </div>
     </div>
   );
@@ -1293,31 +1509,13 @@ function VariablePanel(props: {
   onRename: () => void;
   onDelete: () => void;
   onMechanism: (id: string, patch: Partial<NodeMechanism>) => void;
-  onOverride: (id: string, value: number | null) => void;
-  onSelectionCondition: (id: string, condition: SimulationSelectionCondition | null) => void;
 }) {
   if (!props.node) return <p className="muted">Select a variable to edit roles, value, and simulation settings.</p>;
   const node = props.node;
   const mechanism = normalizeNodeMechanism(props.document.simulation.nodes[node.id]);
   const value = props.simulation.values[node.id] ?? 0;
-  const binary = normalizeVariableModel(node.variable).valueType === "binary";
-  const condition = props.document.simulation.selections[node.id];
-  const hardDoActive = Object.hasOwn(props.document.simulation.overrides, node.id);
-  const hardDoValue = props.document.simulation.overrides[node.id] ?? value;
-  const state = props.simulation.nodeStates[node.id];
-  const [sliderMin, sliderMax] = conditioningSliderBounds(state, condition?.value ?? value);
-  const sliderStep = conditioningSliderStep(sliderMin, sliderMax);
   const parentIds = props.document.graph.edges.filter((edge) => edge.kind === "directed" && edge.target === node.id).map((edge) => edge.source);
   const isRoot = parentIds.length === 0;
-  const updateCondition = (patch: Partial<SimulationSelectionCondition>) => {
-    props.onSelectionCondition(node.id, {
-      operator: condition?.operator ?? "at_least",
-      value: condition?.value ?? value,
-      upper: condition?.upper ?? null,
-      sampling: condition?.sampling ?? "auto",
-      ...patch
-    });
-  };
   return (
     <div className="variable-panel">
       <div className="value-card">
@@ -1332,114 +1530,6 @@ function VariablePanel(props: {
       <div className="button-row">
         <button type="button" onClick={props.onRename}>rename</button>
         <button type="button" onClick={props.onDelete}>delete</button>
-      </div>
-      <div className="module-set">
-        <strong className="module-set-title">Causal Modules</strong>
-        <div className={`module-card hard-do-editor ${hardDoActive ? "active" : ""}`}>
-          <div className="module-card-header">
-            <strong>Hard do intervention</strong>
-            <span className={hardDoActive ? "module-badge active" : "module-badge"}>{hardDoActive ? "active" : "available"}</span>
-          </div>
-          <label className="field">
-            <span>fixed value</span>
-            <input
-              aria-label="hard do value"
-              type="number"
-              value={hardDoValue}
-              min={binary ? 0 : undefined}
-              max={binary ? 1 : undefined}
-              step={binary ? 1 : 0.1}
-              onChange={(event) => props.onOverride(node.id, binary ? coerceBinary(Number(event.target.value)) : Number(event.target.value))}
-            />
-          </label>
-          <div className="button-row">
-            {!hardDoActive && <button type="button" onClick={() => props.onOverride(node.id, value)}>fix current value</button>}
-            {hardDoActive && <button type="button" onClick={() => props.onOverride(node.id, null)}>release hard do</button>}
-          </div>
-        </div>
-        <div className={`module-card conditioning-editor ${condition ? "active" : ""}`}>
-          <div className="module-card-header">
-            <strong>Conditioning filter</strong>
-            <span className={condition ? "module-badge active" : "module-badge"}>{condition ? "active" : "available"}</span>
-          </div>
-          <p className="muted">Observational selection, not a structural intervention.</p>
-          <label className="field">
-            <span>condition</span>
-            <select
-              value={condition?.operator ?? "at_least"}
-              onChange={(event) => updateCondition({
-                operator: event.target.value as SimulationSelectionCondition["operator"],
-                upper: event.target.value === "between" ? condition?.upper ?? value : null
-              })}
-            >
-              <option value="at_least">at least</option>
-              <option value="at_most">at most</option>
-              <option value="between">between</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>inference method</span>
-            <select aria-label="inference method" value={condition?.sampling ?? "auto"} onChange={(event) => updateCondition({ sampling: event.target.value as SimulationSelectionCondition["sampling"] })}>
-              <option value="auto">auto</option>
-              <option value="analytic">analytic</option>
-              <option value="importance">importance sampling</option>
-              <option value="rejection">rejection sampling</option>
-            </select>
-          </label>
-          <div className="two-field-grid">
-            <NumberField
-              label={condition?.operator === "between" ? "lower" : "value"}
-              value={condition?.value ?? value}
-              onChange={(nextValue) => updateCondition({ value: nextValue, upper: condition?.operator === "between" ? condition.upper ?? nextValue : null })}
-            />
-            {condition?.operator === "between" && (
-              <NumberField
-                label="upper"
-                value={condition.upper ?? condition.value}
-                onChange={(upper) => updateCondition({ upper })}
-              />
-            )}
-          </div>
-          <label className="field conditioning-range">
-            <span>{condition?.operator === "between" ? "lower slider" : "value slider"}</span>
-            <input
-              type="range"
-              min={sliderMin}
-              max={sliderMax}
-              step={sliderStep}
-              value={clamp(condition?.value ?? value, sliderMin, sliderMax)}
-              onChange={(event) => {
-                const nextValue = roundToStep(Number(event.target.value), sliderStep);
-                updateCondition({ value: nextValue, upper: condition?.operator === "between" ? condition.upper ?? nextValue : null });
-              }}
-            />
-          </label>
-          {condition?.operator === "between" && (
-            <label className="field conditioning-range">
-              <span>upper slider</span>
-              <input
-                type="range"
-                min={sliderMin}
-                max={sliderMax}
-                step={sliderStep}
-                value={clamp(condition.upper ?? condition.value, sliderMin, sliderMax)}
-                onChange={(event) => updateCondition({ upper: roundToStep(Number(event.target.value), sliderStep) })}
-              />
-            </label>
-          )}
-          <div className="button-row">
-            {!condition && <button type="button" onClick={() => props.onSelectionCondition(node.id, { operator: "at_least", value, upper: null, sampling: "auto" })}>condition on current</button>}
-            {condition && <button type="button" onClick={() => props.onSelectionCondition(node.id, null)}>clear condition</button>}
-          </div>
-        </div>
-        <div className="planned-module-list">
-          {PLANNED_CAUSAL_MODULES.map((module) => (
-            <div className="module-card planned" aria-disabled="true" key={module.id} title="Planned module">
-              <span>{module.label}</span>
-              <span className="module-badge planned">planned</span>
-            </div>
-          ))}
-        </div>
       </div>
       {isRoot && <DistributionEditor
         label="root distribution"
@@ -1476,6 +1566,7 @@ function VariableModelPanel(props: {
   node?: GraphNode;
   simulation: SimulationResult;
   graph: GraphModel;
+  showMeasurement?: boolean;
   onChange: (nodeId: string, variable: VariableModel) => void;
 }) {
   if (!props.node) return <p className="muted">Select a variable.</p>;
@@ -1515,7 +1606,7 @@ function VariableModelPanel(props: {
         </div>
       </div>
 
-      <div className="variable-model-block">
+      {props.showMeasurement !== false && <div className="variable-model-block">
         <strong>Measurement</strong>
         <label className="field">
           <span>model</span>
@@ -1531,7 +1622,7 @@ function VariableModelPanel(props: {
           <NullableNumberField label="lower" value={variable.measurement.lowerLimit} onChange={(lowerLimit) => updateMeasurement({ lowerLimit })} />
           <NullableNumberField label="upper" value={variable.measurement.upperLimit} onChange={(upperLimit) => updateMeasurement({ upperLimit })} />
         </div>
-      </div>
+      </div>}
 
       <div className="variable-model-block">
         <strong>Simulation View</strong>

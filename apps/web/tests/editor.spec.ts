@@ -6,7 +6,7 @@ test("loads the editor and creates a variable with the node tool", async ({ page
   await expect(page.getByLabel("Editable causal graph")).toBeVisible();
 
   await page.getByRole("button", { name: "Variable" }).click();
-  await page.locator(".graph-canvas").click({ position: { x: 520, y: 500 } });
+  await page.locator(".graph-canvas").click({ position: { x: 80, y: 320 } });
 
   await expect(page.locator("text.node-label").filter({ hasText: "V" }).first()).toBeVisible();
   await expect(page.locator(".cm-content")).toContainText("V");
@@ -26,23 +26,21 @@ test("connection function table stays in sync with the selected connection inspe
 test("selected variables expose a fuller variable model row", async ({ page }) => {
   await page.goto("/");
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
-  const row = page.locator(".variable-model-row");
-  const panel = page.locator(".variable-panel");
+  const inspector = page.locator(".model-panel");
+  const scenario = page.locator(".scenario-column");
 
-  await row.getByLabel("description").fill("Baseline confounder");
-  await row.getByLabel("type").selectOption("count");
-  await row.getByLabel("model").selectOption("noisy_proxy");
+  await inspector.getByLabel("description").fill("Baseline confounder");
+  await inspector.getByLabel("type").selectOption("count");
 
-  await expect(row.getByLabel("description")).toHaveValue("Baseline confounder");
-  await expect(row.getByLabel("type")).toHaveValue("count");
-  await expect(row.getByLabel("model")).toHaveValue("noisy_proxy");
-  await expect(row).not.toContainText("Domain");
-  await expect(row).not.toContainText("Intervention");
-  await expect(panel).toContainText("Causal Modules");
-  await expect(panel.locator(".hard-do-editor")).toContainText("Hard do intervention");
-  await expect(panel).toContainText("Conditioning filter");
-  await expect(panel.locator(".planned-module-list")).not.toContainText("Hard do");
-  await expect(panel.locator(".planned-module-list")).toContainText("planned");
+  await expect(inspector.getByLabel("description")).toHaveValue("Baseline confounder");
+  await expect(inspector.getByLabel("type")).toHaveValue("count");
+  await expect(inspector).not.toContainText("Domain");
+  await expect(inspector).not.toContainText("Measurement");
+  await expect(inspector).not.toContainText("Intervention");
+  await expect(scenario.locator(".hard-do-editor")).toContainText("Hard do intervention");
+  await expect(scenario).toContainText("Conditioning filter");
+  await expect(scenario.locator(".planned-module-list")).not.toContainText("Hard do");
+  await expect(scenario.locator(".planned-module-list")).toContainText("planned");
 });
 
 test("hard do controls share one override state", async ({ page }) => {
@@ -68,14 +66,14 @@ test("hard do controls share one override state", async ({ page }) => {
 test("binary variables update simulation defaults", async ({ page }) => {
   await page.goto("/");
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
-  const row = page.locator(".variable-model-row");
+  const inspector = page.locator(".model-panel");
 
-  await row.getByLabel("type").selectOption("binary");
+  await inspector.getByLabel("type").selectOption("binary");
   await expect(page.getByLabel("root distribution")).toHaveValue("bernoulli");
 
   await page.getByLabel("Examples").selectOption("mediation-direct-total");
   await page.locator("text.node-label").filter({ hasText: "Biomarker" }).click({ force: true });
-  await row.getByLabel("type").selectOption("binary");
+  await inspector.getByLabel("type").selectOption("binary");
   await expect(page.getByLabel("combiner")).toHaveValue("bernoulli_logit");
 });
 
@@ -86,8 +84,8 @@ test("Galton example renders analytic and empirical node distributions", async (
   await expect(page.locator("text.node-label").filter({ hasText: "father height" })).toBeVisible();
   await expect(page.locator(".node-distribution-plot")).toHaveCount(6);
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
-  await expect(page.locator(".variable-model-row")).toContainText("linear Gaussian SEM");
-  await expect(page.locator(".variable-model-row")).toContainText("Normal(69.0, 2.80)");
+  await expect(page.locator(".model-panel")).toContainText("linear Gaussian SEM");
+  await expect(page.locator(".model-panel")).toContainText("Normal(69.0, 2.80)");
 });
 
 test("binary variable pairs render a table and colored confusion matrix", async ({ page }) => {
@@ -141,7 +139,7 @@ test("conditioning a Galton variable is separate from overriding it", async ({ p
   await expect(page.locator(".conditioning-summary")).toContainText("active analytic");
   await expect(page.locator(".conditioning-summary")).toContainText("linear Gaussian");
   await expect(page.locator(".conditioning-summary")).toContainText(/\/ \d+/);
-  await expect(page.locator(".variable-model-row")).toContainText("linear Gaussian moment match conditioned on Father_height >= 72");
+  await expect(page.locator(".model-panel")).toContainText("linear Gaussian moment match conditioned on Father_height >= 72");
 });
 
 test("inference selector switches Galton conditioning between rejection and importance", async ({ page }) => {
