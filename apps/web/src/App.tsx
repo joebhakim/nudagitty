@@ -18,6 +18,7 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EXAMPLES,
+  EXAMPLE_DOMAINS,
   addEdge,
   addNode,
   adjusted,
@@ -32,6 +33,7 @@ import {
   deleteNode,
   edgeId,
   emptyDocument,
+  exampleDenouement,
   exampleDocument,
   equivalenceGraph,
   exposures,
@@ -61,6 +63,8 @@ import type {
   EdgeMechanism,
   EdgeMechanismKind,
   EdgeKind,
+  ExampleDenouement,
+  ExampleDomain,
   EffectKind,
   GraphDocument,
   GraphEdge,
@@ -89,6 +93,72 @@ type ScatterPair = { x: string; y: string };
 type ScatterPoint = { x: number; y: number; weight: number; index: number };
 type BinaryCell = { x: 0 | 1; y: 0 | 1; weight: number; count: number; percent: number };
 type VariableEditorTab = "model" | "interventions";
+type WorkbenchMode = "basic" | "domain" | "pro";
+type DesignModuleStatus = "usable" | "todo";
+type SimpsonCompletedOutput = {
+  crudeTreatedRecovery: number;
+  crudeUntreatedRecovery: number;
+  crudeDiff: number;
+  causalTreatedRecovery: number;
+  causalUntreatedRecovery: number;
+  causalDiff: number;
+  treatedSeverity: number;
+  untreatedSeverity: number;
+  severityDiff: number;
+  adjustmentSet: string;
+  visualRead: string;
+  paradox: string;
+  conclusion: string;
+};
+type IcuCompletedOutput = {
+  crudeIcuMortality: number;
+  crudeWardMortality: number;
+  crudeDiff: number;
+  causalIcuMortality: number;
+  causalWardMortality: number;
+  causalDiff: number;
+  icuSeverity: number;
+  wardSeverity: number;
+  severityDiff: number;
+  icuTriage: number;
+  wardTriage: number;
+  triageDiff: number;
+  adjustmentSet: string;
+  visualRead: string;
+  colliderWarning: string;
+  verdict: string;
+  conclusion: string;
+};
+type CollegeCompletedOutput = {
+  crudeCollegeEarnings: number;
+  crudeNoCollegeEarnings: number;
+  crudePremium: number;
+  causalCollegeEarnings: number;
+  causalNoCollegeEarnings: number;
+  causalPremium: number;
+  collegeAdvantage: number;
+  noCollegeAdvantage: number;
+  advantageDiff: number;
+  adjustmentSet: string;
+  visualRead: string;
+  verdict: string;
+  conclusion: string;
+};
+type TutoringCompletedOutput = {
+  crudeTutoredScore: number;
+  crudeUntutoredScore: number;
+  crudeGap: number;
+  causalTutoredScore: number;
+  causalUntutoredScore: number;
+  causalGap: number;
+  tutoredNeed: number;
+  untutoredNeed: number;
+  needDiff: number;
+  adjustmentSet: string;
+  visualRead: string;
+  verdict: string;
+  conclusion: string;
+};
 type DragState =
   | { kind: "node"; id: string; offset: Point }
   | { kind: "edge-control"; id: string }
@@ -172,6 +242,178 @@ const PLANNED_CAUSAL_MODULES = [
   { id: "policy", label: "Policy rule" }
 ] as const;
 
+const MODE_LABELS: Record<WorkbenchMode, string> = {
+  basic: "Basic",
+  domain: "Domain",
+  pro: "Pro"
+};
+
+const DESIGN_MODULES: Array<{
+  id: string;
+  label: string;
+  status: DesignModuleStatus;
+  domains: ExampleDomain[];
+  basic?: boolean;
+  description: string;
+}> = [
+  {
+    id: "adjustment",
+    label: "Adjustment / backdoor",
+    status: "usable",
+    basic: true,
+    domains: ["classic", "epidemiology", "social", "ml"],
+    description: "Use roles, biasing paths, and minimal adjustment sets to decide what belongs in the estimating equation."
+  },
+  {
+    id: "target-trial",
+    label: "Target trial",
+    status: "todo",
+    domains: ["epidemiology"],
+    description: "TODO: specify eligibility, time zero, treatment strategies, follow-up, censoring, estimand, and analysis plan."
+  },
+  {
+    id: "negative-controls",
+    label: "Negative controls",
+    status: "todo",
+    domains: ["epidemiology", "ml"],
+    description: "TODO: mark exposure/outcome controls that should have no effect and use violations as residual-bias warnings."
+  },
+  {
+    id: "iv",
+    label: "Instrumental variables",
+    status: "usable",
+    domains: ["classic", "econometrics"],
+    description: "Check relevance paths, exclusion restrictions, and unblocked backdoors from candidate instruments to outcomes."
+  },
+  {
+    id: "did",
+    label: "DiD / event study",
+    status: "todo",
+    domains: ["econometrics"],
+    description: "TODO: track policy timing, panel unit/time structure, pre-trends, staggered adoption, and placebo endpoints."
+  },
+  {
+    id: "rd",
+    label: "Regression discontinuity",
+    status: "todo",
+    domains: ["econometrics"],
+    description: "TODO: mark running variable, cutoff, manipulation risks, bandwidth choices, and continuity assumptions."
+  },
+  {
+    id: "synthetic-control",
+    label: "Synthetic control / CausalImpact",
+    status: "todo",
+    domains: ["econometrics", "product"],
+    description: "TODO: define treated unit, donor pool, pre-period fit, unaffected control series, and placebo permutations."
+  },
+  {
+    id: "experiment-uplift",
+    label: "Experiment / uplift",
+    status: "todo",
+    domains: ["product"],
+    description: "TODO: represent randomization, holdouts, geolift, guardrails, spillovers, and heterogeneous treatment effects."
+  },
+  {
+    id: "mediation",
+    label: "Mediation",
+    status: "usable",
+    basic: true,
+    domains: ["classic", "epidemiology", "social"],
+    description: "Separate direct and indirect paths, then make post-treatment adjustment risks visible."
+  },
+  {
+    id: "graph-refutation",
+    label: "Graph refutation",
+    status: "todo",
+    domains: ["ml"],
+    description: "TODO: run conditional-independence checks implied by the graph and flag assumptions contradicted by data."
+  },
+  {
+    id: "causal-discovery",
+    label: "Discovery hypotheses",
+    status: "todo",
+    domains: ["ml"],
+    description: "TODO: import candidate structures from discovery tools as hypotheses, not automatic truth."
+  },
+  {
+    id: "root-cause",
+    label: "Root cause",
+    status: "todo",
+    domains: ["operations"],
+    description: "TODO: compare old/new mechanism behavior and attribute observed changes to upstream nodes."
+  },
+  {
+    id: "distribution-change",
+    label: "Distribution change",
+    status: "todo",
+    domains: ["operations", "ml"],
+    description: "TODO: attribute target distribution shifts to changed causal mechanisms, not only changed marginal correlations."
+  },
+  {
+    id: "latent-measurement",
+    label: "Latent measurement",
+    status: "todo",
+    domains: ["social", "epidemiology"],
+    description: "TODO: connect latent constructs, proxies, survey error, rounding, missingness, and attrition mechanisms."
+  }
+];
+
+const ROADMAP_TODOS = [
+  {
+    label: "Question-first analysis plan",
+    description: "TODO mode for population, unit, time zero, treatment strategies, outcome horizon, estimand, contrast, data source, and design assumptions. Keep it optional because it demands more upfront thinking than quick DAG sketching."
+  },
+  {
+    label: "Data-aware DAG",
+    description: "TODO: CSV import, column-to-node mapping, type/missingness summaries, positivity and balance checks, and graph implication tests. Synthetic datasets will plug in here later."
+  },
+  {
+    label: "Code/export bridge",
+    description: "TODO: generate R, Python, and Stata starter code for selected design modules plus a collaborator-facing report with DAG, assumptions, threats, and chosen estimand."
+  }
+];
+
+const CUSTOM_DENOUEMENT: ExampleDenouement = {
+  module: "Custom causal claim packet",
+  punchline: "Turn the graph into a claim packet: what can be said causally, what design supports it, and what assumptions could embarrass the claim.",
+  estimand: "Set an exposure and outcome, then choose whether the target is a total effect, direct effect, IV estimand, mediation contrast, policy effect, or descriptive mechanism claim.",
+  primaryOutput: "A concise conclusion backed by an adjustment or design verdict, visible causal and biasing paths, diagnostics, and unresolved threats.",
+  validity: "Credible only after the graph declares time order, treatment/exposure status, outcome, adjustment choices, selection nodes, latent nodes, and post-treatment variables.",
+  nextAction: "Pick a domain example closest to the current problem or mark exposure/outcome roles and use the identification panel to start the packet.",
+  sections: [
+    {
+      title: "Claim packet",
+      defaultOpen: true,
+      items: [
+        "Name the causal contrast before interpreting associations.",
+        "State the unit, population, exposure or treatment, outcome, time horizon, and contrast scale.",
+        "Separate the graph-supported claim from unresolved threats.",
+        "Write the final sentence as a claim with a validity qualifier, not as a dashboard observation."
+      ]
+    },
+    {
+      title: "Checklist",
+      defaultOpen: true,
+      items: [
+        "Mark exposure and outcome roles.",
+        "Mark adjusted, selected, and unobserved nodes.",
+        "Inspect causal and biasing paths.",
+        "Choose the identification mode in Advanced diagnostics.",
+        "Document any TODO design module that is relevant but not implemented yet."
+      ]
+    },
+    {
+      title: "Threats",
+      items: [
+        "Post-treatment adjustment can change the estimand or introduce bias.",
+        "Selection nodes can make the analysis population differ from the target population.",
+        "Latent variables mean the DAG is an assumption statement, not a complete control strategy.",
+        "Poor overlap, interference, and measurement error usually require domain-specific modules."
+      ]
+    }
+  ]
+};
+
 const BIBLIOGRAPHY: Array<{
   topic: BibliographyTopic;
   label: string;
@@ -254,6 +496,8 @@ export function App() {
   const [showCausal, setShowCausal] = useState(true);
   const [showBiasing, setShowBiasing] = useState(true);
   const [showAncestors, setShowAncestors] = useState(true);
+  const [workbenchMode, setWorkbenchMode] = useState<WorkbenchMode>("basic");
+  const [activeExampleId, setActiveExampleId] = useState<string | null>(EXAMPLES[0]?.id ?? null);
   const [modelText, setModelText] = useState(() => serializeModel(document));
   const [modelDirty, setModelDirty] = useState(false);
   const [simulation, setSimulation] = useState<SimulationResult>(() => runSimulation(document.graph, document.simulation));
@@ -263,6 +507,9 @@ export function App() {
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
   const selectedNode = selection?.kind === "node" ? findNode(document.graph, selection.id) : undefined;
   const selectedEdge = selection?.kind === "edge" ? findEdge(document.graph, selection.id) : undefined;
+  const activeExample = EXAMPLES.find((example) => example.id === activeExampleId) ?? null;
+  const activeDomain = activeExample?.domain ?? "classic";
+  const activeDenouement = activeExample ? exampleDenouement(activeExample.id) : null;
   const highlightedEdges = useMemo(() => computeHighlightedEdges(document.graph, analysis, showCausal, showBiasing), [analysis, document.graph, showBiasing, showCausal]);
   const ancestorIds = useMemo(() => showAncestors ? new Set(analysis.causalPaths.flat()) : new Set<string>(), [analysis.causalPaths, showAncestors]);
 
@@ -444,6 +691,7 @@ export function App() {
     const document = exampleDocument(id);
     if (!document) return;
     commit(document);
+    setActiveExampleId(id);
     setSelection(null);
   }, [commit]);
 
@@ -604,17 +852,16 @@ export function App() {
         <div className="toolbar" aria-label="Model actions">
           <IconButton label="New" onClick={() => {
             commit(emptyDocument());
+            setActiveExampleId(null);
             setSelection(null);
           }}><FilePlus2 size={18} /></IconButton>
-          <select aria-label="Examples" onChange={(event) => loadExample(event.target.value)} defaultValue="">
-            <option value="" disabled>Examples</option>
-            {EXAMPLES.map((example) => <option key={example.id} value={example.id}>{example.title}</option>)}
-          </select>
+          <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
           <IconButton label="Save" onClick={() => window.localStorage.setItem(STORAGE_KEY, JSON.stringify(document))}><Save size={18} /></IconButton>
           <IconButton label="Share" onClick={() => copyShareUrl(document)}><Share2 size={18} /></IconButton>
           <IconButton label="SVG" onClick={() => exportSvg()}><Download size={18} /></IconButton>
           <IconButton label="PNG" onClick={() => exportBitmap("png")}><Camera size={18} /></IconButton>
         </div>
+        <ModeToggle value={workbenchMode} onChange={setWorkbenchMode} />
       </header>
 
       <main className="workspace">
@@ -622,11 +869,17 @@ export function App() {
           <Section title="Scenario Builder">
             <ScenarioPanel
               document={document}
+              activeExampleId={activeExample?.id ?? null}
+              analysis={analysis}
               simulation={simulation}
               onResample={resample}
               onClearOverrides={clearOverrides}
               onClearSelections={clearSelections}
               onEmpiricalDraws={updateEmpiricalDraws}
+              mode={workbenchMode}
+              domain={activeDomain}
+              denouement={activeDenouement ?? CUSTOM_DENOUEMENT}
+              denouementTitle={activeExample?.title ?? document.title}
             />
           </Section>
           <Section title="Pairwise Output">
@@ -731,10 +984,100 @@ export function App() {
                 <button type="button" onClick={() => downloadText("nudagitty-model.tex", tikzDocument(document.graph))}><Download size={15} /> TikZ</button>
                 <button type="button" onClick={() => exportBitmap("jpeg")}><Camera size={15} /> JPEG</button>
               </Section>
+              <Section title="Workbench TODOs">
+                <RoadmapTodoPanel />
+              </Section>
             </div>
           </details>
         </section>
       </main>
+    </div>
+  );
+}
+
+function ModeToggle(props: { value: WorkbenchMode; onChange: (value: WorkbenchMode) => void }) {
+  return (
+    <div className="mode-toggle" aria-label="Workbench mode">
+      {(Object.keys(MODE_LABELS) as WorkbenchMode[]).map((mode) => (
+        <button
+          type="button"
+          className={props.value === mode ? "active" : ""}
+          aria-pressed={props.value === mode}
+          title={modeDescription(mode)}
+          onClick={() => props.onChange(mode)}
+          key={mode}
+        >
+          {MODE_LABELS[mode]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: string | null; onSelect: (id: string) => void }) {
+  const activeExample = EXAMPLES.find((example) => example.id === props.activeExampleId);
+  const domains = exampleDomainsForMode(props.mode);
+  const domainIds = new Set<ExampleDomain>(domains.map((domain) => domain.id));
+  const activeDomain = activeExample && domainIds.has(activeExample.domain) ? activeExample.domain : domains[0]?.id ?? "classic";
+  const [open, setOpen] = useState(false);
+  const [highlightedDomain, setHighlightedDomain] = useState<ExampleDomain>(activeDomain);
+
+  useEffect(() => {
+    setHighlightedDomain(activeDomain);
+  }, [activeDomain, props.mode]);
+
+  const highlighted = EXAMPLE_DOMAINS.find((domain) => domain.id === highlightedDomain) ?? domains[0];
+  const examples = EXAMPLES.filter((example) => example.domain === highlighted?.id);
+  return (
+    <div className="example-menu" onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        aria-label="Examples"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="example-menu-trigger"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{activeExample?.title ?? "Examples"}</span>
+      </button>
+      {open && (
+        <div className="example-menu-popover" role="menu">
+          <div className="example-domain-list" aria-label="Example domains">
+            {domains.map((domain) => (
+              <button
+                type="button"
+                className={domain.id === highlightedDomain ? "active" : ""}
+                onMouseEnter={() => setHighlightedDomain(domain.id)}
+                onFocus={() => setHighlightedDomain(domain.id)}
+                key={domain.id}
+              >
+                <span>{domain.label}</span>
+              </button>
+            ))}
+          </div>
+          <div className="example-choice-list">
+            <div className="example-choice-head">
+              <strong>{highlighted?.label}</strong>
+              <span>{highlighted?.description}</span>
+            </div>
+            {examples.map((example) => (
+              <button
+                type="button"
+                role="menuitem"
+                className={example.id === props.activeExampleId ? "active" : ""}
+                onClick={() => {
+                  props.onSelect(example.id);
+                  setOpen(false);
+                }}
+                key={example.id}
+              >
+                <strong>{example.title}</strong>
+                <span>{example.summary}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1248,9 +1591,7 @@ function BinaryPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel:
   const maxWeight = Math.max(...cells.map((cell) => cell.weight), 1);
   const cell = (x: 0 | 1, y: 0 | 1) => cells.find((candidate) => candidate.x === x && candidate.y === y) ?? { x, y, weight: 0, count: 0, percent: 0 };
   const yPositive = cell(1, 1).weight + cell(0, 1).weight;
-  const yNegative = cell(1, 0).weight + cell(0, 0).weight;
   const xPositive = cell(1, 1).weight + cell(1, 0).weight;
-  const xNegative = cell(0, 1).weight + cell(0, 0).weight;
 
   if (props.points.length === 0 || totalWeight <= 0) {
     return <p className="muted">No finite paired samples are available for this variable pair.</p>;
@@ -1258,31 +1599,6 @@ function BinaryPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel:
 
   return (
     <div className="binary-pair-view">
-      <div className="binary-summary-table" role="table" aria-label={`Binary table of ${props.xLabel} and ${props.yLabel}`}>
-        <div className="binary-table-row header" role="row">
-          <span role="columnheader">{abbreviateLabel(props.yLabel, 16)} \\ {abbreviateLabel(props.xLabel, 16)}</span>
-          <span role="columnheader">x=0</span>
-          <span role="columnheader">x=1</span>
-          <span role="columnheader">total</span>
-        </div>
-        {[1, 0].map((y) => (
-          <div className="binary-table-row" role="row" key={y}>
-            <span role="rowheader">y={y}</span>
-            {[0, 1].map((x) => {
-              const current = cell(x as 0 | 1, y as 0 | 1);
-              return <span role="cell" key={x}>{formatWeightedCount(current.weight)} <small>{formatPercent(current.percent)}</small></span>;
-            })}
-            <span role="cell">{formatWeightedCount(y === 1 ? yPositive : yNegative)}</span>
-          </div>
-        ))}
-        <div className="binary-table-row total" role="row">
-          <span role="rowheader">total</span>
-          <span role="cell">{formatWeightedCount(xNegative)}</span>
-          <span role="cell">{formatWeightedCount(xPositive)}</span>
-          <span role="cell">{formatWeightedCount(totalWeight)}</span>
-        </div>
-      </div>
-
       <div className="confusion-matrix" role="img" aria-label={`Confusion matrix of ${props.xLabel} and ${props.yLabel}`}>
         <div className="matrix-corner" />
         <div className="matrix-axis-label">x=0</div>
@@ -1298,6 +1614,7 @@ function BinaryPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel:
                 <div
                   className={agreement ? "matrix-cell agreement" : "matrix-cell disagreement"}
                   key={x}
+                  title={`${props.yLabel}=${y}, ${props.xLabel}=${x}: ${formatWeightedCount(current.weight)} (${formatPercent(current.percent)})`}
                   style={{
                     backgroundColor: agreement
                       ? `rgba(35, 113, 111, ${0.12 + intensity * 0.68})`
@@ -1325,11 +1642,17 @@ function BinaryPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel:
 
 function ScenarioPanel(props: {
   document: GraphDocument;
+  activeExampleId: string | null;
+  analysis: AnalysisReport;
   simulation: SimulationResult;
   onResample: () => void;
   onClearOverrides: () => void;
   onClearSelections: () => void;
   onEmpiricalDraws: (sampleSize: number) => void;
+  mode: WorkbenchMode;
+  domain: ExampleDomain;
+  denouement: ExampleDenouement;
+  denouementTitle: string;
 }) {
   const blocked = simulationBlocked(props.simulation);
   const overrides = Object.keys(props.document.simulation.overrides);
@@ -1349,8 +1672,334 @@ function ScenarioPanel(props: {
       </div>
       <DrawCountControl value={empiricalDraws} onChange={props.onEmpiricalDraws} />
       <ConditioningMethodPanel simulation={props.simulation} />
+      <CompletedExampleOutput
+        activeExampleId={props.activeExampleId}
+        analysis={props.analysis}
+        document={props.document}
+        simulation={props.simulation}
+      />
+      <DenouementPanel denouement={props.denouement} title={props.denouementTitle} />
+      <DesignModulePanel mode={props.mode} domain={props.domain} />
       {props.simulation.diagnostics.map((message) => <p className="warning" key={message}>{message}</p>)}
     </div>
+  );
+}
+
+function CompletedExampleOutput(props: {
+  activeExampleId: string | null;
+  analysis: AnalysisReport;
+  document: GraphDocument;
+  simulation: SimulationResult;
+}) {
+  if (props.activeExampleId === "simpson-severity") {
+    return (
+      <SimpsonCompletedOutputPanel
+        analysis={props.analysis}
+        document={props.document}
+        simulation={props.simulation}
+      />
+    );
+  }
+  if (props.activeExampleId === "icu-mortality-triage") {
+    return (
+      <IcuCompletedOutputPanel
+        analysis={props.analysis}
+        document={props.document}
+        simulation={props.simulation}
+      />
+    );
+  }
+  if (props.activeExampleId === "college-earnings") {
+    return (
+      <CollegeCompletedOutputPanel
+        analysis={props.analysis}
+        document={props.document}
+        simulation={props.simulation}
+      />
+    );
+  }
+  if (props.activeExampleId === "tutoring-scores") {
+    return (
+      <TutoringCompletedOutputPanel
+        analysis={props.analysis}
+        document={props.document}
+        simulation={props.simulation}
+      />
+    );
+  }
+  return null;
+}
+
+function SimpsonCompletedOutputPanel(props: { analysis: AnalysisReport; document: GraphDocument; simulation: SimulationResult }) {
+  const output = useMemo(
+    () => computeSimpsonCompletedOutput(props.document, props.simulation, props.analysis),
+    [props.analysis, props.document, props.simulation]
+  );
+
+  if (!output) {
+    return (
+      <div className="completed-output-card">
+        <div className="module-card-header">
+          <strong>Completed output</strong>
+          <span className="module-badge planned">needs roles</span>
+        </div>
+        <p className="muted">This completed Simpson output needs Treatment, Recovery, and Severity in the graph.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="completed-output-card">
+      <div className="module-card-header">
+        <strong>Completed output</strong>
+        <span className="module-badge active">Simpson ready</span>
+      </div>
+      <p className="completed-conclusion">{output.conclusion}</p>
+
+      <div className="completed-metric-grid">
+        <div>
+          <span>crude association</span>
+          <strong>{formatPercentagePoints(output.crudeDiff)}</strong>
+          <small>treated {formatPercent(output.crudeTreatedRecovery)} vs untreated {formatPercent(output.crudeUntreatedRecovery)}</small>
+        </div>
+        <div>
+          <span>do contrast</span>
+          <strong>{formatPercentagePoints(output.causalDiff)}</strong>
+          <small>do(1) {formatPercent(output.causalTreatedRecovery)} vs do(0) {formatPercent(output.causalUntreatedRecovery)}</small>
+        </div>
+        <div>
+          <span>severity separation</span>
+          <strong>{formatSignedValue(output.severityDiff)}</strong>
+          <small>treated mean {formatValue(output.treatedSeverity)} vs untreated {formatValue(output.untreatedSeverity)}</small>
+        </div>
+      </div>
+
+      <ul className="completed-output-list">
+        <li><strong>Fast visual read:</strong> {output.visualRead}</li>
+        <li><strong>Backdoor:</strong> Treatment &lt;- Severity -&gt; Recovery is the reason the aggregate comparison is not decisive.</li>
+        <li><strong>Adjustment set:</strong> {output.adjustmentSet}</li>
+        <li><strong>Paradox check:</strong> {output.paradox}</li>
+      </ul>
+    </div>
+  );
+}
+
+function IcuCompletedOutputPanel(props: { analysis: AnalysisReport; document: GraphDocument; simulation: SimulationResult }) {
+  const output = useMemo(
+    () => computeIcuCompletedOutput(props.document, props.simulation, props.analysis),
+    [props.analysis, props.document, props.simulation]
+  );
+
+  if (!output) {
+    return (
+      <div className="completed-output-card">
+        <div className="module-card-header">
+          <strong>Completed output</strong>
+          <span className="module-badge planned">needs roles</span>
+        </div>
+        <p className="muted">This completed ICU output needs Severity, ICU_admission, Death, and Triage_score in the graph.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="completed-output-card">
+      <div className="module-card-header">
+        <strong>Completed output</strong>
+        <span className="module-badge active">ICU ready</span>
+      </div>
+      <p className="completed-conclusion">{output.conclusion}</p>
+
+      <div className="completed-metric-grid">
+        <div>
+          <span>crude mortality</span>
+          <strong>{formatPercentagePoints(output.crudeDiff)}</strong>
+          <small>ICU {formatPercent(output.crudeIcuMortality)} vs no ICU {formatPercent(output.crudeWardMortality)}</small>
+        </div>
+        <div>
+          <span>do mortality</span>
+          <strong>{formatPercentagePoints(output.causalDiff)}</strong>
+          <small>do(ICU) {formatPercent(output.causalIcuMortality)} vs do(no ICU) {formatPercent(output.causalWardMortality)}</small>
+        </div>
+        <div>
+          <span>severity separation</span>
+          <strong>{formatSignedValue(output.severityDiff)}</strong>
+          <small>ICU mean {formatValue(output.icuSeverity)} vs no ICU {formatValue(output.wardSeverity)}</small>
+        </div>
+        <div>
+          <span>triage collider</span>
+          <strong>{formatSignedValue(output.triageDiff)}</strong>
+          <small>ICU mean {formatValue(output.icuTriage)} vs no ICU {formatValue(output.wardTriage)}</small>
+        </div>
+      </div>
+
+      <ul className="completed-output-list">
+        <li><strong>Fast visual read:</strong> {output.visualRead}</li>
+        <li><strong>Backdoor:</strong> ICU_admission &lt;- Severity -&gt; Death is the crude-comparison problem.</li>
+        <li><strong>Bad-control warning:</strong> {output.colliderWarning}</li>
+        <li><strong>Adjustment set:</strong> {output.adjustmentSet}</li>
+        <li><strong>Verdict:</strong> {output.verdict}</li>
+      </ul>
+    </div>
+  );
+}
+
+function CollegeCompletedOutputPanel(props: { analysis: AnalysisReport; document: GraphDocument; simulation: SimulationResult }) {
+  const output = useMemo(
+    () => computeCollegeCompletedOutput(props.document, props.simulation, props.analysis),
+    [props.analysis, props.document, props.simulation]
+  );
+
+  if (!output) {
+    return (
+      <div className="completed-output-card">
+        <div className="module-card-header">
+          <strong>Completed output</strong>
+          <span className="module-badge planned">needs roles</span>
+        </div>
+        <p className="muted">This completed college output needs Family_advantage, College, and Earnings in the graph.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="completed-output-card">
+      <div className="module-card-header">
+        <strong>Completed output</strong>
+        <span className="module-badge active">college ready</span>
+      </div>
+      <p className="completed-conclusion">{output.conclusion}</p>
+
+      <div className="completed-metric-grid">
+        <div>
+          <span>raw premium</span>
+          <strong>{formatSignedValue(output.crudePremium)}</strong>
+          <small>college {formatValue(output.crudeCollegeEarnings)} vs no college {formatValue(output.crudeNoCollegeEarnings)}</small>
+        </div>
+        <div>
+          <span>do premium</span>
+          <strong>{formatSignedValue(output.causalPremium)}</strong>
+          <small>do(college) {formatValue(output.causalCollegeEarnings)} vs do(no college) {formatValue(output.causalNoCollegeEarnings)}</small>
+        </div>
+        <div>
+          <span>advantage gap</span>
+          <strong>{formatPercentagePoints(output.advantageDiff)}</strong>
+          <small>college {formatPercent(output.collegeAdvantage)} vs no college {formatPercent(output.noCollegeAdvantage)}</small>
+        </div>
+      </div>
+
+      <ul className="completed-output-list">
+        <li><strong>Fast visual read:</strong> {output.visualRead}</li>
+        <li><strong>Backdoor:</strong> College &lt;- Family_advantage -&gt; Earnings inflates the raw wage premium.</li>
+        <li><strong>Adjustment set:</strong> {output.adjustmentSet}</li>
+        <li><strong>Verdict:</strong> {output.verdict}</li>
+      </ul>
+    </div>
+  );
+}
+
+function TutoringCompletedOutputPanel(props: { analysis: AnalysisReport; document: GraphDocument; simulation: SimulationResult }) {
+  const output = useMemo(
+    () => computeTutoringCompletedOutput(props.document, props.simulation, props.analysis),
+    [props.analysis, props.document, props.simulation]
+  );
+
+  if (!output) {
+    return (
+      <div className="completed-output-card">
+        <div className="module-card-header">
+          <strong>Completed output</strong>
+          <span className="module-badge planned">needs roles</span>
+        </div>
+        <p className="muted">This completed tutoring output needs Academic_need, Tutoring, and Test_score in the graph.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="completed-output-card">
+      <div className="module-card-header">
+        <strong>Completed output</strong>
+        <span className="module-badge active">sign flip ready</span>
+      </div>
+      <p className="completed-conclusion">{output.conclusion}</p>
+
+      <div className="completed-metric-grid">
+        <div>
+          <span>raw score gap</span>
+          <strong>{formatSignedValue(output.crudeGap)}</strong>
+          <small>tutored {formatValue(output.crudeTutoredScore)} vs not tutored {formatValue(output.crudeUntutoredScore)}</small>
+        </div>
+        <div>
+          <span>do score gain</span>
+          <strong>{formatSignedValue(output.causalGap)}</strong>
+          <small>do(tutoring) {formatValue(output.causalTutoredScore)} vs do(no tutoring) {formatValue(output.causalUntutoredScore)}</small>
+        </div>
+        <div>
+          <span>need gap</span>
+          <strong>{formatPercentagePoints(output.needDiff)}</strong>
+          <small>tutored {formatPercent(output.tutoredNeed)} vs not tutored {formatPercent(output.untutoredNeed)}</small>
+        </div>
+      </div>
+
+      <ul className="completed-output-list">
+        <li><strong>Fast visual read:</strong> {output.visualRead}</li>
+        <li><strong>Backdoor:</strong> Tutoring &lt;- Academic_need -&gt; Test_score makes the raw score gap point the wrong way.</li>
+        <li><strong>Adjustment set:</strong> {output.adjustmentSet}</li>
+        <li><strong>Verdict:</strong> {output.verdict}</li>
+      </ul>
+    </div>
+  );
+}
+
+function DenouementPanel({ denouement, title }: { denouement: ExampleDenouement; title: string }) {
+  return (
+    <div className="denouement-panel">
+      <div className="module-card-header">
+        <strong>Denouement</strong>
+        <span className="module-badge">{denouement.module}</span>
+      </div>
+      <div className="denouement-head">
+        <span>{title}</span>
+        <p>{denouement.punchline}</p>
+      </div>
+      <dl className="denouement-summary">
+        <div>
+          <dt>estimand</dt>
+          <dd>{denouement.estimand}</dd>
+        </div>
+        <div>
+          <dt>main output</dt>
+          <dd>{denouement.primaryOutput}</dd>
+        </div>
+        <div>
+          <dt>validity</dt>
+          <dd>{denouement.validity}</dd>
+        </div>
+        <div>
+          <dt>next action</dt>
+          <dd>{denouement.nextAction}</dd>
+        </div>
+      </dl>
+      <div className="denouement-sections">
+        {denouement.sections.map((section) => <DenouementSection section={section} key={section.title} />)}
+      </div>
+    </div>
+  );
+}
+
+function DenouementSection({ section }: { section: ExampleDenouement["sections"][number] }) {
+  const [open, setOpen] = useState(section.defaultOpen ?? false);
+  useEffect(() => {
+    setOpen(section.defaultOpen ?? false);
+  }, [section]);
+  return (
+    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary>{section.title}</summary>
+      <ul className="denouement-checklist">
+        {section.items.map((item) => <li key={item}>{item}</li>)}
+      </ul>
+    </details>
   );
 }
 
@@ -1407,7 +2056,7 @@ function HardDoEditor(props: {
         <input
           aria-label="hard do value"
           type="number"
-          value={hardDoValue}
+          value={formatInputNumber(hardDoValue)}
           min={binary ? 0 : undefined}
           max={binary ? 1 : undefined}
           step={binary ? 1 : 0.1}
@@ -1547,6 +2196,43 @@ function ConditioningMethodPanel({ simulation }: { simulation: SimulationResult 
           <span>analytic inactive</span>
         </>
       )}
+    </div>
+  );
+}
+
+function DesignModulePanel({ mode, domain }: { mode: WorkbenchMode; domain: ExampleDomain }) {
+  const modules = designModulesForMode(mode, domain);
+  return (
+    <div className="design-module-panel">
+      <div className="module-card-header">
+        <strong>Design modules</strong>
+        <span className="module-badge">{MODE_LABELS[mode]}</span>
+      </div>
+      <p className="muted">{designModuleScopeLabel(mode, domain)}</p>
+      <div className="design-module-list">
+        {modules.map((module) => (
+          <div className={`design-module-card ${module.status}`} key={module.id}>
+            <div className="module-card-header">
+              <strong>{module.label}</strong>
+              <span className={module.status === "usable" ? "module-badge active" : "module-badge planned"}>{module.status}</span>
+            </div>
+            <p>{module.description}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RoadmapTodoPanel() {
+  return (
+    <div className="roadmap-todo-panel">
+      {ROADMAP_TODOS.map((item) => (
+        <div className="roadmap-todo-card" key={item.label}>
+          <strong>{item.label}</strong>
+          <p>{item.description}</p>
+        </div>
+      ))}
     </div>
   );
 }
@@ -2217,7 +2903,7 @@ function RadioGroup({ value, options, onChange }: { value: string; options: Arra
 }
 
 function NumberField({ label, value, min, max, step = 0.1, onChange }: { label: string; value: number; min?: number; max?: number; step?: number; onChange: (value: number) => void }) {
-  return <label className="field"><span>{label}</span><input type="number" value={value} min={min} max={max} step={step} onChange={(event) => onChange(Number(event.target.value))} /></label>;
+  return <label className="field"><span>{label}</span><input type="number" value={formatInputNumber(value)} min={min} max={max} step={step} onChange={(event) => onChange(Number(event.target.value))} /></label>;
 }
 
 function SliderNumberField({ label, value, min, max, step = 0.1, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (value: number) => void }) {
@@ -2237,7 +2923,7 @@ function SliderNumberField({ label, value, min, max, step = 0.1, onChange }: { l
         <input
           aria-label={label}
           type="number"
-          value={value}
+          value={formatInputNumber(value)}
           min={range.min}
           max={range.max}
           step={step}
@@ -2278,6 +2964,30 @@ function sliderRange(min: number, max: number, value: number): { min: number; ma
 function List({ values, empty }: { values: string[]; empty: string }) {
   if (values.length === 0) return empty ? <p className="muted">{empty}</p> : null;
   return <ul className="plain-list">{values.map((value) => <li key={value}>{value}</li>)}</ul>;
+}
+
+function exampleDomainsForMode(mode: WorkbenchMode): ReadonlyArray<typeof EXAMPLE_DOMAINS[number]> {
+  if (mode === "basic") return EXAMPLE_DOMAINS.filter((domain) => domain.id === "classic");
+  return EXAMPLE_DOMAINS;
+}
+
+function designModulesForMode(mode: WorkbenchMode, domain: ExampleDomain) {
+  if (mode === "pro") return DESIGN_MODULES;
+  if (mode === "basic") return DESIGN_MODULES.filter((module) => module.basic);
+  return DESIGN_MODULES.filter((module) => module.basic || module.domains.includes(domain));
+}
+
+function designModuleScopeLabel(mode: WorkbenchMode, domain: ExampleDomain): string {
+  if (mode === "basic") return "Small set for quick DAG explanations and common internet-argument traps.";
+  if (mode === "pro") return "All tools are visible, including TODO modules that still need data and code plumbing.";
+  const meta = EXAMPLE_DOMAINS.find((item) => item.id === domain);
+  return `Recommended for ${meta?.label ?? "the selected domain"}. Switch to Pro to see everything.`;
+}
+
+function modeDescription(mode: WorkbenchMode): string {
+  if (mode === "basic") return "Quick teaching and sanity-check mode.";
+  if (mode === "domain") return "Show examples and modules recommended for the selected practitioner domain.";
+  return "Expose every module and TODO surface.";
 }
 
 function defaultScatterPair(graph: GraphModel): ScatterPair {
@@ -2377,6 +3087,296 @@ function weightedScatterStats(points: ScatterPoint[]): {
   const correlation = varianceX <= Number.EPSILON || varianceY <= Number.EPSILON ? null : covariance / Math.sqrt(varianceX * varianceY);
   const slope = varianceX <= Number.EPSILON ? 0 : covariance / varianceX;
   return { meanX, meanY, correlation, slope, intercept: meanY - slope * meanX };
+}
+
+function computeSimpsonCompletedOutput(document: GraphDocument, simulation: SimulationResult, analysis: AnalysisReport): SimpsonCompletedOutput | null {
+  const treatment = simulation.nodeStates.Treatment;
+  const recovery = simulation.nodeStates.Recovery;
+  const severity = simulation.nodeStates.Severity;
+  if (!treatment || !recovery || !severity) return null;
+
+  const treatedRecovery = weightedConditionalMean(treatment, recovery, 1);
+  const untreatedRecovery = weightedConditionalMean(treatment, recovery, 0);
+  const treatedSeverity = weightedConditionalMean(treatment, severity, 1);
+  const untreatedSeverity = weightedConditionalMean(treatment, severity, 0);
+  if (
+    treatedRecovery === null ||
+    untreatedRecovery === null ||
+    treatedSeverity === null ||
+    untreatedSeverity === null
+  ) return null;
+
+  const causalOne = runSimulation(document.graph, {
+    ...document.simulation,
+    overrides: { Treatment: 1 },
+    selections: {}
+  });
+  const causalZero = runSimulation(document.graph, {
+    ...document.simulation,
+    overrides: { Treatment: 0 },
+    selections: {}
+  });
+  const causalTreatedRecovery = causalOne.nodeStates.Recovery?.empirical.mean;
+  const causalUntreatedRecovery = causalZero.nodeStates.Recovery?.empirical.mean;
+  if (causalTreatedRecovery === null || causalTreatedRecovery === undefined || causalUntreatedRecovery === null || causalUntreatedRecovery === undefined) return null;
+
+  const crudeDiff = treatedRecovery - untreatedRecovery;
+  const causalDiff = causalTreatedRecovery - causalUntreatedRecovery;
+  const severityDiff = treatedSeverity - untreatedSeverity;
+  const adjustmentSet = formatAdjustmentSet(analysis.totalEffect.minimalSets[0] ?? ["Severity"]);
+  const severityDirection = severityDiff >= 0 ? "higher" : "lower";
+  const visualRead = `Treatment groups are separated on Severity: treated cases average ${formatValue(Math.abs(severityDiff))} severity units ${severityDirection}. If that vertical separation is visible, the crude recovery gap is already suspect.`;
+  const signsReverse = crudeDiff !== 0 && causalDiff !== 0 && Math.sign(crudeDiff) !== Math.sign(causalDiff);
+  const paradox = signsReverse
+    ? `Sign reversal: crude ${formatPercentagePoints(crudeDiff)} versus causal ${formatPercentagePoints(causalDiff)}.`
+    : `No sign reversal with the current parameters, but Severity still confounds the crude comparison.`;
+  const causalDirection = causalDiff >= 0 ? "raises" : "lowers";
+  const crudeDirection = crudeDiff >= 0 ? "higher" : "lower";
+  const conclusion = `Observed treated cases have a recovery rate ${formatPercentagePointMagnitude(crudeDiff)} ${crudeDirection} than untreated cases in the crude comparison. Because Severity drives both treatment and recovery, the reportable causal contrast is do(Treatment=1) versus do(Treatment=0): under this DAG, treatment ${causalDirection} recovery by ${formatPercentagePointMagnitude(causalDiff)}.`;
+
+  return {
+    crudeTreatedRecovery: treatedRecovery,
+    crudeUntreatedRecovery: untreatedRecovery,
+    crudeDiff,
+    causalTreatedRecovery,
+    causalUntreatedRecovery,
+    causalDiff,
+    treatedSeverity,
+    untreatedSeverity,
+    severityDiff,
+    adjustmentSet,
+    visualRead,
+    paradox,
+    conclusion
+  };
+}
+
+function computeIcuCompletedOutput(document: GraphDocument, simulation: SimulationResult, analysis: AnalysisReport): IcuCompletedOutput | null {
+  const admission = simulation.nodeStates.ICU_admission;
+  const death = simulation.nodeStates.Death;
+  const severity = simulation.nodeStates.Severity;
+  const triage = simulation.nodeStates.Triage_score;
+  if (!admission || !death || !severity || !triage) return null;
+
+  const crudeIcuMortality = weightedConditionalMean(admission, death, 1);
+  const crudeWardMortality = weightedConditionalMean(admission, death, 0);
+  const icuSeverity = weightedConditionalMean(admission, severity, 1);
+  const wardSeverity = weightedConditionalMean(admission, severity, 0);
+  const icuTriage = weightedConditionalMean(admission, triage, 1);
+  const wardTriage = weightedConditionalMean(admission, triage, 0);
+  if (
+    crudeIcuMortality === null ||
+    crudeWardMortality === null ||
+    icuSeverity === null ||
+    wardSeverity === null ||
+    icuTriage === null ||
+    wardTriage === null
+  ) return null;
+
+  const causalIcu = runSimulation(document.graph, {
+    ...document.simulation,
+    overrides: { ICU_admission: 1 },
+    selections: {}
+  });
+  const causalWard = runSimulation(document.graph, {
+    ...document.simulation,
+    overrides: { ICU_admission: 0 },
+    selections: {}
+  });
+  const causalIcuMortality = causalIcu.nodeStates.Death?.empirical.mean;
+  const causalWardMortality = causalWard.nodeStates.Death?.empirical.mean;
+  if (causalIcuMortality === null || causalIcuMortality === undefined || causalWardMortality === null || causalWardMortality === undefined) return null;
+
+  const crudeDiff = crudeIcuMortality - crudeWardMortality;
+  const causalDiff = causalIcuMortality - causalWardMortality;
+  const severityDiff = icuSeverity - wardSeverity;
+  const triageDiff = icuTriage - wardTriage;
+  const adjustmentSet = formatAdjustmentSet(analysis.totalEffect.minimalSets[0] ?? ["Severity"]);
+  const severityDirection = severityDiff >= 0 ? "sicker" : "less sick";
+  const triageDirection = triageDiff >= 0 ? "higher" : "lower";
+  const visualRead = `ICU patients are ${formatValue(Math.abs(severityDiff))} severity units ${severityDirection} on average. That vertical baseline gap makes raw ICU-versus-ward mortality a poor causal read before any arithmetic.`;
+  const colliderWarning = `Triage_score is drawn as ICU_admission -> Triage_score <- Severity. Its ICU group mean is ${formatValue(Math.abs(triageDiff))} points ${triageDirection}, but that score is a common effect/downstream summary, not a clean baseline confounder.`;
+  const signsReverse = crudeDiff !== 0 && causalDiff !== 0 && Math.sign(crudeDiff) !== Math.sign(causalDiff);
+  const verdict = signsReverse
+    ? `Sign reversal: crude ICU mortality ${formatPercentagePoints(crudeDiff)} versus causal ICU effect ${formatPercentagePoints(causalDiff)}.`
+    : `No sign reversal with the current parameters, but Severity still makes the crude ICU mortality gap non-causal.`;
+  const crudeDirection = crudeDiff >= 0 ? "higher" : "lower";
+  const causalDirection = causalDiff >= 0 ? "raises" : "lowers";
+  const conclusion = `Observed ICU patients have mortality ${formatPercentagePointMagnitude(crudeDiff)} ${crudeDirection} than non-ICU patients. They are also much sicker at baseline, so the reportable contrast is do(ICU_admission=1) versus do(ICU_admission=0): under this DAG, ICU admission ${causalDirection} mortality by ${formatPercentagePointMagnitude(causalDiff)}.`;
+
+  return {
+    crudeIcuMortality,
+    crudeWardMortality,
+    crudeDiff,
+    causalIcuMortality,
+    causalWardMortality,
+    causalDiff,
+    icuSeverity,
+    wardSeverity,
+    severityDiff,
+    icuTriage,
+    wardTriage,
+    triageDiff,
+    adjustmentSet,
+    visualRead,
+    colliderWarning,
+    verdict,
+    conclusion
+  };
+}
+
+function computeCollegeCompletedOutput(document: GraphDocument, simulation: SimulationResult, analysis: AnalysisReport): CollegeCompletedOutput | null {
+  const college = simulation.nodeStates.College;
+  const earnings = simulation.nodeStates.Earnings;
+  const advantage = simulation.nodeStates.Family_advantage;
+  if (!college || !earnings || !advantage) return null;
+
+  const crudeCollegeEarnings = weightedConditionalMean(college, earnings, 1);
+  const crudeNoCollegeEarnings = weightedConditionalMean(college, earnings, 0);
+  const collegeAdvantage = weightedConditionalMean(college, advantage, 1);
+  const noCollegeAdvantage = weightedConditionalMean(college, advantage, 0);
+  if (
+    crudeCollegeEarnings === null ||
+    crudeNoCollegeEarnings === null ||
+    collegeAdvantage === null ||
+    noCollegeAdvantage === null
+  ) return null;
+
+  const doCollege = runSimulation(document.graph, {
+    ...document.simulation,
+    overrides: { College: 1 },
+    selections: {}
+  });
+  const doNoCollege = runSimulation(document.graph, {
+    ...document.simulation,
+    overrides: { College: 0 },
+    selections: {}
+  });
+  const causalCollegeEarnings = doCollege.nodeStates.Earnings?.empirical.mean;
+  const causalNoCollegeEarnings = doNoCollege.nodeStates.Earnings?.empirical.mean;
+  if (causalCollegeEarnings === null || causalCollegeEarnings === undefined || causalNoCollegeEarnings === null || causalNoCollegeEarnings === undefined) return null;
+
+  const crudePremium = crudeCollegeEarnings - crudeNoCollegeEarnings;
+  const causalPremium = causalCollegeEarnings - causalNoCollegeEarnings;
+  const advantageDiff = collegeAdvantage - noCollegeAdvantage;
+  const adjustmentSet = formatAdjustmentSet(analysis.totalEffect.minimalSets[0] ?? ["Family_advantage"]);
+  const rawDirection = crudePremium >= 0 ? "higher" : "lower";
+  const causalDirection = causalPremium >= 0 ? "raises" : "lowers";
+  const visualRead = `College attendees are ${formatPercentagePointMagnitude(advantageDiff)} more likely to come from advantaged families. That group separation means the raw earnings gap is not automatically a college effect.`;
+  const overstatement = Math.abs(crudePremium) - Math.abs(causalPremium);
+  const verdict = crudePremium !== 0 && causalPremium !== 0 && Math.sign(crudePremium) !== Math.sign(causalPremium)
+    ? `Sign reversal: raw premium ${formatSignedValue(crudePremium)} versus causal premium ${formatSignedValue(causalPremium)}.`
+    : overstatement > 0
+      ? `Raw premium overstates the do-premium by ${formatValue(overstatement)} earnings units under this DAG.`
+      : `Raw premium and do-premium point the same way; Family_advantage still makes the raw comparison non-causal.`;
+  const conclusion = `College graduates earn ${formatValue(Math.abs(crudePremium))} earnings units ${rawDirection} than non-graduates in the raw comparison. Because Family_advantage affects both college attendance and earnings, the reportable causal contrast is do(College=1) versus do(College=0): under this DAG, college ${causalDirection} earnings by ${formatValue(Math.abs(causalPremium))} units.`;
+
+  return {
+    crudeCollegeEarnings,
+    crudeNoCollegeEarnings,
+    crudePremium,
+    causalCollegeEarnings,
+    causalNoCollegeEarnings,
+    causalPremium,
+    collegeAdvantage,
+    noCollegeAdvantage,
+    advantageDiff,
+    adjustmentSet,
+    visualRead,
+    verdict,
+    conclusion
+  };
+}
+
+function computeTutoringCompletedOutput(document: GraphDocument, simulation: SimulationResult, analysis: AnalysisReport): TutoringCompletedOutput | null {
+  const tutoring = simulation.nodeStates.Tutoring;
+  const score = simulation.nodeStates.Test_score;
+  const need = simulation.nodeStates.Academic_need;
+  if (!tutoring || !score || !need) return null;
+
+  const crudeTutoredScore = weightedConditionalMean(tutoring, score, 1);
+  const crudeUntutoredScore = weightedConditionalMean(tutoring, score, 0);
+  const tutoredNeed = weightedConditionalMean(tutoring, need, 1);
+  const untutoredNeed = weightedConditionalMean(tutoring, need, 0);
+  if (
+    crudeTutoredScore === null ||
+    crudeUntutoredScore === null ||
+    tutoredNeed === null ||
+    untutoredNeed === null
+  ) return null;
+
+  const doTutoring = runSimulation(document.graph, {
+    ...document.simulation,
+    overrides: { Tutoring: 1 },
+    selections: {}
+  });
+  const doNoTutoring = runSimulation(document.graph, {
+    ...document.simulation,
+    overrides: { Tutoring: 0 },
+    selections: {}
+  });
+  const causalTutoredScore = doTutoring.nodeStates.Test_score?.empirical.mean;
+  const causalUntutoredScore = doNoTutoring.nodeStates.Test_score?.empirical.mean;
+  if (causalTutoredScore === null || causalTutoredScore === undefined || causalUntutoredScore === null || causalUntutoredScore === undefined) return null;
+
+  const crudeGap = crudeTutoredScore - crudeUntutoredScore;
+  const causalGap = causalTutoredScore - causalUntutoredScore;
+  const needDiff = tutoredNeed - untutoredNeed;
+  const adjustmentSet = formatAdjustmentSet(analysis.totalEffect.minimalSets[0] ?? ["Academic_need"]);
+  const rawDirection = crudeGap >= 0 ? "higher" : "lower";
+  const causalDirection = causalGap >= 0 ? "raises" : "lowers";
+  const visualRead = `Tutored students are ${formatPercentagePointMagnitude(needDiff)} more likely to be high-need students. That imbalance is enough to make the raw score gap point the wrong way.`;
+  const signsReverse = crudeGap !== 0 && causalGap !== 0 && Math.sign(crudeGap) !== Math.sign(causalGap);
+  const verdict = signsReverse
+    ? `Sign reversal: raw gap ${formatSignedValue(crudeGap)} score points versus causal gain ${formatSignedValue(causalGap)} points.`
+    : `No sign reversal with the current parameters, but Academic_need still confounds the raw tutoring comparison.`;
+  const conclusion = `Tutored students score ${formatValue(Math.abs(crudeGap))} points ${rawDirection} than non-tutored students in the raw comparison. Because Academic_need drives both tutoring and lower scores, the reportable causal contrast is do(Tutoring=1) versus do(Tutoring=0): under this DAG, tutoring ${causalDirection} scores by ${formatValue(Math.abs(causalGap))} points.`;
+
+  return {
+    crudeTutoredScore,
+    crudeUntutoredScore,
+    crudeGap,
+    causalTutoredScore,
+    causalUntutoredScore,
+    causalGap,
+    tutoredNeed,
+    untutoredNeed,
+    needDiff,
+    adjustmentSet,
+    visualRead,
+    verdict,
+    conclusion
+  };
+}
+
+function weightedConditionalMean(conditionState: SimulatedNodeState, outcomeState: SimulatedNodeState, conditionValue: 0 | 1): number | null {
+  const conditions = conditionState.empirical.samples;
+  const outcomes = outcomeState.empirical.samples;
+  const length = Math.min(conditions.length, outcomes.length);
+  let numerator = 0;
+  let denominator = 0;
+  for (let index = 0; index < length; index += 1) {
+    const condition = conditions[index];
+    const outcome = outcomes[index];
+    if (condition === undefined || outcome === undefined || !Number.isFinite(condition) || !Number.isFinite(outcome)) continue;
+    if (coerceBinary(condition) !== conditionValue) continue;
+    const weight = empiricalSampleWeight(index, conditionState, outcomeState);
+    numerator += outcome * weight;
+    denominator += weight;
+  }
+  return denominator > 0 ? numerator / denominator : null;
+}
+
+function empiricalSampleWeight(index: number, ...states: SimulatedNodeState[]): number {
+  for (const state of states) {
+    const weight = state.empirical.weights[index];
+    if (weight !== undefined && Number.isFinite(weight)) return Math.max(0, weight);
+  }
+  return 1;
+}
+
+function formatAdjustmentSet(set: string[]): string {
+  return set.length === 0 ? "{}" : `{${set.join(", ")}}`;
 }
 
 function transformView(graph: GraphModel, mode: ViewMode): GraphModel {
@@ -2860,6 +3860,16 @@ function formatValue(value: number): string {
   return value.toFixed(2);
 }
 
+function formatInputNumber(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  if (Object.is(value, -0) || value === 0) return "0";
+  if (Number.isInteger(value)) return String(value);
+  const abs = Math.abs(value);
+  if (abs < 0.001) return Number(value.toPrecision(3)).toString();
+  const decimals = abs >= 100 ? 1 : abs >= 10 ? 2 : abs >= 1 ? 3 : 4;
+  return value.toFixed(decimals).replace(/0+$/, "").replace(/\.$/, "");
+}
+
 function formatSignedValue(value: number): string {
   const formatted = formatValue(Math.abs(value));
   return `${value >= 0 ? "+" : "-"}${formatted}`;
@@ -2868,6 +3878,16 @@ function formatSignedValue(value: number): string {
 function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return "0%";
   return `${Math.round(value * 100)}%`;
+}
+
+function formatPercentagePoints(value: number): string {
+  if (!Number.isFinite(value)) return "0 pp";
+  return `${value >= 0 ? "+" : "-"}${formatValue(Math.abs(value * 100))} pp`;
+}
+
+function formatPercentagePointMagnitude(value: number): string {
+  if (!Number.isFinite(value)) return "0 pp";
+  return `${formatValue(Math.abs(value * 100))} pp`;
 }
 
 function inferenceModeLabel(mode: SimulationInferenceMode | "forward"): string {

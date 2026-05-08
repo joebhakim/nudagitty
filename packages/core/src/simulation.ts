@@ -28,7 +28,21 @@ interface LinearGaussianJoint {
   ids: string[];
   mean: number[];
   covariance: number[][];
+  binaryLatents: Map<string, BinaryLatentInfo>;
+  binaryOverridden: Map<string, number>;
 }
+
+interface BinaryLatentInfo {
+  approximate: boolean;
+}
+
+interface BinaryLatentNoise {
+  meanShift: number;
+  noiseVariance: number;
+  approximate: boolean;
+}
+
+const LOGIT_LATENT_VARIANCE = (Math.PI * Math.PI) / 3;
 
 interface LinearGaussianConditioning {
   nodeAnalytics: Map<string, SimulatedAnalyticDistribution>;
@@ -700,25 +714,39 @@ function buildLinearGaussianJoint(graph: GraphModel, spec: SimulationSpec, order
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
   const mean = Array.from({ length: ids.length }, () => 0);
   const covariance = Array.from({ length: ids.length }, () => Array.from({ length: ids.length }, () => 0));
+  const binaryLatents = new Map<string, BinaryLatentInfo>();
+  const binaryOverridden = new Map<string, number>();
 
   for (let index = 0; index < ids.length; index += 1) {
     const id = ids[index];
     if (!id) return null;
     const node = nodesById.get(id);
     const variable = normalizeVariableModel(node?.variable);
-    if (!isLinearGaussianValueType(variable)) return null;
     const mechanism = normalizeNodeMechanism(spec.nodes[id]);
     const row = covariance[index];
     if (!row) return null;
+    const parents = directedParents(graph, id);
+    const isRoot = parents.length === 0;
+    const continuous = isLinearGaussianValueType(variable);
+    const binaryLatent = continuous ? null : binaryLatentNoise(variable, mechanism, isRoot);
+    if (!continuous && !binaryLatent) return null;
+    if (parents.some((parent) => binaryLatents.has(parent))) return null;
 
     if (Object.hasOwn(spec.overrides, id)) {
-      mean[index] = coerceVariableValue(spec.overrides[id] ?? 0, variable);
+      const overrideValue = coerceVariableValue(spec.overrides[id] ?? 0, variable);
+      mean[index] = overrideValue;
       row[index] = 0;
+      if (variable.valueType === "binary") binaryOverridden.set(id, overrideValue);
       continue;
     }
 
-    const parents = directedParents(graph, id);
-    if (parents.length === 0) {
+    if (isRoot) {
+      if (binaryLatent) {
+        mean[index] = binaryLatent.meanShift;
+        row[index] = binaryLatent.noiseVariance;
+        binaryLatents.set(id, { approximate: binaryLatent.approximate });
+        continue;
+      }
       const moments = linearGaussianDistributionMoments(mechanism.distribution);
       if (!moments) return null;
       mean[index] = moments.mean;
@@ -726,7 +754,8 @@ function buildLinearGaussianJoint(graph: GraphModel, spec: SimulationSpec, order
       continue;
     }
 
-    if (mechanism.combiner !== "additive" || mechanism.interactions.length > 0) return null;
+    if (mechanism.interactions.length > 0) return null;
+    if (!binaryLatent && mechanism.combiner !== "additive") return null;
     const noiseMoments = linearGaussianDistributionMoments(mechanism.noise);
     if (!noiseMoments) return null;
 
@@ -755,24 +784,63 @@ function buildLinearGaussianJoint(graph: GraphModel, spec: SimulationSpec, order
         return innerSum + left.coefficient * right.coefficient * (covariance[left.index]?.[right.index] ?? 0);
       }, 0);
     }, 0);
-    row[index] = Math.max(0, structuralVariance + noiseMoments.variance);
+    const latentNoise = binaryLatent?.noiseVariance ?? 0;
+    row[index] = Math.max(0, structuralVariance + noiseMoments.variance + latentNoise);
+    if (binaryLatent) binaryLatents.set(id, { approximate: binaryLatent.approximate });
   }
 
-  return { ids, mean, covariance };
+  return { ids, mean, covariance, binaryLatents, binaryOverridden };
+}
+
+function binaryLatentNoise(variable: VariableModel, mechanism: NodeMechanism, isRoot: boolean): BinaryLatentNoise | null {
+  if (variable.valueType !== "binary") return null;
+  if (mechanism.interactions.length > 0) return null;
+  if (isRoot) {
+    if (mechanism.distribution.kind === "bernoulli") {
+      const p = clampProbability(mechanism.distribution.p);
+      return { meanShift: inverseStandardNormalCdf(p), noiseVariance: 1, approximate: false };
+    }
+    return null;
+  }
+  if (mechanism.combiner === "bernoulli_logit" || mechanism.combiner === "bounded_logistic") {
+    return { meanShift: 0, noiseVariance: LOGIT_LATENT_VARIANCE, approximate: true };
+  }
+  return null;
 }
 
 function conditionLinearGaussianJoint(joint: LinearGaussianJoint, conditions: Array<[string, SimulationSelectionCondition]>): LinearGaussianConditioning | null {
+  if (conditions.length === 0) return null;
+  if (conditions.length === 2) {
+    const c1 = conditions[0];
+    const c2 = conditions[1];
+    if (!c1 || !c2 || c1[0] === c2[0]) return null;
+    return conditionLinearGaussianJointPair(joint, c1, c2);
+  }
   if (conditions.length !== 1) return null;
   const [conditionId, condition] = conditions[0] ?? [];
   if (!conditionId || !condition) return null;
   const conditionIndex = joint.ids.indexOf(conditionId);
   if (conditionIndex < 0) return null;
+  const conditionIsBinary = joint.binaryLatents.has(conditionId);
+  const binaryDirection = conditionIsBinary ? translateBinaryCondition(condition) : null;
+  if (conditionIsBinary && (binaryDirection === "trivial" || binaryDirection === "impossible")) return null;
+  const effectiveCondition: SimulationSelectionCondition = conditionIsBinary
+    ? { operator: binaryDirection === "high" ? "at_least" : "at_most", value: 0, upper: null, sampling: condition.sampling }
+    : condition;
   const conditionMean = joint.mean[conditionIndex] ?? 0;
   const conditionVariance = joint.covariance[conditionIndex]?.[conditionIndex] ?? 0;
   if (conditionVariance <= VARIANCE_EPSILON) return null;
   const conditionSd = Math.sqrt(conditionVariance);
-  const truncated = conditionalSelectionMoments(conditionMean, conditionSd, condition);
+  const truncated = conditionalSelectionMoments(conditionMean, conditionSd, effectiveCondition);
   if (!truncated) return null;
+  const anyApproximate = Array.from(joint.binaryLatents.values()).some((info) => info.approximate);
+  const noteSuffix = formatSelectionCondition(conditionId, condition);
+  const noteKind = anyApproximate
+    ? "logit-as-probit moment match"
+    : conditionIsBinary
+      ? "multivariate probit"
+      : (truncated.exact ? "analytic linear Gaussian" : "analytic linear Gaussian moment match");
+  const note = `${noteKind} conditioned on ${noteSuffix}`;
 
   const nodeAnalytics = new Map<string, SimulatedAnalyticDistribution>();
   for (let index = 0; index < joint.ids.length; index += 1) {
@@ -785,21 +853,220 @@ function conditionLinearGaussianJoint(joint: LinearGaussianJoint, conditions: Ar
     const residualVariance = Math.max(0, unconditionalVariance - (covarianceWithCondition * covarianceWithCondition / conditionVariance));
     const mean = unconditionalMean + slope * (truncated.mean - conditionMean);
     const variance = Math.max(0, residualVariance + slope * slope * truncated.variance);
+    const isLatent = joint.binaryLatents.has(id);
+    const overrideValue = joint.binaryOverridden.get(id);
+    const isBinary = isLatent || overrideValue !== undefined;
+    if (isBinary) {
+      const probability = overrideValue !== undefined
+        ? overrideValue
+        : index === conditionIndex
+          ? (binaryDirection === "high" ? 1 : 0)
+          : binaryProbabilityFromLatent(mean, variance);
+      nodeAnalytics.set(id, {
+        distribution: { kind: "bernoulli", p: probability },
+        mean: probability,
+        variance: probability * (1 - probability),
+        note,
+        density: { kind: "bernoulli", p: probability }
+      });
+      continue;
+    }
     const distribution: NodeDistribution = variance <= VARIANCE_EPSILON ? { kind: "constant", value: mean } : { kind: "normal", mean, sd: Math.sqrt(variance) };
-    const density = index === conditionIndex ? truncatedNormalDensitySpec(conditionMean, conditionSd, condition, truncated.exact) : undefined;
+    const density = index === conditionIndex && !conditionIsBinary ? truncatedNormalDensitySpec(conditionMean, conditionSd, condition, truncated.exact) : undefined;
     nodeAnalytics.set(id, {
       distribution,
       mean,
       variance,
-      note: truncated.exact ? `linear Gaussian conditioned on ${formatSelectionCondition(conditionId, condition)}` : `linear Gaussian moment match conditioned on ${formatSelectionCondition(conditionId, condition)}`,
+      note,
       ...(density ? { density } : {})
     });
   }
 
   return {
     nodeAnalytics,
-    note: `${truncated.exact ? "analytic linear Gaussian conditioning" : "analytic linear Gaussian moment-matched conditioning"}: ${formatSelectionCondition(conditionId, condition)}`
+    note
   };
+}
+
+interface PairConditionBounds {
+  idx: number;
+  mu: number;
+  sd: number;
+  lower: number;
+  upper: number;
+  isBinary: boolean;
+  binaryDirection: "high" | "low" | null;
+}
+
+function conditionToWBounds(joint: LinearGaussianJoint, conditionId: string, cond: SimulationSelectionCondition): PairConditionBounds | null {
+  const idx = joint.ids.indexOf(conditionId);
+  if (idx < 0) return null;
+  const mu = joint.mean[idx] ?? 0;
+  const variance = joint.covariance[idx]?.[idx] ?? 0;
+  if (variance <= VARIANCE_EPSILON) return null;
+  const sd = Math.sqrt(variance);
+  const isBinary = joint.binaryLatents.has(conditionId);
+  if (isBinary) {
+    const dir = translateBinaryCondition(cond);
+    if (dir !== "high" && dir !== "low") return null;
+    return dir === "high"
+      ? { idx, mu, sd, lower: -mu / sd, upper: Number.POSITIVE_INFINITY, isBinary: true, binaryDirection: "high" }
+      : { idx, mu, sd, lower: Number.NEGATIVE_INFINITY, upper: -mu / sd, isBinary: true, binaryDirection: "low" };
+  }
+  if (cond.operator === "at_least") {
+    return { idx, mu, sd, lower: (cond.value - mu) / sd, upper: Number.POSITIVE_INFINITY, isBinary: false, binaryDirection: null };
+  }
+  if (cond.operator === "at_most") {
+    return { idx, mu, sd, lower: Number.NEGATIVE_INFINITY, upper: (cond.value - mu) / sd, isBinary: false, binaryDirection: null };
+  }
+  const upper = cond.upper ?? cond.value;
+  if (Math.abs(upper - cond.value) <= 1e-9) return null;
+  return {
+    idx,
+    mu,
+    sd,
+    lower: (cond.value - mu) / sd,
+    upper: (upper - mu) / sd,
+    isBinary: false,
+    binaryDirection: null
+  };
+}
+
+function conditionLinearGaussianJointPair(
+  joint: LinearGaussianJoint,
+  c1: [string, SimulationSelectionCondition],
+  c2: [string, SimulationSelectionCondition]
+): LinearGaussianConditioning | null {
+  const [id1, cond1] = c1;
+  const [id2, cond2] = c2;
+  if (id1 === id2) return null;
+  const b1 = conditionToWBounds(joint, id1, cond1);
+  const b2 = conditionToWBounds(joint, id2, cond2);
+  if (!b1 || !b2) return null;
+
+  const cov12 = joint.covariance[b1.idx]?.[b2.idx] ?? 0;
+  const rho = cov12 / (b1.sd * b2.sd);
+  const moments = bivariateRectangleMoments(b1.lower, b1.upper, b2.lower, b2.upper, rho);
+  if (!moments) return null;
+
+  const ez1 = b1.mu + b1.sd * moments.mean1;
+  const ez2 = b2.mu + b2.sd * moments.mean2;
+  const vz1 = b1.sd * b1.sd * moments.var1;
+  const vz2 = b2.sd * b2.sd * moments.var2;
+  const cz12 = b1.sd * b2.sd * moments.cov;
+
+  const var1 = b1.sd * b1.sd;
+  const var2 = b2.sd * b2.sd;
+  const det = var1 * var2 - cov12 * cov12;
+  if (Math.abs(det) <= VARIANCE_EPSILON) return null;
+  const inv00 = var2 / det;
+  const inv11 = var1 / det;
+  const inv01 = -cov12 / det;
+
+  const anyApproximate = Array.from(joint.binaryLatents.values()).some((info) => info.approximate);
+  const bothBinary = b1.isBinary && b2.isBinary;
+  const anyBinary = b1.isBinary || b2.isBinary;
+  const noteSuffix = `${formatSelectionCondition(id1, cond1)}, ${formatSelectionCondition(id2, cond2)}`;
+  const noteKind = bothBinary
+    ? (anyApproximate ? "logit-as-probit moment match orthant" : "multivariate probit orthant")
+    : anyBinary
+      ? (anyApproximate ? "logit-as-probit moment match joint" : "multivariate probit joint")
+      : "analytic linear Gaussian joint moment match";
+  const note = `${noteKind} conditioned on ${noteSuffix}`;
+
+  const nodeAnalytics = new Map<string, SimulatedAnalyticDistribution>();
+  for (let index = 0; index < joint.ids.length; index += 1) {
+    const id = joint.ids[index];
+    if (!id) continue;
+    const isLatent = joint.binaryLatents.has(id);
+    const overrideValue = joint.binaryOverridden.get(id);
+    const isBinaryNode = isLatent || overrideValue !== undefined;
+
+    let conditionalMean: number;
+    let conditionalVariance: number;
+    if (index === b1.idx) {
+      conditionalMean = ez1;
+      conditionalVariance = vz1;
+    } else if (index === b2.idx) {
+      conditionalMean = ez2;
+      conditionalVariance = vz2;
+    } else {
+      const sigmaY1 = joint.covariance[index]?.[b1.idx] ?? 0;
+      const sigmaY2 = joint.covariance[index]?.[b2.idx] ?? 0;
+      const s1 = sigmaY1 * inv00 + sigmaY2 * inv01;
+      const s2 = sigmaY1 * inv01 + sigmaY2 * inv11;
+      const muY = joint.mean[index] ?? 0;
+      const varY = joint.covariance[index]?.[index] ?? 0;
+      const residualVar = Math.max(0, varY - s1 * sigmaY1 - s2 * sigmaY2);
+      conditionalMean = muY + s1 * (ez1 - b1.mu) + s2 * (ez2 - b2.mu);
+      conditionalVariance = Math.max(0, residualVar + s1 * s1 * vz1 + s2 * s2 * vz2 + 2 * s1 * s2 * cz12);
+    }
+
+    if (isBinaryNode) {
+      let probability: number;
+      if (overrideValue !== undefined) {
+        probability = overrideValue;
+      } else if (index === b1.idx && b1.isBinary) {
+        probability = b1.binaryDirection === "high" ? 1 : 0;
+      } else if (index === b2.idx && b2.isBinary) {
+        probability = b2.binaryDirection === "high" ? 1 : 0;
+      } else {
+        probability = binaryProbabilityFromLatent(conditionalMean, conditionalVariance);
+      }
+      nodeAnalytics.set(id, {
+        distribution: { kind: "bernoulli", p: probability },
+        mean: probability,
+        variance: probability * (1 - probability),
+        note,
+        density: { kind: "bernoulli", p: probability }
+      });
+      continue;
+    }
+    const distribution: NodeDistribution = conditionalVariance <= VARIANCE_EPSILON
+      ? { kind: "constant", value: conditionalMean }
+      : { kind: "normal", mean: conditionalMean, sd: Math.sqrt(conditionalVariance) };
+    let density: SimulatedAnalyticDistribution["density"] | undefined;
+    if (index === b1.idx && !b1.isBinary) density = continuousDensityForCondition(b1.mu, b1.sd, cond1);
+    else if (index === b2.idx && !b2.isBinary) density = continuousDensityForCondition(b2.mu, b2.sd, cond2);
+    nodeAnalytics.set(id, {
+      distribution,
+      mean: conditionalMean,
+      variance: conditionalVariance,
+      note,
+      ...(density ? { density } : {})
+    });
+  }
+
+  return { nodeAnalytics, note };
+}
+
+function continuousDensityForCondition(mean: number, sd: number, cond: SimulationSelectionCondition): SimulatedAnalyticDistribution["density"] | undefined {
+  if (sd <= VARIANCE_EPSILON) return undefined;
+  if (cond.operator === "at_least") return { kind: "truncated_normal", mean, sd, lower: cond.value, upper: null };
+  if (cond.operator === "at_most") return { kind: "truncated_normal", mean, sd, lower: null, upper: cond.value };
+  const upper = cond.upper ?? cond.value;
+  return { kind: "truncated_normal", mean, sd, lower: cond.value, upper };
+}
+
+function translateBinaryCondition(condition: SimulationSelectionCondition): "high" | "low" | "trivial" | "impossible" {
+  const include0 = matchesBinaryValue(0, condition);
+  const include1 = matchesBinaryValue(1, condition);
+  if (include0 && include1) return "trivial";
+  if (include1) return "high";
+  if (include0) return "low";
+  return "impossible";
+}
+
+function matchesBinaryValue(value: 0 | 1, condition: SimulationSelectionCondition): boolean {
+  if (condition.operator === "at_least") return value >= condition.value;
+  if (condition.operator === "at_most") return value <= condition.value;
+  const upper = condition.upper ?? condition.value;
+  return value >= condition.value && value <= upper;
+}
+
+function binaryProbabilityFromLatent(latentMean: number, latentVariance: number): number {
+  const sd = Math.sqrt(Math.max(latentVariance, VARIANCE_EPSILON));
+  return clampProbability(standardNormalCdf(latentMean / sd));
 }
 
 function truncatedNormalDensitySpec(
@@ -922,6 +1189,115 @@ function erf(value: number): number {
   const t = 1 / (1 + 0.3275911 * x);
   const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
   return sign * y;
+}
+
+const GAUSS_LEGENDRE_16_NODES: number[] = [
+  -0.9894009349916499, -0.9445750230732326, -0.8656312023878317, -0.7554044083550030,
+  -0.6178762444026438, -0.4580167776572274, -0.2816035507792589, -0.0950125098376374,
+   0.0950125098376374,  0.2816035507792589,  0.4580167776572274,  0.6178762444026438,
+   0.7554044083550030,  0.8656312023878317,  0.9445750230732326,  0.9894009349916499
+];
+
+const GAUSS_LEGENDRE_16_WEIGHTS: number[] = [
+  0.0271524594117541, 0.0622535239386479, 0.0951585116824928, 0.1246289712555339,
+  0.1495959888165767, 0.1691565193950025, 0.1826034150449236, 0.1894506104550685,
+  0.1894506104550685, 0.1826034150449236, 0.1691565193950025, 0.1495959888165767,
+  0.1246289712555339, 0.0951585116824928, 0.0622535239386479, 0.0271524594117541
+];
+
+function gaussLegendre16(integrand: (x: number) => number, lower: number, upper: number): number {
+  if (lower === upper) return 0;
+  const half = (upper - lower) / 2;
+  const mid = (upper + lower) / 2;
+  let sum = 0;
+  for (let i = 0; i < 16; i += 1) {
+    const x = mid + half * (GAUSS_LEGENDRE_16_NODES[i] ?? 0);
+    sum += (GAUSS_LEGENDRE_16_WEIGHTS[i] ?? 0) * integrand(x);
+  }
+  return half * sum;
+}
+
+function bivariateNormalCdf(h: number, k: number, rho: number): number {
+  if (rho === 0) return standardNormalCdf(h) * standardNormalCdf(k);
+  const r = Math.max(-0.9999, Math.min(0.9999, rho));
+  const hSq = h * h;
+  const kSq = k * k;
+  const integrand = (rValue: number): number => {
+    const denom = 1 - rValue * rValue;
+    if (denom <= 1e-12) return 0;
+    const exponent = -(hSq - 2 * rValue * h * k + kSq) / (2 * denom);
+    if (exponent < -700) return 0;
+    return Math.exp(exponent) / (2 * Math.PI * Math.sqrt(denom));
+  };
+  return standardNormalCdf(h) * standardNormalCdf(k) + gaussLegendre16(integrand, 0, r);
+}
+
+interface BivariateMoments {
+  L: number;
+  mean1: number;
+  mean2: number;
+  var1: number;
+  var2: number;
+  cov: number;
+}
+
+function bivariateRectangleMoments(a1: number, b1: number, a2: number, b2: number, rho: number): BivariateMoments | null {
+  if (a1 >= b1 || a2 >= b2) return null;
+  const r = Math.max(-0.9999, Math.min(0.9999, rho));
+  const oneMinusRsq = Math.max(1 - r * r, 1e-12);
+  const root = Math.sqrt(oneMinusRsq);
+
+  const Phi2 = (h: number, k: number): number => {
+    if (h === Number.NEGATIVE_INFINITY || k === Number.NEGATIVE_INFINITY) return 0;
+    if (h === Number.POSITIVE_INFINITY) return k === Number.POSITIVE_INFINITY ? 1 : standardNormalCdf(k);
+    if (k === Number.POSITIVE_INFINITY) return standardNormalCdf(h);
+    return bivariateNormalCdf(h, k, r);
+  };
+
+  const phi2 = (h: number, k: number): number => {
+    if (!Number.isFinite(h) || !Number.isFinite(k)) return 0;
+    return Math.exp(-(h * h - 2 * r * h * k + k * k) / (2 * oneMinusRsq)) / (2 * Math.PI * root);
+  };
+
+  const m = (t: number, aOther: number, bOther: number): number => {
+    if (!Number.isFinite(t)) return 0;
+    const upper = bOther === Number.POSITIVE_INFINITY ? 1 : standardNormalCdf((bOther - r * t) / root);
+    const lower = aOther === Number.NEGATIVE_INFINITY ? 0 : standardNormalCdf((aOther - r * t) / root);
+    return standardNormalPdf(t) * (upper - lower);
+  };
+
+  const L = Phi2(b1, b2) - Phi2(a1, b2) - Phi2(b1, a2) + Phi2(a1, a2);
+  if (L <= VARIANCE_EPSILON) return null;
+
+  const m1a = m(a1, a2, b2);
+  const m1b = m(b1, a2, b2);
+  const m2a = m(a2, a1, b1);
+  const m2b = m(b2, a1, b1);
+
+  const F1 = m1a - m1b;
+  const F2 = m2a - m2b;
+
+  const safeProduct = (t: number, value: number): number => (Number.isFinite(t) ? t * value : 0);
+  const G1 = safeProduct(a1, m1a) - safeProduct(b1, m1b);
+  const G2 = safeProduct(a2, m2a) - safeProduct(b2, m2b);
+
+  const Corner = phi2(a1, a2) - phi2(a1, b2) - phi2(b1, a2) + phi2(b1, b2);
+
+  const mean1 = (F1 + r * F2) / L;
+  const mean2 = (r * F1 + F2) / L;
+
+  const ew1sq = 1 + (G1 + r * r * G2) / L + r * (1 - r * r) * Corner / L;
+  const ew2sq = 1 + (G2 + r * r * G1) / L + r * (1 - r * r) * Corner / L;
+  const ew1w2 = r + r * (G1 + G2) / L + (1 - r * r) * Corner / L;
+
+  return {
+    L,
+    mean1,
+    mean2,
+    var1: Math.max(0, ew1sq - mean1 * mean1),
+    var2: Math.max(0, ew2sq - mean2 * mean2),
+    cov: ew1w2 - mean1 * mean2
+  };
 }
 
 function empiricalSampleSize(graph: GraphModel): number {

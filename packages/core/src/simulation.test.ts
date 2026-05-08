@@ -286,6 +286,178 @@ describe("SEM simulation", () => {
     expect(result.values.B).toBe(0.5);
   });
 
+  it("analytically conditions a logit binary leaf on a continuous tail", () => {
+    const doc = parseModel(`dag {
+      X
+      Y
+      X -> Y
+    }`).document;
+    const y = doc.graph.nodes.find((node) => node.id === "Y");
+    const edge = doc.graph.edges[0];
+    if (!y || !edge) throw new Error("missing fixture graph");
+    y.variable = { ...y.variable, valueType: "binary" };
+    doc.simulation.nodes.X = normalizeNodeMechanism({ distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
+    doc.simulation.nodes.Y = normalizeNodeMechanism({ intercept: 0, noise: { kind: "constant", value: 0 }, combiner: "bernoulli_logit" });
+    doc.simulation.edges[edge.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
+    doc.simulation.selections.X = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+
+    const result = runSimulation(doc.graph, doc.simulation);
+    expect(result.conditioning.primaryMethod).toBe("analytic");
+    expect(result.conditioning.analytic).toContain("logit-as-probit");
+    const yAnalytic = result.nodeStates.Y?.analytic;
+    expect(yAnalytic?.distribution.kind).toBe("bernoulli");
+    expect((yAnalytic?.mean ?? 0)).toBeGreaterThan(0.5);
+    expect(yAnalytic?.density).toEqual({ kind: "bernoulli", p: yAnalytic?.mean });
+  });
+
+  it("analytically conditions a continuous parent on a binary outcome", () => {
+    const doc = parseModel(`dag {
+      X
+      Y
+      X -> Y
+    }`).document;
+    const y = doc.graph.nodes.find((node) => node.id === "Y");
+    const edge = doc.graph.edges[0];
+    if (!y || !edge) throw new Error("missing fixture graph");
+    y.variable = { ...y.variable, valueType: "binary" };
+    doc.simulation.nodes.X = normalizeNodeMechanism({ distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
+    doc.simulation.nodes.Y = normalizeNodeMechanism({ intercept: 0, noise: { kind: "constant", value: 0 }, combiner: "bernoulli_logit" });
+    doc.simulation.edges[edge.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
+    doc.simulation.selections.Y = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+
+    const result = runSimulation(doc.graph, doc.simulation);
+    expect(result.conditioning.primaryMethod).toBe("analytic");
+    const xAnalytic = result.nodeStates.X?.analytic;
+    expect(xAnalytic?.distribution.kind).toBe("normal");
+    expect((xAnalytic?.mean ?? 0)).toBeGreaterThan(0);
+    const yAnalytic = result.nodeStates.Y?.analytic;
+    expect(yAnalytic?.distribution).toEqual({ kind: "bernoulli", p: 1 });
+    expect(yAnalytic?.density).toEqual({ kind: "bernoulli", p: 1 });
+  });
+
+  it("falls back to empirical when a binary node feeds another node", () => {
+    const doc = parseModel(`dag {
+      A
+      B
+      A -> B
+    }`).document;
+    const a = doc.graph.nodes.find((node) => node.id === "A");
+    const b = doc.graph.nodes.find((node) => node.id === "B");
+    const edge = doc.graph.edges[0];
+    if (!a || !b || !edge) throw new Error("missing fixture graph");
+    a.variable = { ...a.variable, valueType: "binary" };
+    b.variable = { ...b.variable, valueType: "binary" };
+    doc.simulation.nodes.A = normalizeNodeMechanism({ distribution: { kind: "bernoulli", p: 0.3 }, noise: { kind: "constant", value: 0 } });
+    doc.simulation.nodes.B = normalizeNodeMechanism({ intercept: 0, noise: { kind: "constant", value: 0 }, combiner: "bernoulli_logit" });
+    doc.simulation.edges[edge.id] = { ...defaultEdgeMechanism(), coefficient: 2 };
+    doc.simulation.selections.B = { operator: "at_least", value: 1, upper: null, sampling: "auto" };
+
+    const result = runSimulation(doc.graph, doc.simulation);
+    expect(result.conditioning.primaryMethod).not.toBe("analytic");
+    expect(result.conditioning.analytic).toBeNull();
+  });
+
+  it("recovers a Bernoulli root marginal under independent continuous conditioning", () => {
+    const doc = parseModel(`dag {
+      A
+      X
+    }`).document;
+    const a = doc.graph.nodes.find((node) => node.id === "A");
+    if (!a) throw new Error("missing fixture graph");
+    a.variable = { ...a.variable, valueType: "binary" };
+    doc.simulation.nodes.A = normalizeNodeMechanism({ distribution: { kind: "bernoulli", p: 0.4 }, noise: { kind: "constant", value: 0 } });
+    doc.simulation.nodes.X = normalizeNodeMechanism({ distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
+    doc.simulation.selections.X = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+
+    const result = runSimulation(doc.graph, doc.simulation);
+    expect(result.conditioning.primaryMethod).toBe("analytic");
+    const aAnalytic = result.nodeStates.A?.analytic;
+    expect(aAnalytic?.distribution.kind).toBe("bernoulli");
+    expect(aAnalytic?.mean).toBeCloseTo(0.4, 2);
+  });
+
+  it("conditions on a joint event on two binaries via bivariate orthant truncation", () => {
+    const doc = parseModel(`dag {
+      U
+      A
+      B
+      U -> A
+      U -> B
+    }`).document;
+    const a = doc.graph.nodes.find((node) => node.id === "A");
+    const b = doc.graph.nodes.find((node) => node.id === "B");
+    const ua = doc.graph.edges.find((edge) => edge.source === "U" && edge.target === "A");
+    const ub = doc.graph.edges.find((edge) => edge.source === "U" && edge.target === "B");
+    if (!a || !b || !ua || !ub) throw new Error("missing fixture graph");
+    a.variable = { ...a.variable, valueType: "binary" };
+    b.variable = { ...b.variable, valueType: "binary" };
+    doc.simulation.nodes.U = normalizeNodeMechanism({ distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
+    doc.simulation.nodes.A = normalizeNodeMechanism({ intercept: 0, noise: { kind: "constant", value: 0 }, combiner: "bernoulli_logit" });
+    doc.simulation.nodes.B = normalizeNodeMechanism({ intercept: 0, noise: { kind: "constant", value: 0 }, combiner: "bernoulli_logit" });
+    doc.simulation.edges[ua.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
+    doc.simulation.edges[ub.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
+    doc.simulation.selections.A = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+    doc.simulation.selections.B = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+
+    const result = runSimulation(doc.graph, doc.simulation);
+    expect(result.conditioning.primaryMethod).toBe("analytic");
+    expect(result.conditioning.analytic).toContain("orthant");
+    const uAnalytic = result.nodeStates.U?.analytic;
+    expect(uAnalytic?.distribution.kind).toBe("normal");
+    expect(uAnalytic?.mean ?? 0).toBeGreaterThan(0.4);
+    expect(uAnalytic?.mean ?? 0).toBeLessThan(0.9);
+    expect(result.nodeStates.A?.analytic?.mean).toBe(1);
+    expect(result.nodeStates.B?.analytic?.mean).toBe(1);
+  });
+
+  it("conditions on a mixed binary+continuous pair analytically", () => {
+    const doc = parseModel(`dag {
+      U
+      A
+    }`).document;
+    const a = doc.graph.nodes.find((node) => node.id === "A");
+    if (!a) throw new Error("missing fixture graph");
+    a.variable = { ...a.variable, valueType: "binary" };
+    doc.simulation.nodes.U = normalizeNodeMechanism({ distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
+    doc.simulation.nodes.A = normalizeNodeMechanism({ distribution: { kind: "bernoulli", p: 0.5 }, noise: { kind: "constant", value: 0 } });
+    doc.simulation.selections.U = { operator: "at_least", value: 0, upper: null, sampling: "analytic" };
+    doc.simulation.selections.A = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+
+    const result = runSimulation(doc.graph, doc.simulation);
+    expect(result.conditioning.primaryMethod).toBe("analytic");
+    expect(result.conditioning.analytic).toContain("joint");
+    const uAnalytic = result.nodeStates.U?.analytic;
+    expect(uAnalytic?.mean ?? 0).toBeCloseTo(Math.sqrt(2 / Math.PI), 2);
+    expect(result.nodeStates.A?.analytic?.mean).toBe(1);
+  });
+
+  it("conditions on two continuous interval events jointly", () => {
+    const doc = parseModel(`dag {
+      U
+      X
+      Y
+      U -> X
+      U -> Y
+    }`).document;
+    const ux = doc.graph.edges.find((edge) => edge.source === "U" && edge.target === "X");
+    const uy = doc.graph.edges.find((edge) => edge.source === "U" && edge.target === "Y");
+    if (!ux || !uy) throw new Error("missing fixture edges");
+    doc.simulation.nodes.U = normalizeNodeMechanism({ distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
+    doc.simulation.nodes.X = normalizeNodeMechanism({ intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+    doc.simulation.nodes.Y = normalizeNodeMechanism({ intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+    doc.simulation.edges[ux.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
+    doc.simulation.edges[uy.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
+    doc.simulation.selections.X = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+    doc.simulation.selections.Y = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+
+    const result = runSimulation(doc.graph, doc.simulation);
+    expect(result.conditioning.primaryMethod).toBe("analytic");
+    expect(result.conditioning.analytic).toContain("analytic linear Gaussian");
+    const uAnalytic = result.nodeStates.U?.analytic;
+    expect(uAnalytic?.distribution.kind).toBe("normal");
+    expect(uAnalytic?.mean ?? 0).toBeGreaterThan(0.5);
+  });
+
   it("samples non-root binary variables as zero-or-one draws", () => {
     const doc = parseModel(`dag {
       A

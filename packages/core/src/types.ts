@@ -207,7 +207,8 @@ export interface SimulationSelectionCondition {
 }
 
 export type SimulatedAnalyticDensity =
-  | { kind: "truncated_normal"; mean: number; sd: number; lower: number | null; upper: number | null };
+  | { kind: "truncated_normal"; mean: number; sd: number; lower: number | null; upper: number | null }
+  | { kind: "bernoulli"; p: number };
 
 export interface SimulatedAnalyticDistribution {
   distribution: NodeDistribution;

@@ -1,4 +1,10 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
+async function loadExample(page: Page, title: string) {
+  await page.getByLabel("Examples").click();
+  await page.getByRole("menuitem").filter({ hasText: title }).click();
+}
 
 test("loads the editor and creates a variable with the node tool", async ({ page }) => {
   await page.goto("/");
@@ -93,7 +99,7 @@ test("binary variables update simulation defaults", async ({ page }) => {
   await expect(binaryLabels.nth(1)).toContainText("P(1)");
   expect((await binaryLabels.allTextContents()).join(" ")).not.toContain("Bernoulli");
 
-  await page.getByLabel("Examples").selectOption("mediation-direct-total");
+  await loadExample(page, "Mediation: direct and total effect");
   await page.locator("text.node-label").filter({ hasText: "Biomarker" }).click({ force: true });
   await variableEditor.getByLabel("combiner").selectOption("bernoulli_logit");
   await expect(variableEditor.getByLabel("combiner")).toHaveValue("bernoulli_logit");
@@ -102,7 +108,7 @@ test("binary variables update simulation defaults", async ({ page }) => {
 
 test("Galton example renders analytic and empirical node distributions", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("Examples").selectOption("galton-regression");
+  await loadExample(page, "Galton regression to the mean");
 
   await expect(page.locator("text.node-label").filter({ hasText: "father height" })).toBeVisible();
   await expect(page.locator(".node-distribution-plot")).toHaveCount(6);
@@ -117,14 +123,112 @@ test("Galton example renders analytic and empirical node distributions", async (
   await expect(page.locator(".editor-column")).toContainText("Normal(69.0, 2.80)");
 });
 
-test("binary variable pairs render a table and colored confusion matrix", async ({ page }) => {
+test("domain mode exposes practitioner examples and recommended modules", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("Examples").selectOption("simpson-severity");
+  await page.getByRole("button", { name: "Domain" }).click();
+  await page.getByLabel("Examples").click();
+  await page.getByText("Epidemiology / public health").hover();
+  await expect(page.getByRole("menuitem").filter({ hasText: "Target trial: treatment start and follow-up" })).toBeVisible();
+  await page.getByRole("menuitem").filter({ hasText: "Target trial: treatment start and follow-up" }).click();
+
+  await expect(page.locator("text.node-label").filter({ hasText: "treatment start" })).toBeVisible();
+  await expect(page.locator(".scenario-column")).toContainText("Target trial");
+  await expect(page.locator(".scenario-column")).toContainText("Negative controls");
+
+  await page.getByRole("button", { name: "Pro" }).click();
+  await expect(page.locator(".scenario-column")).toContainText("Synthetic control / CausalImpact");
+  await expect(page.locator(".scenario-column")).toContainText("Root cause");
+});
+
+test("Simpson example reports a completed crude versus do contrast", async ({ page }) => {
+  await page.goto("/");
+  const output = page.locator(".completed-output-card");
+
+  await expect(output).toContainText("Simpson ready");
+  await expect(output).toContainText("crude association");
+  await expect(output).toContainText("do contrast");
+  await expect(output).toContainText("Fast visual read");
+  await expect(output).toContainText("Treatment <- Severity -> Recovery");
+  await expect(output).toContainText("do(Treatment=1)");
+  await expect(output).toContainText(/Sign reversal|No sign reversal/);
+});
+
+test("ICU example reports severity confounding and triage collider warning", async ({ page }) => {
+  await page.goto("/");
+  await loadExample(page, "Does the ICU make patients die?");
+  const output = page.locator(".completed-output-card");
+
+  await expect(page.locator("text.node-label").filter({ hasText: "ICU admission" })).toBeVisible();
+  await expect(page.locator("text.node-label").filter({ hasText: "triage score" })).toBeVisible();
+  await expect(output).toContainText("ICU ready");
+  await expect(output).toContainText("crude mortality");
+  await expect(output).toContainText("do mortality");
+  await expect(output).toContainText("severity separation");
+  await expect(output).toContainText("triage collider");
+  await expect(output).toContainText("ICU_admission <- Severity -> Death");
+  await expect(output).toContainText("ICU_admission -> Triage_score <- Severity");
+});
+
+test("college example reports a raw versus do earnings premium", async ({ page }) => {
+  await page.goto("/");
+  await loadExample(page, "Does college raise earnings?");
+  const output = page.locator(".completed-output-card");
+
+  await expect(page.locator("text.node-label").filter({ hasText: "family advantage" })).toBeVisible();
+  await expect(page.locator("text.node-label").filter({ hasText: "College" })).toBeVisible();
+  await expect(page.locator("text.node-label").filter({ hasText: "Earnings" })).toBeVisible();
+  await expect(output).toContainText("college ready");
+  await expect(output).toContainText("raw premium");
+  await expect(output).toContainText("do premium");
+  await expect(output).toContainText("advantage gap");
+  await expect(output).toContainText("College <- Family_advantage -> Earnings");
+  await expect(output).toContainText("do(College=1)");
+});
+
+test("tutoring example reports a raw versus do sign flip", async ({ page }) => {
+  await page.goto("/");
+  await loadExample(page, "Does tutoring hurt test scores?");
+  const output = page.locator(".completed-output-card");
+
+  await expect(page.locator("text.node-label").filter({ hasText: "academic need" })).toBeVisible();
+  await expect(page.locator("text.node-label").filter({ hasText: "Tutoring" })).toBeVisible();
+  await expect(page.locator("text.node-label").filter({ hasText: "test score" })).toBeVisible();
+  await expect(output).toContainText("sign flip ready");
+  await expect(output).toContainText("raw score gap");
+  await expect(output).toContainText("do score gain");
+  await expect(output).toContainText("need gap");
+  await expect(output).toContainText("Tutoring <- Academic_need -> Test_score");
+  await expect(output).toContainText("Sign reversal");
+  await expect(output).toContainText("do(Tutoring=1)");
+});
+
+test("denouement panel switches by example and expands checklists", async ({ page }) => {
+  await page.goto("/");
+  const denouement = page.locator(".denouement-panel");
+
+  await expect(denouement).toContainText("Adjustment / backdoor");
+  await expect(denouement).toContainText("The treatment looks worse in the crude comparison");
+
+  await page.getByRole("button", { name: "Domain" }).click();
+  await page.getByLabel("Examples").click();
+  await page.getByText("Econometrics / public policy").hover();
+  await page.getByRole("menuitem").filter({ hasText: "Policy evaluation: DiD and synthetic control" }).click();
+  await expect(denouement).toContainText("DiD / event study / synthetic control");
+  await expect(denouement).toContainText("treated units' post-policy change");
+  await expect(denouement).toContainText("event-time effects");
+
+  await denouement.getByText("Assumption checklist").click();
+  await expect(denouement).toContainText("Parallel trends");
+  await expect(denouement).toContainText("No anticipation");
+});
+
+test("binary variable pairs render a colored confusion matrix", async ({ page }) => {
+  await page.goto("/");
+  await loadExample(page, "Simpson's paradox: treatment by severity");
 
   const panel = page.locator(".scatterplot-panel");
   await expect(panel.getByLabel("x variable")).toHaveValue("Treatment");
   await expect(panel.getByLabel("y variable")).toHaveValue("Recovery");
-  await expect(panel.locator(".binary-summary-table")).toBeVisible();
   await expect(panel.locator(".confusion-matrix")).toBeVisible();
   await expect(panel.locator(".matrix-cell.agreement").first()).toBeVisible();
   await expect(panel).toContainText("positive x");
@@ -133,7 +237,7 @@ test("binary variable pairs render a table and colored confusion matrix", async 
 
 test("Galton example plots observed father and son height samples", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("Examples").selectOption("galton-regression");
+  await loadExample(page, "Galton regression to the mean");
 
   const scatter = page.locator(".scatterplot-panel");
   await expect(scatter.getByLabel("x variable")).toHaveValue("Father_height");
@@ -147,7 +251,7 @@ test("Galton example plots observed father and son height samples", async ({ pag
 
 test("conditioning a Galton variable is separate from overriding it", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("Examples").selectOption("galton-regression");
+  await loadExample(page, "Galton regression to the mean");
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
 
   await page.locator(".editor-column").getByRole("tab", { name: "interventions" }).click();
@@ -174,7 +278,7 @@ test("conditioning a Galton variable is separate from overriding it", async ({ p
 
 test("inference selector switches Galton conditioning between rejection and importance", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("Examples").selectOption("galton-regression");
+  await loadExample(page, "Galton regression to the mean");
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
 
   await page.locator(".editor-column").getByRole("tab", { name: "interventions" }).click();
@@ -193,7 +297,7 @@ test("inference selector switches Galton conditioning between rejection and impo
 
 test("canvas zoom controls keep distribution plots visible", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("Examples").selectOption("galton-regression");
+  await loadExample(page, "Galton regression to the mean");
 
   await expect(page.locator(".node-distribution-plot")).toHaveCount(6);
   const initialZoom = Number((await page.locator(".canvas-zoom-controls span").textContent())?.replace("%", ""));
