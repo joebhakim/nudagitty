@@ -1099,7 +1099,7 @@ marker path {
   }
 
   .workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto auto auto auto auto;
     min-height: auto;
   }
@@ -1155,8 +1155,199 @@ marker path {
 }
 
 @media (max-width: 700px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 6px;
+    overflow: visible;
+    padding: 6px 8px;
+  }
+
+  .brand {
+    min-width: 0;
+    font-size: 16px;
+    line-height: 22px;
+  }
+
+  .toolbar {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .toolbar[aria-label="Main tools"] {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) repeat(3, 36px);
+    gap: 5px;
+  }
+
+  .toolbar[aria-label="Model actions"] {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .toolbar[aria-label="Model actions"] select {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .toolbar[aria-label="Model actions"] .icon-button {
+    grid-row: 2;
+  }
+
+  .toolbar[aria-label="Main tools"] .icon-button:nth-child(n + 4),
+  .toolbar[aria-label="Model actions"] .icon-button {
+    padding: 0;
+  }
+
+  .toolbar[aria-label="Main tools"] .icon-button:nth-child(n + 4) .icon-button-label,
+  .toolbar[aria-label="Model actions"] .icon-button-label {
+    display: none;
+  }
+
+  .icon-button {
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    gap: 4px;
+    padding: 0 4px;
+  }
+
+  .icon-button svg {
+    flex: 0 0 auto;
+  }
+
+  .icon-button-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 10.5px;
+  }
+
+  .workspace {
+    overflow-x: hidden;
+  }
+
+  .canvas-shell {
+    min-height: 340px;
+    height: min(52vh, 370px);
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .graph-canvas {
+    max-width: 100%;
+    height: 100%;
+  }
+
+  .canvas-status {
+    display: none;
+  }
+
+  .canvas-zoom-controls {
+    right: 8px;
+    bottom: 8px;
+    grid-template-columns: 30px 46px 30px 34px;
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .canvas-zoom-controls button {
+    min-height: 28px;
+    padding: 0 6px;
+  }
+
+  .panel-section {
+    padding: 10px;
+  }
+
   .variable-model-panel,
   .two-field-grid {
     grid-template-columns: 1fr;
+  }
+
+  .value-row {
+    grid-template-columns: minmax(0, 1fr) 58px;
+    align-items: center;
+  }
+
+  .value-row input[type="range"] {
+    grid-column: 1 / -1;
+  }
+
+  .value-row .mini-button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .mechanism-header {
+    display: none;
+  }
+
+  .mechanism-row {
+    grid-template-columns: 22px minmax(0, 1fr) 52px;
+    grid-template-rows: auto auto;
+    align-items: center;
+  }
+
+  .mechanism-row .edge-enabled {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    align-self: center;
+  }
+
+  .mechanism-row .mechanism-name {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .mechanism-row .mechanism-contribution {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .mechanism-row .function-picker {
+    grid-column: 2 / 4;
+    grid-row: 2;
+  }
+
+  .function-picker-menu {
+    width: min(238px, calc(100vw - 44px));
+  }
+
+  .scatter-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .scatterplot-svg {
+    min-height: 180px;
+  }
+
+  .binary-table-row {
+    grid-template-columns: minmax(62px, 1fr) repeat(3, minmax(42px, 0.72fr));
+  }
+
+  .binary-table-row > span {
+    padding: 5px;
+  }
+
+  .confusion-matrix {
+    grid-template-columns: 34px repeat(2, minmax(0, 1fr));
+    grid-template-rows: 20px repeat(2, minmax(64px, 1fr));
+    gap: 4px;
+  }
+
+  .matrix-cell {
+    min-height: 64px;
   }
 }

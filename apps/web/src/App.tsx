@@ -73,6 +73,7 @@ import type {
   NodeRoleFlags,
   Point,
   SimulationResult,
+  SimulationInferenceMode,
   SimulationSelectionCondition,
   SimulatedNodeState,
   VariableMeasurementModel,
@@ -96,6 +97,29 @@ type DragState =
 const STORAGE_KEY = "nudagitty.document.v1";
 const BASE_VIEWBOX = { width: 1000, height: 700 };
 const DEFAULT_VIEWPORT: CanvasViewport = { cx: 0, cy: 0, zoom: 1 };
+const NODE_VIEW_MARGIN = { x: 100, top: 110, bottom: 130 };
+
+function graphViewportSignature(graph: GraphModel): string {
+  const nodes = graph.nodes.map((node) => `${node.id}:${node.label}`).join("|");
+  const edges = graph.edges.map((edge) => `${edge.source}:${edge.kind}:${edge.target}`).join("|");
+  return `${nodes}::${edges}`;
+}
+
+function fitViewportToGraph(graph: GraphModel): CanvasViewport {
+  if (graph.nodes.length === 0) return DEFAULT_VIEWPORT;
+  const minX = Math.min(...graph.nodes.map((node) => node.position.x)) - NODE_VIEW_MARGIN.x;
+  const maxX = Math.max(...graph.nodes.map((node) => node.position.x)) + NODE_VIEW_MARGIN.x;
+  const minY = Math.min(...graph.nodes.map((node) => node.position.y)) - NODE_VIEW_MARGIN.top;
+  const maxY = Math.max(...graph.nodes.map((node) => node.position.y)) + NODE_VIEW_MARGIN.bottom;
+  const width = Math.max(240, maxX - minX);
+  const height = Math.max(220, maxY - minY);
+  const zoom = clamp(Math.min(BASE_VIEWBOX.width / width, BASE_VIEWBOX.height / height), 0.55, 1.85);
+  return {
+    cx: (minX + maxX) / 2,
+    cy: (minY + maxY) / 2,
+    zoom
+  };
+}
 
 const EDGE_MECHANISMS: Array<{ kind: EdgeMechanismKind; label: string; description: string }> = [
   { kind: "linear", label: "linear", description: "Straight proportional effect." },
@@ -693,10 +717,16 @@ function GraphCanvas(props: {
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [drag, setDrag] = useState<DragState>(null);
-  const [viewport, setViewport] = useState<CanvasViewport>(DEFAULT_VIEWPORT);
+  const viewportSignature = useMemo(() => graphViewportSignature(props.graph), [props.graph.nodes, props.graph.edges]);
+  const fittedViewport = useMemo(() => fitViewportToGraph(props.graph), [viewportSignature]);
+  const [viewport, setViewport] = useState<CanvasViewport>(() => fitViewportToGraph(props.graph));
   const viewBoxWidth = BASE_VIEWBOX.width / viewport.zoom;
   const viewBoxHeight = BASE_VIEWBOX.height / viewport.zoom;
   const viewBox = `${viewport.cx - viewBoxWidth / 2} ${viewport.cy - viewBoxHeight / 2} ${viewBoxWidth} ${viewBoxHeight}`;
+
+  useEffect(() => {
+    setViewport(fittedViewport);
+  }, [fittedViewport]);
 
   const svgPoint = useCallback((event: React.PointerEvent | React.MouseEvent | React.WheelEvent): Point => {
     const svg = svgRef.current;
@@ -856,7 +886,7 @@ function GraphCanvas(props: {
         <button type="button" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>-</button>
         <span>{Math.round(viewport.zoom * 100)}%</span>
         <button type="button" aria-label="Zoom in" onClick={() => zoomBy(1.2)}>+</button>
-        <button type="button" onClick={() => setViewport(DEFAULT_VIEWPORT)}>reset</button>
+        <button type="button" onClick={() => setViewport(fittedViewport)}>reset</button>
       </div>
       <div className="canvas-status">
         <span>{props.tool === "edge" ? (props.edgeSource ? `connect from ${props.edgeSource}` : "click a source variable") : "double-click canvas to add variable"}</span>
@@ -1223,21 +1253,27 @@ function SimulationPanel(props: {
 function ConditioningMethodPanel({ simulation }: { simulation: SimulationResult }) {
   const conditioning = simulation.conditioning;
   const active = conditioning.activeConditions.length > 0;
+  const analyticActive = conditioning.primaryMethod === "analytic";
   return (
     <div className="conditioning-summary">
       <strong>Inference Methods</strong>
       {active ? (
         <>
           {conditioning.activeConditions.map((condition) => <span key={condition}>condition {condition}</span>)}
-          <span>empirical method {conditioning.empiricalMethod}</span>
+          <span>selected {inferenceModeLabel(conditioning.requestedInference)}</span>
+          <span>active {inferenceModeLabel(conditioning.primaryMethod)}</span>
+          {conditioning.analytic
+            ? <span>{analyticActive ? "analytic active" : "analytic available"} {analyticSummaryLabel(conditioning.analytic)}</span>
+            : <span>analytic unavailable</span>}
+          <span>empirical check {conditioning.empiricalMethod}</span>
           <span>empirical draws {conditioning.acceptedSamples} / {conditioning.totalSamples}</span>
           {conditioning.effectiveSampleSize !== null && <span>ESS {formatValue(conditioning.effectiveSampleSize)}</span>}
-          <span>analytic method {conditioning.analytic ?? "unavailable"}</span>
         </>
       ) : (
         <>
-          <span>empirical method forward</span>
-          <span>analytic method inactive</span>
+          <span>selected auto</span>
+          <span>active forward</span>
+          <span>analytic inactive</span>
         </>
       )}
     </div>
@@ -1325,11 +1361,12 @@ function VariablePanel(props: {
             </select>
           </label>
           <label className="field">
-            <span>sampling</span>
-            <select value={condition?.sampling ?? "auto"} onChange={(event) => updateCondition({ sampling: event.target.value as SimulationSelectionCondition["sampling"] })}>
+            <span>inference method</span>
+            <select aria-label="inference method" value={condition?.sampling ?? "auto"} onChange={(event) => updateCondition({ sampling: event.target.value as SimulationSelectionCondition["sampling"] })}>
               <option value="auto">auto</option>
-              <option value="importance">importance</option>
-              <option value="rejection">rejection</option>
+              <option value="analytic">analytic</option>
+              <option value="importance">importance sampling</option>
+              <option value="rejection">rejection sampling</option>
             </select>
           </label>
           <div className="two-field-grid">
@@ -2381,6 +2418,16 @@ function formatSignedValue(value: number): string {
 function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return "0%";
   return `${Math.round(value * 100)}%`;
+}
+
+function inferenceModeLabel(mode: SimulationInferenceMode | "forward"): string {
+  if (mode === "importance") return "importance sampling";
+  if (mode === "rejection") return "rejection sampling";
+  return mode;
+}
+
+function analyticSummaryLabel(note: string): string {
+  return note.replace(/^analytic\s+/i, "");
 }
 
 function formatWeightedCount(value: number): string {

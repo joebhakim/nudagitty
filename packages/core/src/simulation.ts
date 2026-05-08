@@ -8,6 +8,7 @@ import type {
   NodeInteraction,
   NodeMechanism,
   SimulationConditioningSummary,
+  SimulationInferenceMode,
   SimulationSelectionCondition,
   SimulatedAnalyticDistribution,
   SimulatedEmpiricalDistribution,
@@ -111,25 +112,35 @@ export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?
     values[id] = variable.valueType === "distributional" ? distributionProjection(analytic, finalized) : finalized;
     analyticByNode.set(id, analytic);
   }
-  const empirical = simulateEmpiricalDistributions(activeGraph, spec, order);
   const selectionConditions = activeSelectionConditions(spec, activeGraph);
+  const requestedInference = requestedInferenceMode(selectionConditions);
   const joint = buildLinearGaussianJoint(activeGraph, spec, order);
-  const analyticConditioning = joint ? conditionLinearGaussianJoint(joint, selectionConditions) : null;
+  const candidateAnalyticConditioning = joint ? conditionLinearGaussianJoint(joint, selectionConditions) : null;
+  const analyticConditioning = shouldApplyAnalyticInference(requestedInference) ? candidateAnalyticConditioning : null;
+  const empirical = simulateEmpiricalDistributions(activeGraph, spec, order);
   if (empirical.conditioning.activeConditions.length > 0 && empirical.conditioning.acceptedSamples === 0) {
     diagnostics.push("No empirical samples matched the active conditioning filters.");
   }
   if (selectionConditions.some(([, condition]) => condition.sampling === "importance") && empirical.conditioning.empiricalMethod === "rejection") {
     diagnostics.push("Importance sampling is not available for the active conditioning filters; using rejection sampling.");
   }
+  if (selectionConditions.some(([, condition]) => condition.sampling === "analytic") && !candidateAnalyticConditioning) {
+    diagnostics.push("Analytic inference is not available for the active conditioning filters; using empirical inference.");
+  }
+  const primaryMethod = primaryConditioningMethod(requestedInference, candidateAnalyticConditioning, empirical.conditioning.empiricalMethod, selectionConditions.length > 0);
   const conditioning: SimulationConditioningSummary = {
     ...empirical.conditioning,
-    analytic: analyticConditioning?.note ?? null
+    analytic: candidateAnalyticConditioning?.note ?? null,
+    requestedInference,
+    primaryMethod
   };
   const nodeStates: Record<string, SimulatedNodeState> = {};
   for (const id of order) {
     const variable = normalizeVariableModel(nodesById.get(id)?.variable);
     const value = values[id] ?? 0;
-    const analytic = analyticConditioning?.nodeAnalytics.get(id) ?? analyticByNode.get(id) ?? null;
+    const analytic = selectionConditions.length > 0
+      ? analyticConditioning?.nodeAnalytics.get(id) ?? null
+      : analyticByNode.get(id) ?? null;
     nodeStates[id] = {
       kind: variable.valueType === "distributional" ? "distribution" : "scalar",
       value,
@@ -437,6 +448,8 @@ function simulateEmpiricalDistributions(
       activeConditions: conditions.map(([id, condition]) => formatSelectionCondition(id, condition)),
       analytic: null,
       empiricalMethod: method,
+      requestedInference: requestedInferenceMode(conditions),
+      primaryMethod: method,
       effectiveSampleSize: sampleEss
     }
   };
@@ -496,6 +509,8 @@ function simulateLinearGaussianConditionedEmpirical(
       activeConditions: conditions.map(([id, item]) => formatSelectionCondition(id, item)),
       analytic: null,
       empiricalMethod: "importance",
+      requestedInference: requestedInferenceMode(conditions),
+      primaryMethod: "importance",
       effectiveSampleSize: computeEffectiveSampleSize(weights)
     }
   };
@@ -563,7 +578,37 @@ function formatSelectionCondition(id: string, condition: SimulationSelectionCond
 }
 
 function emptyConditioningSummary(): SimulationConditioningSummary {
-  return { totalSamples: 0, acceptedSamples: 0, activeConditions: [], analytic: null, empiricalMethod: "forward", effectiveSampleSize: null };
+  return {
+    totalSamples: 0,
+    acceptedSamples: 0,
+    activeConditions: [],
+    analytic: null,
+    empiricalMethod: "forward",
+    requestedInference: "auto",
+    primaryMethod: "forward",
+    effectiveSampleSize: null
+  };
+}
+
+function requestedInferenceMode(conditions: Array<[string, SimulationSelectionCondition]>): SimulationInferenceMode {
+  if (conditions.length === 0) return "auto";
+  const first = conditions[0]?.[1].sampling ?? "auto";
+  return conditions.every(([, condition]) => condition.sampling === first) ? first : "auto";
+}
+
+function shouldApplyAnalyticInference(mode: SimulationInferenceMode): boolean {
+  return mode === "auto" || mode === "analytic";
+}
+
+function primaryConditioningMethod(
+  requested: SimulationInferenceMode,
+  analytic: LinearGaussianConditioning | null,
+  empirical: SimulationConditioningSummary["empiricalMethod"],
+  active: boolean
+): SimulationConditioningSummary["primaryMethod"] {
+  if (!active) return "forward";
+  if (shouldApplyAnalyticInference(requested) && analytic) return "analytic";
+  return empirical;
 }
 
 function shouldUseImportanceSampling(condition: SimulationSelectionCondition): boolean {

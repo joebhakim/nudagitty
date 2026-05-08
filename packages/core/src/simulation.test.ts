@@ -200,6 +200,8 @@ describe("SEM simulation", () => {
     expect(conditioningResult.conditioning.acceptedSamples).toBeGreaterThan(0);
     expect(conditioningResult.conditioning.activeConditions).toEqual(["Father_height >= 72"]);
     expect(conditioningResult.conditioning.analytic).toContain("analytic linear Gaussian");
+    expect(conditioningResult.conditioning.requestedInference).toBe("auto");
+    expect(conditioningResult.conditioning.primaryMethod).toBe("analytic");
   });
 
   it("uses importance sampling for rare conditions on noisy intermediate variables", () => {
@@ -242,12 +244,16 @@ describe("SEM simulation", () => {
     const rejectionResult = runSimulation(rejection.graph, rejection.simulation);
 
     expect(importanceResult.conditioning.empiricalMethod).toBe("importance");
+    expect(importanceResult.conditioning.primaryMethod).toBe("importance");
     expect(importanceResult.conditioning.acceptedSamples).toBe(320);
     expect(importanceResult.conditioning.totalSamples).toBe(320);
     expect(importanceResult.nodeStates.Father_height?.empirical.samples.every((value) => value >= 72)).toBe(true);
+    expect(importanceResult.nodeStates.Son_height?.analytic).toBeNull();
     expect(importanceResult.nodeStates.Son_height?.empirical.mean ?? 0).toBeGreaterThan(69);
     expect(rejectionResult.conditioning.empiricalMethod).toBe("rejection");
+    expect(rejectionResult.conditioning.primaryMethod).toBe("rejection");
     expect(rejectionResult.conditioning.totalSamples).toBeGreaterThan(rejectionResult.conditioning.acceptedSamples);
+    expect(rejectionResult.nodeStates.Son_height?.analytic).toBeNull();
   });
 
   it("coerces binary overrides and exposes binary expected values", () => {

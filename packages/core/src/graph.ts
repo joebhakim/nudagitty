@@ -356,7 +356,7 @@ export function normalizeSelectionCondition(condition: Partial<SimulationSelecti
   const operator = condition?.operator === "at_most" || condition?.operator === "between" ? condition.operator : "at_least";
   const value = numberOr(condition?.value, 0);
   const rawUpper = nullableNumber(condition?.upper);
-  const sampling = condition?.sampling === "rejection" || condition?.sampling === "importance" ? condition.sampling : "auto";
+  const sampling = condition?.sampling === "rejection" || condition?.sampling === "importance" || condition?.sampling === "analytic" ? condition.sampling : "auto";
   if (operator !== "between") return { operator, value, upper: null, sampling };
   const upper = rawUpper ?? value;
   return value <= upper ? { operator, value, upper, sampling } : { operator, value: upper, upper: value, sampling };

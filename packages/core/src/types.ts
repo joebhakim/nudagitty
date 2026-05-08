@@ -196,7 +196,8 @@ export interface SimulationSpec {
 }
 
 export type SimulationSelectionOperator = "at_least" | "at_most" | "between";
-export type SimulationSamplingMode = "auto" | "rejection" | "importance";
+export type SimulationInferenceMode = "auto" | "analytic" | "rejection" | "importance";
+export type SimulationSamplingMode = SimulationInferenceMode;
 
 export interface SimulationSelectionCondition {
   operator: SimulationSelectionOperator;
@@ -236,6 +237,8 @@ export interface SimulationConditioningSummary {
   activeConditions: string[];
   analytic: string | null;
   empiricalMethod: "forward" | "rejection" | "importance";
+  requestedInference: SimulationInferenceMode;
+  primaryMethod: "forward" | "analytic" | "rejection" | "importance";
   effectiveSampleSize: number | null;
 }
 

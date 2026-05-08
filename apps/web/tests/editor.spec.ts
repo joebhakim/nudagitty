@@ -6,7 +6,7 @@ test("loads the editor and creates a variable with the node tool", async ({ page
   await expect(page.getByLabel("Editable causal graph")).toBeVisible();
 
   await page.getByRole("button", { name: "Variable" }).click();
-  await page.locator(".graph-canvas").click({ position: { x: 520, y: 300 } });
+  await page.locator(".graph-canvas").click({ position: { x: 520, y: 500 } });
 
   await expect(page.locator("text.node-label").filter({ hasText: "V" }).first()).toBeVisible();
   await expect(page.locator(".cm-content")).toContainText("V");
@@ -104,7 +104,7 @@ test("conditioning a Galton variable is separate from overriding it", async ({ p
 
   const conditioning = page.locator(".conditioning-editor");
   await conditioning.getByRole("button", { name: "condition on current" }).click();
-  await conditioning.getByLabel("sampling").selectOption("importance");
+  await conditioning.getByLabel("inference method").selectOption("analytic");
   await conditioning.getByRole("spinbutton", { name: "value" }).fill("72");
   await conditioning.getByLabel("value slider").evaluate((element) => {
     if (!(element instanceof HTMLInputElement)) throw new Error("expected range input");
@@ -113,16 +113,17 @@ test("conditioning a Galton variable is separate from overriding it", async ({ p
     element.dispatchEvent(new Event("change", { bubbles: true }));
   });
 
-  await expect(conditioning.getByLabel("sampling")).toHaveValue("importance");
+  await expect(conditioning.getByLabel("inference method")).toHaveValue("analytic");
   await expect(page.locator(".conditioning-summary")).toContainText("Inference Methods");
   await expect(page.locator(".conditioning-summary")).toContainText("Father_height >= 72");
-  await expect(page.locator(".conditioning-summary")).toContainText("analytic method");
-  await expect(page.locator(".conditioning-summary")).toContainText("analytic linear Gaussian");
+  await expect(page.locator(".conditioning-summary")).toContainText("selected analytic");
+  await expect(page.locator(".conditioning-summary")).toContainText("active analytic");
+  await expect(page.locator(".conditioning-summary")).toContainText("linear Gaussian");
   await expect(page.locator(".conditioning-summary")).toContainText(/\/ \d+/);
   await expect(page.locator(".variable-model-row")).toContainText("linear Gaussian moment match conditioned on Father_height >= 72");
 });
 
-test("sampling selector switches Galton conditioning between rejection and importance", async ({ page }) => {
+test("inference selector switches Galton conditioning between rejection and importance", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Examples").selectOption("galton-regression");
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
@@ -130,11 +131,13 @@ test("sampling selector switches Galton conditioning between rejection and impor
   const conditioning = page.locator(".conditioning-editor");
   await conditioning.getByRole("button", { name: "condition on current" }).click();
   await conditioning.getByRole("spinbutton", { name: "value" }).fill("72");
-  await conditioning.getByLabel("sampling").selectOption("rejection");
-  await expect(page.locator(".conditioning-summary")).toContainText("method rejection");
+  await conditioning.getByLabel("inference method").selectOption("rejection");
+  await expect(page.locator(".conditioning-summary")).toContainText("selected rejection sampling");
+  await expect(page.locator(".conditioning-summary")).toContainText("active rejection sampling");
 
-  await conditioning.getByLabel("sampling").selectOption("importance");
-  await expect(page.locator(".conditioning-summary")).toContainText("method importance");
+  await conditioning.getByLabel("inference method").selectOption("importance");
+  await expect(page.locator(".conditioning-summary")).toContainText("selected importance sampling");
+  await expect(page.locator(".conditioning-summary")).toContainText("active importance sampling");
   await expect(page.locator(".conditioning-summary")).toContainText("320 / 320");
 });
 
@@ -143,9 +146,29 @@ test("canvas zoom controls keep distribution plots visible", async ({ page }) =>
   await page.getByLabel("Examples").selectOption("galton-regression");
 
   await expect(page.locator(".node-distribution-plot")).toHaveCount(6);
+  const initialZoom = Number((await page.locator(".canvas-zoom-controls span").textContent())?.replace("%", ""));
   await page.getByLabel("Zoom in").click();
-  await expect(page.locator(".canvas-zoom-controls")).toContainText("120%");
+  const nextZoom = Number((await page.locator(".canvas-zoom-controls span").textContent())?.replace("%", ""));
+  expect(nextZoom).toBeGreaterThan(initialZoom);
   const firstPlot = await page.locator(".node-distribution-plot").first().boundingBox();
   expect(firstPlot?.width ?? 0).toBeGreaterThan(20);
   expect(firstPlot?.height ?? 0).toBeGreaterThan(8);
+});
+
+test("mobile layout avoids horizontal overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  await expect(page.getByRole("button", { name: "Select" })).toBeVisible();
+  await expect(page.getByLabel("Examples")).toBeVisible();
+
+  const metrics = await page.evaluate(() => ({
+    innerWidth: window.innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    canvasHeight: document.querySelector(".canvas-shell")?.getBoundingClientRect().height ?? 0,
+    topbarHeight: document.querySelector(".topbar")?.getBoundingClientRect().height ?? 0
+  }));
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.innerWidth + 1);
+  expect(metrics.canvasHeight).toBeLessThanOrEqual(430);
+  expect(metrics.topbarHeight).toBeLessThanOrEqual(170);
 });
