@@ -19,6 +19,7 @@ export interface ExampleModel {
   title: string;
   domain: ExampleDomain;
   summary: string;
+  outputModule?: string;
   code: string;
 }
 
@@ -53,6 +54,7 @@ export const EXAMPLES: ExampleModel[] = [
     title: "Simpson's paradox: treatment by severity",
     domain: "classic",
     summary: "Fast explanation of confounding and why unadjusted group comparisons can reverse.",
+    outputModule: "simpson-severity",
     code: `dag {
   Severity [adjusted,pos="-2,1.1"]
   Treatment [exposure,pos="-0.3,0"]
@@ -67,6 +69,7 @@ export const EXAMPLES: ExampleModel[] = [
     title: "Does the ICU make patients die?",
     domain: "classic",
     summary: "Treatment-like ICU admission, Gaussian illness severity, binary mortality, and a Gaussian triage-score collider.",
+    outputModule: "icu-mortality-triage",
     code: `dag {
   Severity [adjusted,label="baseline severity",pos="-2,0.75"]
   ICU_admission [exposure,label="ICU admission",pos="-0.25,0"]
@@ -84,6 +87,7 @@ export const EXAMPLES: ExampleModel[] = [
     title: "Does college raise earnings?",
     domain: "classic",
     summary: "Three-node wage-premium example: binary family advantage, binary college attendance, and continuous earnings.",
+    outputModule: "college-earnings",
     code: `dag {
   Family_advantage [adjusted,label="family advantage",pos="-2,0.9"]
   College [exposure,pos="-0.25,0"]
@@ -98,6 +102,7 @@ export const EXAMPLES: ExampleModel[] = [
     title: "Does tutoring hurt test scores?",
     domain: "classic",
     summary: "Three-node sign-flip example: struggling students get tutoring, score lower in raw data, but tutoring helps under intervention.",
+    outputModule: "tutoring-scores",
     code: `dag {
   Academic_need [adjusted,label="academic need",pos="-2,0.9"]
   Tutoring [exposure,pos="-0.25,0"]

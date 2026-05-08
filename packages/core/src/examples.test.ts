@@ -50,6 +50,15 @@ describe("example catalog", () => {
     }
   });
 
+  it("declares completed output modules for the golden examples", () => {
+    expect(Object.fromEntries(EXAMPLES.filter((example) => example.outputModule).map((example) => [example.id, example.outputModule]))).toEqual({
+      "simpson-severity": "simpson-severity",
+      "icu-mortality-triage": "icu-mortality-triage",
+      "college-earnings": "college-earnings",
+      "tutoring-scores": "tutoring-scores"
+    });
+  });
+
   it("configures the ICU example as a crude-versus-causal reversal with a triage collider", () => {
     const document = exampleDocument("icu-mortality-triage");
     if (!document) throw new Error("missing ICU example");
