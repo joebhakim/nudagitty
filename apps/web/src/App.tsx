@@ -899,6 +899,7 @@ function GraphCanvas(props: {
             const state = props.simulation.nodeStates[node.id];
             const isAncestor = props.ancestorIds.has(node.id);
             const changed = props.simulation.changedNodes.includes(node.id);
+            const variable = normalizeVariableModel(node.variable);
             return (
               <g
                 key={node.id}
@@ -915,8 +916,8 @@ function GraphCanvas(props: {
                 {node.roles.adjusted && <rect className="adjusted-ring" x="-27" y="-27" width="54" height="54" rx="6" />}
                 {node.roles.selected && <path className="selected-mark" d="M -20 24 L 0 34 L 20 24" />}
                 <text className="node-label" y="4">{node.label}</text>
-                <NodeDistributionMiniPlot state={state} />
-                <NodeDistributionAnnotation state={state} value={value} />
+                <NodeDistributionMiniPlot state={state} variable={variable} />
+                <NodeDistributionAnnotation state={state} value={value} variable={variable} />
               </g>
             );
           })}
@@ -935,9 +936,10 @@ function GraphCanvas(props: {
   );
 }
 
-function NodeDistributionMiniPlot({ state }: { state?: SimulatedNodeState }) {
+function NodeDistributionMiniPlot({ state, variable }: { state?: SimulatedNodeState; variable: VariableModel }) {
   const samples = state?.empirical.samples ?? [];
   if (!state || samples.length < 2) return null;
+  if (isBinaryDistributionState(state, variable)) return <BinaryNodeDistributionMiniPlot state={state} />;
   const domain = distributionPlotDomain(state);
   if (!domain) return null;
   const width = 96;
@@ -973,10 +975,49 @@ function NodeDistributionMiniPlot({ state }: { state?: SimulatedNodeState }) {
   );
 }
 
-function NodeDistributionAnnotation({ state, value }: { state?: SimulatedNodeState; value: number | undefined }) {
-  const lines = nodeDistributionAnnotationLines(state, value);
+function BinaryNodeDistributionMiniPlot({ state }: { state: SimulatedNodeState }) {
+  const probability = binaryProbabilityFromState(state);
+  if (probability === null) return null;
+  const width = 96;
+  const height = 32;
+  const baseline = height - 7;
+  const maxBarHeight = height - 11;
+  const probabilities = [1 - probability, probability];
+  const title = [
+    `binary P(1)=${formatPercent(probability)}`,
+    `empirical n=${state.empirical.samples.length}`,
+    state.analytic ? `analytic ${analyticDistributionLabel(state.analytic)} (${state.analytic.note})` : ""
+  ].filter(Boolean).join("; ");
+  return (
+    <g className="node-distribution-plot binary-node-distribution-plot" transform="translate(-48 28)" aria-hidden="true">
+      <title>{title}</title>
+      <rect className="distribution-frame" x="0" y="0" width={width} height={height} rx="4" />
+      <line className="distribution-binary-axis" x1="13" y1={baseline} x2={width - 13} y2={baseline} />
+      {probabilities.map((p, index) => {
+        const barHeight = Math.max(1, p * maxBarHeight);
+        const x = index === 0 ? 25 : 59;
+        return (
+          <Fragment key={index}>
+            <rect
+              className={index === 1 ? "distribution-binary-bar positive" : "distribution-binary-bar"}
+              x={x}
+              y={baseline - barHeight}
+              width="16"
+              height={barHeight}
+              rx="2"
+            />
+            <text className="distribution-binary-label" x={x + 8} y={height - 1}>{index}</text>
+          </Fragment>
+        );
+      })}
+    </g>
+  );
+}
+
+function NodeDistributionAnnotation({ state, value, variable }: { state?: SimulatedNodeState; value: number | undefined; variable: VariableModel }) {
+  const lines = nodeDistributionAnnotationLines(state, value, variable);
   if (lines.length === 0) return null;
-  const title = nodeDistributionFullSummary(state, value);
+  const title = nodeDistributionFullSummary(state, value, variable);
   return (
     <g className="node-distribution-annotation" aria-hidden="true">
       <title>{title}</title>
@@ -2496,24 +2537,53 @@ function normalDensity(value: number, mean: number, sd: number): number {
   return Math.exp(-0.5 * z * z) / (cleanSd * Math.sqrt(2 * Math.PI));
 }
 
-function nodeDistributionAnnotationLines(state: SimulatedNodeState | undefined, value: number | undefined): string[] {
+function nodeDistributionAnnotationLines(state: SimulatedNodeState | undefined, value: number | undefined, variable: VariableModel): string[] {
+  if (isBinaryDistributionState(state, variable)) {
+    const lines: string[] = [];
+    if (typeof value === "number" && Number.isFinite(value)) lines.push(binaryNodeValueLabel(value));
+    const probability = binaryProbabilityFromState(state);
+    if (probability !== null) lines.push(`P(1) ${formatPercent(probability)}`);
+    return lines.map((line) => compactSvgText(line, 28)).slice(0, 2);
+  }
   const lines: string[] = [];
   if (typeof value === "number" && Number.isFinite(value)) lines.push(`draw ${formatValue(value)}`);
   const moment = nodeMomentLabel(state);
   if (moment) lines.push(moment);
-  const params = state?.analytic ? distributionParameterLabel(state.analytic.distribution) : null;
-  if (params) lines.push(params);
-  return lines.map((line) => compactSvgText(line, 28)).slice(0, 3);
+  return lines.map((line) => compactSvgText(line, 28)).slice(0, 2);
 }
 
-function nodeDistributionFullSummary(state: SimulatedNodeState | undefined, value: number | undefined): string {
+function nodeDistributionFullSummary(state: SimulatedNodeState | undefined, value: number | undefined, variable: VariableModel): string {
+  const binary = isBinaryDistributionState(state, variable);
   return [
-    typeof value === "number" && Number.isFinite(value) ? `chosen draw ${formatValue(value)}` : "",
-    nodeMomentLabel(state),
+    typeof value === "number" && Number.isFinite(value) ? (binary ? binaryNodeValueLabel(value) : `chosen draw ${formatValue(value)}`) : "",
+    binary ? binaryProbabilitySummary(state) : nodeMomentLabel(state),
     state?.analytic ? distributionParameterLabel(state.analytic.distribution) : "",
     state?.analytic ? `analytic ${analyticDistributionLabel(state.analytic)}` : "",
     state?.empirical.effectiveSampleSize !== null && state?.empirical.effectiveSampleSize !== undefined ? `ESS ${formatValue(state.empirical.effectiveSampleSize)}` : ""
   ].filter(Boolean).join("; ");
+}
+
+function isBinaryDistributionState(state: SimulatedNodeState | undefined, variable: VariableModel): boolean {
+  return variable.valueType === "binary" || state?.analytic?.distribution.kind === "bernoulli";
+}
+
+function binaryNodeValueLabel(value: number): string {
+  if (Math.abs(value - 0) < 1e-6 || Math.abs(value - 1) < 1e-6) return `draw ${coerceBinary(value)}`;
+  return `value ${formatPercent(clamp(value, 0, 1))}`;
+}
+
+function binaryProbabilitySummary(state: SimulatedNodeState | undefined): string {
+  const probability = binaryProbabilityFromState(state);
+  return probability === null ? "" : `P(1) ${formatPercent(probability)}`;
+}
+
+function binaryProbabilityFromState(state: SimulatedNodeState | undefined): number | null {
+  if (!state) return null;
+  const analytic = state.analytic;
+  if (analytic?.distribution.kind === "bernoulli") return clamp(analytic.distribution.p, 0, 1);
+  if (analytic?.mean !== null && analytic?.mean !== undefined && Number.isFinite(analytic.mean)) return clamp(analytic.mean, 0, 1);
+  if (state.empirical.mean !== null && Number.isFinite(state.empirical.mean)) return clamp(state.empirical.mean, 0, 1);
+  return null;
 }
 
 function nodeMomentLabel(state: SimulatedNodeState | undefined): string {

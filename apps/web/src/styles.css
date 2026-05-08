@@ -1175,6 +1175,26 @@ marker path {
   stroke-linejoin: round;
 }
 
+.distribution-binary-axis {
+  stroke: #8fa0ad;
+  stroke-width: 1px;
+}
+
+.distribution-binary-bar {
+  fill: rgba(178, 69, 103, 0.42);
+}
+
+.distribution-binary-bar.positive {
+  fill: rgba(35, 113, 111, 0.62);
+}
+
+.distribution-binary-label {
+  text-anchor: middle;
+  font-size: 7px;
+  font-weight: 700;
+  fill: #4f5b65;
+}
+
 .cm-editor {
   border: 1px solid var(--line);
   border-radius: 6px;

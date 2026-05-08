@@ -86,6 +86,12 @@ test("binary variables update simulation defaults", async ({ page }) => {
   await expect(variableEditor.getByLabel("root distribution")).toHaveValue("bernoulli");
   await expect(variableEditor).toContainText("binary");
   await expect(variableEditor.getByLabel("p slider")).toBeVisible();
+  await expect(page.locator(".node.selected .binary-node-distribution-plot")).toBeVisible();
+  const binaryLabels = page.locator(".node.selected .node-distribution-annotation text");
+  await expect(binaryLabels).toHaveCount(2);
+  await expect(binaryLabels.nth(0)).toContainText(/^(draw [01]|value \d+%)/);
+  await expect(binaryLabels.nth(1)).toContainText("P(1)");
+  expect((await binaryLabels.allTextContents()).join(" ")).not.toContain("Bernoulli");
 
   await page.getByLabel("Examples").selectOption("mediation-direct-total");
   await page.locator("text.node-label").filter({ hasText: "Biomarker" }).click({ force: true });
@@ -103,6 +109,9 @@ test("Galton example renders analytic and empirical node distributions", async (
   await expect(page.locator(".node-distribution-annotation").first()).toContainText("draw");
   await expect(page.locator(".node-distribution-annotation").first()).toContainText("mean");
   await expect(page.locator(".node-distribution-annotation").first()).toContainText("sd");
+  const galtonAnnotationLabels = page.locator(".node-distribution-annotation").first().locator("text");
+  await expect(galtonAnnotationLabels).toHaveCount(2);
+  expect((await galtonAnnotationLabels.allTextContents()).join(" ")).not.toContain("Normal");
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
   await expect(page.locator(".editor-column")).toContainText("linear Gaussian SEM");
   await expect(page.locator(".editor-column")).toContainText("Normal(69.0, 2.80)");
