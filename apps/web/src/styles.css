@@ -375,6 +375,7 @@ textarea {
 .hard-do-editor,
 .draw-count-control,
 .conditioning-summary,
+.diagnostic-list,
 .completed-output-card,
 .denouement-panel,
 .design-module-panel,
@@ -390,6 +391,7 @@ textarea {
 .hard-do-editor strong,
 .draw-count-control strong,
 .conditioning-summary strong,
+.diagnostic-list strong,
 .completed-output-card > .module-card-header strong,
 .denouement-panel > .module-card-header strong,
 .design-module-panel > .module-card-header strong,
@@ -428,6 +430,79 @@ textarea {
   color: var(--muted);
   font-size: 12px;
   line-height: 16px;
+}
+
+.simulation-diagnostics-panel,
+.diagnostic-list,
+.scenario-disclosure-body {
+  display: grid;
+  gap: 8px;
+}
+
+.diagnostic-list {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.diagnostic-list .warning {
+  margin: 0;
+}
+
+.scenario-disclosure {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.scenario-disclosure > summary {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 9px 28px 9px 10px;
+  cursor: pointer;
+  color: #3d464e;
+  list-style: none;
+}
+
+.scenario-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.scenario-disclosure > summary span {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.scenario-disclosure > summary small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.scenario-disclosure > summary::after {
+  content: "+";
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.scenario-disclosure[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.scenario-disclosure[open] > summary::after {
+  content: "-";
+}
+
+.scenario-disclosure-body {
+  padding: 8px;
 }
 
 .design-module-panel,
@@ -735,8 +810,15 @@ textarea {
 .value-card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+}
+
+.simulation-status {
+  justify-content: flex-start;
+}
+
+.value-card {
+  justify-content: space-between;
 }
 
 .status-dot {
@@ -1232,6 +1314,38 @@ textarea {
   pointer-events: none;
 }
 
+.binary-continuous-pair-view {
+  display: grid;
+  gap: 10px;
+}
+
+.binary-group-label {
+  fill: #394149;
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.binary-continuous-point {
+  fill: #2c7fb8;
+}
+
+.binary-group-mean line {
+  stroke: var(--bias);
+  stroke-width: 2.4px;
+  stroke-linecap: round;
+}
+
+.binary-group-mean text {
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  fill: #394149;
+  font-size: 9px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
 .scatter-stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1239,6 +1353,10 @@ textarea {
   color: var(--muted);
   font-size: 12px;
   line-height: 16px;
+}
+
+.binary-continuous-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .binary-pair-view {
@@ -1397,6 +1515,18 @@ textarea {
   stroke: #111820;
 }
 
+.edge.coefficient-positive .edge-line {
+  stroke: var(--causal);
+}
+
+.edge.coefficient-negative .edge-line {
+  stroke: var(--bias);
+}
+
+.edge.coefficient-zero .edge-line {
+  stroke: #9aa7b1;
+}
+
 .edge-control {
   fill: #fff;
   stroke: #111820;
@@ -1409,17 +1539,30 @@ textarea {
   stroke: #fff;
   stroke-width: 4px;
   text-anchor: middle;
-  font-size: 12px;
+  font-size: 9px;
   font-weight: 700;
   pointer-events: none;
 }
 
-.edge-value.positive {
+.edge-value-context {
+  fill: #4f5b65;
+  letter-spacing: 0;
+}
+
+.edge-value-number {
+  font-size: 12px;
+}
+
+.edge.coefficient-positive .edge-value-number {
   fill: var(--causal);
 }
 
-.edge-value.negative {
+.edge.coefficient-negative .edge-value-number {
   fill: var(--bias);
+}
+
+.edge.coefficient-zero .edge-value-number {
+  fill: #6b7780;
 }
 
 marker path {

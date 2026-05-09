@@ -107,6 +107,7 @@ type CanvasViewport = { cx: number; cy: number; zoom: number };
 type ScatterPair = { x: string; y: string };
 type ScatterPoint = { x: number; y: number; weight: number; index: number };
 type BinaryCell = { x: 0 | 1; y: 0 | 1; weight: number; count: number; percent: number };
+type BinaryContinuousGroup = { value: 0 | 1; count: number; weight: number; mean: number | null; share: number };
 type VariableEditorTab = "model" | "interventions";
 type DesignModuleStatus = "usable" | "todo";
 type DragState =
@@ -454,6 +455,7 @@ export function App() {
   const activeExample = EXAMPLES.find((example) => example.id === activeExampleId) ?? null;
   const activeDomain = activeExample?.domain ?? "classic";
   const activeDenouement = activeExample ? exampleDenouement(activeExample.id) : null;
+  const empiricalDraws = graphEmpiricalDraws(document.graph);
   const highlightedEdges = useMemo(() => computeHighlightedEdges(document.graph, analysis, showCausal, showBiasing), [analysis, document.graph, showBiasing, showCausal]);
   const ancestorIds = useMemo(() => showAncestors ? new Set(analysis.causalPaths.flat()) : new Set<string>(), [analysis.causalPaths, showAncestors]);
 
@@ -819,7 +821,6 @@ export function App() {
               onResample={resample}
               onClearOverrides={clearOverrides}
               onClearSelections={clearSelections}
-              onEmpiricalDraws={updateEmpiricalDraws}
               mode={workbenchMode}
               domain={activeDomain}
               denouement={activeDenouement ?? CUSTOM_DENOUEMENT}
@@ -845,6 +846,7 @@ export function App() {
           edgeSource={edgeSource}
           analysis={analysis}
           simulation={simulation}
+          edgeMechanisms={document.simulation.edges}
           disabledEdgeIds={new Set(Object.entries(document.simulation.edges).filter(([, mechanism]) => !mechanism.enabled).map(([id]) => id))}
           highlightedEdges={highlightedEdges}
           ancestorIds={ancestorIds}
@@ -892,6 +894,14 @@ export function App() {
                 <Checkbox label="causal paths" checked={showCausal} onChange={setShowCausal} />
                 <Checkbox label="biasing paths" checked={showBiasing} onChange={setShowBiasing} />
                 <Checkbox label="ancestral structure" checked={showAncestors} onChange={setShowAncestors} />
+              </Section>
+              <Section title="Simulation Diagnostics">
+                <SimulationDiagnosticsPanel
+                  document={document}
+                  simulation={simulation}
+                  empiricalDraws={empiricalDraws}
+                  onEmpiricalDraws={updateEmpiricalDraws}
+                />
               </Section>
               <Section title="Causal Effect Identification">
                 <select value={effectKind} onChange={(event) => setEffectKind(event.target.value as EffectKind)}>
@@ -947,6 +957,7 @@ function GraphCanvas(props: {
   edgeSource: string | null;
   analysis: AnalysisReport;
   simulation: SimulationResult;
+  edgeMechanisms: Record<string, EdgeMechanism>;
   disabledEdgeIds: Set<string>;
   highlightedEdges: Map<string, "causal" | "biasing">;
   ancestorIds: Set<string>;
@@ -1131,12 +1142,15 @@ function GraphCanvas(props: {
             if (!source || !target) return null;
             const selected = props.selection?.kind === "edge" && props.selection.id === edge.id;
             const semantic = props.highlightedEdges.get(edge.id);
-            const contribution = props.simulation.contributions[edge.id] ?? 0;
-            const width = Math.min(8, 1.8 + Math.abs(contribution) * 1.2);
+            const coefficient = normalizeEdgeMechanism(props.edgeMechanisms[edge.id]).coefficient;
+            const width = Math.min(8, 1.8 + Math.abs(coefficient) * 1.2);
             const geometry = edgeGeometry(edge, source, target, props.graph.edges);
             const enabled = !props.disabledEdgeIds.has(edge.id);
+            const coefficientText = formatSignedValue(coefficient);
+            const coefficientClass = coefficient > 0 ? "coefficient-positive" : coefficient < 0 ? "coefficient-negative" : "coefficient-zero";
             return (
-              <g key={edge.id} className={`edge ${selected ? "selected" : ""} ${semantic ?? ""} ${enabled ? "" : "disabled"}`}>
+              <g key={edge.id} className={`edge ${coefficientClass} ${selected ? "selected" : ""} ${semantic ?? ""} ${enabled ? "" : "disabled"}`}>
+                <title>{edgeCoefficientTitle(edge, source, target, coefficientText)}</title>
                 <path
                   d={geometry.path}
                   className="edge-hit"
@@ -1162,9 +1176,10 @@ function GraphCanvas(props: {
                     setDrag({ kind: "edge-control", id: edge.id });
                   }}
                 />}
-                {typeof contribution === "number" && Math.abs(contribution) > 0.001 && (
-                  <text className={`edge-value ${contribution >= 0 ? "positive" : "negative"}`} x={geometry.control.x} y={geometry.control.y - 8}>
-                    {formatSignedValue(contribution)}
+                {Number.isFinite(coefficient) && Math.abs(coefficient) > 0.001 && (
+                  <text className="edge-value" x={geometry.control.x} y={geometry.control.y - 15}>
+                    <tspan className="edge-value-context" x={geometry.control.x}>linear coef</tspan>
+                    <tspan className="edge-value-number" x={geometry.control.x} dy="13">{coefficientText}</tspan>
                   </text>
                 )}
               </g>
@@ -1211,6 +1226,11 @@ function GraphCanvas(props: {
       </div>
     </section>
   );
+}
+
+function edgeCoefficientTitle(edge: GraphEdge, source: GraphNode, target: GraphNode, coefficient: string): string {
+  const connector = edge.kind === "bidirected" ? "<->" : edge.kind === "undirected" ? "--" : "->";
+  return `${source.label} ${connector} ${target.label}: linear coefficient ${coefficient}. Select the edge to inspect or edit it.`;
 }
 
 function NodeDistributionMiniPlot({ state, variable }: { state?: SimulatedNodeState; variable: VariableModel }) {
@@ -1330,10 +1350,10 @@ function ScatterplotPanel(props: {
   const yNode = props.graph.nodes.find((node) => node.id === pair.y);
   const xLabel = xNode ? nodeDisplayName(xNode) : pair.x;
   const yLabel = yNode ? nodeDisplayName(yNode) : pair.y;
-  const binaryPair = xNode !== undefined
-    && yNode !== undefined
-    && normalizeVariableModel(xNode.variable).valueType === "binary"
-    && normalizeVariableModel(yNode.variable).valueType === "binary";
+  const xIsBinary = xNode !== undefined && normalizeVariableModel(xNode.variable).valueType === "binary";
+  const yIsBinary = yNode !== undefined && normalizeVariableModel(yNode.variable).valueType === "binary";
+  const binaryPair = xIsBinary && yIsBinary;
+  const binaryContinuousPair = xIsBinary && !yIsBinary;
   const toX = (value: number) => margin.left + ((value - xDomain[0]) / (xDomain[1] - xDomain[0] || 1)) * plotWidth;
   const toY = (value: number) => margin.top + plotHeight - ((value - yDomain[0]) / (yDomain[1] - yDomain[0] || 1)) * plotHeight;
   const regression = stats && Number.isFinite(stats.slope) && Number.isFinite(stats.intercept)
@@ -1379,6 +1399,8 @@ function ScatterplotPanel(props: {
           yLabel={yLabel}
           effectiveSampleSize={props.simulation.conditioning.effectiveSampleSize}
         />
+      ) : binaryContinuousPair ? (
+        <BinaryContinuousPairView points={points} xLabel={xLabel} yLabel={yLabel} yState={yState} />
       ) : (
         <>
           <svg
@@ -1437,6 +1459,89 @@ function ScatterplotPanel(props: {
       <div className="button-row">
         <button type="button" className="mini-button" onClick={() => props.onSelectNode(pair.x)}>edit x</button>
         <button type="button" className="mini-button" onClick={() => props.onSelectNode(pair.y)}>edit y</button>
+      </div>
+    </div>
+  );
+}
+
+function BinaryContinuousPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel: string; yState: SimulatedNodeState | undefined }) {
+  const groups = binaryContinuousGroups(props.points);
+  const groupZero = groups[0];
+  const groupOne = groups[1];
+  const totalWeight = groups.reduce((sum, group) => sum + group.weight, 0);
+  const gap = groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined
+    ? groupOne.mean - groupZero.mean
+    : null;
+  const width = 280;
+  const height = 220;
+  const margin = { left: 38, right: 12, top: 14, bottom: 40 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const yDomain = scatterSampleDomain(props.points.map((point) => point.y), props.yState);
+  const maxWeight = Math.max(...props.points.map((point) => point.weight), 1);
+  const toX = (value: 0 | 1, index: number) => {
+    const center = value === 0 ? margin.left + plotWidth * 0.25 : margin.left + plotWidth * 0.75;
+    return center + deterministicJitter(index) * 20;
+  };
+  const groupCenter = (value: 0 | 1) => value === 0 ? margin.left + plotWidth * 0.25 : margin.left + plotWidth * 0.75;
+  const toY = (value: number) => margin.top + plotHeight - ((value - yDomain[0]) / (yDomain[1] - yDomain[0] || 1)) * plotHeight;
+
+  if (props.points.length === 0 || totalWeight <= 0) {
+    return <p className="muted">No finite paired samples are available for this variable pair.</p>;
+  }
+
+  return (
+    <div className="binary-continuous-pair-view">
+      <svg
+        className="scatterplot-svg binary-continuous-svg"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={`Two-group plot of ${props.yLabel} by ${props.xLabel}`}
+      >
+        <rect className="scatter-plot-background" x={margin.left} y={margin.top} width={plotWidth} height={plotHeight} />
+        <line className="scatter-axis" x1={margin.left} y1={margin.top + plotHeight} x2={margin.left + plotWidth} y2={margin.top + plotHeight} />
+        <line className="scatter-axis" x1={margin.left} y1={margin.top} x2={margin.left} y2={margin.top + plotHeight} />
+        <text className="scatter-tick-label y-start" x={margin.left - 7} y={margin.top + plotHeight}>{formatValue(yDomain[0])}</text>
+        <text className="scatter-tick-label y-end" x={margin.left - 7} y={margin.top + 4}>{formatValue(yDomain[1])}</text>
+        <text className="binary-group-label" x={groupCenter(0)} y={height - 22}>0</text>
+        <text className="binary-group-label" x={groupCenter(1)} y={height - 22}>1</text>
+        <text className="scatter-axis-label x" x={margin.left + plotWidth / 2} y={height - 3}>{abbreviateLabel(props.xLabel, 28)}</text>
+        <text className="scatter-axis-label y" x={12} y={margin.top + plotHeight / 2} transform={`rotate(-90 12 ${margin.top + plotHeight / 2})`}>{abbreviateLabel(props.yLabel, 24)}</text>
+        {props.points.map((point) => {
+          const x = coerceBinary(point.x) as 0 | 1;
+          const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
+          return (
+            <circle
+              className="scatter-point binary-continuous-point"
+              key={point.index}
+              cx={toX(x, point.index)}
+              cy={toY(point.y)}
+              r={1.6 + normalizedWeight * 2.2}
+              style={{ opacity: 0.18 + normalizedWeight * 0.58 }}
+            />
+          );
+        })}
+        {groups.map((group) => group.mean !== null && (
+          <g className="binary-group-mean" key={group.value}>
+            <line
+              x1={groupCenter(group.value) - 33}
+              y1={toY(group.mean)}
+              x2={groupCenter(group.value) + 33}
+              y2={toY(group.mean)}
+            />
+            <text x={groupCenter(group.value)} y={toY(group.mean) - 5}>mean {formatValue(group.mean)}</text>
+          </g>
+        ))}
+      </svg>
+
+      <div className="scatter-stats binary-continuous-stats">
+        <span>draws {props.points.length}</span>
+        <span>x=1 share {groupOne ? formatPercent(groupOne.share) : "n/a"}</span>
+        <span>x=0 mean {groupZero?.mean === null || groupZero?.mean === undefined ? "n/a" : formatValue(groupZero.mean)}</span>
+        <span>x=1 mean {groupOne?.mean === null || groupOne?.mean === undefined ? "n/a" : formatValue(groupOne.mean)}</span>
+        <span>x=0 n {groupZero ? formatWeightedCount(groupZero.weight) : "0"}</span>
+        <span>x=1 n {groupOne ? formatWeightedCount(groupOne.weight) : "0"}</span>
+        <span>gap 1-0 {gap === null ? "n/a" : formatSignedValue(gap)}</span>
       </div>
     </div>
   );
@@ -1505,7 +1610,6 @@ function ScenarioPanel(props: {
   onResample: () => void;
   onClearOverrides: () => void;
   onClearSelections: () => void;
-  onEmpiricalDraws: (sampleSize: number) => void;
   mode: WorkbenchMode;
   domain: ExampleDomain;
   denouement: ExampleDenouement;
@@ -1514,31 +1618,71 @@ function ScenarioPanel(props: {
   const blocked = simulationBlocked(props.simulation);
   const overrides = Object.keys(props.document.simulation.overrides);
   const selections = Object.keys(props.document.simulation.selections ?? {});
-  const empiricalDraws = graphEmpiricalDraws(props.document.graph);
   return (
     <div className="simulation-panel">
       <div className="simulation-status">
         <span className={blocked ? "status-dot blocked" : "status-dot active"} />
         <span>{blocked ? "blocked" : "live propagation"}</span>
-        <span className="muted">seed {props.document.simulation.seed}</span>
       </div>
       <div className="button-row">
         <button type="button" onClick={props.onResample}><RefreshCw size={15} /> resample</button>
         {overrides.length > 0 && <button type="button" onClick={props.onClearOverrides}>clear fixed values</button>}
         {selections.length > 0 && <button type="button" onClick={props.onClearSelections}>clear conditions</button>}
       </div>
-      <DrawCountControl value={empiricalDraws} onChange={props.onEmpiricalDraws} />
-      <ConditioningMethodPanel simulation={props.simulation} />
       <CompletedOutputPanel
         moduleId={props.completedOutputModuleId}
         analysis={props.analysis}
         document={props.document}
         simulation={props.simulation}
       />
-      <DenouementPanel denouement={props.denouement} title={props.denouementTitle} />
-      <DesignModulePanel mode={props.mode} domain={props.domain} />
-      {props.simulation.diagnostics.map((message) => <p className="warning" key={message}>{message}</p>)}
+      <PractitionerModulesDisclosure
+        mode={props.mode}
+        domain={props.domain}
+        denouement={props.denouement}
+        denouementTitle={props.denouementTitle}
+      />
     </div>
+  );
+}
+
+function SimulationDiagnosticsPanel(props: {
+  document: GraphDocument;
+  simulation: SimulationResult;
+  empiricalDraws: number;
+  onEmpiricalDraws: (sampleSize: number) => void;
+}) {
+  return (
+    <div className="simulation-diagnostics-panel">
+      <DrawCountControl value={props.empiricalDraws} onChange={props.onEmpiricalDraws} />
+      <ConditioningMethodPanel simulation={props.simulation} />
+      <div className="diagnostic-list">
+        <strong>Run diagnostics</strong>
+        <span>seed {props.document.simulation.seed}</span>
+        {props.simulation.diagnostics.length === 0
+          ? <span>No active simulation warnings.</span>
+          : props.simulation.diagnostics.map((message) => <span className="warning" key={message}>{message}</span>)}
+      </div>
+    </div>
+  );
+}
+
+function PractitionerModulesDisclosure(props: {
+  mode: WorkbenchMode;
+  domain: ExampleDomain;
+  denouement: ExampleDenouement;
+  denouementTitle: string;
+}) {
+  return (
+    <details className="scenario-disclosure practitioner-modules">
+      <summary>
+        <span>Practitioner modules</span>
+        <small>claim packet, denouement, design modules</small>
+      </summary>
+      <div className="scenario-disclosure-body">
+        <DenouementPanel denouement={props.denouement} title={props.denouementTitle} />
+        <DesignModulePanel mode={props.mode} domain={props.domain} />
+      </div>
+    </details>
   );
 }
 
@@ -2563,6 +2707,28 @@ function scatterPoints(xState: SimulatedNodeState | undefined, yState: Simulated
   return points;
 }
 
+function binaryContinuousGroups(points: ScatterPoint[]): BinaryContinuousGroup[] {
+  const groups: BinaryContinuousGroup[] = [
+    { value: 0, count: 0, weight: 0, mean: null, share: 0 },
+    { value: 1, count: 0, weight: 0, mean: null, share: 0 }
+  ];
+  const totals: Record<0 | 1, number> = { 0: 0, 1: 0 };
+  for (const point of points) {
+    const value = coerceBinary(point.x) as 0 | 1;
+    const group = groups[value];
+    if (!group) continue;
+    group.count += 1;
+    group.weight += point.weight;
+    totals[value] += point.y * point.weight;
+  }
+  const totalWeight = groups.reduce((sum, group) => sum + group.weight, 0);
+  return groups.map((group) => ({
+    ...group,
+    mean: group.weight > 0 ? totals[group.value] / group.weight : null,
+    share: totalWeight > 0 ? group.weight / totalWeight : 0
+  }));
+}
+
 function binaryCells(points: ScatterPoint[]): BinaryCell[] {
   const cells: BinaryCell[] = [
     { x: 0, y: 0, weight: 0, count: 0, percent: 0 },
@@ -2596,6 +2762,41 @@ function scatterDomain(values: number[], state: SimulatedNodeState | undefined):
   }
   const pad = (max - min) * 0.06;
   return [min - pad, max + pad];
+}
+
+function scatterSampleDomain(values: number[], state: SimulatedNodeState | undefined): [number, number] {
+  const candidates = values.filter(Number.isFinite);
+  if (candidates.length === 0) {
+    if (state?.empirical.min !== null && state?.empirical.min !== undefined) candidates.push(state.empirical.min);
+    if (state?.empirical.max !== null && state?.empirical.max !== undefined) candidates.push(state.empirical.max);
+  }
+  if (candidates.length === 0) return [-1, 1];
+  let min = Math.min(...candidates);
+  let max = Math.max(...candidates);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [-1, 1];
+  if (Math.abs(max - min) < 1e-6) {
+    min -= 1;
+    max += 1;
+  }
+  const pad = (max - min) * 0.08;
+  min -= pad;
+  max += pad;
+  const step = niceTickStep(max - min);
+  return [Math.floor(min / step) * step, Math.ceil(max / step) * step];
+}
+
+function niceTickStep(span: number): number {
+  if (!Number.isFinite(span) || span <= 0) return 1;
+  const rough = span / 4;
+  const power = 10 ** Math.floor(Math.log10(rough));
+  const scaled = rough / power;
+  const factor = scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 5 ? 5 : 10;
+  return factor * power;
+}
+
+function deterministicJitter(index: number): number {
+  const x = Math.sin((index + 1) * 12.9898) * 43758.5453;
+  return x - Math.floor(x) - 0.5;
 }
 
 function weightedScatterStats(points: ScatterPoint[]): {

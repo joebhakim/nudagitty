@@ -12,9 +12,11 @@ test("loads the editor and creates a variable with the node tool", async ({ page
   await expect(page.getByLabel("Editable causal graph")).toBeVisible();
   await expect(page.locator(".editor-column")).toContainText("Select a node or edge for editing.");
   await expect(page.locator("body")).not.toContainText("Live Node Values");
-  await expect(page.locator(".scenario-column").getByLabel("empirical draws", { exact: true })).toHaveValue("320");
-  await page.locator(".scenario-column").getByLabel("empirical draws", { exact: true }).fill("640");
+  await page.locator(".advanced-drawer summary").click();
+  await expect(page.locator(".advanced-drawer").getByLabel("empirical draws", { exact: true })).toHaveValue("320");
+  await page.locator(".advanced-drawer").getByLabel("empirical draws", { exact: true }).fill("640");
   await expect(page.locator(".scatterplot-panel")).toContainText("draws 640");
+  await page.locator(".advanced-drawer summary").click();
 
   await page.getByRole("button", { name: "Variable" }).click();
   await page.locator(".graph-canvas").click({ position: { x: 80, y: 320 } });
@@ -132,6 +134,7 @@ test("domain mode exposes practitioner examples and recommended modules", async 
   await page.getByRole("menuitem").filter({ hasText: "Target trial: treatment start and follow-up" }).click();
 
   await expect(page.locator("text.node-label").filter({ hasText: "treatment start" })).toBeVisible();
+  await page.locator(".scenario-column").getByText("Practitioner modules").click();
   await expect(page.locator(".scenario-column")).toContainText("Target trial");
   await expect(page.locator(".scenario-column")).toContainText("Negative controls");
 
@@ -151,6 +154,7 @@ test("Simpson example reports a completed crude versus do contrast", async ({ pa
   await expect(output).toContainText("Treatment <- Severity -> Recovery");
   await expect(output).toContainText("do(Treatment=1)");
   await expect(output).toContainText(/Sign reversal|No sign reversal/);
+  await expect(page.locator(".edge-value").first()).toContainText("linear coef");
 });
 
 test("ICU example reports severity confounding and triage collider warning", async ({ page }) => {
@@ -200,10 +204,16 @@ test("tutoring example reports a raw versus do sign flip", async ({ page }) => {
   await expect(output).toContainText("Tutoring <- Academic_need -> Test_score");
   await expect(output).toContainText("Sign reversal");
   await expect(output).toContainText("do(Tutoring=1)");
+  const pairwise = page.locator(".scatterplot-panel");
+  await expect(pairwise).toContainText("x=0 mean");
+  await expect(pairwise).toContainText("x=1 mean");
+  await expect(pairwise).toContainText("gap 1-0");
+  await expect(pairwise).not.toContainText("corr");
 });
 
 test("denouement panel switches by example and expands checklists", async ({ page }) => {
   await page.goto("/");
+  await page.locator(".scenario-column").getByText("Practitioner modules").click();
   const denouement = page.locator(".denouement-panel");
 
   await expect(denouement).toContainText("Adjustment / backdoor");
@@ -266,6 +276,7 @@ test("conditioning a Galton variable is separate from overriding it", async ({ p
     element.dispatchEvent(new Event("change", { bubbles: true }));
   });
 
+  await page.locator(".advanced-drawer summary").click();
   await expect(conditioning.getByLabel("inference method")).toHaveValue("analytic");
   await expect(page.locator(".conditioning-summary")).toContainText("Inference Methods");
   await expect(page.locator(".conditioning-summary")).toContainText("Father_height >= 72");
@@ -285,6 +296,7 @@ test("inference selector switches Galton conditioning between rejection and impo
   const conditioning = page.locator(".editor-column").locator(".conditioning-editor");
   await conditioning.getByRole("button", { name: "condition on current" }).click();
   await conditioning.getByRole("spinbutton", { name: "value" }).fill("72");
+  await page.locator(".advanced-drawer summary").click();
   await conditioning.getByLabel("inference method").selectOption("rejection");
   await expect(page.locator(".conditioning-summary")).toContainText("selected rejection sampling");
   await expect(page.locator(".conditioning-summary")).toContainText("active rejection sampling");
