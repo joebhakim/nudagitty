@@ -22,6 +22,7 @@ describe("example catalog", () => {
       "causal-ml-refutation",
       "ops-root-cause",
       "education-mediation",
+      "chess-intelligence-practice",
       "galton-regression"
     ]);
     expect(EXAMPLES.some((example) => example.id === "confounding-triangle")).toBe(false);
@@ -133,6 +134,29 @@ describe("example catalog", () => {
     expect(causalGap).toBeGreaterThan(0);
     expect(needGap).toBeGreaterThan(0);
   });
+
+  it("configures the chess example with nonlinear practice and Elo selection mechanisms", () => {
+    const document = exampleDocument("chess-intelligence-practice");
+    if (!document) throw new Error("missing chess example");
+    const practiceEdge = document.graph.edges.find((edge) => edge.source === "Practice_hours" && edge.target === "Chess_Elo");
+    const intelligenceEdge = document.graph.edges.find((edge) => edge.source === "Intelligence" && edge.target === "Chess_Elo");
+    const eliteEdge = document.graph.edges.find((edge) => edge.source === "Chess_Elo" && edge.target === "Elite_sample");
+    if (!practiceEdge || !intelligenceEdge || !eliteEdge) throw new Error("missing chess edge");
+    expect(document.simulation.edges[practiceEdge.id]?.kind).toBe("hill_emax");
+    expect(document.simulation.edges[intelligenceEdge.id]?.kind).toBe("smooth_threshold");
+    expect(document.simulation.edges[eliteEdge.id]?.kind).toBe("smooth_threshold");
+
+    const result = runSimulation(document.graph, document.simulation);
+    const practice = result.nodeStates.Practice_hours;
+    const elo = result.nodeStates.Chess_Elo;
+    const elite = result.nodeStates.Elite_sample;
+    if (!practice || !elo || !elite) throw new Error("missing chess node state");
+    expect(elo.empirical.mean ?? 0).toBeGreaterThan(1300);
+    expect(elo.empirical.mean ?? 0).toBeLessThan(2100);
+    expect((elite.empirical.mean ?? 0)).toBeGreaterThan(0.05);
+    expect((elite.empirical.mean ?? 1)).toBeLessThan(0.6);
+    expect(correlation(practice.empirical.samples, elo.empirical.samples)).toBeGreaterThan(0.35);
+  });
 });
 
 function conditionalMean(condition: number[], outcome: number[], value: 0 | 1): number {
@@ -146,4 +170,24 @@ function conditionalMean(condition: number[], outcome: number[], value: 0 | 1): 
     }
   }
   return sum / count;
+}
+
+function correlation(x: number[], y: number[]): number {
+  const length = Math.min(x.length, y.length);
+  if (length === 0) return 0;
+  const xs = x.slice(0, length);
+  const ys = y.slice(0, length);
+  const meanX = xs.reduce((sum, value) => sum + value, 0) / length;
+  const meanY = ys.reduce((sum, value) => sum + value, 0) / length;
+  let numerator = 0;
+  let xVariance = 0;
+  let yVariance = 0;
+  for (let index = 0; index < length; index += 1) {
+    const dx = (xs[index] ?? 0) - meanX;
+    const dy = (ys[index] ?? 0) - meanY;
+    numerator += dx * dy;
+    xVariance += dx * dx;
+    yVariance += dy * dy;
+  }
+  return numerator / Math.sqrt(Math.max(Number.EPSILON, xVariance * yVariance));
 }

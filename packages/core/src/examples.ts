@@ -1,6 +1,6 @@
 import { parseModel } from "./parser";
 import { defaultEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel } from "./graph";
-import type { GraphDocument, NodeDistribution, NodeMechanism, VariableModel } from "./types";
+import type { EdgeMechanismKind, GraphDocument, NodeDistribution, NodeMechanism, VariableModel } from "./types";
 
 export const EXAMPLE_DOMAINS = [
   { id: "classic", label: "Classic DAG patterns", description: "Compact examples for teaching and fast bias checks." },
@@ -379,6 +379,30 @@ export const EXAMPLES: ExampleModel[] = [
   Engagement -> Test_score
   Survey_response -> Attrition
   Test_score -> Attrition
+}`
+  },
+  {
+    id: "chess-intelligence-practice",
+    title: "Does chess need intelligence?",
+    domain: "social",
+    summary: "Youth chess skill example after Bilalic, McLeod, and Gobet: practice dominates, intelligence has a smaller nonlinear contribution, and elite Elo selection changes associations.",
+    code: `dag {
+  Academic_pull [latent,label="academic pull",pos="-3,1.25"]
+  Coaching_access [adjusted,label="coaching access",pos="-3,-0.5"]
+  Experience_years [adjusted,label="years experience",pos="-1.55,-1.25"]
+  Intelligence [exposure,label="intelligence",pos="-1.25,0.9"]
+  Practice_hours [adjusted,label="deliberate practice",pos="-0.9,-0.15"]
+  Chess_Elo [outcome,label="chess Elo",pos="1.15,0"]
+  Elite_sample [selected,label="elite sample",pos="2.8,0.85"]
+  Academic_pull -> Intelligence
+  Academic_pull -> Practice_hours
+  Coaching_access -> Practice_hours
+  Coaching_access -> Chess_Elo
+  Experience_years -> Practice_hours
+  Experience_years -> Chess_Elo
+  Intelligence -> Chess_Elo
+  Practice_hours -> Chess_Elo
+  Chess_Elo -> Elite_sample
 }`
   },
   {
@@ -1312,6 +1336,53 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
       }
     ]
   },
+  "chess-intelligence-practice": {
+    module: "Nonlinear SEM / selection on skill",
+    punchline: "Practice can dominate chess skill while intelligence still has a smaller, threshold-like contribution; selecting only elite Elo players can make the observed intelligence-skill association look weak or even reversed.",
+    estimand: "Total effect of Intelligence on Chess_Elo in the youth-player population represented by the graph, with Practice_hours and Experience_years shown as competing explanatory mechanisms rather than linear nuisances.",
+    primaryOutput: "Nonlinear mechanism packet: saturating practice-to-Elo edge, smooth intelligence threshold, and selected elite sample caused by an Elo cutoff.",
+    validity: "This is a clean-room teaching model inspired by Bilalic, McLeod, and Gobet (2007), not a reconstruction of their fitted coefficients; it is credible only as a demonstration of nonlinear mechanisms and selection effects.",
+    nextAction: "Use it to show why the edge-function menu matters: linear practice effects miss diminishing returns, and linear selection misses the elite-threshold mechanism.",
+    sections: [
+      {
+        title: "Claim packet",
+        defaultOpen: true,
+        items: [
+          "State the motivating question as Intelligence -> Chess_Elo, while keeping practice and experience explicit.",
+          "Show that Practice_hours has a saturating dose-response: early practice moves Elo more than later practice.",
+          "Show that Intelligence contributes through a smooth threshold rather than a constant linear slope.",
+          "Show Elite_sample as selection on Chess_Elo, not as a clean population variable."
+        ]
+      },
+      {
+        title: "Diagnostics to show",
+        defaultOpen: true,
+        items: [
+          "Open paths from Intelligence and Practice_hours into Chess_Elo.",
+          "The nonlinear function on Practice_hours -> Chess_Elo.",
+          "The smooth threshold on Chess_Elo -> Elite_sample.",
+          "Conditioning on Elite_sample can change the apparent relation among intelligence, practice, and skill."
+        ]
+      },
+      {
+        title: "Threats and failure modes",
+        items: [
+          "The example is a stylized SEM, not a claim that the actual paper estimated these exact functions.",
+          "Practice quality, motivation, parental support, tournament access, and age-at-start are compressed into a few nodes.",
+          "Conditioning on elite players is a selection operation and should not be interpreted as the population relationship.",
+          "A linear edge from practice to Elo would overstate gains at the high-practice end."
+        ]
+      },
+      {
+        title: "Report language",
+        items: [
+          "Say: this toy graph uses the chess paper to motivate nonlinear edge functions and selected-subsample reasoning.",
+          "Do not say: the app has reproduced the original article's coefficient estimates.",
+          "Say: practice dominates in this model, intelligence has a smaller nonlinear contribution, and elite selection changes what correlations mean."
+        ]
+      }
+    ]
+  },
   "galton-regression": {
     module: "Descriptive causal explanation / regression to the mean",
     punchline: "The son-father height relationship is not represented as Father_height causing Son_height; the useful output explains regression to the mean through shared and independent latent components.",
@@ -1402,6 +1473,7 @@ function configurePractitionerExample(document: GraphDocument, id: string): Grap
   if (id === "causal-ml-refutation") return configureCausalMlRefutation(next);
   if (id === "ops-root-cause") return configureOpsRootCause(next);
   if (id === "education-mediation") return configureEducationMediation(next);
+  if (id === "chess-intelligence-practice") return configureChessIntelligencePractice(next);
   return next;
 }
 
@@ -1750,6 +1822,52 @@ function configureEducationMediation(document: GraphDocument): GraphDocument {
   return document;
 }
 
+function configureChessIntelligencePractice(document: GraphDocument): GraphDocument {
+  setContinuousVariable(document, "Academic_pull", "Latent academic pull: stronger school identity raises measured intelligence but competes with chess practice time.", "z-score", ["latent"]);
+  setContinuousVariable(document, "Coaching_access", "Family, club, and coaching access that makes practice easier and improves tournament skill.", "access z-score");
+  setContinuousVariable(document, "Experience_years", "Years of tournament chess experience.", "years");
+  setContinuousVariable(document, "Intelligence", "Measured general cognitive ability, analogous to the WISC-style construct in the motivating study.", "IQ");
+  setContinuousVariable(document, "Practice_hours", "Cumulative deliberate chess practice. The effect on Elo is configured as diminishing returns.", "hours");
+  setContinuousVariable(document, "Chess_Elo", "Elo-like chess skill rating. The nonlinear edge functions intentionally make this more than a linear regression example.", "Elo");
+  setBinaryVariable(document, "Elite_sample", "Indicator for being included in an elite subsample after crossing a high Elo threshold.", "selected");
+
+  setNode(document, "Academic_pull", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Coaching_access", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Experience_years", { distribution: { kind: "gamma", shape: 2.3, scale: 1.45 }, noise: ZERO_NOISE });
+  setNode(document, "Intelligence", { intercept: 100, noise: { kind: "normal", mean: 0, sd: 9 } });
+  setNode(document, "Practice_hours", { intercept: 1600, noise: { kind: "normal", mean: 0, sd: 240 } });
+  setNode(document, "Chess_Elo", { intercept: 870, noise: { kind: "normal", mean: 0, sd: 80 } });
+  setLogitNode(document, "Elite_sample", -5.6);
+
+  setLinearCoefficient(document, "Academic_pull", "Intelligence", 10);
+  setLinearCoefficient(document, "Academic_pull", "Practice_hours", -380);
+  setLinearCoefficient(document, "Coaching_access", "Practice_hours", 520);
+  setLinearCoefficient(document, "Coaching_access", "Chess_Elo", 55);
+  setLinearCoefficient(document, "Experience_years", "Practice_hours", 620);
+  setEdgeMechanism(document, "Experience_years", "Chess_Elo", "saturating", {
+    scale: 210,
+    midpoint: 3.1,
+    steepness: 0.42
+  });
+  setEdgeMechanism(document, "Intelligence", "Chess_Elo", "smooth_threshold", {
+    threshold: 100,
+    scale: 170,
+    steepness: 0.09
+  });
+  setEdgeMechanism(document, "Practice_hours", "Chess_Elo", "hill_emax", {
+    baseline: 0,
+    maxEffect: 820,
+    ec50: 2300,
+    exponent: 1.45
+  });
+  setEdgeMechanism(document, "Chess_Elo", "Elite_sample", "smooth_threshold", {
+    threshold: 1800,
+    scale: 9,
+    steepness: 0.018
+  });
+  return document;
+}
+
 function configureGaltonExample(document: GraphDocument): GraphDocument {
   const next = prepareDocument(document, 7);
   next.graph.nodes = next.graph.nodes.map((node) => {
@@ -1919,6 +2037,18 @@ function setLinearCoefficient(document: GraphDocument, source: string, target: s
   const edge = document.graph.edges.find((candidate) => candidate.source === source && candidate.target === target);
   if (!edge) return;
   document.simulation.edges[edge.id] = { ...defaultEdgeMechanism("linear"), coefficient };
+}
+
+function setEdgeMechanism(
+  document: GraphDocument,
+  source: string,
+  target: string,
+  kind: EdgeMechanismKind,
+  patch: Partial<ReturnType<typeof defaultEdgeMechanism>>
+) {
+  const edge = document.graph.edges.find((candidate) => candidate.source === source && candidate.target === target);
+  if (!edge) return;
+  document.simulation.edges[edge.id] = { ...defaultEdgeMechanism(kind), ...patch };
 }
 
 function exampleSeed(id: string): number {

@@ -41,6 +41,26 @@ test("selected connections populate the editor column", async ({ page }) => {
   await expect(page.locator("body")).not.toContainText("Connection Detail");
 });
 
+test("chess example exposes nonlinear practice and elite threshold edges", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Domain" }).click();
+  await page.getByLabel("Examples").click();
+  await page.getByText("Social science / education / psychology").hover();
+  await page.getByRole("menuitem").filter({ hasText: "Does chess need intelligence?" }).click();
+
+  await expect(page.locator("text.node-label").filter({ hasText: "chess Elo" })).toBeVisible();
+  await expect(page.locator("text.node-label").filter({ hasText: "elite sample" })).toBeVisible();
+
+  const editor = page.locator(".editor-column");
+  await page.locator(".edge-hit").nth(7).dispatchEvent("pointerdown");
+  await expect(editor).toContainText("Practice_hours to Chess_Elo");
+  await expect(editor.getByLabel("function Practice_hours to Chess_Elo")).toContainText("Hill / Emax");
+
+  await page.locator(".edge-hit").nth(8).dispatchEvent("pointerdown");
+  await expect(editor).toContainText("Chess_Elo to Elite_sample");
+  await expect(editor.getByLabel("function Chess_Elo to Elite_sample")).toContainText("smooth threshold");
+});
+
 test("selected variables populate the editor column", async ({ page }) => {
   await page.goto("/");
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
