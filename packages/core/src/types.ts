@@ -63,6 +63,11 @@ export type SimulationDisplayMode =
   | "uncertainty_band"
   | "causal_contrast";
 
+export type AdjustmentMethodKind =
+  | "none"
+  | "bins"
+  | "propensity_score_todo";
+
 export interface VariableMeasurementModel {
   kind: MeasurementModelKind;
   errorSd: number;
@@ -83,6 +88,11 @@ export interface VariableSimulationView {
   sampleSize: number;
 }
 
+export interface VariableAdjustmentModel {
+  method: AdjustmentMethodKind;
+  cutpoints: number[];
+}
+
 export interface VariableModel {
   description: string;
   valueType: VariableValueType;
@@ -91,6 +101,7 @@ export interface VariableModel {
   measurement: VariableMeasurementModel;
   intervention: VariableInterventionModel;
   simulation: VariableSimulationView;
+  adjustment: VariableAdjustmentModel;
   tags: string[];
 }
 

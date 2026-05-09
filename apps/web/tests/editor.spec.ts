@@ -10,6 +10,8 @@ test("loads the editor and creates a variable with the node tool", async ({ page
   await page.goto("/");
   await expect(page.getByText("Nudagitty")).toBeVisible();
   await expect(page.getByLabel("Editable causal graph")).toBeVisible();
+  await expect(page.locator(".graph-legend")).toBeVisible();
+  await expect(page.locator(".edge-function-glyph").first()).toBeVisible();
   await expect(page.locator(".editor-column")).toContainText("Select a node or edge for editing.");
   await expect(page.locator("body")).not.toContainText("Live Node Values");
   await page.locator(".advanced-drawer summary").click();
@@ -32,11 +34,16 @@ test("selected connections populate the editor column", async ({ page }) => {
 
   await expect(editor).toContainText("Connection");
   await expect(editor).toContainText("Severity to Treatment");
+  await expect(editor.getByRole("button", { name: "coefficient decrease 10 percent" })).toBeVisible();
+  await expect(editor.getByRole("button", { name: "coefficient increase 1", exact: true })).toBeVisible();
   await editor.getByLabel("function Severity to Treatment").click();
   await page.getByRole("option", { name: /Hill \/ Emax/ }).click();
 
   await expect(editor.locator(".edge-panel")).toContainText("EC50");
+  await expect(editor.getByRole("button", { name: "max effect increase 1", exact: true })).toBeVisible();
+  await expect(editor.getByLabel("EC50 slider")).toBeVisible();
   await expect(editor.getByLabel("function Severity to Treatment")).toContainText("Hill / Emax");
+  await expect(page.locator(".edge-value").filter({ hasText: "Hill / Emax" })).toBeVisible();
   await expect(page.locator("body")).not.toContainText("Connection Functions");
   await expect(page.locator("body")).not.toContainText("Connection Detail");
 });
@@ -48,8 +55,11 @@ test("chess example exposes nonlinear practice and elite threshold edges", async
   await page.getByText("Social science / education / psychology").hover();
   await page.getByRole("menuitem").filter({ hasText: "Does chess need intelligence?" }).click();
 
+  await expect(page.getByLabel("Examples")).toContainText("TO FIX: CALIBRATE?");
   await expect(page.locator("text.node-label").filter({ hasText: "chess Elo" })).toBeVisible();
   await expect(page.locator("text.node-label").filter({ hasText: "elite sample" })).toBeVisible();
+  await expect(page.locator(".edge-value").filter({ hasText: "Hill / Emax" })).toBeVisible();
+  await expect(page.locator(".edge-value").filter({ hasText: "smooth thresh" })).toHaveCount(2);
 
   const editor = page.locator(".editor-column");
   await page.locator(".edge-hit").nth(7).dispatchEvent("pointerdown");
@@ -177,6 +187,27 @@ test("Simpson example reports a completed crude versus do contrast", async ({ pa
   await expect(page.locator(".edge-value").first()).toContainText("linear coef");
 });
 
+test("adjusted continuous variables expose draggable bin methodology and positivity warnings", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
+  const editor = page.locator(".editor-column");
+
+  await editor.getByRole("tab", { name: "adjustment" }).click();
+  await expect(editor).toContainText("Adjustment methodology");
+  await expect(editor).toContainText("Binned standardization");
+  await expect(editor.locator(".adjustment-bin-histogram")).toBeVisible();
+  await expect(editor).toContainText("Click the histogram to add a split");
+
+  await editor.getByRole("button", { name: "quartile splits" }).click();
+  await expect(editor.locator(".adjustment-cut-line")).toHaveCount(3);
+  await expect(editor).toContainText("Positivity by bin");
+  await expect(editor).toContainText("exposed");
+  await expect(editor).toContainText("unexposed");
+
+  await editor.getByRole("button", { name: /Propensity weighting/ }).click();
+  await expect(editor).toContainText("Planned: estimate treatment probability");
+});
+
 test("ICU example reports severity confounding and triage collider warning", async ({ page }) => {
   await page.goto("/");
   await loadExample(page, "Does the ICU make patients die?");
@@ -198,32 +229,61 @@ test("college example reports a raw versus do earnings premium", async ({ page }
   await loadExample(page, "Does college raise earnings?");
   const output = page.locator(".completed-output-card");
 
-  await expect(page.locator("text.node-label").filter({ hasText: "family advantage" })).toBeVisible();
+  await expect(page.locator("text.node-label").filter({ hasText: "family log income" })).toBeVisible();
   await expect(page.locator("text.node-label").filter({ hasText: "College" })).toBeVisible();
   await expect(page.locator("text.node-label").filter({ hasText: "Earnings" })).toBeVisible();
   await expect(output).toContainText("college ready");
   await expect(output).toContainText("raw premium");
   await expect(output).toContainText("do premium");
-  await expect(output).toContainText("advantage gap");
-  await expect(output).toContainText("College <- Family_advantage -> Earnings");
+  await expect(output).toContainText("income gap");
+  await expect(output).toContainText("College <- Family_log_income -> Earnings");
   await expect(output).toContainText("do(College=1)");
+  await page.locator("text.node-label").filter({ hasText: "family log income" }).click({ force: true });
+  await page.locator(".editor-column").getByRole("tab", { name: "adjustment" }).click();
+  await expect(page.locator(".editor-column")).toContainText("Binned standardization");
+  await expect(page.locator(".editor-column").locator(".adjustment-bin-histogram")).toBeVisible();
+  await expect(page.locator(".binned-adjustment-graph-card")).toHaveCount(0);
+  await page.locator(".editor-column").getByRole("button", { name: "quartile splits" }).click();
+  const binnedGraph = page.locator(".binned-adjustment-graph-card");
+  await expect(binnedGraph).toBeVisible();
+  await expect(binnedGraph).toContainText("Binned earnings adjustment");
+  await expect(binnedGraph).toContainText("binned adjusted premium");
+  await expect(binnedGraph).toContainText("Weak support metric");
+  expect(await binnedGraph.locator(".binned-strip-point").count()).toBeGreaterThan(20);
 });
 
 test("tutoring example reports a raw versus do sign flip", async ({ page }) => {
   await page.goto("/");
-  await loadExample(page, "Does tutoring hurt test scores?");
+  await loadExample(page, "Does tutoring hurt test scores (unadjusted)");
   const output = page.locator(".completed-output-card");
 
   await expect(page.locator("text.node-label").filter({ hasText: "academic need" })).toBeVisible();
   await expect(page.locator("text.node-label").filter({ hasText: "Tutoring" })).toBeVisible();
   await expect(page.locator("text.node-label").filter({ hasText: "test score" })).toBeVisible();
-  await expect(output).toContainText("sign flip ready");
+  await expect(output).toContainText("fix available");
+  await expect(output.locator(".completed-output-body")).toBeHidden();
+  await output.locator("summary").click();
+  await expect(output.locator(".completed-output-body")).toBeVisible();
+  await expect(output).toContainText("Fix target");
   await expect(output).toContainText("raw score gap");
   await expect(output).toContainText("do score gain");
   await expect(output).toContainText("need gap");
   await expect(output).toContainText("Tutoring <- Academic_need -> Test_score");
   await expect(output).toContainText("Sign reversal");
   await expect(output).toContainText("do(Tutoring=1)");
+  await expect(output).toContainText("Adjusted reveal plan");
+  await expect(page.locator(".adjusted-pair-graph-card")).toHaveCount(0);
+  await page.locator("text.node-label").filter({ hasText: "academic need" }).click({ force: true });
+  await page.locator(".editor-column").getByLabel("adjusted").click();
+  const adjustedGraph = page.locator(".adjusted-pair-graph-card");
+  await expect(adjustedGraph).toBeVisible();
+  await expect(adjustedGraph).toContainText("Adjusted pair graph");
+  await expect(adjustedGraph).toContainText("Low need");
+  await expect(adjustedGraph).toContainText("High need");
+  await expect(adjustedGraph).toContainText("weighted adjusted gap");
+  await expect(adjustedGraph).toContainText("Continuous confounders need bins");
+  expect(await adjustedGraph.locator(".adjusted-strip-point").count()).toBeGreaterThan(20);
+  await expect(adjustedGraph.locator(".adjusted-strip-treatment-label").filter({ hasText: "tutored" }).first()).toBeVisible();
   const pairwise = page.locator(".scatterplot-panel");
   await expect(pairwise).toContainText("x=0 mean");
   await expect(pairwise).toContainText("x=1 mean");

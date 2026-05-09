@@ -93,12 +93,12 @@ describe("example catalog", () => {
     const result = runSimulation(document.graph, document.simulation);
     const college = result.nodeStates.College;
     const earnings = result.nodeStates.Earnings;
-    const advantage = result.nodeStates.Family_advantage;
-    if (!college || !earnings || !advantage) throw new Error("missing college node state");
+    const income = result.nodeStates.Family_log_income;
+    if (!college || !earnings || !income) throw new Error("missing college node state");
     const observedPremium = conditionalMean(college.empirical.samples, earnings.empirical.samples, 1) -
       conditionalMean(college.empirical.samples, earnings.empirical.samples, 0);
-    const advantageGap = conditionalMean(college.empirical.samples, advantage.empirical.samples, 1) -
-      conditionalMean(college.empirical.samples, advantage.empirical.samples, 0);
+    const incomeGap = conditionalMean(college.empirical.samples, income.empirical.samples, 1) -
+      conditionalMean(college.empirical.samples, income.empirical.samples, 0);
     const doCollege = runSimulation(document.graph, { ...document.simulation, overrides: { College: 1 }, selections: {} });
     const doNoCollege = runSimulation(document.graph, { ...document.simulation, overrides: { College: 0 }, selections: {} });
     const doCollegeEarnings = doCollege.nodeStates.Earnings;
@@ -108,12 +108,14 @@ describe("example catalog", () => {
 
     expect(observedPremium).toBeGreaterThan(causalPremium);
     expect(causalPremium).toBeGreaterThan(0);
-    expect(advantageGap).toBeGreaterThan(0);
+    expect(incomeGap).toBeGreaterThan(0);
   });
 
   it("configures the tutoring example as a raw-versus-causal sign flip", () => {
     const document = exampleDocument("tutoring-scores");
     if (!document) throw new Error("missing tutoring example");
+    expect(document.title).toBe("Does tutoring hurt test scores (unadjusted)");
+    expect(document.graph.nodes.find((node) => node.id === "Academic_need")?.roles.adjusted).toBe(false);
     const result = runSimulation(document.graph, document.simulation);
     const tutoring = result.nodeStates.Tutoring;
     const score = result.nodeStates.Test_score;
@@ -138,6 +140,7 @@ describe("example catalog", () => {
   it("configures the chess example with nonlinear practice and Elo selection mechanisms", () => {
     const document = exampleDocument("chess-intelligence-practice");
     if (!document) throw new Error("missing chess example");
+    expect(document.title).toContain("TO FIX: CALIBRATE?");
     const practiceEdge = document.graph.edges.find((edge) => edge.source === "Practice_hours" && edge.target === "Chess_Elo");
     const intelligenceEdge = document.graph.edges.find((edge) => edge.source === "Intelligence" && edge.target === "Chess_Elo");
     const eliteEdge = document.graph.edges.find((edge) => edge.source === "Chess_Elo" && edge.target === "Elite_sample");

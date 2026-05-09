@@ -14,6 +14,7 @@ import type {
   Point,
   SimulationSpec,
   SimulationSelectionCondition,
+  AdjustmentMethodKind,
   InterventionKind,
   MeasurementModelKind,
   SimulationDisplayMode,
@@ -94,6 +95,12 @@ const SIMULATION_DISPLAY_MODES: ReadonlySet<SimulationDisplayMode> = new Set([
   "causal_contrast"
 ]);
 
+const ADJUSTMENT_METHOD_KINDS: ReadonlySet<AdjustmentMethodKind> = new Set([
+  "none",
+  "bins",
+  "propensity_score_todo"
+]);
+
 export function roles(overrides: Partial<NodeRoleFlags> = {}): NodeRoleFlags {
   return { ...DEFAULT_ROLES, ...overrides };
 }
@@ -120,6 +127,10 @@ export function defaultVariableModel(): VariableModel {
     simulation: {
       mode: "single_draw",
       sampleSize: 320
+    },
+    adjustment: {
+      method: "none",
+      cutpoints: []
     },
     tags: []
   };
@@ -306,6 +317,7 @@ export function normalizeVariableModel(model: Partial<VariableModel> | undefined
   const measurement = (raw.measurement ?? {}) as Record<string, unknown>;
   const intervention = (raw.intervention ?? {}) as Record<string, unknown>;
   const simulation = (raw.simulation ?? {}) as Record<string, unknown>;
+  const adjustment = (raw.adjustment ?? {}) as Record<string, unknown>;
   return {
     description: stringOr(raw.description, base.description),
     valueType: isMember(raw.valueType, VARIABLE_VALUE_TYPES) ? raw.valueType : base.valueType,
@@ -327,6 +339,10 @@ export function normalizeVariableModel(model: Partial<VariableModel> | undefined
     simulation: {
       mode: isMember(simulation.mode, SIMULATION_DISPLAY_MODES) ? simulation.mode : base.simulation.mode,
       sampleSize: integerOr(simulation.sampleSize, base.simulation.sampleSize, 1)
+    },
+    adjustment: {
+      method: isMember(adjustment.method, ADJUSTMENT_METHOD_KINDS) ? adjustment.method : base.adjustment.method,
+      cutpoints: numberListOr(adjustment.cutpoints)
     },
     tags: stringListOr(raw.tags)
   };
@@ -407,6 +423,11 @@ function stringOr(value: unknown, fallback: string): string {
 function stringListOr(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean);
+}
+
+function numberListOr(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is number => typeof item === "number" && Number.isFinite(item)).sort((a, b) => a - b);
 }
 
 function isMember<T extends string>(value: unknown, values: ReadonlySet<T>): value is T {

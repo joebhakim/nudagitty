@@ -108,7 +108,8 @@ type ScatterPair = { x: string; y: string };
 type ScatterPoint = { x: number; y: number; weight: number; index: number };
 type BinaryCell = { x: 0 | 1; y: 0 | 1; weight: number; count: number; percent: number };
 type BinaryContinuousGroup = { value: 0 | 1; count: number; weight: number; mean: number | null; share: number };
-type VariableEditorTab = "model" | "interventions";
+type PositivityRow = { lower: number; upper: number; exposed: number; unexposed: number; total: number; warning: string | null };
+type VariableEditorTab = "model" | "interventions" | "adjustment";
 type DesignModuleStatus = "usable" | "todo";
 type DragState =
   | { kind: "node"; id: string; offset: Point }
@@ -978,6 +979,10 @@ function GraphCanvas(props: {
   const viewBoxWidth = BASE_VIEWBOX.width / viewport.zoom;
   const viewBoxHeight = BASE_VIEWBOX.height / viewport.zoom;
   const viewBox = `${viewport.cx - viewBoxWidth / 2} ${viewport.cy - viewBoxHeight / 2} ${viewBoxWidth} ${viewBoxHeight}`;
+  const legendWidth = 168;
+  const legendHeight = 112;
+  const legendX = viewport.cx + viewBoxWidth / 2 - legendWidth - 18;
+  const legendY = viewport.cy + viewBoxHeight / 2 - legendHeight - 18;
 
   useEffect(() => {
     setViewport(fittedViewport);
@@ -1142,15 +1147,17 @@ function GraphCanvas(props: {
             if (!source || !target) return null;
             const selected = props.selection?.kind === "edge" && props.selection.id === edge.id;
             const semantic = props.highlightedEdges.get(edge.id);
-            const coefficient = normalizeEdgeMechanism(props.edgeMechanisms[edge.id]).coefficient;
-            const width = Math.min(8, 1.8 + Math.abs(coefficient) * 1.2);
+            const mechanism = normalizeEdgeMechanism(props.edgeMechanisms[edge.id]);
+            const edgeStrength = edgeMechanismDisplayStrength(mechanism);
+            const width = Math.min(8, 1.8 + Math.abs(edgeStrength) * 1.2);
             const geometry = edgeGeometry(edge, source, target, props.graph.edges);
             const enabled = !props.disabledEdgeIds.has(edge.id);
-            const coefficientText = formatSignedValue(coefficient);
-            const coefficientClass = coefficient > 0 ? "coefficient-positive" : coefficient < 0 ? "coefficient-negative" : "coefficient-zero";
+            const edgeLabel = edgeMechanismCanvasLabel(mechanism);
+            const showEdgeLabel = enabled && (mechanism.kind !== "linear" || Math.abs(edgeStrength) > 0.001);
+            const coefficientClass = edgeStrength > 0 ? "coefficient-positive" : edgeStrength < 0 ? "coefficient-negative" : "coefficient-zero";
             return (
               <g key={edge.id} className={`edge ${coefficientClass} ${selected ? "selected" : ""} ${semantic ?? ""} ${enabled ? "" : "disabled"}`}>
-                <title>{edgeCoefficientTitle(edge, source, target, coefficientText)}</title>
+                <title>{edgeMechanismTitle(edge, source, target, mechanism)}</title>
                 <path
                   d={geometry.path}
                   className="edge-hit"
@@ -1176,12 +1183,13 @@ function GraphCanvas(props: {
                     setDrag({ kind: "edge-control", id: edge.id });
                   }}
                 />}
-                {Number.isFinite(coefficient) && Math.abs(coefficient) > 0.001 && (
+                {showEdgeLabel && (
                   <text className="edge-value" x={geometry.control.x} y={geometry.control.y - 15}>
-                    <tspan className="edge-value-context" x={geometry.control.x}>linear coef</tspan>
-                    <tspan className="edge-value-number" x={geometry.control.x} dy="13">{coefficientText}</tspan>
+                    <tspan className="edge-value-context" x={geometry.control.x}>{edgeLabel.context}</tspan>
+                    <tspan className="edge-value-number" x={geometry.control.x} dy="13">{edgeLabel.value}</tspan>
                   </text>
                 )}
+                <EdgeFunctionGlyph kind={mechanism.kind} x={geometry.control.x} y={geometry.control.y} />
               </g>
             );
           })}
@@ -1192,6 +1200,8 @@ function GraphCanvas(props: {
             const isAncestor = props.ancestorIds.has(node.id);
             const changed = props.simulation.changedNodes.includes(node.id);
             const variable = normalizeVariableModel(node.variable);
+            const labelLines = nodeLabelLines(node.label);
+            const labelY = labelLines.length === 1 ? 4 : -((labelLines.length - 1) * 6);
             return (
               <g
                 key={node.id}
@@ -1207,12 +1217,19 @@ function GraphCanvas(props: {
                 <circle r={node.roles.exposure || node.roles.outcome ? 25 : 21} />
                 {node.roles.adjusted && <rect className="adjusted-ring" x="-27" y="-27" width="54" height="54" rx="6" />}
                 {node.roles.selected && <path className="selected-mark" d="M -20 24 L 0 34 L 20 24" />}
-                <text className="node-label" y="4">{node.label}</text>
+                <text className="node-label" y={labelY}>
+                  {labelLines.map((line, index) => (
+                    <tspan x="0" dy={index === 0 ? 0 : 12} key={`${line}-${index}`}>
+                      {line}{index < labelLines.length - 1 ? " " : ""}
+                    </tspan>
+                  ))}
+                </text>
                 <NodeDistributionMiniPlot state={state} variable={variable} />
                 <NodeDistributionAnnotation state={state} value={value} variable={variable} />
               </g>
             );
           })}
+          <GraphLegend x={legendX} y={legendY} width={legendWidth} height={legendHeight} />
         </g>
       </svg>
       <div className="canvas-zoom-controls" aria-label="Canvas zoom controls">
@@ -1228,9 +1245,96 @@ function GraphCanvas(props: {
   );
 }
 
-function edgeCoefficientTitle(edge: GraphEdge, source: GraphNode, target: GraphNode, coefficient: string): string {
+function EdgeFunctionGlyph({ kind, x, y }: { kind: EdgeMechanismKind; x: number; y: number }) {
+  return (
+    <g className="edge-function-glyph" transform={`translate(${x - 14}, ${y + 5})`} aria-hidden="true">
+      <rect className="edge-function-glyph-card" x="0" y="0" width="28" height="18" rx="4" />
+      <g transform="translate(0 -1) scale(0.875 0.9)">
+        <path className="edge-function-glyph-axis" d="M 3 17 H 29 M 4 18 V 3" />
+        <path className="edge-function-glyph-curve" d={functionGlyphPath(kind)} />
+      </g>
+    </g>
+  );
+}
+
+function GraphLegend({ x, y, width, height }: { x: number; y: number; width: number; height: number }) {
+  return (
+    <g className="graph-legend" transform={`translate(${x}, ${y})`} aria-hidden="true">
+      <rect className="graph-legend-card" x="0" y="0" width={width} height={height} rx="7" />
+      <text className="graph-legend-heading" x="12" y="18">Legend</text>
+      <line className="graph-legend-line causal" x1="14" y1="34" x2="44" y2="34" />
+      <text className="graph-legend-text" x="54" y="38">positive / causal</text>
+      <line className="graph-legend-line biasing" x1="14" y1="52" x2="44" y2="52" />
+      <text className="graph-legend-text" x="54" y="56">negative / biasing</text>
+      <circle className="graph-legend-node" cx="29" cy="73" r="11" />
+      <rect className="graph-legend-adjusted" x="15" y="59" width="28" height="28" rx="4" />
+      <text className="graph-legend-text" x="54" y="77">adjusted variable</text>
+      <g transform="translate(14 89)">
+        <rect className="edge-function-glyph-card" x="0" y="0" width="28" height="18" rx="4" />
+        <g transform="translate(0 -1) scale(0.875 0.9)">
+          <path className="edge-function-glyph-axis" d="M 3 17 H 29 M 4 18 V 3" />
+          <path className="edge-function-glyph-curve" d={functionGlyphPath("smooth_threshold")} />
+        </g>
+      </g>
+      <text className="graph-legend-text" x="54" y="102">edge mechanism</text>
+    </g>
+  );
+}
+
+function nodeLabelLines(label: string): string[] {
+  const normalized = label.replace(/_/g, " ").trim();
+  if (normalized.length <= 11) return [normalized];
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length <= 1) return [normalized];
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= 11 || current.length === 0) {
+      current = next;
+      continue;
+    }
+    lines.push(current);
+    current = word;
+  }
+  if (current) lines.push(current);
+  if (lines.length <= 3) return lines;
+  return [lines[0]!, lines[1]!, lines.slice(2).join(" ")];
+}
+
+function edgeMechanismTitle(edge: GraphEdge, source: GraphNode, target: GraphNode, mechanism: EdgeMechanism): string {
   const connector = edge.kind === "bidirected" ? "<->" : edge.kind === "undirected" ? "--" : "->";
-  return `${source.label} ${connector} ${target.label}: linear coefficient ${coefficient}. Select the edge to inspect or edit it.`;
+  const label = edgeMechanismCanvasLabel(mechanism);
+  return `${source.label} ${connector} ${target.label}: ${mechanismLabel(mechanism.kind)} mechanism, ${label.value}. Select the edge to inspect or edit it.`;
+}
+
+function edgeMechanismCanvasLabel(mechanism: EdgeMechanism): { context: string; value: string } {
+  if (mechanism.kind === "linear") return { context: "linear coef", value: formatSignedValue(mechanism.coefficient) };
+  if (mechanism.kind === "threshold") return { context: "threshold", value: `t ${formatValue(mechanism.threshold)}` };
+  if (mechanism.kind === "smooth_threshold") return { context: "smooth thresh", value: `t ${formatValue(mechanism.threshold)}` };
+  if (mechanism.kind === "saturating") return { context: "saturating", value: `scale ${formatSignedValue(mechanism.scale)}` };
+  if (mechanism.kind === "quadratic") return { context: "quadratic", value: `b2 ${formatSignedValue(mechanism.beta2)}` };
+  if (mechanism.kind === "piecewise_linear") return { context: "piecewise", value: `${mechanism.points.length} knots` };
+  if (mechanism.kind === "hill_emax") return { context: "Hill / Emax", value: `max ${formatSignedValue(mechanism.maxEffect)}` };
+  if (mechanism.kind === "log_linear") return { context: "log-linear", value: `coef ${formatSignedValue(mechanism.coefficient)}` };
+  if (mechanism.kind === "power_law") return { context: "power law", value: `pow ${formatValue(mechanism.exponent)}` };
+  return { context: "spline", value: `${mechanism.points.length} knots` };
+}
+
+function edgeMechanismDisplayStrength(mechanism: EdgeMechanism): number {
+  if (mechanism.kind === "linear") return mechanism.coefficient;
+  if (mechanism.kind === "threshold") return mechanism.high - mechanism.low;
+  if (mechanism.kind === "smooth_threshold" || mechanism.kind === "saturating") return mechanism.scale;
+  if (mechanism.kind === "quadratic") return mechanism.beta1 + mechanism.beta2;
+  if (mechanism.kind === "piecewise_linear" || mechanism.kind === "monotone_spline") {
+    const first = mechanism.points[0];
+    const last = mechanism.points.at(-1);
+    if (!first || !last) return 0;
+    return last.y - first.y;
+  }
+  if (mechanism.kind === "hill_emax") return mechanism.maxEffect;
+  if (mechanism.kind === "log_linear" || mechanism.kind === "power_law") return mechanism.coefficient;
+  return 0;
 }
 
 function NodeDistributionMiniPlot({ state, variable }: { state?: SimulatedNodeState; variable: VariableModel }) {
@@ -2010,6 +2114,7 @@ function VariableEditor(props: {
         <div className="variable-tabs" role="tablist" aria-label="Variable sections">
           <button type="button" role="tab" aria-selected={tab === "model"} className={tab === "model" ? "active" : ""} onClick={() => setTab("model")}>model</button>
           <button type="button" role="tab" aria-selected={tab === "interventions"} className={tab === "interventions" ? "active" : ""} onClick={() => setTab("interventions")}>interventions</button>
+          <button type="button" role="tab" aria-selected={tab === "adjustment"} className={tab === "adjustment" ? "active" : ""} onClick={() => setTab("adjustment")}>adjustment</button>
         </div>
 
         {tab === "model" && <div className="variable-tab-panel" role="tabpanel">
@@ -2048,10 +2153,13 @@ function VariableEditor(props: {
                   onChange={(noise) => props.onMechanism(node.id, { noise })}
                 />
               </>}
-              <label className="field">
-                <span>intercept</span>
-                <input type="number" value={mechanism.intercept} step="0.1" onChange={(event) => props.onMechanism(node.id, { intercept: Number(event.target.value) })} />
-              </label>
+              <TactileNumberField
+                label="intercept"
+                value={mechanism.intercept}
+                step={0.1}
+                nudge={1}
+                onChange={(intercept) => props.onMechanism(node.id, { intercept })}
+              />
             </div>
           </div>
 
@@ -2075,6 +2183,15 @@ function VariableEditor(props: {
           <HardDoEditor node={node} document={props.document} simulation={props.simulation} onOverride={props.onOverride} />
           <ConditioningEditor node={node} document={props.document} simulation={props.simulation} onSelectionCondition={props.onSelectionCondition} />
           <PlannedModuleSet />
+        </div>}
+
+        {tab === "adjustment" && <div className="variable-tab-panel adjustment-tab-panel" role="tabpanel">
+          <AdjustmentMethodEditor
+            node={node}
+            document={props.document}
+            simulation={props.simulation}
+            onVariableChange={props.onVariableChange}
+          />
         </div>}
 
         <div className="model-facts">
@@ -2105,6 +2222,202 @@ function PlannedModuleSet() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function AdjustmentMethodEditor(props: {
+  node: GraphNode;
+  document: GraphDocument;
+  simulation: SimulationResult;
+  onVariableChange: (nodeId: string, variable: VariableModel) => void;
+}) {
+  const variable = normalizeVariableModel(props.node.variable);
+  const state = props.simulation.nodeStates[props.node.id];
+  const exposureNode = props.document.graph.nodes.find((node) => node.roles.exposure);
+  const exposureState = exposureNode ? props.simulation.nodeStates[exposureNode.id] : undefined;
+  const exposureVariable = normalizeVariableModel(exposureNode?.variable);
+  const continuousEnough = variable.valueType !== "binary" && variable.valueType !== "categorical" && variable.valueType !== "text";
+  const method = variable.adjustment.method === "none" ? "bins" : variable.adjustment.method;
+  const updateAdjustment = (patch: Partial<VariableModel["adjustment"]>) => {
+    props.onVariableChange(props.node.id, normalizeVariableModel({
+      ...variable,
+      adjustment: {
+        ...variable.adjustment,
+        ...patch
+      }
+    }));
+  };
+  return (
+    <div className="adjustment-method-editor">
+      <div className="selection-editor-block">
+        <strong>Adjustment methodology</strong>
+        <p className="muted">{props.node.roles.adjusted ? "Configure how this adjusted variable will be used in the visible estimand." : "Mark this variable as adjusted to make these settings part of the visible adjustment output."}</p>
+        <div className="adjustment-method-choices" role="tablist" aria-label="Adjustment methodology">
+          <button type="button" className={method === "bins" ? "active" : ""} onClick={() => updateAdjustment({ method: "bins" })}>Binned standardization</button>
+          <button type="button" className={method === "propensity_score_todo" ? "active planned" : "planned"} onClick={() => updateAdjustment({ method: "propensity_score_todo" })}>Propensity weighting <span>todo</span></button>
+        </div>
+      </div>
+      {method === "propensity_score_todo" ? (
+        <div className="selection-editor-block adjustment-todo">
+          <strong>Propensity score weighting</strong>
+          <p className="muted">Planned: estimate treatment probability from adjusted variables, show overlap, trim unsupported regions, and weight the raw comparison. Bins come first because they make positivity visible.</p>
+        </div>
+      ) : (
+        <BinnedAdjustmentEditor
+          node={props.node}
+          variable={variable}
+          state={state}
+          exposureNode={exposureNode}
+          exposureState={exposureState}
+          exposureValueType={exposureVariable.valueType}
+          continuousEnough={continuousEnough}
+          onCutpoints={(cutpoints) => updateAdjustment({ method: "bins", cutpoints })}
+        />
+      )}
+    </div>
+  );
+}
+
+function BinnedAdjustmentEditor(props: {
+  node: GraphNode;
+  variable: VariableModel;
+  state: SimulatedNodeState | undefined;
+  exposureNode: GraphNode | undefined;
+  exposureState: SimulatedNodeState | undefined;
+  exposureValueType: VariableModel["valueType"];
+  continuousEnough: boolean;
+  onCutpoints: (cutpoints: number[]) => void;
+}) {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [draggingCut, setDraggingCut] = useState<number | null>(null);
+  const domain = props.state ? distributionPlotDomain(props.state) : null;
+  const samples = props.state?.empirical.samples.filter(Number.isFinite) ?? [];
+  const cutpoints = domain ? sanitizeCutpoints(props.variable.adjustment.cutpoints, domain) : [];
+  const positivity = domain && props.exposureState && props.exposureValueType === "binary"
+    ? positivityRows(props.state, props.exposureState, cutpoints, domain)
+    : [];
+  const bars = domain ? histogram(samples, domain, 18, props.state?.empirical.weights) : [];
+  const maxBar = Math.max(...bars, 1);
+  const width = 320;
+  const height = 132;
+  const plot = { x: 18, y: 18, width: 284, height: 72 };
+  const valueToX = (value: number) => plot.x + ((value - (domain?.[0] ?? 0)) / Math.max((domain?.[1] ?? 1) - (domain?.[0] ?? 0), 1e-9)) * plot.width;
+  const xToValue = (clientX: number) => {
+    const svg = svgRef.current;
+    if (!svg || !domain) return null;
+    const rect = svg.getBoundingClientRect();
+    const x = ((clientX - rect.left) / Math.max(rect.width, 1)) * width;
+    const t = clamp((x - plot.x) / plot.width, 0, 1);
+    return roundToStep(domain[0] + t * (domain[1] - domain[0]), adjustmentCutStep(domain));
+  };
+  const commitCutpoint = (index: number, value: number) => {
+    if (!domain) return;
+    const next = [...cutpoints];
+    next[index] = clamp(value, domain[0], domain[1]);
+    props.onCutpoints(sanitizeCutpoints(next, domain));
+  };
+  const addCutpoint = (clientX: number) => {
+    const value = xToValue(clientX);
+    if (value === null || !domain) return;
+    props.onCutpoints(sanitizeCutpoints([...cutpoints, value], domain));
+  };
+  if (!props.continuousEnough) {
+    return (
+      <div className="selection-editor-block adjustment-todo">
+        <strong>Binned standardization</strong>
+        <p className="muted">This bin editor is for continuous adjusted variables. Binary variables already have exact strata.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="selection-editor-block binned-adjustment-editor">
+      <div className="selection-editor-block-title">
+        <strong>Binned standardization</strong>
+        <span className="variable-pill">{cutpoints.length + 1} bins</span>
+      </div>
+      <p className="muted">Click the histogram to add a split. Drag vertical lines to move bin boundaries.</p>
+      {domain ? (
+        <svg
+          ref={svgRef}
+          className="adjustment-bin-histogram"
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          aria-label={`${props.node.id} adjustment bins`}
+          onPointerMove={(event) => {
+            if (draggingCut === null) return;
+            const value = xToValue(event.clientX);
+            if (value !== null) commitCutpoint(draggingCut, value);
+          }}
+          onPointerUp={() => setDraggingCut(null)}
+          onPointerCancel={() => setDraggingCut(null)}
+          onClick={(event) => {
+            if ((event.target as Element).classList.contains("adjustment-cut-line")) return;
+            addCutpoint(event.clientX);
+          }}
+        >
+          <rect className="adjustment-bin-frame" x={plot.x} y={plot.y} width={plot.width} height={plot.height} rx="4" />
+          {bars.map((count, index) => {
+            const barWidth = plot.width / bars.length;
+            const barHeight = Math.max(1, (count / maxBar) * (plot.height - 8));
+            return <rect
+              className="adjustment-bin-bar"
+              key={index}
+              x={plot.x + index * barWidth + 1}
+              y={plot.y + plot.height - barHeight}
+              width={Math.max(1, barWidth - 2)}
+              height={barHeight}
+            />;
+          })}
+          {cutpoints.map((cut, index) => (
+            <g key={`${cut}-${index}`}>
+              <line
+                className="adjustment-cut-line"
+                x1={valueToX(cut)}
+                x2={valueToX(cut)}
+                y1={plot.y - 5}
+                y2={plot.y + plot.height + 8}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  svgRef.current?.setPointerCapture(event.pointerId);
+                  setDraggingCut(index);
+                }}
+              />
+              <text className="adjustment-cut-label" x={valueToX(cut)} y={plot.y + plot.height + 22}>{formatValue(cut)}</text>
+            </g>
+          ))}
+          <text className="adjustment-axis-label" x={plot.x} y={height - 6}>{formatValue(domain[0])}</text>
+          <text className="adjustment-axis-label end" x={plot.x + plot.width} y={height - 6}>{formatValue(domain[1])}</text>
+        </svg>
+      ) : <p className="muted">No empirical distribution available for binning.</p>}
+      <div className="button-row">
+        <button type="button" disabled={!domain} onClick={() => domain && props.onCutpoints(defaultQuantileCuts(samples, domain, 4))}>quartile splits</button>
+        <button type="button" disabled={cutpoints.length === 0} onClick={() => props.onCutpoints(cutpoints.slice(0, -1))}>remove last split</button>
+        <button type="button" disabled={cutpoints.length === 0} onClick={() => props.onCutpoints([])}>clear</button>
+      </div>
+      <PositivityPanel
+        exposureNode={props.exposureNode}
+        exposureValueType={props.exposureValueType}
+        rows={positivity}
+      />
+    </div>
+  );
+}
+
+function PositivityPanel(props: { exposureNode: GraphNode | undefined; exposureValueType: VariableModel["valueType"]; rows: PositivityRow[] }) {
+  if (!props.exposureNode) return <p className="warning">Choose an exposure before positivity can be checked.</p>;
+  if (props.exposureValueType !== "binary") return <p className="warning">Binned positivity currently checks binary exposures; propensity and continuous exposure methods are still planned.</p>;
+  if (props.rows.length === 0) return <p className="muted">Add bin splits to inspect overlap within each bin.</p>;
+  return (
+    <div className="positivity-panel">
+      <strong>Positivity by bin</strong>
+      {props.rows.map((row) => (
+        <div className={row.warning ? "positivity-row warning" : "positivity-row"} key={`${row.lower}-${row.upper}`}>
+          <span>{formatValue(row.lower)} to {formatValue(row.upper)}</span>
+          <span>exposed {formatWeightedCount(row.exposed)} / unexposed {formatWeightedCount(row.unexposed)}</span>
+          <small>{row.warning ?? "overlap ok"}</small>
+        </div>
+      ))}
     </div>
   );
 }
@@ -2172,20 +2485,15 @@ function EdgePanel(props: {
       </div>
       <EdgeMechanismFields edge={props.edge} mechanism={mechanism} onMechanism={props.onMechanism} />
       {mechanism.kind === "linear" && (
-        <>
-          <label className="field">
-            <span>coefficient</span>
-            <input type="number" value={mechanism.coefficient} step="0.1" onChange={(event) => props.onCoefficient(props.edge, Number(event.target.value))} />
-          </label>
-          <input
-            type="range"
-            min="-5"
-            max="5"
-            step="0.1"
-            value={clamp(mechanism.coefficient, -5, 5)}
-            onChange={(event) => props.onCoefficient(props.edge, Number(event.target.value))}
-          />
-        </>
+        <TactileNumberField
+          label="coefficient"
+          value={mechanism.coefficient}
+          min={-5}
+          max={5}
+          step={0.1}
+          nudge={1}
+          onChange={(coefficient) => props.onCoefficient(props.edge, coefficient)}
+        />
       )}
       <p className={contribution >= 0 ? "assurance" : "warning"}>contribution {formatSignedValue(contribution)}</p>
     </div>
@@ -2223,15 +2531,15 @@ function InteractionEditor(props: {
             <>
               <ParentSelect value={interaction.left} parentIds={props.parentIds} onChange={(left) => update(interaction.id, { left })} />
               <ParentSelect value={interaction.right} parentIds={props.parentIds} onChange={(right) => update(interaction.id, { right })} />
-              <NumberField label="gamma" value={interaction.coefficient} onChange={(coefficient) => update(interaction.id, { coefficient })} />
+              <TactileNumberField label="gamma" value={interaction.coefficient} step={0.1} nudge={1} onChange={(coefficient) => update(interaction.id, { coefficient })} />
             </>
           ) : (
             <>
               <ParentSelect value={interaction.source} parentIds={props.parentIds} onChange={(source) => update(interaction.id, { source })} />
               <ParentSelect value={interaction.gate} parentIds={props.parentIds} onChange={(gate) => update(interaction.id, { gate })} />
-              <NumberField label="gamma" value={interaction.coefficient} onChange={(coefficient) => update(interaction.id, { coefficient })} />
-              <NumberField label="threshold" value={interaction.threshold} onChange={(threshold) => update(interaction.id, { threshold })} />
-              <NumberField label="steepness" value={interaction.steepness} onChange={(steepness) => update(interaction.id, { steepness })} />
+              <TactileNumberField label="gamma" value={interaction.coefficient} step={0.1} nudge={1} onChange={(coefficient) => update(interaction.id, { coefficient })} />
+              <TactileNumberField label="threshold" value={interaction.threshold} step={0.1} nudge={1} onChange={(threshold) => update(interaction.id, { threshold })} />
+              <TactileNumberField label="steepness" value={interaction.steepness} min={0.001} step={0.1} nudge={1} onChange={(steepness) => update(interaction.id, { steepness })} />
             </>
           )}
           <button type="button" onClick={() => remove(interaction.id)}>remove</button>
@@ -2348,29 +2656,29 @@ function EdgeMechanismFields(props: { edge: GraphEdge; mechanism: EdgeMechanism;
   const set = (patch: Partial<EdgeMechanism>) => props.onMechanism(props.edge, patch);
   if (props.mechanism.kind === "threshold") {
     return <>
-      <NumberField label="threshold" value={props.mechanism.threshold} onChange={(threshold) => set({ threshold })} />
-      <NumberField label="low" value={props.mechanism.low} onChange={(low) => set({ low })} />
-      <NumberField label="high" value={props.mechanism.high} onChange={(high) => set({ high })} />
+      <TactileNumberField label="threshold" value={props.mechanism.threshold} step={0.1} nudge={1} onChange={(threshold) => set({ threshold })} />
+      <TactileNumberField label="low" value={props.mechanism.low} step={0.1} nudge={1} onChange={(low) => set({ low })} />
+      <TactileNumberField label="high" value={props.mechanism.high} step={0.1} nudge={1} onChange={(high) => set({ high })} />
     </>;
   }
   if (props.mechanism.kind === "smooth_threshold") {
     return <>
-      <NumberField label="scale" value={props.mechanism.scale} onChange={(scale) => set({ scale })} />
-      <NumberField label="threshold" value={props.mechanism.threshold} onChange={(threshold) => set({ threshold })} />
-      <NumberField label="steepness" value={props.mechanism.steepness} onChange={(steepness) => set({ steepness })} />
+      <TactileNumberField label="scale" value={props.mechanism.scale} step={0.1} nudge={1} onChange={(scale) => set({ scale })} />
+      <TactileNumberField label="threshold" value={props.mechanism.threshold} step={0.1} nudge={1} onChange={(threshold) => set({ threshold })} />
+      <TactileNumberField label="steepness" value={props.mechanism.steepness} min={0.001} step={0.1} nudge={1} onChange={(steepness) => set({ steepness })} />
     </>;
   }
   if (props.mechanism.kind === "saturating") {
     return <>
-      <NumberField label="scale" value={props.mechanism.scale} onChange={(scale) => set({ scale })} />
-      <NumberField label="midpoint" value={props.mechanism.midpoint} onChange={(midpoint) => set({ midpoint })} />
-      <NumberField label="steepness" value={props.mechanism.steepness} onChange={(steepness) => set({ steepness })} />
+      <TactileNumberField label="scale" value={props.mechanism.scale} step={0.1} nudge={1} onChange={(scale) => set({ scale })} />
+      <TactileNumberField label="midpoint" value={props.mechanism.midpoint} step={0.1} nudge={1} onChange={(midpoint) => set({ midpoint })} />
+      <TactileNumberField label="steepness" value={props.mechanism.steepness} min={0.001} step={0.1} nudge={1} onChange={(steepness) => set({ steepness })} />
     </>;
   }
   if (props.mechanism.kind === "quadratic") {
     return <>
-      <NumberField label="linear term" value={props.mechanism.beta1} onChange={(beta1) => set({ beta1, coefficient: beta1 })} />
-      <NumberField label="quadratic term" value={props.mechanism.beta2} onChange={(beta2) => set({ beta2 })} />
+      <TactileNumberField label="linear term" value={props.mechanism.beta1} step={0.1} nudge={1} onChange={(beta1) => set({ beta1, coefficient: beta1 })} />
+      <TactileNumberField label="quadratic term" value={props.mechanism.beta2} step={0.1} nudge={1} onChange={(beta2) => set({ beta2 })} />
     </>;
   }
   if (props.mechanism.kind === "piecewise_linear") {
@@ -2384,26 +2692,26 @@ function EdgeMechanismFields(props: { edge: GraphEdge; mechanism: EdgeMechanism;
   }
   if (props.mechanism.kind === "hill_emax") {
     return <>
-      <NumberField label="baseline" value={props.mechanism.baseline} onChange={(baseline) => set({ baseline })} />
-      <NumberField label="max effect" value={props.mechanism.maxEffect} onChange={(maxEffect) => set({ maxEffect })} />
-      <NumberField label="EC50" value={props.mechanism.ec50} min={0.001} onChange={(ec50) => set({ ec50 })} />
-      <NumberField label="Hill slope" value={props.mechanism.exponent} min={0.001} onChange={(exponent) => set({ exponent })} />
+      <TactileNumberField label="baseline" value={props.mechanism.baseline} step={0.1} nudge={1} onChange={(baseline) => set({ baseline })} />
+      <TactileNumberField label="max effect" value={props.mechanism.maxEffect} step={0.1} nudge={1} onChange={(maxEffect) => set({ maxEffect })} />
+      <TactileNumberField label="EC50" value={props.mechanism.ec50} min={0.001} step={0.1} nudge={1} onChange={(ec50) => set({ ec50 })} />
+      <TactileNumberField label="Hill slope" value={props.mechanism.exponent} min={0.001} step={0.1} nudge={1} onChange={(exponent) => set({ exponent })} />
     </>;
   }
   if (props.mechanism.kind === "log_linear") {
     return <>
-      <NumberField label="coefficient" value={props.mechanism.coefficient} onChange={(coefficient) => set({ coefficient })} />
-      <NumberField label="offset" value={props.mechanism.offset} onChange={(offset) => set({ offset })} />
-      <NumberField label="baseline" value={props.mechanism.baseline} onChange={(baseline) => set({ baseline })} />
+      <TactileNumberField label="coefficient" value={props.mechanism.coefficient} step={0.1} nudge={1} onChange={(coefficient) => set({ coefficient })} />
+      <TactileNumberField label="offset" value={props.mechanism.offset} step={0.1} nudge={1} onChange={(offset) => set({ offset })} />
+      <TactileNumberField label="baseline" value={props.mechanism.baseline} step={0.1} nudge={1} onChange={(baseline) => set({ baseline })} />
     </>;
   }
   if (props.mechanism.kind === "power_law") {
     return <>
-      <NumberField label="coefficient" value={props.mechanism.coefficient} onChange={(coefficient) => set({ coefficient })} />
-      <NumberField label="input scale" value={props.mechanism.scale} min={0.001} onChange={(scale) => set({ scale })} />
-      <NumberField label="offset" value={props.mechanism.offset} onChange={(offset) => set({ offset })} />
-      <NumberField label="exponent" value={props.mechanism.exponent} min={0.001} onChange={(exponent) => set({ exponent })} />
-      <NumberField label="baseline" value={props.mechanism.baseline} onChange={(baseline) => set({ baseline })} />
+      <TactileNumberField label="coefficient" value={props.mechanism.coefficient} step={0.1} nudge={1} onChange={(coefficient) => set({ coefficient })} />
+      <TactileNumberField label="input scale" value={props.mechanism.scale} min={0.001} step={0.1} nudge={1} onChange={(scale) => set({ scale })} />
+      <TactileNumberField label="offset" value={props.mechanism.offset} step={0.1} nudge={1} onChange={(offset) => set({ offset })} />
+      <TactileNumberField label="exponent" value={props.mechanism.exponent} min={0.001} step={0.1} nudge={1} onChange={(exponent) => set({ exponent })} />
+      <TactileNumberField label="baseline" value={props.mechanism.baseline} step={0.1} nudge={1} onChange={(baseline) => set({ baseline })} />
     </>;
   }
   if (props.mechanism.kind === "monotone_spline") {
@@ -2438,7 +2746,7 @@ function DistributionEditor(props: { label: string; distribution: NodeDistributi
           <option value="exponential">exponential</option>
         </select>
       </label>
-      {distribution.kind === "constant" && <SliderNumberField
+      {distribution.kind === "constant" && <TactileNumberField
         key="constant-value"
         label="value"
         value={distribution.value}
@@ -2448,7 +2756,7 @@ function DistributionEditor(props: { label: string; distribution: NodeDistributi
         onChange={(value) => props.onChange({ ...distribution, value })}
       />}
       {distribution.kind === "normal" && <>
-        <SliderNumberField
+        <TactileNumberField
           key="normal-mean"
           label="mean"
           value={distribution.mean}
@@ -2457,7 +2765,7 @@ function DistributionEditor(props: { label: string; distribution: NodeDistributi
           step={0.1}
           onChange={(mean) => props.onChange({ ...distribution, mean })}
         />
-        <SliderNumberField
+        <TactileNumberField
           key="normal-sd"
           label="sd"
           value={distribution.sd}
@@ -2468,33 +2776,33 @@ function DistributionEditor(props: { label: string; distribution: NodeDistributi
         />
       </>}
       {distribution.kind === "lognormal" && <>
-        <NumberField label="log mean" value={distribution.meanLog} onChange={(meanLog) => props.onChange({ ...distribution, meanLog })} />
-        <NumberField label="log sd" value={distribution.sdLog} min={0.001} onChange={(sdLog) => props.onChange({ ...distribution, sdLog })} />
+        <TactileNumberField label="log mean" value={distribution.meanLog} step={0.1} nudge={1} onChange={(meanLog) => props.onChange({ ...distribution, meanLog })} />
+        <TactileNumberField label="log sd" value={distribution.sdLog} min={0.001} step={0.1} nudge={1} onChange={(sdLog) => props.onChange({ ...distribution, sdLog })} />
       </>}
       {distribution.kind === "uniform" && <>
-        <NumberField label="min" value={distribution.min} onChange={(min) => props.onChange({ ...distribution, min })} />
-        <NumberField label="max" value={distribution.max} onChange={(max) => props.onChange({ ...distribution, max })} />
+        <TactileNumberField label="min" value={distribution.min} step={0.1} nudge={1} onChange={(min) => props.onChange({ ...distribution, min })} />
+        <TactileNumberField label="max" value={distribution.max} step={0.1} nudge={1} onChange={(max) => props.onChange({ ...distribution, max })} />
       </>}
-      {distribution.kind === "bernoulli" && <SliderNumberField key="bernoulli-p" label="p" value={distribution.p} min={0} max={1} step={0.01} onChange={(p) => props.onChange({ ...distribution, p })} />}
-      {distribution.kind === "poisson" && <NumberField label="lambda" value={distribution.lambda} min={0.001} onChange={(lambda) => props.onChange({ ...distribution, lambda })} />}
+      {distribution.kind === "bernoulli" && <TactileNumberField key="bernoulli-p" label="p" value={distribution.p} min={0} max={1} step={0.01} nudge={0.01} onChange={(p) => props.onChange({ ...distribution, p })} />}
+      {distribution.kind === "poisson" && <TactileNumberField label="lambda" value={distribution.lambda} min={0.001} step={0.1} nudge={1} onChange={(lambda) => props.onChange({ ...distribution, lambda })} />}
       {distribution.kind === "beta" && <>
-        <NumberField label="alpha" value={distribution.alpha} min={0.001} onChange={(alpha) => props.onChange({ ...distribution, alpha })} />
-        <NumberField label="beta" value={distribution.beta} min={0.001} onChange={(beta) => props.onChange({ ...distribution, beta })} />
+        <TactileNumberField label="alpha" value={distribution.alpha} min={0.001} step={0.1} nudge={1} onChange={(alpha) => props.onChange({ ...distribution, alpha })} />
+        <TactileNumberField label="beta" value={distribution.beta} min={0.001} step={0.1} nudge={1} onChange={(beta) => props.onChange({ ...distribution, beta })} />
       </>}
       {distribution.kind === "laplace" && <>
-        <NumberField label="mean" value={distribution.mean} onChange={(mean) => props.onChange({ ...distribution, mean })} />
-        <NumberField label="scale" value={distribution.scale} min={0.001} onChange={(scale) => props.onChange({ ...distribution, scale })} />
+        <TactileNumberField label="mean" value={distribution.mean} step={0.1} nudge={1} onChange={(mean) => props.onChange({ ...distribution, mean })} />
+        <TactileNumberField label="scale" value={distribution.scale} min={0.001} step={0.1} nudge={1} onChange={(scale) => props.onChange({ ...distribution, scale })} />
       </>}
       {distribution.kind === "student_t" && <>
-        <NumberField label="mean" value={distribution.mean} onChange={(mean) => props.onChange({ ...distribution, mean })} />
-        <NumberField label="scale" value={distribution.scale} min={0.001} onChange={(scale) => props.onChange({ ...distribution, scale })} />
-        <NumberField label="df" value={distribution.df} min={0.001} onChange={(df) => props.onChange({ ...distribution, df })} />
+        <TactileNumberField label="mean" value={distribution.mean} step={0.1} nudge={1} onChange={(mean) => props.onChange({ ...distribution, mean })} />
+        <TactileNumberField label="scale" value={distribution.scale} min={0.001} step={0.1} nudge={1} onChange={(scale) => props.onChange({ ...distribution, scale })} />
+        <TactileNumberField label="df" value={distribution.df} min={0.001} step={0.1} nudge={1} onChange={(df) => props.onChange({ ...distribution, df })} />
       </>}
       {distribution.kind === "gamma" && <>
-        <NumberField label="shape" value={distribution.shape} min={0.001} onChange={(shape) => props.onChange({ ...distribution, shape })} />
-        <NumberField label="scale" value={distribution.scale} min={0.001} onChange={(scale) => props.onChange({ ...distribution, scale })} />
+        <TactileNumberField label="shape" value={distribution.shape} min={0.001} step={0.1} nudge={1} onChange={(shape) => props.onChange({ ...distribution, shape })} />
+        <TactileNumberField label="scale" value={distribution.scale} min={0.001} step={0.1} nudge={1} onChange={(scale) => props.onChange({ ...distribution, scale })} />
       </>}
-      {distribution.kind === "exponential" && <NumberField label="rate" value={distribution.rate} min={0.001} onChange={(rate) => props.onChange({ ...distribution, rate })} />}
+      {distribution.kind === "exponential" && <TactileNumberField label="rate" value={distribution.rate} min={0.001} step={0.1} nudge={1} onChange={(rate) => props.onChange({ ...distribution, rate })} />}
     </div>
   );
 }
@@ -2589,46 +2897,87 @@ function NumberField({ label, value, min, max, step = 0.1, onChange }: { label: 
   return <label className="field"><span>{label}</span><input type="number" value={formatInputNumber(value)} min={min} max={max} step={step} onChange={(event) => onChange(Number(event.target.value))} /></label>;
 }
 
-function SliderNumberField({ label, value, min, max, step = 0.1, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (value: number) => void }) {
-  const [range, setRange] = useState(() => sliderRange(min, max, value));
+function TactileNumberField({
+  label,
+  value,
+  min,
+  max,
+  step = 0.1,
+  nudge = 1,
+  onChange
+}: {
+  label: string;
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  nudge?: number;
+  onChange: (value: number) => void;
+}) {
+  const [range, setRange] = useState(() => tactileSliderRange(min, max, value, nudge));
   useEffect(() => {
-    setRange((current) => value < current.min || value > current.max ? sliderRange(min, max, value) : current);
-  }, [max, min, value]);
+    setRange((current) => {
+      const next = tactileSliderRange(min, max, value, nudge);
+      if (value < current.min || value > current.max) return next;
+      if ((min !== undefined && current.min < min) || (max !== undefined && current.max > max)) return next;
+      return current;
+    });
+  }, [max, min, nudge, value]);
   const sliderValue = clamp(value, range.min, range.max);
-  const updateNumber = (next: number) => {
-    if (Number.isFinite(next)) onChange(roundToStep(next, step));
+  const smallNudge = Math.max(Math.abs(nudge), Math.abs(step), Number.EPSILON);
+  const smallLabel = trimNumber(smallNudge);
+  const commit = (next: number) => {
+    if (!Number.isFinite(next)) return;
+    onChange(clampNumber(roundToStep(next, step), min, max));
   };
-  const updateSlider = (next: number) => onChange(roundToStep(clamp(next, range.min, range.max), step));
+  const nudgeBy = (delta: number) => commit(value + delta);
+  const nudgePercent = (direction: -1 | 1) => {
+    const rangeFallback = Math.max(Math.abs(range.max - range.min) * 0.1, smallNudge);
+    const magnitude = value === 0 ? rangeFallback : Math.abs(value) * 0.1;
+    commit(value + direction * magnitude);
+  };
   return (
-    <div className="slider-number-field">
-      <div className="slider-number-head">
+    <div className="tactile-number-field">
+      <div className="tactile-number-head">
         <span>{label}</span>
         <input
           aria-label={label}
           type="number"
           value={formatInputNumber(value)}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(event) => commit(Number(event.target.value))}
+        />
+      </div>
+      <div className="tactile-number-controls">
+        <button type="button" aria-label={`${label} decrease 10 percent`} onClick={() => nudgePercent(-1)}>-10%</button>
+        <button type="button" aria-label={`${label} decrease ${smallLabel}`} onClick={() => nudgeBy(-smallNudge)}>-{smallLabel}</button>
+        <input
+          type="range"
+          aria-label={`${label} slider`}
           min={range.min}
           max={range.max}
           step={step}
-          onChange={(event) => updateNumber(Number(event.target.value))}
+          value={sliderValue}
+          onChange={(event) => commit(Number(event.target.value))}
         />
+        <button type="button" aria-label={`${label} increase ${smallLabel}`} onClick={() => nudgeBy(smallNudge)}>+{smallLabel}</button>
+        <button type="button" aria-label={`${label} increase 10 percent`} onClick={() => nudgePercent(1)}>+10%</button>
       </div>
-      <input
-        type="range"
-        aria-label={`${label} slider`}
-        min={range.min}
-        max={range.max}
-        step={step}
-        value={sliderValue}
-        onChange={(event) => updateSlider(Number(event.target.value))}
-      />
     </div>
   );
 }
 
-function sliderRange(min: number, max: number, value: number): { min: number; max: number } {
-  let safeMin = Math.min(min, max);
-  let safeMax = Math.max(min, max);
+function tactileSliderRange(min: number | undefined, max: number | undefined, value: number, nudge: number): { min: number; max: number } {
+  const magnitude = Math.max(Math.abs(value), Math.abs(nudge) * 10, 10);
+  let safeMin = min ?? value - magnitude;
+  let safeMax = max ?? value + magnitude;
+  if (safeMin > safeMax) {
+    const nextMin = safeMax;
+    safeMax = safeMin;
+    safeMin = nextMin;
+  }
   if (!Number.isFinite(safeMin) || !Number.isFinite(safeMax) || Math.abs(safeMax - safeMin) < 1e-9) {
     safeMin = Number.isFinite(value) ? value - 1 : -1;
     safeMax = Number.isFinite(value) ? value + 1 : 1;
@@ -2642,6 +2991,12 @@ function sliderRange(min: number, max: number, value: number): { min: number; ma
     safeMax += 1;
   }
   return { min: safeMin, max: safeMax };
+}
+
+function clampNumber(value: number, min?: number, max?: number): number {
+  const lower = min ?? -Infinity;
+  const upper = max ?? Infinity;
+  return Math.min(upper, Math.max(lower, value));
 }
 
 function List({ values, empty }: { values: string[]; empty: string }) {
@@ -2915,6 +3270,66 @@ function conditioningSliderStep(min: number, max: number): number {
   if (span <= 2) return 0.01;
   if (span <= 20) return 0.1;
   return 1;
+}
+
+function adjustmentCutStep(domain: [number, number]): number {
+  const span = Math.abs(domain[1] - domain[0]);
+  if (span <= 2) return 0.01;
+  if (span <= 20) return 0.1;
+  return 1;
+}
+
+function sanitizeCutpoints(cutpoints: number[], domain: [number, number]): number[] {
+  const [min, max] = domain;
+  const epsilon = Math.max((max - min) * 0.005, Number.EPSILON);
+  return [...new Set(cutpoints
+    .filter((value) => Number.isFinite(value) && value > min + epsilon && value < max - epsilon)
+    .map((value) => roundToStep(value, adjustmentCutStep(domain))))]
+    .sort((a, b) => a - b);
+}
+
+function defaultQuantileCuts(samples: number[], domain: [number, number], bins: number): number[] {
+  const sorted = samples.filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length < bins) {
+    const [min, max] = domain;
+    return Array.from({ length: bins - 1 }, (_, index) => min + ((index + 1) / bins) * (max - min));
+  }
+  return Array.from({ length: bins - 1 }, (_, index) => {
+    const sampleIndex = Math.min(sorted.length - 1, Math.max(0, Math.round(((index + 1) / bins) * (sorted.length - 1))));
+    return sorted[sampleIndex] ?? domain[0];
+  });
+}
+
+function positivityRows(confounderState: SimulatedNodeState | undefined, exposureState: SimulatedNodeState, cutpoints: number[], domain: [number, number]): PositivityRow[] {
+  const confounderSamples = confounderState?.empirical.samples ?? [];
+  const exposureSamples = exposureState.empirical.samples;
+  const weights = confounderState?.empirical.weights.length ? confounderState.empirical.weights : exposureState.empirical.weights;
+  const boundaries = [domain[0], ...cutpoints, domain[1]];
+  return boundaries.slice(0, -1).map((lower, index) => {
+    const upper = boundaries[index + 1] ?? domain[1];
+    let exposed = 0;
+    let unexposed = 0;
+    for (let sampleIndex = 0; sampleIndex < Math.min(confounderSamples.length, exposureSamples.length); sampleIndex += 1) {
+      const confounder = confounderSamples[sampleIndex];
+      const exposure = exposureSamples[sampleIndex];
+      if (confounder === undefined || exposure === undefined || !Number.isFinite(confounder) || !Number.isFinite(exposure)) continue;
+      const inBin = index === boundaries.length - 2 ? confounder >= lower && confounder <= upper : confounder >= lower && confounder < upper;
+      if (!inBin) continue;
+      const weight = Math.max(0, weights[sampleIndex] ?? 1);
+      if (coerceBinary(exposure) === 1) exposed += weight;
+      else unexposed += weight;
+    }
+    const total = exposed + unexposed;
+    const minArm = Math.min(exposed, unexposed);
+    const warning = total <= 0
+      ? "empty bin"
+      : minArm <= 0
+        ? "no support"
+        : minArm < 8 || minArm / total < 0.08
+          ? "weak support"
+          : null;
+    return { lower, upper, exposed, unexposed, total, warning };
+  });
 }
 
 function graphEmpiricalDraws(graph: GraphModel): number {

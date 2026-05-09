@@ -86,25 +86,25 @@ export const EXAMPLES: ExampleModel[] = [
     id: "college-earnings",
     title: "Does college raise earnings?",
     domain: "classic",
-    summary: "Three-node wage-premium example: binary family advantage, binary college attendance, and continuous earnings.",
+    summary: "Three-node wage-premium example: continuous family log income, binary college attendance, and continuous earnings.",
     outputModule: "college-earnings",
     code: `dag {
-  Family_advantage [adjusted,label="family advantage",pos="-2,0.9"]
+  Family_log_income [adjusted,label="family log income",pos="-2,0.9"]
   College [exposure,pos="-0.25,0"]
   Earnings [outcome,pos="2,0"]
-  Family_advantage -> College
-  Family_advantage -> Earnings
+  Family_log_income -> College
+  Family_log_income -> Earnings
   College -> Earnings
 }`
   },
   {
     id: "tutoring-scores",
-    title: "Does tutoring hurt test scores?",
+    title: "Does tutoring hurt test scores (unadjusted)",
     domain: "classic",
-    summary: "Three-node sign-flip example: struggling students get tutoring, score lower in raw data, but tutoring helps under intervention.",
+    summary: "Three-node sign-flip example to fix: struggling students get tutoring, score lower in raw data, and the user should adjust for academic need.",
     outputModule: "tutoring-scores",
     code: `dag {
-  Academic_need [adjusted,label="academic need",pos="-2,0.9"]
+  Academic_need [label="academic need",pos="-2,0.9"]
   Tutoring [exposure,pos="-0.25,0"]
   Test_score [outcome,label="test score",pos="2,0"]
   Academic_need -> Tutoring
@@ -383,9 +383,9 @@ export const EXAMPLES: ExampleModel[] = [
   },
   {
     id: "chess-intelligence-practice",
-    title: "Does chess need intelligence?",
+    title: "Does chess need intelligence? [TO FIX: CALIBRATE?]",
     domain: "social",
-    summary: "Youth chess skill example after Bilalic, McLeod, and Gobet: practice dominates, intelligence has a smaller nonlinear contribution, and elite Elo selection changes associations.",
+    summary: "TO FIX: CALIBRATE? Stylized youth chess SEM after Bilalic, McLeod, and Gobet (2007, Intelligence, doi:10.1016/j.intell.2006.09.005); coefficients are not calibrated to the paper.",
     code: `dag {
   Academic_pull [latent,label="academic pull",pos="-3,1.25"]
   Coaching_access [adjusted,label="coaching access",pos="-3,-0.5"]
@@ -536,10 +536,10 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
   },
   "college-earnings": {
     module: "Adjustment / wage premium",
-    punchline: "College graduates earn more in the crude comparison, but that raw wage premium mixes the effect of college with family advantage that affects both college attendance and earnings.",
+    punchline: "College graduates earn more in the crude comparison, but that raw wage premium mixes the effect of college with family log income that affects both college attendance and earnings.",
     estimand: "Mean effect of College on Earnings, comparing do(College=1) versus do(College=0) for the population represented by the DAG.",
-    primaryOutput: "Raw earnings premium, causal do-premium, family-advantage separation, and adjustment-set verdict.",
-    validity: "Credible only if Family_advantage captures the pre-college background causes of both college attendance and earnings; omitted ability, school quality, or networks would remain threats.",
+    primaryOutput: "Raw earnings premium, causal do-premium, family-income separation, binned overlap checks, and adjustment-set verdict.",
+    validity: "Credible only if Family_log_income captures the pre-college background causes of both college attendance and earnings; omitted ability, school quality, or networks would remain threats.",
     nextAction: "Use the do-premium as the reportable causal claim; use the crude premium only as the tempting but confounded headline.",
     sections: [
       {
@@ -547,7 +547,7 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
         defaultOpen: true,
         items: [
           "State the public argument as College -> Earnings, not as a raw graduate/non-graduate wage gap.",
-          "Name Family_advantage as the pre-treatment common cause of College and Earnings.",
+          "Name Family_log_income as the pre-treatment common cause of College and Earnings.",
           "Report the target as a mean difference in earnings under do(College=1) versus do(College=0).",
           "Explain whether the raw wage premium overstates or understates the causal college premium."
         ]
@@ -557,8 +557,9 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
         defaultOpen: true,
         items: [
           "Mean earnings among college and non-college groups.",
-          "Share or mean of Family_advantage among college and non-college groups.",
-          "Open backdoor path College <- Family_advantage -> Earnings.",
+          "Mean Family_log_income among college and non-college groups.",
+          "Open backdoor path College <- Family_log_income -> Earnings.",
+          "Binned family-income overlap checks before trusting the adjusted contrast.",
           "Minimal adjustment set for the total effect.",
           "Continuous earnings distributions, so users do not need to parse a binary confusion matrix."
         ]
@@ -566,7 +567,7 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
       {
         title: "Assumption checklist",
         items: [
-          "Family_advantage is measured before the college decision.",
+          "Family_log_income is measured before the college decision.",
           "College is a treatment-like decision or exposure, not merely a label assigned after earnings are known.",
           "Earnings are measured after college attendance.",
           "No important pre-college common causes remain unmeasured.",
@@ -576,18 +577,18 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
       {
         title: "Threats and failure modes",
         items: [
-          "Latent ability can confound college attendance and earnings beyond Family_advantage.",
+          "Latent ability can confound college attendance and earnings beyond Family_log_income.",
           "College quality, major, local labor market, and networks can make the effect heterogeneous.",
           "Selection into college may involve expectations about future earnings.",
           "Conditioning on post-college occupation would change the estimand.",
-          "Poor overlap can make disadvantaged college graduates or advantaged non-graduates rare."
+          "Poor overlap can make low-income college graduates or high-income non-graduates rare."
         ]
       },
       {
         title: "Report language",
         items: [
-          "Say: college graduates earn more in the raw data, but part of that gap reflects family advantage.",
-          "Say: under this DAG, the causal college premium is the do-contrast after accounting for family advantage.",
+          "Say: college graduates earn more in the raw data, but part of that gap reflects family log income.",
+          "Say: under this DAG, the causal college premium is the do-contrast after accounting for family log income.",
           "Do not say: the entire graduate/non-graduate wage gap is caused by college.",
           "Mention that omitted ability or school-quality differences would weaken the claim."
         ]
@@ -598,9 +599,9 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
     module: "Adjustment / sign reversal",
     punchline: "Tutored students can score lower in the raw comparison because tutoring is targeted to students who already need help, even when tutoring causally improves scores.",
     estimand: "Mean effect of Tutoring on Test_score, comparing do(Tutoring=1) versus do(Tutoring=0) for the student population represented by the DAG.",
-    primaryOutput: "Raw score gap, causal do-score gain, academic-need imbalance, and a sign-reversal verdict.",
+    primaryOutput: "Collapsed reveal card: raw score gap, causal do-score gain, academic-need imbalance, and a sign-reversal verdict.",
     validity: "Credible only if Academic_need captures the pre-tutoring reasons students receive tutoring and score lower; omitted motivation, teacher assignment, or prior achievement would remain threats.",
-    nextAction: "Use this as the braindead-obvious sign-flip card: the crude comparison says tutoring hurts, while the do-contrast says tutoring helps.",
+    nextAction: "Make the user fix the graph by marking Academic_need adjusted. After that state change, reveal a corrected adjusted graph panel rather than immediately handing them the answer.",
     sections: [
       {
         title: "Claim packet",
@@ -650,6 +651,16 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
           "Say: under this DAG, the causal tutoring effect is positive after comparing students with the same academic need.",
           "Do not say: tutoring harms students merely because tutored students have lower scores.",
           "Mention omitted prior-achievement or referral mechanisms if Academic_need is too crude."
+        ]
+      },
+      {
+        title: "Adjusted graph reveal plan",
+        items: [
+          "Treat the initial catalog entry as the unadjusted state: same nodes and arrows, but Academic_need is not yet selected as adjusted.",
+          "Detect the fix when Academic_need.roles.adjusted becomes true while Tutoring is exposure and Test_score is outcome.",
+          "On that transition, open a lightweight comparison panel with two graph snapshots: raw graph and adjusted graph.",
+          "In the adjusted snapshot, highlight Academic_need and the now-blocked path Tutoring <- Academic_need -> Test_score.",
+          "Keep the completed output collapsed until the user expands it, so the exercise remains interactive rather than a pre-solved report."
         ]
       }
     ]
@@ -1337,13 +1348,22 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
     ]
   },
   "chess-intelligence-practice": {
-    module: "Nonlinear SEM / selection on skill",
+    module: "Nonlinear SEM / selection on skill / TO FIX: CALIBRATE?",
     punchline: "Practice can dominate chess skill while intelligence still has a smaller, threshold-like contribution; selecting only elite Elo players can make the observed intelligence-skill association look weak or even reversed.",
     estimand: "Total effect of Intelligence on Chess_Elo in the youth-player population represented by the graph, with Practice_hours and Experience_years shown as competing explanatory mechanisms rather than linear nuisances.",
     primaryOutput: "Nonlinear mechanism packet: saturating practice-to-Elo edge, smooth intelligence threshold, and selected elite sample caused by an Elo cutoff.",
-    validity: "This is a clean-room teaching model inspired by Bilalic, McLeod, and Gobet (2007), not a reconstruction of their fitted coefficients; it is credible only as a demonstration of nonlinear mechanisms and selection effects.",
+    validity: "TO FIX: CALIBRATE? This is a clean-room teaching model inspired by Bilalic, McLeod, and Gobet (2007), doi:10.1016/j.intell.2006.09.005, not a reconstruction of their fitted coefficients; it is credible only as a demonstration of nonlinear mechanisms and selection effects.",
     nextAction: "Use it to show why the edge-function menu matters: linear practice effects miss diminishing returns, and linear selection misses the elite-threshold mechanism.",
     sections: [
+      {
+        title: "Citation and calibration status",
+        defaultOpen: true,
+        items: [
+          "TO FIX: CALIBRATE? The current parameters are illustrative and should not be read as estimates from the source paper.",
+          "Citation: Bilalic, M., McLeod, P., & Gobet, F. (2007). Does chess need intelligence? Intelligence, 35(5), 457-470. doi:10.1016/j.intell.2006.09.005.",
+          "Next calibration pass should decide whether to match reported signs/rank ordering only, or attempt rough marginal distributions for Elo, practice, and intelligence."
+        ]
+      },
       {
         title: "Claim packet",
         defaultOpen: true,
@@ -1508,14 +1528,14 @@ function configureIcuMortalityTriage(document: GraphDocument): GraphDocument {
 }
 
 function configureCollegeEarnings(document: GraphDocument): GraphDocument {
-  setBinaryVariable(document, "Family_advantage", "Pre-college family advantage affecting both college attendance and later earnings.", "advantaged");
+  setContinuousVariable(document, "Family_log_income", "Standardized pre-college log family income. Higher-income families make college attendance more likely and also raise expected adult earnings through non-college pathways.", "log income z");
   setBinaryVariable(document, "College", "College attendance or completion indicator.", "college");
   setContinuousVariable(document, "Earnings", "Adult earnings measured after the college decision.", "earnings index");
-  setNode(document, "Family_advantage", { distribution: { kind: "bernoulli", p: 0.42 }, noise: ZERO_NOISE });
-  setLogitNode(document, "College", -1.0);
+  setNode(document, "Family_log_income", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "College", -0.35);
   setNode(document, "Earnings", { intercept: 45, noise: { kind: "normal", mean: 0, sd: 7 } });
-  setLinearCoefficient(document, "Family_advantage", "College", 2.1);
-  setLinearCoefficient(document, "Family_advantage", "Earnings", 16);
+  setLinearCoefficient(document, "Family_log_income", "College", 1.25);
+  setLinearCoefficient(document, "Family_log_income", "Earnings", 12);
   setLinearCoefficient(document, "College", "Earnings", 8);
   return document;
 }
