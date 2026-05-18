@@ -28,6 +28,33 @@ npm run build
 npm run test:e2e
 ```
 
+## Web Deployment
+
+The public site at `https://nudag.joeha.kim/` is served from this checkout by
+the `joesite-status` control plane in `/home/joe/skunks/joesite-status`, not by
+Cloudflare Pages or a per-push hosted build.
+
+Deployment shape:
+
+- `joesite-status/apps.toml` maps the `nudagitty` app to this repo, branch
+  `main`, local port `8502`, and systemd service `joesite-nudagitty.service`.
+- `joesite-nudagitty.service` runs `vite preview` against
+  `apps/web/vite.config.ts` on `127.0.0.1:8502`.
+- Cloudflare Tunnel maps `nudag.joeha.kim` to `http://127.0.0.1:8502/`.
+- GitHub push webhooks to `https://status.joeha.kim/github` trigger
+  `joesitectl.py deploy nudagitty`, which fetches, fast-forwards, verifies,
+  builds, restarts the service, and checks local/public health.
+
+Useful status command:
+
+```bash
+/home/joe/skunks/joesite-status/joesitectl.py status nudagitty
+```
+
+Normal deploys refuse to run from a dirty checkout. If the status reports
+`attention` with a dirty git state, commit, stash, or otherwise clean local
+changes before expecting the webhook deploy to advance.
+
 ## Planning Docs
 
 - [Variable types simulation plan](docs/variable-types-plan.md)

@@ -186,7 +186,7 @@ describe("SEM simulation", () => {
     if (!baseline || !intervened || !conditioned) throw new Error("missing Galton example");
 
     intervened.simulation.overrides.Father_height = 78;
-    conditioned.simulation.selections.Father_height = { operator: "at_least", value: 72, upper: null, sampling: "auto" };
+    conditioned.simulation.selections.Father_height = { operator: "at_least", value: 72, upper: null, valueRef: null, upperRef: null, sampling: "auto" };
 
     const baselineResult = runSimulation(baseline.graph, baseline.simulation);
     const interventionResult = runSimulation(intervened.graph, intervened.simulation);
@@ -229,7 +229,7 @@ describe("SEM simulation", () => {
     doc.simulation.nodes.Y = normalizeNodeMechanism({ intercept: 0, noise: { kind: "constant", value: 0 } });
     doc.simulation.edges[aToM.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
     doc.simulation.edges[mToY.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
-    doc.simulation.selections.M = { operator: "at_least", value: 4, upper: null, sampling: "auto" };
+    doc.simulation.selections.M = { operator: "at_least", value: 4, upper: null, valueRef: null, upperRef: null, sampling: "auto" };
 
     const result = runSimulation(doc.graph, doc.simulation);
     expect(result.conditioning.empiricalMethod).toBe("importance");
@@ -240,13 +240,37 @@ describe("SEM simulation", () => {
     expect(result.nodeStates.Y?.empirical.mean ?? 0).toBeGreaterThan(4);
   });
 
+  it("filters samples by a variable-bound condition (X >= Y) and forces rejection sampling", () => {
+    const doc = parseModel(`dag {
+      X
+      Y
+    }`).document;
+    doc.simulation.nodes.X = normalizeNodeMechanism({ distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
+    doc.simulation.nodes.Y = normalizeNodeMechanism({ distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
+    // Condition: keep draws where X >= Y. Even with sampling=auto, the ref forces rejection.
+    doc.simulation.selections.X = { operator: "at_least", value: 0, upper: null, valueRef: "Y", upperRef: null, sampling: "auto" };
+
+    const result = runSimulation(doc.graph, doc.simulation);
+    expect(result.conditioning.activeConditions).toEqual(["X >= Y"]);
+    expect(result.conditioning.empiricalMethod).toBe("rejection");
+    expect(result.conditioning.primaryMethod).toBe("rejection");
+    expect(result.conditioning.acceptedSamples).toBeGreaterThan(0);
+    const xs = result.nodeStates.X?.empirical.samples ?? [];
+    const ys = result.nodeStates.Y?.empirical.samples ?? [];
+    expect(xs.length).toBe(ys.length);
+    expect(xs.every((value, index) => value >= (ys[index] ?? Number.NEGATIVE_INFINITY))).toBe(true);
+    // Conditioning on X >= Y should yield positive E[X - Y] (~ 1/sqrt(pi) for unit normals).
+    const meanDiff = xs.reduce((sum, value, index) => sum + value - (ys[index] ?? 0), 0) / xs.length;
+    expect(meanDiff).toBeGreaterThan(0.3);
+  });
+
   it("uses linear Gaussian importance sampling for Galton conditioning", () => {
     const importance = exampleDocument("galton-regression");
     const rejection = exampleDocument("galton-regression");
     if (!importance || !rejection) throw new Error("missing Galton example");
 
-    importance.simulation.selections.Father_height = { operator: "at_least", value: 72, upper: null, sampling: "importance" };
-    rejection.simulation.selections.Father_height = { operator: "at_least", value: 72, upper: null, sampling: "rejection" };
+    importance.simulation.selections.Father_height = { operator: "at_least", value: 72, upper: null, valueRef: null, upperRef: null, sampling: "importance" };
+    rejection.simulation.selections.Father_height = { operator: "at_least", value: 72, upper: null, valueRef: null, upperRef: null, sampling: "rejection" };
 
     const importanceResult = runSimulation(importance.graph, importance.simulation);
     const rejectionResult = runSimulation(rejection.graph, rejection.simulation);
@@ -299,7 +323,7 @@ describe("SEM simulation", () => {
     doc.simulation.nodes.X = normalizeNodeMechanism({ distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
     doc.simulation.nodes.Y = normalizeNodeMechanism({ intercept: 0, noise: { kind: "constant", value: 0 }, combiner: "bernoulli_logit" });
     doc.simulation.edges[edge.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
-    doc.simulation.selections.X = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+    doc.simulation.selections.X = { operator: "at_least", value: 1, upper: null, valueRef: null, upperRef: null, sampling: "analytic" };
 
     const result = runSimulation(doc.graph, doc.simulation);
     expect(result.conditioning.primaryMethod).toBe("analytic");
@@ -323,7 +347,7 @@ describe("SEM simulation", () => {
     doc.simulation.nodes.X = normalizeNodeMechanism({ distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
     doc.simulation.nodes.Y = normalizeNodeMechanism({ intercept: 0, noise: { kind: "constant", value: 0 }, combiner: "bernoulli_logit" });
     doc.simulation.edges[edge.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
-    doc.simulation.selections.Y = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+    doc.simulation.selections.Y = { operator: "at_least", value: 1, upper: null, valueRef: null, upperRef: null, sampling: "analytic" };
 
     const result = runSimulation(doc.graph, doc.simulation);
     expect(result.conditioning.primaryMethod).toBe("analytic");
@@ -350,7 +374,7 @@ describe("SEM simulation", () => {
     doc.simulation.nodes.A = normalizeNodeMechanism({ distribution: { kind: "bernoulli", p: 0.3 }, noise: { kind: "constant", value: 0 } });
     doc.simulation.nodes.B = normalizeNodeMechanism({ intercept: 0, noise: { kind: "constant", value: 0 }, combiner: "bernoulli_logit" });
     doc.simulation.edges[edge.id] = { ...defaultEdgeMechanism(), coefficient: 2 };
-    doc.simulation.selections.B = { operator: "at_least", value: 1, upper: null, sampling: "auto" };
+    doc.simulation.selections.B = { operator: "at_least", value: 1, upper: null, valueRef: null, upperRef: null, sampling: "auto" };
 
     const result = runSimulation(doc.graph, doc.simulation);
     expect(result.conditioning.primaryMethod).not.toBe("analytic");
@@ -367,7 +391,7 @@ describe("SEM simulation", () => {
     a.variable = { ...a.variable, valueType: "binary" };
     doc.simulation.nodes.A = normalizeNodeMechanism({ distribution: { kind: "bernoulli", p: 0.4 }, noise: { kind: "constant", value: 0 } });
     doc.simulation.nodes.X = normalizeNodeMechanism({ distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
-    doc.simulation.selections.X = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+    doc.simulation.selections.X = { operator: "at_least", value: 1, upper: null, valueRef: null, upperRef: null, sampling: "analytic" };
 
     const result = runSimulation(doc.graph, doc.simulation);
     expect(result.conditioning.primaryMethod).toBe("analytic");
@@ -396,8 +420,8 @@ describe("SEM simulation", () => {
     doc.simulation.nodes.B = normalizeNodeMechanism({ intercept: 0, noise: { kind: "constant", value: 0 }, combiner: "bernoulli_logit" });
     doc.simulation.edges[ua.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
     doc.simulation.edges[ub.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
-    doc.simulation.selections.A = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
-    doc.simulation.selections.B = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+    doc.simulation.selections.A = { operator: "at_least", value: 1, upper: null, valueRef: null, upperRef: null, sampling: "analytic" };
+    doc.simulation.selections.B = { operator: "at_least", value: 1, upper: null, valueRef: null, upperRef: null, sampling: "analytic" };
 
     const result = runSimulation(doc.graph, doc.simulation);
     expect(result.conditioning.primaryMethod).toBe("analytic");
@@ -420,8 +444,8 @@ describe("SEM simulation", () => {
     a.variable = { ...a.variable, valueType: "binary" };
     doc.simulation.nodes.U = normalizeNodeMechanism({ distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
     doc.simulation.nodes.A = normalizeNodeMechanism({ distribution: { kind: "bernoulli", p: 0.5 }, noise: { kind: "constant", value: 0 } });
-    doc.simulation.selections.U = { operator: "at_least", value: 0, upper: null, sampling: "analytic" };
-    doc.simulation.selections.A = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+    doc.simulation.selections.U = { operator: "at_least", value: 0, upper: null, valueRef: null, upperRef: null, sampling: "analytic" };
+    doc.simulation.selections.A = { operator: "at_least", value: 1, upper: null, valueRef: null, upperRef: null, sampling: "analytic" };
 
     const result = runSimulation(doc.graph, doc.simulation);
     expect(result.conditioning.primaryMethod).toBe("analytic");
@@ -447,8 +471,8 @@ describe("SEM simulation", () => {
     doc.simulation.nodes.Y = normalizeNodeMechanism({ intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
     doc.simulation.edges[ux.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
     doc.simulation.edges[uy.id] = { ...defaultEdgeMechanism(), coefficient: 1 };
-    doc.simulation.selections.X = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
-    doc.simulation.selections.Y = { operator: "at_least", value: 1, upper: null, sampling: "analytic" };
+    doc.simulation.selections.X = { operator: "at_least", value: 1, upper: null, valueRef: null, upperRef: null, sampling: "analytic" };
+    doc.simulation.selections.Y = { operator: "at_least", value: 1, upper: null, valueRef: null, upperRef: null, sampling: "analytic" };
 
     const result = runSimulation(doc.graph, doc.simulation);
     expect(result.conditioning.primaryMethod).toBe("analytic");

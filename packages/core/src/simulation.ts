@@ -480,6 +480,10 @@ function simulateLinearGaussianConditionedEmpirical(
   if (conditions.length !== 1) return null;
   const [conditionId, condition] = conditions[0] ?? [];
   if (!conditionId || !condition || condition.sampling === "rejection") return null;
+  if (condition.operator === "one_of") return null;
+  // Variable-bound conditions cannot use linear-Gaussian importance sampling;
+  // the bound is not a fixed scalar so the truncation density is undefined.
+  if (selectionConditionUsesRef(condition)) return null;
   const joint = buildLinearGaussianJoint(graph, spec, order);
   if (!joint) return null;
   const conditionIndex = joint.ids.indexOf(conditionId);
@@ -575,20 +579,47 @@ function matchesSelectionConditions(values: Record<string, number>, conditions: 
   for (const [id, condition] of conditions) {
     const value = values[id];
     if (value === undefined || !Number.isFinite(value)) return false;
-    if (condition.operator === "at_least" && value < condition.value) return false;
-    if (condition.operator === "at_most" && value > condition.value) return false;
+    if (condition.operator === "one_of") {
+      const allowed = condition.values ?? [condition.value];
+      if (!allowed.some((candidate) => Math.abs(value - candidate) <= 1e-9)) return false;
+      continue;
+    }
+    const lowerBound = resolveSelectionBound(values, condition.valueRef, condition.value);
+    if (lowerBound === null) return false;
+    if (condition.operator === "at_least" && value < lowerBound) return false;
+    if (condition.operator === "at_most" && value > lowerBound) return false;
     if (condition.operator === "between") {
-      const upper = condition.upper ?? condition.value;
-      if (value < condition.value || value > upper) return false;
+      const upperBound = resolveSelectionBound(values, condition.upperRef, condition.upper ?? condition.value);
+      if (upperBound === null) return false;
+      const [lo, hi] = lowerBound <= upperBound ? [lowerBound, upperBound] : [upperBound, lowerBound];
+      if (value < lo || value > hi) return false;
     }
   }
   return true;
 }
 
+function resolveSelectionBound(values: Record<string, number>, ref: string | null, literal: number): number | null {
+  if (!ref) return literal;
+  const referenced = values[ref];
+  return referenced === undefined || !Number.isFinite(referenced) ? null : referenced;
+}
+
+function selectionConditionUsesRef(condition: SimulationSelectionCondition): boolean {
+  return Boolean(condition.valueRef || condition.upperRef);
+}
+
 function formatSelectionCondition(id: string, condition: SimulationSelectionCondition): string {
-  if (condition.operator === "at_most") return `${id} <= ${condition.value}`;
-  if (condition.operator === "between") return `${condition.value} <= ${id} <= ${condition.upper ?? condition.value}`;
-  return `${id} >= ${condition.value}`;
+  if (condition.operator === "one_of") {
+    const values = condition.values ?? [condition.value];
+    return `${id} in {${values.join(", ")}}`;
+  }
+  const lower = condition.valueRef ?? String(condition.value);
+  if (condition.operator === "at_most") return `${id} <= ${lower}`;
+  if (condition.operator === "between") {
+    const upper = condition.upperRef ?? String(condition.upper ?? condition.value);
+    return `${lower} <= ${id} <= ${upper}`;
+  }
+  return `${id} >= ${lower}`;
 }
 
 function emptyConditioningSummary(): SimulationConditioningSummary {
@@ -626,6 +657,10 @@ function primaryConditioningMethod(
 }
 
 function shouldUseImportanceSampling(condition: SimulationSelectionCondition): boolean {
+  if (condition.operator === "one_of") return false;
+  // Importance sampling needs a fixed numeric bound to compute the proposal density.
+  // Variable-bound conditions resolve only at draw time, so fall back to rejection.
+  if (selectionConditionUsesRef(condition)) return false;
   return condition.sampling !== "rejection";
 }
 
@@ -689,6 +724,10 @@ function sampleNormalWithinBounds(mean: number, sd: number, lower: number, upper
 }
 
 function selectionBounds(condition: SimulationSelectionCondition): [number, number] {
+  if (condition.operator === "one_of") {
+    const values = condition.values ?? [condition.value];
+    return [Math.min(...values), Math.max(...values)];
+  }
   if (condition.operator === "at_least") return [condition.value, Number.POSITIVE_INFINITY];
   if (condition.operator === "at_most") return [Number.NEGATIVE_INFINITY, condition.value];
   return [condition.value, condition.upper ?? condition.value];
@@ -810,6 +849,9 @@ function binaryLatentNoise(variable: VariableModel, mechanism: NodeMechanism, is
 
 function conditionLinearGaussianJoint(joint: LinearGaussianJoint, conditions: Array<[string, SimulationSelectionCondition]>): LinearGaussianConditioning | null {
   if (conditions.length === 0) return null;
+  // Variable-bound conditions resolve only at draw time and have no closed-form analytic conditioning.
+  if (conditions.some(([, condition]) => selectionConditionUsesRef(condition))) return null;
+  if (conditions.some(([, condition]) => condition.operator === "one_of")) return null;
   if (conditions.length === 2) {
     const c1 = conditions[0];
     const c2 = conditions[1];
@@ -825,7 +867,7 @@ function conditionLinearGaussianJoint(joint: LinearGaussianJoint, conditions: Ar
   const binaryDirection = conditionIsBinary ? translateBinaryCondition(condition) : null;
   if (conditionIsBinary && (binaryDirection === "trivial" || binaryDirection === "impossible")) return null;
   const effectiveCondition: SimulationSelectionCondition = conditionIsBinary
-    ? { operator: binaryDirection === "high" ? "at_least" : "at_most", value: 0, upper: null, sampling: condition.sampling }
+    ? { operator: binaryDirection === "high" ? "at_least" : "at_most", value: 0, upper: null, valueRef: null, upperRef: null, sampling: condition.sampling }
     : condition;
   const conditionMean = joint.mean[conditionIndex] ?? 0;
   const conditionVariance = joint.covariance[conditionIndex]?.[conditionIndex] ?? 0;
@@ -899,6 +941,7 @@ interface PairConditionBounds {
 }
 
 function conditionToWBounds(joint: LinearGaussianJoint, conditionId: string, cond: SimulationSelectionCondition): PairConditionBounds | null {
+  if (cond.operator === "one_of") return null;
   const idx = joint.ids.indexOf(conditionId);
   if (idx < 0) return null;
   const mu = joint.mean[idx] ?? 0;
@@ -1044,6 +1087,7 @@ function continuousDensityForCondition(mean: number, sd: number, cond: Simulatio
   if (sd <= VARIANCE_EPSILON) return undefined;
   if (cond.operator === "at_least") return { kind: "truncated_normal", mean, sd, lower: cond.value, upper: null };
   if (cond.operator === "at_most") return { kind: "truncated_normal", mean, sd, lower: null, upper: cond.value };
+  if (cond.operator === "one_of") return undefined;
   const upper = cond.upper ?? cond.value;
   return { kind: "truncated_normal", mean, sd, lower: cond.value, upper };
 }
@@ -1058,6 +1102,7 @@ function translateBinaryCondition(condition: SimulationSelectionCondition): "hig
 }
 
 function matchesBinaryValue(value: 0 | 1, condition: SimulationSelectionCondition): boolean {
+  if (condition.operator === "one_of") return (condition.values ?? [condition.value]).some((candidate) => Math.abs(value - candidate) <= 1e-9);
   if (condition.operator === "at_least") return value >= condition.value;
   if (condition.operator === "at_most") return value <= condition.value;
   const upper = condition.upper ?? condition.value;
@@ -1087,6 +1132,7 @@ function truncatedNormalDensitySpec(
 }
 
 function conditionalSelectionMoments(mean: number, sd: number, condition: SimulationSelectionCondition): { mean: number; variance: number; exact: boolean } | null {
+  if (condition.operator === "one_of") return null;
   if (condition.operator === "at_least") {
     const alpha = (condition.value - mean) / sd;
     const denominator = 1 - standardNormalCdf(alpha);

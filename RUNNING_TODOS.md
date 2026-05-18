@@ -13,6 +13,7 @@ This branch is turning Nudagitty from a DAG drawing surface into a broader pract
 - [x] Completed ICU example: added the golden "Does the ICU make patients die?" model with Gaussian baseline severity, binary ICU admission, binary mortality, Gaussian triage-score collider, and a computed output card for crude mortality, `do(ICU)` contrast, severity separation, and bad-control warning.
 - [x] Completed college example: added the golden "Does college raise earnings?" three-variable model with binary family advantage, binary college attendance, continuous earnings, and a computed output card for raw wage premium versus `do(College)` premium.
 - [x] Completed tutoring sign-flip example: added the golden "Does tutoring hurt test scores?" three-variable model with binary academic need, binary tutoring, continuous test score, and a computed output card where the raw association is negative but the `do(Tutoring)` effect is positive.
+- [x] Chess model consolidation: reduced the chess narrative to two examples: a paper-shaped nonlinear DGP that conditions on `Elite_sample` but fails to flip the IQ-rating sign, and a compact manually specified compensatory-selection DGP that succeeds. Removed the rich latent scaffolding from the catalog.
 - [x] TODO affordances: added visible TODO cards for heavier workflows that are not implemented yet: question-first analysis plan, data-aware DAG/import, and code/export bridge.
 
 ## Later

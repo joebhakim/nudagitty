@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
@@ -14,6 +14,10 @@ const VIEWPORTS = [
 
 test.skip(process.env.NUDAGITTY_SCREENSHOTS !== "1", "Set NUDAGITTY_SCREENSHOTS=1 or run npm run screenshots:examples.");
 test.describe.configure({ mode: "serial" });
+
+if (process.env.NUDAGITTY_SCREENSHOTS === "1") {
+  rmSync(OUTPUT_ROOT, { recursive: true, force: true });
+}
 
 for (const viewport of VIEWPORTS) {
   test.describe(`example screenshots: ${viewport.id}`, () => {
@@ -47,7 +51,7 @@ async function loadExample(page: Page, example: ExampleModel) {
   if (domain) {
     await page.locator(".example-domain-list button").filter({ hasText: domain.label }).hover();
   }
-  await page.getByRole("menuitem").filter({ hasText: example.title }).click();
+  await page.getByRole("menuitem").filter({ has: page.getByText(example.title, { exact: true }) }).click();
   await expect(page.getByLabel("Examples")).toContainText(example.title);
   await expect(page.getByLabel("Editable causal graph")).toBeVisible();
 }

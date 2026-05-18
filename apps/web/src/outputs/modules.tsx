@@ -9,7 +9,7 @@ import {
   formatValue,
   formatWeightedCount
 } from "../shared/formatting";
-import { formatAdjustmentSet, weightedBinaryShare, weightedConditionalMean, weightedJointConditionalMean } from "./helpers";
+import { empiricalSampleWeight, formatAdjustmentSet, weightedBinaryShare, weightedConditionalMean, weightedJointConditionalMean } from "./helpers";
 import type { CompletedOutputModule, OutputContext } from "./types";
 
 type SimpsonCompletedOutput = {
@@ -114,6 +114,45 @@ type TutoringAdjustedPair = {
   untutoredSamples: number[];
 };
 
+type HuhMetric = {
+  label: string;
+  value: string;
+  detail: string;
+  numericValue?: number;
+  lower?: number;
+  upper?: number;
+};
+
+type HuhCompletedOutput = {
+  badge: string;
+  conclusion: string;
+  metrics: HuhMetric[];
+  bullets: Array<{ label: string; text: string }>;
+};
+
+export type BasicOutputPunchlineMetric = {
+  label: string;
+  value: string;
+  detail: string;
+  numericValue: number | null;
+  lower?: number;
+  upper?: number;
+};
+
+export type BasicOutputPunchline = {
+  badge: string;
+  title: string;
+  observed: BasicOutputPunchlineMetric;
+  comparison: BasicOutputPunchlineMetric;
+  note: string;
+};
+
+export type ComputedCompletedOutput = {
+  moduleId: string;
+  module: CompletedOutputModule<unknown>;
+  result: unknown | null;
+};
+
 export const completedOutputModules: CompletedOutputModule<unknown>[] = [
   {
     id: "simpson-severity",
@@ -142,8 +181,195 @@ export const completedOutputModules: CompletedOutputModule<unknown>[] = [
     compute: computeTutoringCompletedOutput,
     render: (result) => renderTutoringOutput(result as TutoringCompletedOutput),
     fallback: fallbackOutput("needs roles", "This completed tutoring output needs Academic_need, Tutoring, and Test_score in the graph.")
+  },
+  {
+    id: "front-door-smoking",
+    label: "front door",
+    compute: computeFrontDoorSmokingOutput,
+    render: (result) => renderHuhOutput(result as HuhCompletedOutput),
+    fallback: fallbackOutput("needs roles", "This front-door output needs Smoking, Tar, Cancer, and Genetic_risk in the graph.")
+  },
+  {
+    id: "birthweight-paradox",
+    label: "paradox ready",
+    compute: computeBirthweightParadoxOutput,
+    render: (result) => renderHuhOutput(result as HuhCompletedOutput),
+    fallback: fallbackOutput("needs roles", "This birthweight output needs Smoking, Birthweight, Frailty, and Infant_mortality in the graph.")
+  },
+  {
+    id: "obesity-paradox",
+    label: "paradox ready",
+    compute: computeObesityParadoxOutput,
+    render: (result) => renderHuhOutput(result as HuhCompletedOutput),
+    fallback: fallbackOutput("needs roles", "This obesity-paradox output needs Obesity, Chronic_disease, Frailty, and Mortality in the graph.")
+  },
+  {
+    id: "policing-encounters",
+    label: "selection ready",
+    compute: computePolicingEncountersOutput,
+    render: (result) => renderHuhOutput(result as HuhCompletedOutput),
+    fallback: fallbackOutput("needs roles", "This policing output needs Group_A, Police_contact, Incident_risk, and Use_of_force in the graph.")
+  },
+  {
+    id: "m-bias-adjustment",
+    label: "bad control",
+    compute: computeMBiasOutput,
+    render: (result) => renderHuhOutput(result as HuhCompletedOutput),
+    fallback: fallbackOutput("needs roles", "This M-bias output needs Exposure, Collider_score, and Outcome in the graph.")
+  },
+  {
+    id: "lords-paradox",
+    label: "estimand split",
+    compute: computeLordsParadoxOutput,
+    render: (result) => renderHuhOutput(result as HuhCompletedOutput),
+    fallback: fallbackOutput("needs roles", "This Lord's paradox output needs Program, Baseline_weight, and Final_weight in the graph.")
+  },
+  {
+    id: "chess-intelligence-practice-simple-flip",
+    label: "sign flip",
+    compute: computeChessSimpleFlipOutput,
+    render: (result) => renderHuhOutput(result as HuhCompletedOutput),
+    fallback: fallbackOutput("needs roles", "This chess output needs Intelligence, Practice_hours, Chess_Elo, and Elite_sample in the graph.")
   }
 ];
+
+export function computeCompletedOutput(context: OutputContext, moduleId: string | null): ComputedCompletedOutput | null {
+  const module = completedOutputModules.find((candidate) => candidate.id === moduleId);
+  if (!module || !moduleId) return null;
+  return {
+    moduleId,
+    module,
+    result: module.compute(context)
+  };
+}
+
+export function renderCompletedOutput(computed: ComputedCompletedOutput) {
+  return computed.result === null ? computed.module.fallback : computed.module.render(computed.result);
+}
+
+export function computeBasicOutputPunchline(context: OutputContext, moduleId: string | null): BasicOutputPunchline | null {
+  const computed = computeCompletedOutput(context, moduleId);
+  return basicOutputPunchlineFromResult(moduleId, computed?.result ?? null);
+}
+
+export function basicOutputPunchlineFromResult(moduleId: string | null, result: unknown | null): BasicOutputPunchline | null {
+  if (result === null) return null;
+  if (isHuhCompletedOutput(result)) {
+    const observed = result.metrics[0];
+    const comparison = result.metrics[1];
+    if (!observed || !comparison) return null;
+    return {
+      badge: result.badge,
+      title: "Huh moment",
+      observed: metricForPunchline(observed),
+      comparison: metricForPunchline(comparison),
+      note: result.conclusion
+    };
+  }
+  if (moduleId === "simpson-severity") {
+    const output = result as SimpsonCompletedOutput;
+    return {
+      badge: "Simpson",
+      title: "Huh moment",
+      observed: {
+        label: "Observed association",
+        value: formatPercentagePoints(output.crudeDiff),
+        detail: `treated ${formatPercent(output.crudeTreatedRecovery)} vs untreated ${formatPercent(output.crudeUntreatedRecovery)}`,
+        numericValue: output.crudeDiff
+      },
+      comparison: {
+        label: "Causal do contrast",
+        value: formatPercentagePoints(output.causalDiff),
+        detail: `do(1) ${formatPercent(output.causalTreatedRecovery)} vs do(0) ${formatPercent(output.causalUntreatedRecovery)}`,
+        numericValue: output.causalDiff
+      },
+      note: output.conclusion
+    };
+  }
+  if (moduleId === "icu-mortality-triage") {
+    const output = result as IcuCompletedOutput;
+    return {
+      badge: "triage",
+      title: "Huh moment",
+      observed: {
+        label: "Observed mortality",
+        value: formatPercentagePoints(output.crudeDiff),
+        detail: `ICU ${formatPercent(output.crudeIcuMortality)} vs no ICU ${formatPercent(output.crudeWardMortality)}`,
+        numericValue: output.crudeDiff
+      },
+      comparison: {
+        label: "Causal do contrast",
+        value: formatPercentagePoints(output.causalDiff),
+        detail: `do(ICU) ${formatPercent(output.causalIcuMortality)} vs do(no ICU) ${formatPercent(output.causalWardMortality)}`,
+        numericValue: output.causalDiff
+      },
+      note: output.conclusion
+    };
+  }
+  if (moduleId === "college-earnings") {
+    const output = result as CollegeCompletedOutput;
+    return {
+      badge: "confounding",
+      title: "Huh moment",
+      observed: {
+        label: "Observed premium",
+        value: formatSignedValue(output.crudePremium),
+        detail: `college ${formatValue(output.crudeCollegeEarnings)} vs no college ${formatValue(output.crudeNoCollegeEarnings)}`,
+        numericValue: output.crudePremium
+      },
+      comparison: {
+        label: "Causal do contrast",
+        value: formatSignedValue(output.causalPremium),
+        detail: `do(college) ${formatValue(output.causalCollegeEarnings)} vs do(no college) ${formatValue(output.causalNoCollegeEarnings)}`,
+        numericValue: output.causalPremium
+      },
+      note: output.conclusion
+    };
+  }
+  if (moduleId === "tutoring-scores") {
+    const output = result as TutoringCompletedOutput;
+    return {
+      badge: output.academicNeedAdjusted ? "adjusted" : "needs adjustment",
+      title: "Huh moment",
+      observed: {
+        label: "Observed score gap",
+        value: formatSignedValue(output.crudeGap),
+        detail: `tutored ${formatValue(output.crudeTutoredScore)} vs untutored ${formatValue(output.crudeUntutoredScore)}`,
+        numericValue: output.crudeGap
+      },
+      comparison: {
+        label: "Causal do contrast",
+        value: formatSignedValue(output.causalGap),
+        detail: `do(tutoring) ${formatValue(output.causalTutoredScore)} vs do(no tutoring) ${formatValue(output.causalUntutoredScore)}`,
+        numericValue: output.causalGap
+      },
+      note: output.conclusion
+    };
+  }
+  return null;
+}
+
+function isHuhCompletedOutput(value: unknown): value is HuhCompletedOutput {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    "badge" in value &&
+    "conclusion" in value &&
+    "metrics" in value &&
+    Array.isArray((value as { metrics?: unknown }).metrics)
+  );
+}
+
+function metricForPunchline(metric: HuhMetric): BasicOutputPunchlineMetric {
+  return {
+    label: metric.label,
+    value: metric.value,
+    detail: metric.detail,
+    numericValue: metric.numericValue ?? null,
+    lower: metric.lower,
+    upper: metric.upper
+  };
+}
 
 function renderSimpsonOutput(output: SimpsonCompletedOutput) {
   return (
@@ -415,6 +641,83 @@ function TutoringAdjustedPairsGraph({ output }: { output: TutoringCompletedOutpu
   );
 }
 
+function renderHuhOutput(output: HuhCompletedOutput) {
+  const before = output.metrics[0];
+  const after = output.metrics[1];
+  return (
+    <CompletedOutputShell badge={output.badge} conclusion={output.conclusion}>
+      <div className="completed-metric-grid">
+        {output.metrics.map((metric) => (
+          <div key={metric.label}>
+            <span>{metric.label}</span>
+            <strong>{metric.value}</strong>
+            <small>{metric.detail}</small>
+          </div>
+        ))}
+      </div>
+      {before && after && before.numericValue !== undefined && after.numericValue !== undefined && (
+        <HuhShiftPlot before={before} after={after} />
+      )}
+      <ul className="completed-output-list">
+        {output.bullets.map((bullet) => (
+          <li key={bullet.label}><strong>{bullet.label}:</strong> {bullet.text}</li>
+        ))}
+      </ul>
+    </CompletedOutputShell>
+  );
+}
+
+function HuhShiftPlot(props: { before: HuhMetric; after: HuhMetric }) {
+  const width = 320;
+  const height = 104;
+  const plot = { left: 78, right: 28, top: 18, rowGap: 32 };
+  const values = [
+    props.before.numericValue,
+    props.after.numericValue,
+    props.before.lower,
+    props.before.upper,
+    props.after.lower,
+    props.after.upper
+  ].filter((value): value is number => value !== undefined && Number.isFinite(value));
+  if (values.length === 0) return null;
+  const maxAbs = Math.max(0.1, ...values.map((value) => Math.abs(value)));
+  const domain = maxAbs * 1.18;
+  const x = (value: number) => plot.left + ((value + domain) / (2 * domain)) * (width - plot.left - plot.right);
+  const rows = [
+    { key: "before", label: "before", metric: props.before, y: plot.top + 15 },
+    { key: "after", label: "after", metric: props.after, y: plot.top + 15 + plot.rowGap }
+  ] as const;
+  return (
+    <div className="huh-shift-plot-card">
+      <div className="module-card-header">
+        <strong>Before / after</strong>
+        <span>same signed scale</span>
+      </div>
+      <svg className="huh-shift-plot" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${props.before.label} compared with ${props.after.label}`}>
+        <line className="huh-shift-axis" x1={plot.left} y1={height - 20} x2={width - plot.right} y2={height - 20} />
+        <line className="huh-shift-zero" x1={x(0)} y1="12" x2={x(0)} y2={height - 18} />
+        <text className="huh-shift-axis-label" x={plot.left} y={height - 4}>{formatSignedValue(-domain)}</text>
+        <text className="huh-shift-axis-label end" x={width - plot.right} y={height - 4}>{formatSignedValue(domain)}</text>
+        {rows.map((row) => (
+          <g key={row.key}>
+            <text className="huh-shift-row-label" x="10" y={row.y + 4}>{row.label}</text>
+            {row.metric.lower !== undefined && row.metric.upper !== undefined && (
+              <line className="huh-shift-interval" x1={x(row.metric.lower)} y1={row.y} x2={x(row.metric.upper)} y2={row.y} />
+            )}
+            <circle className={`huh-shift-dot ${row.key} ${metricToneClass(row.metric.numericValue ?? null)}`} cx={x(row.metric.numericValue ?? 0)} cy={row.y} r="5" />
+            <text className="huh-shift-value" x={Math.min(width - 8, x(row.metric.numericValue ?? 0) + 9)} y={row.y + 4}>{row.metric.value}</text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function metricToneClass(value: number | null): "negative" | "neutral" | "positive" {
+  if (value === null || Math.abs(value) < 0.005) return "neutral";
+  return value < 0 ? "negative" : "positive";
+}
+
 function sampleScoresForPlot(samples: number[]): number[] {
   const maxPoints = 52;
   if (samples.length <= maxPoints) return samples;
@@ -555,7 +858,7 @@ function computeIcuCompletedOutput(context: OutputContext): IcuCompletedOutput |
   const severityDirection = severityDiff >= 0 ? "sicker" : "less sick";
   const triageDirection = triageDiff >= 0 ? "higher" : "lower";
   const visualRead = `ICU patients are ${formatValue(Math.abs(severityDiff))} severity units ${severityDirection} on average. That vertical baseline gap makes raw ICU-versus-ward mortality a poor causal read before any arithmetic.`;
-  const colliderWarning = `Triage_score is drawn as ICU_admission -> Triage_score <- Severity. Its ICU group mean is ${formatValue(Math.abs(triageDiff))} points ${triageDirection}, but that score is a common effect/downstream summary, not a clean baseline confounder.`;
+  const colliderWarning = `Triage_score is shown as ICU_admission -> Triage_score <- Severity. Its ICU group mean is ${formatValue(Math.abs(triageDiff))} points ${triageDirection}, but that score is a common effect/downstream summary, not a clean baseline confounder.`;
   const signsReverse = crudeDiff !== 0 && causalDiff !== 0 && Math.sign(crudeDiff) !== Math.sign(causalDiff);
   const verdict = signsReverse
     ? `Sign reversal: crude ICU mortality ${formatPercentagePoints(crudeDiff)} versus causal ICU effect ${formatPercentagePoints(causalDiff)}.`
@@ -857,4 +1160,418 @@ function jointSamplesForPair(need: SimulatedNodeState, needValue: 0 | 1, tutorin
     out.push(scoreValue);
   }
   return out;
+}
+
+function computeFrontDoorSmokingOutput(context: OutputContext): HuhCompletedOutput | null {
+  const { document, simulation } = context;
+  const smoking = simulation.nodeStates.Smoking;
+  const cancer = simulation.nodeStates.Cancer;
+  const geneticRisk = simulation.nodeStates.Genetic_risk;
+  if (!smoking || !cancer || !geneticRisk) return null;
+  const rawSmokerCancer = weightedConditionalMean(smoking, cancer, 1);
+  const rawNonSmokerCancer = weightedConditionalMean(smoking, cancer, 0);
+  const smokerRisk = weightedConditionalMean(smoking, geneticRisk, 1);
+  const nonSmokerRisk = weightedConditionalMean(smoking, geneticRisk, 0);
+  if (rawSmokerCancer === null || rawNonSmokerCancer === null || smokerRisk === null || nonSmokerRisk === null) return null;
+  const doSmoke = runSimulation(document.graph, { ...document.simulation, overrides: { Smoking: 1 }, selections: {} });
+  const doNoSmoke = runSimulation(document.graph, { ...document.simulation, overrides: { Smoking: 0 }, selections: {} });
+  const doSmokeCancer = doSmoke.nodeStates.Cancer?.empirical.mean;
+  const doNoSmokeCancer = doNoSmoke.nodeStates.Cancer?.empirical.mean;
+  const doSmokeTar = doSmoke.nodeStates.Tar?.empirical.mean;
+  const doNoSmokeTar = doNoSmoke.nodeStates.Tar?.empirical.mean;
+  if (
+    doSmokeCancer === null ||
+    doSmokeCancer === undefined ||
+    doNoSmokeCancer === null ||
+    doNoSmokeCancer === undefined ||
+    doSmokeTar === null ||
+    doSmokeTar === undefined ||
+    doNoSmokeTar === null ||
+    doNoSmokeTar === undefined
+  ) return null;
+  const rawDiff = rawSmokerCancer - rawNonSmokerCancer;
+  const doDiff = doSmokeCancer - doNoSmokeCancer;
+  const tarShift = doSmokeTar - doNoSmokeTar;
+  const riskGap = smokerRisk - nonSmokerRisk;
+  return {
+    badge: "front door",
+    conclusion: `The raw smoking-cancer gap is ${formatPercentagePoints(rawDiff)}, but smokers also differ on latent Genetic_risk by ${formatSignedValue(riskGap)}. The useful causal read is the mediated do contrast: do(Smoking=1) changes Tar by ${formatSignedValue(tarShift)} and raises Cancer by ${formatPercentagePointMagnitude(doDiff)} under this DGP.`,
+    metrics: [
+      { label: "naive cancer gap", value: formatPercentagePoints(rawDiff), detail: `smokers ${formatPercent(rawSmokerCancer)} vs non-smokers ${formatPercent(rawNonSmokerCancer)}`, numericValue: rawDiff },
+      { label: "do cancer gap", value: formatPercentagePoints(doDiff), detail: `do(smoke) ${formatPercent(doSmokeCancer)} vs do(no smoke) ${formatPercent(doNoSmokeCancer)}`, numericValue: doDiff },
+      { label: "mediator shift", value: formatSignedValue(tarShift), detail: `Tar moves from ${formatValue(doNoSmokeTar)} to ${formatValue(doSmokeTar)}`, numericValue: tarShift },
+      { label: "latent imbalance", value: formatSignedValue(riskGap), detail: `smokers have higher Genetic_risk in the observed data`, numericValue: riskGap }
+    ],
+    bullets: [
+      { label: "Huh", text: "Hidden confounding blocks ordinary backdoor adjustment, but the observed mediator still carries a front-door style causal story." },
+      { label: "Mechanism", text: "Smoking -> Tar -> Cancer is the directed path; Genetic_risk confounds Smoking and Cancer." },
+      { label: "Caveat", text: "This card shows the DGP do contrast, not a full nonparametric front-door estimator from data." }
+    ]
+  };
+}
+
+function computeBirthweightParadoxOutput(context: OutputContext): HuhCompletedOutput | null {
+  const { document, simulation } = context;
+  const smoking = simulation.nodeStates.Smoking;
+  const mortality = simulation.nodeStates.Infant_mortality;
+  const frailty = simulation.nodeStates.Frailty;
+  if (!smoking || !mortality || !frailty) return null;
+  const selectedSmokerMortality = weightedConditionalMean(smoking, mortality, 1);
+  const selectedNonSmokerMortality = weightedConditionalMean(smoking, mortality, 0);
+  const selectedSmokerFrailty = weightedConditionalMean(smoking, frailty, 1);
+  const selectedNonSmokerFrailty = weightedConditionalMean(smoking, frailty, 0);
+  if (selectedSmokerMortality === null || selectedNonSmokerMortality === null || selectedSmokerFrailty === null || selectedNonSmokerFrailty === null) return null;
+  const doSmoke = runSimulation(document.graph, { ...document.simulation, overrides: { Smoking: 1 }, selections: {} });
+  const doNoSmoke = runSimulation(document.graph, { ...document.simulation, overrides: { Smoking: 0 }, selections: {} });
+  const doSmokeMortality = doSmoke.nodeStates.Infant_mortality?.empirical.mean;
+  const doNoSmokeMortality = doNoSmoke.nodeStates.Infant_mortality?.empirical.mean;
+  if (doSmokeMortality === null || doSmokeMortality === undefined || doNoSmokeMortality === null || doNoSmokeMortality === undefined) return null;
+  const selectedDiff = selectedSmokerMortality - selectedNonSmokerMortality;
+  const doDiff = doSmokeMortality - doNoSmokeMortality;
+  const frailtyGap = selectedSmokerFrailty - selectedNonSmokerFrailty;
+  return {
+    badge: "birthweight paradox",
+    conclusion: `Inside the low-birthweight sample, smoking appears ${selectedDiff < 0 ? "protective" : "harmful"} by ${formatPercentagePointMagnitude(selectedDiff)}. In the full DGP, do(Smoking=1) ${doDiff >= 0 ? "raises" : "lowers"} infant mortality by ${formatPercentagePointMagnitude(doDiff)}. The difference is the selected low-birthweight world: non-smoking low-birthweight babies are much frailer on average.`,
+    metrics: [
+      { label: "low-birthweight read", value: formatPercentagePoints(selectedDiff), detail: `smoking ${formatPercent(selectedSmokerMortality)} vs no smoking ${formatPercent(selectedNonSmokerMortality)}`, numericValue: selectedDiff },
+      { label: "population do effect", value: formatPercentagePoints(doDiff), detail: `do(smoke) ${formatPercent(doSmokeMortality)} vs do(no smoke) ${formatPercent(doNoSmokeMortality)}`, numericValue: doDiff },
+      { label: "frailty gap in sample", value: formatSignedValue(frailtyGap), detail: `smokers ${formatValue(selectedSmokerFrailty)} vs non-smokers ${formatValue(selectedNonSmokerFrailty)}`, numericValue: frailtyGap }
+    ],
+    bullets: [
+      { label: "Huh", text: "Conditioning on low birthweight compares smoking-caused small babies to babies made small by severe latent frailty." },
+      { label: "Selection", text: "Birthweight is downstream of Smoking and Frailty, so the low-birthweight analysis sample is a conditioned collider world." },
+      { label: "Report", text: "The birthweight-restricted contrast is not the total effect of smoking." }
+    ]
+  };
+}
+
+function computeObesityParadoxOutput(context: OutputContext): HuhCompletedOutput | null {
+  const { document, simulation } = context;
+  const obesity = simulation.nodeStates.Obesity;
+  const mortality = simulation.nodeStates.Mortality;
+  const frailty = simulation.nodeStates.Frailty;
+  if (!obesity || !mortality || !frailty) return null;
+  const selectedObeseMortality = weightedConditionalMean(obesity, mortality, 1);
+  const selectedNonObeseMortality = weightedConditionalMean(obesity, mortality, 0);
+  const selectedObeseFrailty = weightedConditionalMean(obesity, frailty, 1);
+  const selectedNonObeseFrailty = weightedConditionalMean(obesity, frailty, 0);
+  if (selectedObeseMortality === null || selectedNonObeseMortality === null || selectedObeseFrailty === null || selectedNonObeseFrailty === null) return null;
+  const doObese = runSimulation(document.graph, { ...document.simulation, overrides: { Obesity: 1 }, selections: {} });
+  const doNonObese = runSimulation(document.graph, { ...document.simulation, overrides: { Obesity: 0 }, selections: {} });
+  const doObeseMortality = doObese.nodeStates.Mortality?.empirical.mean;
+  const doNonObeseMortality = doNonObese.nodeStates.Mortality?.empirical.mean;
+  if (doObeseMortality === null || doObeseMortality === undefined || doNonObeseMortality === null || doNonObeseMortality === undefined) return null;
+  const selectedDiff = selectedObeseMortality - selectedNonObeseMortality;
+  const doDiff = doObeseMortality - doNonObeseMortality;
+  const frailtyGap = selectedObeseFrailty - selectedNonObeseFrailty;
+  return {
+    badge: "obesity paradox",
+    conclusion: `Among people selected for chronic disease, obesity appears ${selectedDiff < 0 ? "protective" : "harmful"} by ${formatPercentagePointMagnitude(selectedDiff)}. In the population DGP, do(Obesity=1) ${doDiff >= 0 ? "raises" : "lowers"} mortality by ${formatPercentagePointMagnitude(doDiff)}. The selected cohort makes obesity and latent frailty substitute routes into disease.`,
+    metrics: [
+      { label: "disease-sample read", value: formatPercentagePoints(selectedDiff), detail: `obese ${formatPercent(selectedObeseMortality)} vs non-obese ${formatPercent(selectedNonObeseMortality)}`, numericValue: selectedDiff },
+      { label: "population do effect", value: formatPercentagePoints(doDiff), detail: `do(obese) ${formatPercent(doObeseMortality)} vs do(non-obese) ${formatPercent(doNonObeseMortality)}`, numericValue: doDiff },
+      { label: "frailty gap in sample", value: formatSignedValue(frailtyGap), detail: `obese ${formatValue(selectedObeseFrailty)} vs non-obese ${formatValue(selectedNonObeseFrailty)}`, numericValue: frailtyGap }
+    ],
+    bullets: [
+      { label: "Huh", text: "Inside the diseased sample, obese patients can be less frail because obesity itself was one route into the sample." },
+      { label: "Selection", text: "Chronic_disease is a selected common effect of Obesity and Frailty." },
+      { label: "Report", text: "The disease-restricted association should not be read as a population obesity effect." }
+    ]
+  };
+}
+
+function computePolicingEncountersOutput(context: OutputContext): HuhCompletedOutput | null {
+  const { document, simulation } = context;
+  const group = simulation.nodeStates.Group_A;
+  const force = simulation.nodeStates.Use_of_force;
+  const risk = simulation.nodeStates.Incident_risk;
+  if (!group || !force || !risk) return null;
+  const selectedGroupForce = weightedConditionalMean(group, force, 1);
+  const selectedOtherForce = weightedConditionalMean(group, force, 0);
+  const selectedGroupRisk = weightedConditionalMean(group, risk, 1);
+  const selectedOtherRisk = weightedConditionalMean(group, risk, 0);
+  if (selectedGroupForce === null || selectedOtherForce === null || selectedGroupRisk === null || selectedOtherRisk === null) return null;
+  const doGroup = runSimulation(document.graph, { ...document.simulation, overrides: { Group_A: 1 }, selections: {} });
+  const doOther = runSimulation(document.graph, { ...document.simulation, overrides: { Group_A: 0 }, selections: {} });
+  const doGroupForce = doGroup.nodeStates.Use_of_force?.empirical.mean;
+  const doOtherForce = doOther.nodeStates.Use_of_force?.empirical.mean;
+  if (doGroupForce === null || doGroupForce === undefined || doOtherForce === null || doOtherForce === undefined) return null;
+  const encounterDiff = selectedGroupForce - selectedOtherForce;
+  const structuralDiff = doGroupForce - doOtherForce;
+  const riskGap = selectedGroupRisk - selectedOtherRisk;
+  return {
+    badge: "selected data",
+    conclusion: `Among police contacts, Group_A has a use-of-force contrast of ${formatPercentagePoints(encounterDiff)} in this toy DGP. The population structural contrast is ${formatPercentagePoints(structuralDiff)}. The denominator changed: contact selection makes Group_A contacts lower-risk by ${formatSignedValue(riskGap)} on latent incident risk.`,
+    metrics: [
+      { label: "encounter-only read", value: formatPercentagePoints(encounterDiff), detail: `Group_A ${formatPercent(selectedGroupForce)} vs other ${formatPercent(selectedOtherForce)}`, numericValue: encounterDiff },
+      { label: "population contrast", value: formatPercentagePoints(structuralDiff), detail: `synthetic do(group A) ${formatPercent(doGroupForce)} vs do(other) ${formatPercent(doOtherForce)}`, numericValue: structuralDiff },
+      { label: "risk gap in contacts", value: formatSignedValue(riskGap), detail: `Group_A ${formatValue(selectedGroupRisk)} vs other ${formatValue(selectedOtherRisk)}`, numericValue: riskGap }
+    ],
+    bullets: [
+      { label: "Huh", text: "Encounter-only data are already conditioned on Police_contact, and contact is part of the causal process." },
+      { label: "Careful wording", text: "This is a synthetic denominator example, not an empirical claim about a real police department." },
+      { label: "Report", text: "Separate upstream contact risk from conditional force risk." }
+    ]
+  };
+}
+
+function computeMBiasOutput(context: OutputContext): HuhCompletedOutput | null {
+  const { simulation } = context;
+  const exposure = simulation.nodeStates.Exposure;
+  const outcome = simulation.nodeStates.Outcome;
+  const collider = simulation.nodeStates.Collider_score;
+  if (!exposure || !outcome || !collider) return null;
+  const rawExposed = weightedConditionalMean(exposure, outcome, 1);
+  const rawUnexposed = weightedConditionalMean(exposure, outcome, 0);
+  if (rawExposed === null || rawUnexposed === null) return null;
+  const rawInterval = filteredMeanDifferenceInterval(exposure, outcome, null);
+  const cutoff = quantile(collider.empirical.samples, 0.7);
+  if (cutoff === null) return null;
+  const adjustedExposed = filteredConditionalMean(exposure, outcome, 1, collider, (value) => value >= cutoff);
+  const adjustedUnexposed = filteredConditionalMean(exposure, outcome, 0, collider, (value) => value >= cutoff);
+  if (adjustedExposed === null || adjustedUnexposed === null) return null;
+  const conditionedInterval = filteredMeanDifferenceInterval(exposure, outcome, (index) => {
+    const value = collider.empirical.samples[index];
+    return value !== undefined && Number.isFinite(value) && value >= cutoff;
+  });
+  const rawGap = rawExposed - rawUnexposed;
+  const colliderGap = adjustedExposed - adjustedUnexposed;
+  const rawUncertainty = rawInterval ? intervalDetail(rawInterval) : "uncertainty unavailable";
+  const conditionedUncertainty = conditionedInterval ? intervalDetail(conditionedInterval) : "uncertainty unavailable";
+  return {
+    badge: "bad control",
+    conclusion: `Before adjustment, Exposure and Outcome differ by ${formatSignedValue(rawGap)} (${rawUncertainty}), which is compatible with the null in this finite sample. After conditioning on high Collider_score, the apparent gap becomes ${formatSignedValue(colliderGap)} (${conditionedUncertainty}) even though the DAG has no Exposure -> Outcome path.`,
+    metrics: [
+      { label: "raw outcome gap", value: formatSignedValue(rawGap), detail: `${rawUncertainty}; exposed ${formatValue(rawExposed)} vs unexposed ${formatValue(rawUnexposed)}`, numericValue: rawGap, lower: rawInterval?.lower, upper: rawInterval?.upper },
+      { label: "conditioned gap", value: formatSignedValue(colliderGap), detail: `${conditionedUncertainty}; within Collider_score >= ${formatValue(cutoff)}`, numericValue: colliderGap, lower: conditionedInterval?.lower, upper: conditionedInterval?.upper },
+      { label: "true do effect", value: formatSignedValue(0), detail: "no directed path from Exposure to Outcome", numericValue: 0 }
+    ],
+    bullets: [
+      { label: "Huh", text: "A pre-treatment variable can still be a collider; adjusting for it opens a path that was closed." },
+      { label: "Path", text: "Exposure <- Cause_of_exposure -> Collider_score <- Cause_of_outcome -> Outcome opens when Collider_score is conditioned on." },
+      { label: "Report", text: "No adjustment is better than adjusting for this collider." }
+    ]
+  };
+}
+
+function computeLordsParadoxOutput(context: OutputContext): HuhCompletedOutput | null {
+  const { document, simulation } = context;
+  const program = simulation.nodeStates.Program;
+  const baseline = simulation.nodeStates.Baseline_weight;
+  const final = simulation.nodeStates.Final_weight;
+  if (!program || !baseline || !final) return null;
+  const baselineProgram = weightedConditionalMean(program, baseline, 1);
+  const baselineControl = weightedConditionalMean(program, baseline, 0);
+  const changeProgram = weightedConditionalMeanOfDifference(program, final, baseline, 1);
+  const changeControl = weightedConditionalMeanOfDifference(program, final, baseline, 0);
+  if (baselineProgram === null || baselineControl === null || changeProgram === null || changeControl === null) return null;
+  const doProgram = runSimulation(document.graph, { ...document.simulation, overrides: { Program: 1 }, selections: {} });
+  const doControl = runSimulation(document.graph, { ...document.simulation, overrides: { Program: 0 }, selections: {} });
+  const doProgramFinal = doProgram.nodeStates.Final_weight?.empirical.mean;
+  const doControlFinal = doControl.nodeStates.Final_weight?.empirical.mean;
+  if (doProgramFinal === null || doProgramFinal === undefined || doControlFinal === null || doControlFinal === undefined) return null;
+  const changeGap = changeProgram - changeControl;
+  const doGap = doProgramFinal - doControlFinal;
+  const baselineGap = baselineProgram - baselineControl;
+  return {
+    badge: "estimand split",
+    conclusion: `The change-score comparison says Program changes weight by ${formatSignedValue(changeGap)} kg, while the baseline-standardized do contrast on final weight is ${formatSignedValue(doGap)} kg. The groups start ${formatSignedValue(baselineGap)} kg apart, so the two analyses are not answering the same question.`,
+    metrics: [
+      { label: "change-score read", value: formatSignedValue(changeGap), detail: `program ${formatValue(changeProgram)} kg vs control ${formatValue(changeControl)} kg`, numericValue: changeGap },
+      { label: "final do contrast", value: formatSignedValue(doGap), detail: `do(program) ${formatValue(doProgramFinal)} kg vs do(control) ${formatValue(doControlFinal)}`, numericValue: doGap },
+      { label: "baseline imbalance", value: formatSignedValue(baselineGap), detail: `program ${formatValue(baselineProgram)} kg vs control ${formatValue(baselineControl)} kg`, numericValue: baselineGap }
+    ],
+    bullets: [
+      { label: "Huh", text: "Change scores and baseline-adjusted final outcomes can disagree because they encode different estimands." },
+      { label: "Question first", text: "Ask whether the target is change from baseline or final outcome at comparable baseline values." },
+      { label: "Report", text: "Do not treat this as a generic model-choice dispute; state the causal question." }
+    ]
+  };
+}
+
+function computeChessSimpleFlipOutput(context: OutputContext): HuhCompletedOutput | null {
+  const { document, simulation } = context;
+  const full = runSimulation(document.graph, { ...document.simulation, selections: {} });
+  const fullIq = full.nodeStates.Intelligence;
+  const fullPractice = full.nodeStates.Practice_hours;
+  const fullElo = full.nodeStates.Chess_Elo;
+  const selectedIq = simulation.nodeStates.Intelligence;
+  const selectedPractice = simulation.nodeStates.Practice_hours;
+  const selectedElo = simulation.nodeStates.Chess_Elo;
+  if (!fullIq || !fullPractice || !fullElo || !selectedIq || !selectedPractice || !selectedElo) return null;
+  const fullIqElo = correlation(fullIq.empirical.samples, fullElo.empirical.samples);
+  const selectedIqElo = correlation(selectedIq.empirical.samples, selectedElo.empirical.samples);
+  const selectedIqPractice = correlation(selectedIq.empirical.samples, selectedPractice.empirical.samples);
+  const selectedPracticeElo = correlation(selectedPractice.empirical.samples, selectedElo.empirical.samples);
+  return {
+    badge: "selected sign flip",
+    conclusion: `In the full DGP, intelligence and rating correlate ${formatSignedValue(fullIqElo)}. Inside the selected rated/elite sample, the correlation flips to ${formatSignedValue(selectedIqElo)} because intelligence and practice become substitute routes into the sample.`,
+    metrics: [
+      { label: "full-pop IQ/Elo", value: formatSignedValue(fullIqElo), detail: "before selecting the rated/elite sample", numericValue: fullIqElo },
+      { label: "selected IQ/Elo", value: formatSignedValue(selectedIqElo), detail: `${simulation.conditioning.acceptedSamples} selected samples`, numericValue: selectedIqElo },
+      { label: "selected IQ/practice", value: formatSignedValue(selectedIqPractice), detail: "substitute routes inside selected sample", numericValue: selectedIqPractice },
+      { label: "practice/Elo", value: formatSignedValue(selectedPracticeElo), detail: "practice remains the dominant selected-sample driver", numericValue: selectedPracticeElo }
+    ],
+    bullets: [
+      { label: "Huh", text: "A helpful trait in the population can correlate negatively with performance inside a selected sample." },
+      { label: "Selection", text: "Children can enter the rated sample through high intelligence, high practice, or both." },
+      { label: "Report", text: "The selected-sample correlation is not the same object as the full-population mechanism." }
+    ]
+  };
+}
+
+function filteredConditionalMean(
+  conditionState: SimulatedNodeState,
+  outcomeState: SimulatedNodeState,
+  conditionValue: 0 | 1,
+  filterState: SimulatedNodeState,
+  predicate: (value: number) => boolean
+): number | null {
+  const conditions = conditionState.empirical.samples;
+  const outcomes = outcomeState.empirical.samples;
+  const filters = filterState.empirical.samples;
+  const length = Math.min(conditions.length, outcomes.length, filters.length);
+  let numerator = 0;
+  let denominator = 0;
+  for (let index = 0; index < length; index += 1) {
+    const condition = conditions[index];
+    const outcome = outcomes[index];
+    const filter = filters[index];
+    if (
+      condition === undefined ||
+      outcome === undefined ||
+      filter === undefined ||
+      !Number.isFinite(condition) ||
+      !Number.isFinite(outcome) ||
+      !Number.isFinite(filter)
+    ) continue;
+    if ((condition >= 0.5 ? 1 : 0) !== conditionValue || !predicate(filter)) continue;
+    numerator += outcome;
+    denominator += 1;
+  }
+  return denominator > 0 ? numerator / denominator : null;
+}
+
+type MeanDifferenceInterval = {
+  diff: number;
+  lower: number;
+  upper: number;
+  n0: number;
+  n1: number;
+};
+
+function filteredMeanDifferenceInterval(
+  conditionState: SimulatedNodeState,
+  outcomeState: SimulatedNodeState,
+  predicate: ((index: number) => boolean) | null
+): MeanDifferenceInterval | null {
+  const group0 = weightedGroupMoments(conditionState, outcomeState, 0, predicate);
+  const group1 = weightedGroupMoments(conditionState, outcomeState, 1, predicate);
+  if (!group0 || !group1 || group0.nEff <= 1 || group1.nEff <= 1) return null;
+  const diff = group1.mean - group0.mean;
+  const se = Math.sqrt(group1.variance / group1.nEff + group0.variance / group0.nEff);
+  return {
+    diff,
+    lower: diff - 1.96 * se,
+    upper: diff + 1.96 * se,
+    n0: Math.round(group0.nEff),
+    n1: Math.round(group1.nEff)
+  };
+}
+
+function weightedGroupMoments(
+  conditionState: SimulatedNodeState,
+  outcomeState: SimulatedNodeState,
+  conditionValue: 0 | 1,
+  predicate: ((index: number) => boolean) | null
+): { mean: number; variance: number; nEff: number } | null {
+  const conditions = conditionState.empirical.samples;
+  const outcomes = outcomeState.empirical.samples;
+  const length = Math.min(conditions.length, outcomes.length);
+  let sumWeight = 0;
+  let sumWeightSquared = 0;
+  let sum = 0;
+  const retained: Array<{ value: number; weight: number }> = [];
+  for (let index = 0; index < length; index += 1) {
+    if (predicate && !predicate(index)) continue;
+    const condition = conditions[index];
+    const outcome = outcomes[index];
+    if (condition === undefined || outcome === undefined || !Number.isFinite(condition) || !Number.isFinite(outcome)) continue;
+    if ((condition >= 0.5 ? 1 : 0) !== conditionValue) continue;
+    const weight = empiricalSampleWeight(index, conditionState, outcomeState);
+    if (weight <= 0) continue;
+    retained.push({ value: outcome, weight });
+    sumWeight += weight;
+    sumWeightSquared += weight * weight;
+    sum += outcome * weight;
+  }
+  if (sumWeight <= 0 || sumWeightSquared <= 0) return null;
+  const mean = sum / sumWeight;
+  const variance = retained.reduce((acc, item) => acc + item.weight * (item.value - mean) ** 2, 0) / sumWeight;
+  return {
+    mean,
+    variance,
+    nEff: sumWeight * sumWeight / sumWeightSquared
+  };
+}
+
+function intervalDetail(interval: MeanDifferenceInterval): string {
+  return `95% CI ${formatSignedValue(interval.lower)} to ${formatSignedValue(interval.upper)}`;
+}
+
+function weightedConditionalMeanOfDifference(
+  conditionState: SimulatedNodeState,
+  leftState: SimulatedNodeState,
+  rightState: SimulatedNodeState,
+  conditionValue: 0 | 1
+): number | null {
+  const conditions = conditionState.empirical.samples;
+  const left = leftState.empirical.samples;
+  const right = rightState.empirical.samples;
+  const length = Math.min(conditions.length, left.length, right.length);
+  let numerator = 0;
+  let denominator = 0;
+  for (let index = 0; index < length; index += 1) {
+    const condition = conditions[index];
+    const leftValue = left[index];
+    const rightValue = right[index];
+    if (
+      condition === undefined ||
+      leftValue === undefined ||
+      rightValue === undefined ||
+      !Number.isFinite(condition) ||
+      !Number.isFinite(leftValue) ||
+      !Number.isFinite(rightValue)
+    ) continue;
+    if ((condition >= 0.5 ? 1 : 0) !== conditionValue) continue;
+    numerator += (leftValue - rightValue);
+    denominator += 1;
+  }
+  return denominator > 0 ? numerator / denominator : null;
+}
+
+function quantile(values: number[], p: number): number | null {
+  const finite = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (finite.length === 0) return null;
+  const index = Math.min(finite.length - 1, Math.max(0, Math.floor((finite.length - 1) * p)));
+  return finite[index] ?? null;
+}
+
+function correlation(x: number[], y: number[]): number {
+  const paired = x.map((value, index) => [value, y[index]] as const)
+    .filter((pair): pair is readonly [number, number] => Number.isFinite(pair[0]) && Number.isFinite(pair[1]));
+  if (paired.length < 2) return 0;
+  const meanX = paired.reduce((sum, pair) => sum + pair[0], 0) / paired.length;
+  const meanY = paired.reduce((sum, pair) => sum + pair[1], 0) / paired.length;
+  let numerator = 0;
+  let xVariance = 0;
+  let yVariance = 0;
+  for (const [xValue, yValue] of paired) {
+    const dx = xValue - meanX;
+    const dy = yValue - meanY;
+    numerator += dx * dy;
+    xVariance += dx * dx;
+    yVariance += dy * dy;
+  }
+  return numerator / Math.sqrt(Math.max(Number.EPSILON, xVariance * yVariance));
 }

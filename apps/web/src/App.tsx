@@ -1,6 +1,7 @@
 import CodeMirror from "@uiw/react-codemirror";
 import {
   ArrowRight,
+  BarChart3,
   Braces,
   Camera,
   CirclePlus,
@@ -13,7 +14,8 @@ import {
   Share2,
   Sigma,
   Trash2,
-  Undo2
+  Undo2,
+  X
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -89,11 +91,15 @@ import {
   coerceBinary,
   formatInputNumber,
   formatPercent,
+  formatPercentagePoints,
   formatSignedValue,
   formatValue,
   formatWeightedCount
 } from "./shared/formatting";
+import { basicOutputPunchlineFromResult, computeCompletedOutput } from "./outputs/modules";
+import type { BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
+import type { OutputContext } from "./outputs/types";
 import { DenouementPanel } from "./outputs/DenouementPanel";
 import { ExampleMenu } from "./examples/ExampleMenu";
 import { ModeToggle } from "./examples/ModeToggle";
@@ -106,10 +112,113 @@ type BibliographyTopic = "sem" | "nonlinear" | "probability" | "deep";
 type CanvasViewport = { cx: number; cy: number; zoom: number };
 type ScatterPair = { x: string; y: string };
 type ScatterPoint = { x: number; y: number; weight: number; index: number };
-type BinaryCell = { x: 0 | 1; y: 0 | 1; weight: number; count: number; percent: number };
+type BinaryCell = { x: 0 | 1; y: 0 | 1; weight: number; count: number; percent: number; columnPercent: number };
 type BinaryContinuousGroup = { value: 0 | 1; count: number; weight: number; mean: number | null; share: number };
+type BasicRelationSummary = {
+  relationLabel: string;
+  observed: BasicOutputPunchlineMetric;
+  comparison: BasicOutputPunchlineMetric | null;
+  note: string;
+};
+type WeightedScatterSummary = {
+  meanX: number;
+  meanY: number;
+  correlation: number | null;
+  slope: number;
+  intercept: number;
+};
+type BinaryOutcomeContrastSummary = { yAtX0: number | null; yAtX1: number | null; diff: number | null };
+type NodeDistributionSummary = {
+  domain: [number, number] | null;
+  finiteSamples: number[];
+  histogram18: number[];
+  histogram20: number[];
+};
+type PairDerivedSummary = {
+  points: ScatterPoint[];
+  stats: WeightedScatterSummary | null;
+  binaryCells: BinaryCell[];
+  binaryContrast: BinaryOutcomeContrastSummary;
+  binaryContinuousGroups: BinaryContinuousGroup[];
+  xDomain: [number, number];
+  yDomain: [number, number];
+  ySampleDomain: [number, number];
+};
+type SimulationDerivedCache = {
+  simulation: SimulationResult;
+  nodes: Map<string, NodeDistributionSummary>;
+  pairs: Map<string, PairDerivedSummary>;
+};
+type BinaryAdjustmentOutput = {
+  exposure: GraphNode;
+  outcome: GraphNode;
+  rawPoints: ScatterPoint[];
+  rawCells: BinaryCell[];
+  rawContrast: BinaryOutcomeContrastSummary;
+  adjustedNodes: GraphNode[];
+  binaryAdjustedNodes: GraphNode[];
+  binnedAdjustedNodes: BinnedAdjustmentNode[];
+  unsupportedAdjustedNodes: GraphNode[];
+  strata: BinaryAdjustmentStratum[];
+  stabilizedIpw: StabilizedIpwOutput | null;
+  truncated: boolean;
+};
+type StabilizedIpwOutput = {
+  exposure: GraphNode;
+  outcome: GraphNode | null;
+  adjustedNodes: GraphNode[];
+  treatedShare: number;
+  rawTreated: number | null;
+  rawUntreated: number | null;
+  rawDiff: number | null;
+  weightedTreated: number | null;
+  weightedUntreated: number | null;
+  weightedDiff: number | null;
+  effectiveSampleSize: number | null;
+  maxWeight: number | null;
+  clippedCount: number;
+  sampleCount: number;
+  weightedPoints: ScatterPoint[];
+  weightedCells: BinaryCell[];
+  weightedContrast: BinaryOutcomeContrastSummary;
+  balances: StabilizedIpwBalance[];
+};
+type StabilizedIpwBalance = {
+  node: GraphNode;
+  domain: [number, number];
+  rawTreatedMean: number | null;
+  rawUntreatedMean: number | null;
+  weightedTreatedMean: number | null;
+  weightedUntreatedMean: number | null;
+  rawSmd: number | null;
+  weightedSmd: number | null;
+};
+type StabilizedIpwRow = {
+  treatment: 0 | 1;
+  outcome: number | null;
+  covariates: number[];
+  baseWeight: number;
+  weight: number;
+};
+type BinnedAdjustmentNode = {
+  node: GraphNode;
+  state: SimulatedNodeState;
+  domain: [number, number];
+  cutpoints: number[];
+};
+type BinaryAdjustmentStratum = {
+  id: string;
+  label: string;
+  points: ScatterPoint[];
+  cells: BinaryCell[];
+  contrast: BinaryOutcomeContrastSummary;
+  weight: number;
+};
+type AdjustmentStratumCondition =
+  | { kind: "binary"; node: GraphNode; value: 0 | 1; state: SimulatedNodeState }
+  | { kind: "bin"; node: GraphNode; lower: number; upper: number; index: number; last: boolean; state: SimulatedNodeState };
 type PositivityRow = { lower: number; upper: number; exposed: number; unexposed: number; total: number; warning: string | null };
-type VariableEditorTab = "model" | "interventions" | "adjustment";
+type VariableEditorTab = "model" | "interventions" | "selection" | "adjustment";
 type DesignModuleStatus = "usable" | "todo";
 type DragState =
   | { kind: "node"; id: string; offset: Point }
@@ -131,6 +240,30 @@ function graphViewportSignature(graph: GraphModel): string {
   const nodes = graph.nodes.map((node) => `${node.id}:${node.label}`).join("|");
   const edges = graph.edges.map((edge) => `${edge.source}:${edge.kind}:${edge.target}`).join("|");
   return `${nodes}::${edges}`;
+}
+
+function graphAnalysisSignature(graph: GraphModel): string {
+  const nodes = graph.nodes
+    .map((node) => `${node.id}:${Number(node.roles.exposure)}${Number(node.roles.outcome)}${Number(node.roles.adjusted)}${Number(node.roles.selected)}${Number(node.roles.latent)}`)
+    .join("|");
+  const edges = graph.edges.map((edge) => `${edge.id}:${edge.source}:${edge.kind}:${edge.target}`).join("|");
+  return `${graph.kind}::${nodes}::${edges}`;
+}
+
+function graphSimulationSignature(graph: GraphModel): string {
+  const nodes = graph.nodes
+    .map((node) => `${node.id}:${JSON.stringify(normalizeVariableModel(node.variable))}`)
+    .join("|");
+  const edges = graph.edges.map((edge) => `${edge.id}:${edge.source}:${edge.kind}:${edge.target}`).join("|");
+  return `${graph.kind}::${nodes}::${edges}`;
+}
+
+function graphOutputSignature(graph: GraphModel): string {
+  const nodes = graph.nodes
+    .map((node) => `${node.id}:${node.label}:${Number(node.roles.exposure)}${Number(node.roles.outcome)}${Number(node.roles.adjusted)}${Number(node.roles.selected)}${Number(node.roles.latent)}:${JSON.stringify(normalizeVariableModel(node.variable))}`)
+    .join("|");
+  const edges = graph.edges.map((edge) => `${edge.id}:${edge.source}:${edge.kind}:${edge.target}`).join("|");
+  return `${graph.kind}::${nodes}::${edges}`;
 }
 
 function fitViewportToGraph(graph: GraphModel): CanvasViewport {
@@ -443,6 +576,7 @@ export function App() {
   const [showBiasing, setShowBiasing] = useState(true);
   const [showAncestors, setShowAncestors] = useState(true);
   const [workbenchMode, setWorkbenchMode] = useState<WorkbenchMode>("basic");
+  const [basicResultsOpen, setBasicResultsOpen] = useState(false);
   const [activeExampleId, setActiveExampleId] = useState<string | null>(EXAMPLES[0]?.id ?? null);
   const [modelText, setModelText] = useState(() => serializeModel(document));
   const [modelDirty, setModelDirty] = useState(false);
@@ -451,6 +585,22 @@ export function App() {
 
   const [analysis, setAnalysis] = useState<AnalysisReport>(() => analyzeGraph(document.graph));
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
+  const analysisSignature = graphAnalysisSignature(document.graph);
+  const analysisGraph = useMemo(() => document.graph, [analysisSignature]);
+  const simulationSignature = graphSimulationSignature(document.graph);
+  const simulationGraph = useMemo(() => document.graph, [simulationSignature]);
+  const outputSignature = graphOutputSignature(document.graph);
+  const outputGraph = useMemo(() => document.graph, [outputSignature]);
+  const computationDocument = useMemo<GraphDocument>(() => ({
+    ...document,
+    graph: outputGraph
+  }), [document.id, document.schemaVersion, document.simulation, document.title, document.updatedAt, outputGraph]);
+  const outputContext = useMemo<OutputContext>(() => ({
+    analysis,
+    document: computationDocument,
+    simulation
+  }), [analysis, computationDocument, simulation]);
+  const simulationDerived = useMemo(() => buildSimulationDerivedCache(simulation), [simulation]);
   const selectedNode = selection?.kind === "node" ? findNode(document.graph, selection.id) : undefined;
   const selectedEdge = selection?.kind === "edge" ? findEdge(document.graph, selection.id) : undefined;
   const activeExample = EXAMPLES.find((example) => example.id === activeExampleId) ?? null;
@@ -459,20 +609,28 @@ export function App() {
   const empiricalDraws = graphEmpiricalDraws(document.graph);
   const highlightedEdges = useMemo(() => computeHighlightedEdges(document.graph, analysis, showCausal, showBiasing), [analysis, document.graph, showBiasing, showCausal]);
   const ancestorIds = useMemo(() => showAncestors ? new Set(analysis.causalPaths.flat()) : new Set<string>(), [analysis.causalPaths, showAncestors]);
+  const completedOutput = useMemo(() => computeCompletedOutput(outputContext, activeExample?.outputModule ?? null), [activeExample?.outputModule, outputContext]);
+  const binaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived), [outputContext, simulationDerived]);
+  const basicRelationSummary = useMemo(
+    () => computeBasicRelationSummary({ ...outputContext, moduleId: activeExample?.outputModule ?? null }, completedOutput, simulationDerived),
+    [activeExample?.outputModule, completedOutput, outputContext, simulationDerived]
+  );
+  const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null);
+  const isBasicMode = workbenchMode === "basic";
 
   useEffect(() => {
     const worker = new Worker(new URL("./analysis.worker.ts", import.meta.url), { type: "module" });
     worker.onmessage = (event: MessageEvent<AnalysisReport>) => setAnalysis(event.data);
-    worker.postMessage(document.graph);
+    worker.postMessage(analysisGraph);
     return () => worker.terminate();
-  }, [document.graph]);
+  }, [analysisGraph]);
 
   useEffect(() => {
     const worker = new Worker(new URL("./sim.worker.ts", import.meta.url), { type: "module" });
     worker.onmessage = (event: MessageEvent<SimulationResult>) => setSimulation(event.data);
-    worker.postMessage({ graph: document.graph, spec: document.simulation });
+    worker.postMessage({ graph: simulationGraph, spec: document.simulation });
     return () => worker.terminate();
-  }, [document.graph, document.simulation]);
+  }, [document.simulation, simulationGraph]);
 
   useEffect(() => {
     setScatterPair((pair) => reconcileScatterPair(document.graph, pair));
@@ -484,7 +642,6 @@ export function App() {
     setDocument(next);
     setModelText(serializeModel(next));
     setModelDirty(false);
-    setSimulation((previous) => runSimulation(next.graph, next.simulation, previous));
   }, [document]);
 
   useEffect(() => {
@@ -531,7 +688,6 @@ export function App() {
       setDocument(previous);
       setModelText(serializeModel(previous));
       setModelDirty(false);
-      setSimulation(runSimulation(previous.graph, previous.simulation));
       return items.slice(0, -1);
     });
   }, [document]);
@@ -544,7 +700,6 @@ export function App() {
       setDocument(next);
       setModelText(serializeModel(next));
       setModelDirty(false);
-      setSimulation(runSimulation(next.graph, next.simulation));
       return items.slice(1);
     });
   }, [document]);
@@ -782,7 +937,7 @@ export function App() {
   }, [commit, document]);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell mode-${workbenchMode}`}>
       <header className="topbar">
         <div className="brand">
           <Sigma size={20} />
@@ -803,21 +958,23 @@ export function App() {
             setSelection(null);
           }}><FilePlus2 size={18} /></IconButton>
           <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
-          <IconButton label="Save" onClick={() => window.localStorage.setItem(STORAGE_KEY, JSON.stringify(document))}><Save size={18} /></IconButton>
-          <IconButton label="Share" onClick={() => copyShareUrl(document)}><Share2 size={18} /></IconButton>
-          <IconButton label="SVG" onClick={() => exportSvg()}><Download size={18} /></IconButton>
-          <IconButton label="PNG" onClick={() => exportBitmap("png")}><Camera size={18} /></IconButton>
+          {isBasicMode && <IconButton label={basicResultsOpen ? "Hide results" : "Results"} active={basicResultsOpen} onClick={() => setBasicResultsOpen((open) => !open)}><BarChart3 size={18} /></IconButton>}
+          {!isBasicMode && <>
+            <IconButton label="Save" onClick={() => window.localStorage.setItem(STORAGE_KEY, JSON.stringify(document))}><Save size={18} /></IconButton>
+            <IconButton label="Share" onClick={() => copyShareUrl(document)}><Share2 size={18} /></IconButton>
+            <IconButton label="SVG" onClick={() => exportSvg()}><Download size={18} /></IconButton>
+            <IconButton label="PNG" onClick={() => exportBitmap("png")}><Camera size={18} /></IconButton>
+          </>}
         </div>
         <ModeToggle value={workbenchMode} onChange={setWorkbenchMode} />
       </header>
+      <AnalysisSampleBanner simulation={simulation} onClearSelections={clearSelections} />
 
       <main className="workspace">
-        <aside className="side-panel scenario-column">
+        {!isBasicMode && <aside className="side-panel scenario-column">
           <Section title="Scenario Builder">
             <ScenarioPanel
               document={document}
-              completedOutputModuleId={activeExample?.outputModule ?? null}
-              analysis={analysis}
               simulation={simulation}
               onResample={resample}
               onClearOverrides={clearOverrides}
@@ -828,18 +985,63 @@ export function App() {
               denouementTitle={activeExample?.title ?? document.title}
             />
           </Section>
+        </aside>}
+
+        {!isBasicMode && <aside className="side-panel pairwise-column">
           <Section title="Pairwise Output">
             <ScatterplotPanel
               graph={document.graph}
               simulation={simulation}
+              derived={simulationDerived}
               pair={scatterPair}
               onPair={setScatterPair}
               onSelectNode={selectNode}
             />
           </Section>
-        </aside>
+        </aside>}
+
+        {!isBasicMode && showAdjustedOutputColumn && (
+          <aside className="side-panel adjusted-output-column">
+            <Section title="Adjusted Output">
+              <AdjustedOutputPanel
+                moduleId={activeExample?.outputModule ?? null}
+                computedOutput={completedOutput}
+                binaryOutput={binaryAdjustmentOutput}
+              />
+            </Section>
+          </aside>
+        )}
+
+        {isBasicMode && basicResultsOpen && (
+          <aside className="side-panel basic-results-column" aria-label="Results">
+            <div className="basic-results-header">
+              <strong>Results</strong>
+              <button type="button" aria-label="Close results" onClick={() => setBasicResultsOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <Section title="Pairwise Output">
+              <ScatterplotPanel
+                graph={document.graph}
+                simulation={simulation}
+                derived={simulationDerived}
+                pair={scatterPair}
+                onPair={setScatterPair}
+                onSelectNode={selectNode}
+              />
+            </Section>
+            {showAdjustedOutputColumn && <Section title="Adjustment">
+              <AdjustedOutputPanel
+                moduleId={activeExample?.outputModule ?? null}
+                computedOutput={completedOutput}
+                binaryOutput={binaryAdjustmentOutput}
+              />
+            </Section>}
+          </aside>
+        )}
 
         <GraphCanvas
+          mode={workbenchMode}
           graph={visibleGraph}
           sourceGraph={document.graph}
           selection={selection}
@@ -847,6 +1049,7 @@ export function App() {
           edgeSource={edgeSource}
           analysis={analysis}
           simulation={simulation}
+          derived={simulationDerived}
           edgeMechanisms={document.simulation.edges}
           disabledEdgeIds={new Set(Object.entries(document.simulation.edges).filter(([, mechanism]) => !mechanism.enabled).map(([id]) => id))}
           highlightedEdges={highlightedEdges}
@@ -857,13 +1060,22 @@ export function App() {
           onNodeClick={(id) => tool === "edge" ? createOrSelectEdge(id) : selectNode(id)}
           onEdgeClick={selectEdge}
           onEdgeControl={(edge) => replaceGraph(upsertEdge(document.graph, edge))}
+          onResample={resample}
         />
 
         <aside className="side-panel editor-column" aria-label="Selection editor">
+          {isBasicMode && (
+            <BasicRelationPanel
+              summary={basicRelationSummary}
+              onOpenResults={() => setBasicResultsOpen(true)}
+            />
+          )}
           <SelectionEditor
+            mode={workbenchMode}
             node={selectedNode}
             edge={selectedEdge}
             simulation={simulation}
+            derived={simulationDerived}
             document={document}
             onToggleRole={toggleRole}
             onRename={renameNodeById}
@@ -879,7 +1091,7 @@ export function App() {
           />
         </aside>
 
-        <section className="advanced-drawer">
+        {!isBasicMode && <section className="advanced-drawer">
           <details>
             <summary>Advanced diagnostics and artifacts</summary>
             <div className="advanced-grid">
@@ -944,13 +1156,14 @@ export function App() {
               </Section>
             </div>
           </details>
-        </section>
+        </section>}
       </main>
     </div>
   );
 }
 
 function GraphCanvas(props: {
+  mode: WorkbenchMode;
   graph: GraphModel;
   sourceGraph: GraphModel;
   selection: Selection;
@@ -958,6 +1171,7 @@ function GraphCanvas(props: {
   edgeSource: string | null;
   analysis: AnalysisReport;
   simulation: SimulationResult;
+  derived: SimulationDerivedCache;
   edgeMechanisms: Record<string, EdgeMechanism>;
   disabledEdgeIds: Set<string>;
   highlightedEdges: Map<string, "causal" | "biasing">;
@@ -968,9 +1182,11 @@ function GraphCanvas(props: {
   onNodeClick: (id: string) => void;
   onEdgeClick: (id: string) => void;
   onEdgeControl: (edge: GraphEdge) => void;
+  onResample: () => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [drag, setDrag] = useState<DragState>(null);
+  const [legendOpen, setLegendOpen] = useState(false);
   const activePointersRef = useRef(new Map<number, PointerScreenPoint>());
   const pinchRef = useRef<{ distance: number; center: PointerScreenPoint } | null>(null);
   const viewportSignature = useMemo(() => graphViewportSignature(props.graph), [props.graph.nodes, props.graph.edges]);
@@ -979,8 +1195,8 @@ function GraphCanvas(props: {
   const viewBoxWidth = BASE_VIEWBOX.width / viewport.zoom;
   const viewBoxHeight = BASE_VIEWBOX.height / viewport.zoom;
   const viewBox = `${viewport.cx - viewBoxWidth / 2} ${viewport.cy - viewBoxHeight / 2} ${viewBoxWidth} ${viewBoxHeight}`;
-  const legendWidth = 168;
-  const legendHeight = 112;
+  const legendWidth = 172;
+  const legendHeight = 124;
   const legendX = viewport.cx + viewBoxWidth / 2 - legendWidth - 18;
   const legendY = viewport.cy + viewBoxHeight / 2 - legendHeight - 18;
 
@@ -1138,6 +1354,9 @@ function GraphCanvas(props: {
           <marker id="arrow-bias" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="12" markerHeight="12" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
             <path d="M 0 0 L 12 6 L 0 12 z" />
           </marker>
+          <marker id="legend-arrow" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M 0 0 L 12 6 L 0 12 z" />
+          </marker>
         </defs>
         <g>
           <rect className="canvas-grid" x="-2400" y="-2400" width="4800" height="4800" />
@@ -1224,24 +1443,67 @@ function GraphCanvas(props: {
                     </tspan>
                   ))}
                 </text>
-                <NodeDistributionMiniPlot state={state} variable={variable} />
+                <NodeDistributionMiniPlot state={state} variable={variable} summary={props.derived.nodes.get(node.id)} />
                 <NodeDistributionAnnotation state={state} value={value} variable={variable} />
               </g>
             );
           })}
-          <GraphLegend x={legendX} y={legendY} width={legendWidth} height={legendHeight} />
+          {legendOpen && <GraphLegend x={legendX} y={legendY} width={legendWidth} height={legendHeight} />}
         </g>
       </svg>
+      <button
+        type="button"
+        className={legendOpen ? "canvas-legend-toggle active" : "canvas-legend-toggle"}
+        aria-expanded={legendOpen}
+        onClick={() => setLegendOpen((open) => !open)}
+      >
+        Legend
+      </button>
       <div className="canvas-zoom-controls" aria-label="Canvas zoom controls">
         <button type="button" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>-</button>
         <span>{Math.round(viewport.zoom * 100)}%</span>
         <button type="button" aria-label="Zoom in" onClick={() => zoomBy(1.2)}>+</button>
         <button type="button" onClick={() => setViewport(fittedViewport)}>reset</button>
       </div>
-      <div className="canvas-status">
+      {props.mode === "basic" && <CanvasCoachmark tool={props.tool} edgeSource={props.edgeSource} selection={props.selection} nodeCount={props.sourceGraph.nodes.length} />}
+      {props.mode === "basic" && <div className="canvas-causal-controls">
+        <span>live causal propagation</span>
+        <button type="button" onClick={props.onResample}><RefreshCw size={14} /> refresh sample</button>
+      </div>}
+      {props.mode !== "basic" && <div className="canvas-status">
         <span>{props.tool === "edge" ? (props.edgeSource ? `connect from ${props.edgeSource}` : "click a source variable") : "double-click canvas to add variable"}</span>
-      </div>
+      </div>}
     </section>
+  );
+}
+
+function CanvasCoachmark(props: { tool: ToolMode; edgeSource: string | null; selection: Selection; nodeCount: number }) {
+  let title = "Choose a variable";
+  let body = "Click a variable to set exposure, outcome, adjustment, selection, or intervention.";
+  if (props.nodeCount === 0) {
+    title = "Start with a variable";
+    body = "Choose Variable, then click an open spot on the graph.";
+  } else if (props.tool === "node") {
+    title = "Place a variable";
+    body = "Click an open spot to add it to the causal story.";
+  } else if (props.tool === "edge" && !props.edgeSource) {
+    title = "Start an arrow";
+    body = "Choose the variable that causes something else.";
+  } else if (props.tool === "edge" && props.edgeSource) {
+    title = "Finish the arrow";
+    body = `Now choose what ${props.edgeSource} points to.`;
+  } else if (props.selection?.kind === "node") {
+    title = "Edit the causal role";
+    body = "Use the panel on the right for roles, selection, interventions, and adjustment.";
+  } else if (props.selection?.kind === "edge") {
+    title = "Edit the arrow";
+    body = "Use the panel on the right to include the link or change its strength.";
+  }
+  return (
+    <div className="canvas-coachmark" role="status">
+      <strong>{title}</strong>
+      <span>{body}</span>
+    </div>
   );
 }
 
@@ -1262,21 +1524,24 @@ function GraphLegend({ x, y, width, height }: { x: number; y: number; width: num
     <g className="graph-legend" transform={`translate(${x}, ${y})`} aria-hidden="true">
       <rect className="graph-legend-card" x="0" y="0" width={width} height={height} rx="7" />
       <text className="graph-legend-heading" x="12" y="18">Legend</text>
-      <line className="graph-legend-line causal" x1="14" y1="34" x2="44" y2="34" />
-      <text className="graph-legend-text" x="54" y="38">positive / causal</text>
-      <line className="graph-legend-line biasing" x1="14" y1="52" x2="44" y2="52" />
-      <text className="graph-legend-text" x="54" y="56">negative / biasing</text>
-      <circle className="graph-legend-node" cx="29" cy="73" r="11" />
-      <rect className="graph-legend-adjusted" x="15" y="59" width="28" height="28" rx="4" />
-      <text className="graph-legend-text" x="54" y="77">adjusted variable</text>
-      <g transform="translate(14 89)">
+      <circle className="graph-legend-node" cx="29" cy="34" r="10" />
+      <rect className="graph-legend-adjusted" x="16" y="21" width="26" height="26" rx="4" />
+      <text className="graph-legend-text" x="54" y="38">adjusted variable</text>
+      <circle className="graph-legend-node" cx="29" cy="55" r="10" />
+      <path className="graph-legend-selected-mark" d="M 17 67 L 29 74 L 41 67" />
+      <text className="graph-legend-text" x="54" y="59">selected variable</text>
+      <circle className="graph-legend-node latent" cx="29" cy="77" r="10" />
+      <text className="graph-legend-text" x="54" y="81">unobserved variable</text>
+      <line className="graph-legend-arrow" x1="14" y1="98" x2="44" y2="98" markerEnd="url(#legend-arrow)" />
+      <text className="graph-legend-text" x="54" y="102">directed edge</text>
+      <g transform="translate(14 108) scale(0.82)">
         <rect className="edge-function-glyph-card" x="0" y="0" width="28" height="18" rx="4" />
         <g transform="translate(0 -1) scale(0.875 0.9)">
           <path className="edge-function-glyph-axis" d="M 3 17 H 29 M 4 18 V 3" />
           <path className="edge-function-glyph-curve" d={functionGlyphPath("smooth_threshold")} />
         </g>
       </g>
-      <text className="graph-legend-text" x="54" y="102">edge mechanism</text>
+      <text className="graph-legend-text" x="54" y="120">edge mechanism</text>
     </g>
   );
 }
@@ -1337,15 +1602,19 @@ function edgeMechanismDisplayStrength(mechanism: EdgeMechanism): number {
   return 0;
 }
 
-function NodeDistributionMiniPlot({ state, variable }: { state?: SimulatedNodeState; variable: VariableModel }) {
+const NODE_DISTRIBUTION_PLOT_X = -48;
+const NODE_DISTRIBUTION_PLOT_Y = -72;
+const NODE_DISTRIBUTION_ANNOTATION_Y = -28;
+
+function NodeDistributionMiniPlot({ state, variable, summary }: { state?: SimulatedNodeState; variable: VariableModel; summary?: NodeDistributionSummary }) {
   const samples = state?.empirical.samples ?? [];
   if (!state || samples.length < 2) return null;
   if (isBinaryDistributionState(state, variable)) return <BinaryNodeDistributionMiniPlot state={state} />;
-  const domain = distributionPlotDomain(state);
+  const domain = summary?.domain ?? distributionPlotDomain(state);
   if (!domain) return null;
   const width = 96;
   const height = 32;
-  const bins = histogram(samples, domain, 20, state.empirical.weights);
+  const bins = summary?.histogram20 ?? histogram(samples, domain, 20, state.empirical.weights);
   const maxBin = Math.max(...bins, 1);
   const analyticPath = state.analytic ? analyticDistributionPath(state.analytic, domain, width, height) : null;
   const title = [
@@ -1354,7 +1623,7 @@ function NodeDistributionMiniPlot({ state, variable }: { state?: SimulatedNodeSt
     state.empirical.mean !== null ? `sample mean ${formatValue(state.empirical.mean)}` : ""
   ].filter(Boolean).join("; ");
   return (
-    <g className="node-distribution-plot" transform="translate(-48 28)" aria-hidden="true">
+    <g className="node-distribution-plot" transform={`translate(${NODE_DISTRIBUTION_PLOT_X} ${NODE_DISTRIBUTION_PLOT_Y})`} aria-hidden="true">
       <title>{title}</title>
       <rect className="distribution-frame" x="0" y="0" width={width} height={height} rx="4" />
       {bins.map((count, index) => {
@@ -1390,7 +1659,7 @@ function BinaryNodeDistributionMiniPlot({ state }: { state: SimulatedNodeState }
     state.analytic ? `analytic ${analyticDistributionLabel(state.analytic)} (${state.analytic.note})` : ""
   ].filter(Boolean).join("; ");
   return (
-    <g className="node-distribution-plot binary-node-distribution-plot" transform="translate(-48 28)" aria-hidden="true">
+    <g className="node-distribution-plot binary-node-distribution-plot" transform={`translate(${NODE_DISTRIBUTION_PLOT_X} ${NODE_DISTRIBUTION_PLOT_Y})`} aria-hidden="true">
       <title>{title}</title>
       <rect className="distribution-frame" x="0" y="0" width={width} height={height} rx="4" />
       <line className="distribution-binary-axis" x1="13" y1={baseline} x2={width - 13} y2={baseline} />
@@ -1415,15 +1684,15 @@ function BinaryNodeDistributionMiniPlot({ state }: { state: SimulatedNodeState }
   );
 }
 
-function NodeDistributionAnnotation({ state, value, variable }: { state?: SimulatedNodeState; value: number | undefined; variable: VariableModel }) {
-  const lines = nodeDistributionAnnotationLines(state, value, variable);
+function NodeDistributionAnnotation({ state, variable }: { state?: SimulatedNodeState; value?: number; variable: VariableModel }) {
+  const lines = nodeDistributionAnnotationLines(state, variable);
   if (lines.length === 0) return null;
-  const title = nodeDistributionFullSummary(state, value, variable);
+  const title = nodeDistributionFullSummary(state, variable);
   return (
     <g className="node-distribution-annotation" aria-hidden="true">
       <title>{title}</title>
       {lines.map((line, index) => (
-        <text key={line} className={index === 0 ? "node-value" : "node-distribution-label"} y={74 + (index * 13)}>{line}</text>
+        <text key={line} className={index === 0 ? "node-value" : "node-distribution-label"} y={NODE_DISTRIBUTION_ANNOTATION_Y + (index * 13)}>{line}</text>
       ))}
     </g>
   );
@@ -1432,6 +1701,7 @@ function NodeDistributionAnnotation({ state, value, variable }: { state?: Simula
 function ScatterplotPanel(props: {
   graph: GraphModel;
   simulation: SimulationResult;
+  derived: SimulationDerivedCache;
   pair: ScatterPair;
   onPair: (pair: ScatterPair) => void;
   onSelectNode: (id: string) => void;
@@ -1440,10 +1710,11 @@ function ScatterplotPanel(props: {
   const pair = reconcileScatterPair(props.graph, props.pair);
   const xState = props.simulation.nodeStates[pair.x];
   const yState = props.simulation.nodeStates[pair.y];
-  const points = useMemo(() => scatterPoints(xState, yState), [xState, yState]);
-  const xDomain = scatterDomain(points.map((point) => point.x), xState);
-  const yDomain = scatterDomain(points.map((point) => point.y), yState);
-  const stats = weightedScatterStats(points);
+  const pairSummary = pairDerivedSummary(props.derived, pair.x, pair.y);
+  const points = pairSummary.points;
+  const xDomain = pairSummary.xDomain;
+  const yDomain = pairSummary.yDomain;
+  const stats = pairSummary.stats;
   const width = 280;
   const height = 220;
   const margin = { left: 38, right: 12, top: 14, bottom: 34 };
@@ -1498,13 +1769,13 @@ function ScatterplotPanel(props: {
 
       {binaryPair ? (
         <BinaryPairView
-          points={points}
+          summary={pairSummary}
           xLabel={xLabel}
           yLabel={yLabel}
           effectiveSampleSize={props.simulation.conditioning.effectiveSampleSize}
         />
       ) : binaryContinuousPair ? (
-        <BinaryContinuousPairView points={points} xLabel={xLabel} yLabel={yLabel} yState={yState} />
+        <BinaryContinuousPairView summary={pairSummary} xLabel={xLabel} yLabel={yLabel} />
       ) : (
         <>
           <svg
@@ -1550,7 +1821,7 @@ function ScatterplotPanel(props: {
             <p className="muted">No finite paired samples are available for this variable pair.</p>
           ) : (
             <div className="scatter-stats">
-              <span>draws {points.length}</span>
+              <span>samples {points.length}</span>
               <span>corr {stats?.correlation === null || stats?.correlation === undefined ? "n/a" : formatValue(stats.correlation)}</span>
               <span>x mean {stats ? formatValue(stats.meanX) : "n/a"}</span>
               <span>y mean {stats ? formatValue(stats.meanY) : "n/a"}</span>
@@ -1568,8 +1839,9 @@ function ScatterplotPanel(props: {
   );
 }
 
-function BinaryContinuousPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel: string; yState: SimulatedNodeState | undefined }) {
-  const groups = binaryContinuousGroups(props.points);
+function BinaryContinuousPairView(props: { summary: PairDerivedSummary; xLabel: string; yLabel: string }) {
+  const points = props.summary.points;
+  const groups = props.summary.binaryContinuousGroups;
   const groupZero = groups[0];
   const groupOne = groups[1];
   const totalWeight = groups.reduce((sum, group) => sum + group.weight, 0);
@@ -1581,8 +1853,8 @@ function BinaryContinuousPairView(props: { points: ScatterPoint[]; xLabel: strin
   const margin = { left: 38, right: 12, top: 14, bottom: 40 };
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
-  const yDomain = scatterSampleDomain(props.points.map((point) => point.y), props.yState);
-  const maxWeight = Math.max(...props.points.map((point) => point.weight), 1);
+  const yDomain = props.summary.ySampleDomain;
+  const maxWeight = Math.max(...points.map((point) => point.weight), 1);
   const toX = (value: 0 | 1, index: number) => {
     const center = value === 0 ? margin.left + plotWidth * 0.25 : margin.left + plotWidth * 0.75;
     return center + deterministicJitter(index) * 20;
@@ -1590,7 +1862,7 @@ function BinaryContinuousPairView(props: { points: ScatterPoint[]; xLabel: strin
   const groupCenter = (value: 0 | 1) => value === 0 ? margin.left + plotWidth * 0.25 : margin.left + plotWidth * 0.75;
   const toY = (value: number) => margin.top + plotHeight - ((value - yDomain[0]) / (yDomain[1] - yDomain[0] || 1)) * plotHeight;
 
-  if (props.points.length === 0 || totalWeight <= 0) {
+  if (points.length === 0 || totalWeight <= 0) {
     return <p className="muted">No finite paired samples are available for this variable pair.</p>;
   }
 
@@ -1611,7 +1883,7 @@ function BinaryContinuousPairView(props: { points: ScatterPoint[]; xLabel: strin
         <text className="binary-group-label" x={groupCenter(1)} y={height - 22}>1</text>
         <text className="scatter-axis-label x" x={margin.left + plotWidth / 2} y={height - 3}>{abbreviateLabel(props.xLabel, 28)}</text>
         <text className="scatter-axis-label y" x={12} y={margin.top + plotHeight / 2} transform={`rotate(-90 12 ${margin.top + plotHeight / 2})`}>{abbreviateLabel(props.yLabel, 24)}</text>
-        {props.points.map((point) => {
+        {points.map((point) => {
           const x = coerceBinary(point.x) as 0 | 1;
           const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
           return (
@@ -1639,7 +1911,7 @@ function BinaryContinuousPairView(props: { points: ScatterPoint[]; xLabel: strin
       </svg>
 
       <div className="scatter-stats binary-continuous-stats">
-        <span>draws {props.points.length}</span>
+        <span>samples {points.length}</span>
         <span>x=1 share {groupOne ? formatPercent(groupOne.share) : "n/a"}</span>
         <span>x=0 mean {groupZero?.mean === null || groupZero?.mean === undefined ? "n/a" : formatValue(groupZero.mean)}</span>
         <span>x=1 mean {groupOne?.mean === null || groupOne?.mean === undefined ? "n/a" : formatValue(groupOne.mean)}</span>
@@ -1651,15 +1923,25 @@ function BinaryContinuousPairView(props: { points: ScatterPoint[]; xLabel: strin
   );
 }
 
-function BinaryPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel: string; effectiveSampleSize: number | null }) {
-  const cells = binaryCells(props.points);
+function BinaryPairView(props: {
+  summary?: PairDerivedSummary;
+  points?: ScatterPoint[];
+  cells?: BinaryCell[];
+  contrast?: BinaryOutcomeContrastSummary;
+  xLabel: string;
+  yLabel: string;
+  effectiveSampleSize: number | null;
+}) {
+  const points = props.summary?.points ?? props.points ?? [];
+  const cells = props.summary?.binaryCells ?? props.cells ?? binaryCells(points);
   const totalWeight = cells.reduce((sum, cell) => sum + cell.weight, 0);
-  const maxWeight = Math.max(...cells.map((cell) => cell.weight), 1);
-  const cell = (x: 0 | 1, y: 0 | 1) => cells.find((candidate) => candidate.x === x && candidate.y === y) ?? { x, y, weight: 0, count: 0, percent: 0 };
+  const maxColumnPercent = Math.max(...cells.map((cell) => cell.columnPercent), 1);
+  const cell = (x: 0 | 1, y: 0 | 1) => cells.find((candidate) => candidate.x === x && candidate.y === y) ?? { x, y, weight: 0, count: 0, percent: 0, columnPercent: 0 };
   const yPositive = cell(1, 1).weight + cell(0, 1).weight;
   const xPositive = cell(1, 1).weight + cell(1, 0).weight;
+  const contrast = props.summary?.binaryContrast ?? props.contrast ?? binaryOutcomeContrastFromCells(cells);
 
-  if (props.points.length === 0 || totalWeight <= 0) {
+  if (points.length === 0 || totalWeight <= 0) {
     return <p className="muted">No finite paired samples are available for this variable pair.</p>;
   }
 
@@ -1667,28 +1949,28 @@ function BinaryPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel:
     <div className="binary-pair-view">
       <div className="confusion-matrix" role="img" aria-label={`Confusion matrix of ${props.xLabel} and ${props.yLabel}`}>
         <div className="matrix-corner" />
-        <div className="matrix-axis-label">x=0</div>
-        <div className="matrix-axis-label">x=1</div>
-        {[1, 0].map((y) => (
+        <div className="matrix-axis-label">{binaryAxisValueLabel(props.xLabel, 0)}</div>
+        <div className="matrix-axis-label">{binaryAxisValueLabel(props.xLabel, 1)}</div>
+        {[0, 1].map((y) => (
           <Fragment key={y}>
-            <div className="matrix-axis-label row">y={y}</div>
+            <div className="matrix-axis-label row">{binaryAxisValueLabel(props.yLabel, y as 0 | 1)}</div>
             {[0, 1].map((x) => {
               const current = cell(x as 0 | 1, y as 0 | 1);
-              const intensity = current.weight / maxWeight;
-              const agreement = x === y;
+              const intensity = current.columnPercent / maxColumnPercent;
+              const positiveOutcome = y === 1;
               return (
                 <div
-                  className={agreement ? "matrix-cell agreement" : "matrix-cell disagreement"}
+                  className={positiveOutcome ? "matrix-cell outcome-positive" : "matrix-cell outcome-negative"}
                   key={x}
-                  title={`${props.yLabel}=${y}, ${props.xLabel}=${x}: ${formatWeightedCount(current.weight)} (${formatPercent(current.percent)})`}
+                  title={`${props.yLabel}=${y}, ${props.xLabel}=${x}: ${formatPercent(current.columnPercent)} within ${props.xLabel}=${x}; weighted n ${formatWeightedCount(current.weight)}; joint ${formatPercent(current.percent)}`}
                   style={{
-                    backgroundColor: agreement
+                    backgroundColor: positiveOutcome
                       ? `rgba(35, 113, 111, ${0.12 + intensity * 0.68})`
                       : `rgba(178, 69, 103, ${0.1 + intensity * 0.6})`
                   }}
                 >
-                  <strong>{formatPercent(current.percent)}</strong>
-                  <span>{formatWeightedCount(current.weight)}</span>
+                  <strong>{formatPercent(current.columnPercent)}</strong>
+                  <span>n {formatWeightedCount(current.weight)}</span>
                 </div>
               );
             })}
@@ -1697,9 +1979,12 @@ function BinaryPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel:
       </div>
 
       <div className="scatter-stats">
-        <span>draws {props.points.length}</span>
-        <span>positive x {formatPercent(xPositive / totalWeight)}</span>
-        <span>positive y {formatPercent(yPositive / totalWeight)}</span>
+        <span>samples {points.length}</span>
+        <span>{binaryShortLabel(props.yLabel)} at {binaryAxisValueLabel(props.xLabel, 0)} {contrast.yAtX0 === null ? "n/a" : formatPercent(contrast.yAtX0)}</span>
+        <span>{binaryShortLabel(props.yLabel)} at {binaryAxisValueLabel(props.xLabel, 1)} {contrast.yAtX1 === null ? "n/a" : formatPercent(contrast.yAtX1)}</span>
+        <span>risk diff {contrast.diff === null ? "n/a" : formatPercentagePoints(contrast.diff)}</span>
+        <span>{binaryAxisValueLabel(props.xLabel, 1)} share {formatPercent(xPositive / totalWeight)}</span>
+        <span>{binaryAxisValueLabel(props.yLabel, 1)} share {formatPercent(yPositive / totalWeight)}</span>
         {props.effectiveSampleSize !== null && <span>ESS {formatValue(props.effectiveSampleSize)}</span>}
       </div>
     </div>
@@ -1708,8 +1993,6 @@ function BinaryPairView(props: { points: ScatterPoint[]; xLabel: string; yLabel:
 
 function ScenarioPanel(props: {
   document: GraphDocument;
-  completedOutputModuleId: string | null;
-  analysis: AnalysisReport;
   simulation: SimulationResult;
   onResample: () => void;
   onClearOverrides: () => void;
@@ -1733,18 +2016,528 @@ function ScenarioPanel(props: {
         {overrides.length > 0 && <button type="button" onClick={props.onClearOverrides}>clear fixed values</button>}
         {selections.length > 0 && <button type="button" onClick={props.onClearSelections}>clear conditions</button>}
       </div>
-      <CompletedOutputPanel
-        moduleId={props.completedOutputModuleId}
-        analysis={props.analysis}
-        document={props.document}
-        simulation={props.simulation}
-      />
       <PractitionerModulesDisclosure
         mode={props.mode}
         domain={props.domain}
         denouement={props.denouement}
         denouementTitle={props.denouementTitle}
       />
+    </div>
+  );
+}
+
+function AnalysisSampleBanner(props: {
+  simulation: SimulationResult;
+  onClearSelections: () => void;
+}) {
+  const conditioning = props.simulation.conditioning;
+  if (conditioning.activeConditions.length === 0) return null;
+  return (
+    <div className="analysis-sample-banner" role="status" aria-label="Analysis sample">
+      <strong>Analysis sample</strong>
+      {conditioning.activeConditions.map((condition) => (
+        <span className="analysis-sample-chip" key={condition}>{condition}</span>
+      ))}
+      <span>method {inferenceModeLabel(conditioning.primaryMethod)}</span>
+      <span>samples {conditioning.acceptedSamples} / {conditioning.totalSamples}</span>
+      {conditioning.effectiveSampleSize !== null && <span>ESS {formatValue(conditioning.effectiveSampleSize)}</span>}
+      <button type="button" onClick={props.onClearSelections}>clear conditions</button>
+    </div>
+  );
+}
+
+function BasicRelationPanel(props: { summary: BasicRelationSummary | null; onOpenResults: () => void }) {
+  if (!props.summary) {
+    return (
+      <section className="basic-relation-panel empty" aria-label="Exposure outcome relation">
+        <div className="module-card-header">
+          <strong>Exposure {"->"} outcome</strong>
+          <span className="module-badge planned">pick roles</span>
+        </div>
+        <p>Mark one exposure and one outcome to put the main comparison here.</p>
+      </section>
+    );
+  }
+  const summary = props.summary;
+  const status = relationChangeLabel(summary.observed.numericValue, summary.comparison?.numericValue ?? null);
+  return (
+    <section className="basic-relation-panel" aria-label="Exposure outcome relation">
+      <div className="module-card-header">
+        <strong>{summary.relationLabel}</strong>
+        <span className={status === "sign flip" ? "module-badge active punchline-flip" : "module-badge active"}>{status}</span>
+      </div>
+      <div className={summary.comparison ? "basic-relation-compare" : "basic-relation-compare single"}>
+        <BasicRelationMetricView metric={summary.observed} role="observed" />
+        {summary.comparison ? (
+          <>
+            <div className="basic-relation-arrow" aria-hidden="true">{"->"}</div>
+            <BasicRelationMetricView metric={summary.comparison} role="comparison" />
+          </>
+        ) : null}
+      </div>
+      {summary.comparison && (
+        <BasicRelationShiftPlot before={summary.observed} after={summary.comparison} />
+      )}
+      <p>{summary.note}</p>
+      <button type="button" className="mini-button" onClick={props.onOpenResults}><BarChart3 size={14} /> full results</button>
+    </section>
+  );
+}
+
+function BasicRelationMetricView(props: { metric: BasicOutputPunchlineMetric; role: "observed" | "comparison" }) {
+  return (
+    <div className={`basic-relation-metric ${props.role} ${metricTone(props.metric.numericValue)}`}>
+      <span>{props.metric.label}</span>
+      <strong>{props.metric.value}</strong>
+      <small>{props.metric.detail}</small>
+    </div>
+  );
+}
+
+function BasicRelationShiftPlot(props: { before: BasicOutputPunchlineMetric; after: BasicOutputPunchlineMetric }) {
+  const beforeValue = props.before.numericValue;
+  const afterValue = props.after.numericValue;
+  if (beforeValue === null || afterValue === null) return null;
+  const width = 320;
+  const height = 92;
+  const plot = { left: 66, right: 24, top: 15, rowGap: 28 };
+  const values = [
+    beforeValue,
+    afterValue,
+    props.before.lower,
+    props.before.upper,
+    props.after.lower,
+    props.after.upper
+  ].filter((value): value is number => value !== undefined && Number.isFinite(value));
+  const maxAbs = Math.max(0.1, ...values.map((value) => Math.abs(value)));
+  const domain = maxAbs * 1.18;
+  const x = (value: number) => plot.left + ((value + domain) / (2 * domain)) * (width - plot.left - plot.right);
+  const rows = [
+    { key: "before", label: "before", metric: props.before, value: beforeValue, y: plot.top + 13 },
+    { key: "after", label: "after", metric: props.after, value: afterValue, y: plot.top + 13 + plot.rowGap }
+  ] as const;
+  return (
+    <svg className="huh-shift-plot basic" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${props.before.label} compared with ${props.after.label}`}>
+      <line className="huh-shift-axis" x1={plot.left} y1={height - 18} x2={width - plot.right} y2={height - 18} />
+      <line className="huh-shift-zero" x1={x(0)} y1="10" x2={x(0)} y2={height - 16} />
+      <text className="huh-shift-axis-label" x={plot.left} y={height - 3}>{formatSignedValue(-domain)}</text>
+      <text className="huh-shift-axis-label end" x={width - plot.right} y={height - 3}>{formatSignedValue(domain)}</text>
+      {rows.map((row) => (
+        <g key={row.key}>
+          <text className="huh-shift-row-label" x="8" y={row.y + 4}>{row.label}</text>
+          {row.metric.lower !== undefined && row.metric.upper !== undefined && (
+            <line className="huh-shift-interval" x1={x(row.metric.lower)} y1={row.y} x2={x(row.metric.upper)} y2={row.y} />
+          )}
+          <circle className={`huh-shift-dot ${row.key} ${metricTone(row.value)}`} cx={x(row.value)} cy={row.y} r="5" />
+          <text className="huh-shift-value" x={Math.min(width - 8, x(row.value) + 9)} y={row.y + 4}>{row.metric.value}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function computeBasicRelationSummary(
+  context: OutputContext & { moduleId: string | null },
+  completedOutput: ComputedCompletedOutput | null,
+  derived: SimulationDerivedCache
+): BasicRelationSummary | null {
+  const modulePunchline = completedOutput?.moduleId === context.moduleId
+    ? basicOutputPunchlineFromResult(context.moduleId, completedOutput.result)
+    : null;
+  const relationLabel = basicRelationLabel(context.document.graph);
+  if (modulePunchline) {
+    return {
+      relationLabel,
+      observed: modulePunchline.observed,
+      comparison: modulePunchline.comparison,
+      note: modulePunchline.note
+    };
+  }
+  return computeObservedRelationSummary(context.document.graph, context.simulation, derived);
+}
+
+function basicRelationLabel(graph: GraphModel): string {
+  const exposure = graph.nodes.find((node) => node.roles.exposure);
+  const outcome = graph.nodes.find((node) => node.roles.outcome);
+  if (exposure && outcome) return `${shortNodeLabel(exposure)} -> ${shortNodeLabel(outcome)}`;
+  const pair = defaultScatterPair(graph);
+  const xNode = graph.nodes.find((node) => node.id === pair.x);
+  const yNode = graph.nodes.find((node) => node.id === pair.y);
+  if (xNode && yNode) return `${shortNodeLabel(xNode)} -> ${shortNodeLabel(yNode)}`;
+  return "Exposure -> outcome";
+}
+
+function computeObservedRelationSummary(graph: GraphModel, simulation: SimulationResult, derived: SimulationDerivedCache): BasicRelationSummary | null {
+  const pair = defaultScatterPair(graph);
+  const xNode = graph.nodes.find((node) => node.id === pair.x);
+  const yNode = graph.nodes.find((node) => node.id === pair.y);
+  if (!xNode || !yNode) return null;
+  const xState = simulation.nodeStates[pair.x];
+  const yState = simulation.nodeStates[pair.y];
+  const pairSummary = pairDerivedSummary(derived, pair.x, pair.y);
+  const points = pairSummary.points;
+  if (points.length === 0) return null;
+  const xLabel = shortNodeLabel(xNode);
+  const yLabel = shortNodeLabel(yNode);
+  const xIsBinary = isBinaryGraphNode(xNode, xState);
+  const yIsBinary = isBinaryGraphNode(yNode, yState);
+  const sampleLabel = simulation.conditioning.activeConditions.length > 0 ? "current analysis sample" : "simulated sample";
+  if (xIsBinary && yIsBinary) {
+    const contrast = pairSummary.binaryContrast;
+    if (contrast.diff === null) return null;
+    return {
+      relationLabel: `${xLabel} -> ${yLabel}`,
+      observed: {
+        label: "Observed risk diff",
+        value: formatPercentagePoints(contrast.diff),
+        detail: `${yLabel} at ${xLabel}=1 ${contrast.yAtX1 === null ? "n/a" : formatPercent(contrast.yAtX1)} vs ${contrast.yAtX0 === null ? "n/a" : formatPercent(contrast.yAtX0)}`,
+        numericValue: contrast.diff
+      },
+      comparison: null,
+      note: `This is the raw exposure/outcome relation in the ${sampleLabel}. Add adjustment, selection, or an intervention to see whether the causal read changes.`
+    };
+  }
+  if (xIsBinary && !yIsBinary) {
+    const groups = pairSummary.binaryContinuousGroups;
+    const groupZero = groups[0];
+    const groupOne = groups[1];
+    const groupZeroMean = groupZero?.mean;
+    const groupOneMean = groupOne?.mean;
+    if (groupZeroMean === null || groupZeroMean === undefined || groupOneMean === null || groupOneMean === undefined) return null;
+    const gap = groupOneMean - groupZeroMean;
+    return {
+      relationLabel: `${xLabel} -> ${yLabel}`,
+      observed: {
+        label: "Observed mean gap",
+        value: formatSignedValue(gap),
+        detail: `${xLabel}=1 mean ${formatValue(groupOneMean)} vs ${xLabel}=0 mean ${formatValue(groupZeroMean)}`,
+        numericValue: gap
+      },
+      comparison: null,
+      note: `This is the raw exposure/outcome relation in the ${sampleLabel}. Open Results for the plot and mark covariates when this is not the causal comparison.`
+    };
+  }
+  const stats = pairSummary.stats;
+  if (!stats || stats.correlation === null) return null;
+  return {
+    relationLabel: `${xLabel} -> ${yLabel}`,
+    observed: {
+      label: "Observed correlation",
+      value: formatSignedValue(stats.correlation),
+      detail: `slope ${formatSignedValue(stats.slope)} across ${points.length} samples`,
+      numericValue: stats.correlation
+    },
+    comparison: null,
+    note: `This is the raw relation in the ${sampleLabel}. It is a descriptive correlation until the graph says what adjustment, selection, or intervention means.`
+  };
+}
+
+function relationChangeLabel(observed: number | null, comparison: number | null): string {
+  if (comparison === null) return "observed";
+  const observedSign = signForPunchline(observed);
+  const comparisonSign = signForPunchline(comparison);
+  if (observedSign !== 0 && comparisonSign !== 0 && observedSign !== comparisonSign) return "sign flip";
+  if (observed !== null && Math.abs(observed - comparison) >= 0.05) return "changes";
+  return "same sign";
+}
+
+function signForPunchline(value: number | null): -1 | 0 | 1 {
+  if (value === null || Math.abs(value) < 0.005) return 0;
+  return value < 0 ? -1 : 1;
+}
+
+function metricTone(value: number | null): "negative" | "neutral" | "positive" {
+  const sign = signForPunchline(value);
+  if (sign < 0) return "negative";
+  if (sign > 0) return "positive";
+  return "neutral";
+}
+
+function shortNodeLabel(node: GraphNode): string {
+  return abbreviateLabel(node.label || node.id, 24);
+}
+
+function AdjustedOutputPanel(props: {
+  moduleId: string | null;
+  computedOutput: ComputedCompletedOutput | null;
+  binaryOutput: BinaryAdjustmentOutput | null;
+}) {
+  const adjustedNodes = props.binaryOutput?.adjustedNodes ?? [];
+  const binaryOutput = props.binaryOutput;
+  if (props.moduleId) {
+    return (
+      <div className="adjusted-output-stack">
+        <CompletedOutputPanel moduleId={props.moduleId} computedOutput={props.computedOutput} />
+        {binaryOutput && shouldRenderBinaryAdjustmentOutput(binaryOutput) && <BinaryAdjustmentOutputCard output={binaryOutput} />}
+      </div>
+    );
+  }
+  if (binaryOutput) {
+    return (
+      <div className="adjusted-output-stack">
+        <BinaryAdjustmentOutputCard output={binaryOutput} />
+      </div>
+    );
+  }
+  if (adjustedNodes.length === 0) return <AdjustedOutputEmptyState />;
+  if (!props.moduleId) {
+    return (
+      <div className="adjusted-output-empty">
+        <strong>Adjusted variables selected</strong>
+        <p>{adjustedNodes.map((node) => node.label).join(", ")} marked adjusted. This custom graph does not have a specialized adjusted-output module yet.</p>
+      </div>
+    );
+  }
+  return <CompletedOutputPanel moduleId={props.moduleId} computedOutput={props.computedOutput} />;
+}
+
+function shouldRenderBinaryAdjustmentOutput(output: BinaryAdjustmentOutput): boolean {
+  return output.stabilizedIpw !== null || output.strata.length > 0;
+}
+
+function shouldShowAdjustedOutputColumn(document: GraphDocument, simulation: SimulationResult, moduleId: string | null): boolean {
+  if (moduleId) return true;
+  const exposure = document.graph.nodes.find((node) => node.roles.exposure);
+  const outcome = document.graph.nodes.find((node) => node.roles.outcome);
+  if (!exposure || !outcome) return false;
+  return isBinaryGraphNode(exposure, simulation.nodeStates[exposure.id]) && isBinaryGraphNode(outcome, simulation.nodeStates[outcome.id]);
+}
+
+function BinaryAdjustmentOutputCard({ output }: { output: BinaryAdjustmentOutput }) {
+  const xLabel = nodeDisplayName(output.exposure);
+  const yLabel = nodeDisplayName(output.outcome);
+  const rawContrast = output.rawContrast;
+  const rawDirection = rawContrast.diff === null
+    ? null
+    : rawContrast.diff < 0
+      ? "harm"
+      : rawContrast.diff > 0
+        ? "benefit"
+        : "flat";
+  return (
+    <div className="binary-adjustment-output">
+      <div className="module-card-header">
+        <strong>Binary adjusted output</strong>
+        <span className="module-badge active">{output.strata.length > 0 ? `${output.strata.length} strata` : "summary"}</span>
+      </div>
+      {rawContrast.diff !== null && !output.stabilizedIpw && (
+        <div className={`raw-effect-callout ${rawDirection}`}>
+          <strong>{rawDirection === "harm" ? "Unadjusted harms" : rawDirection === "benefit" ? "Unadjusted helps" : "Unadjusted is flat"}</strong>
+          <span>
+            {binaryShortLabel(yLabel)} at {binaryAxisValueLabel(xLabel, 1)} is {rawContrast.yAtX1 === null ? "n/a" : formatPercent(rawContrast.yAtX1)} versus {rawContrast.yAtX0 === null ? "n/a" : formatPercent(rawContrast.yAtX0)} at {binaryAxisValueLabel(xLabel, 0)} ({formatPercentagePoints(rawContrast.diff)}).
+          </span>
+        </div>
+      )}
+      {output.stabilizedIpw && <StabilizedIpwCard output={output.stabilizedIpw} />}
+      {output.strata.length > 0 ? (
+        <div className="binary-adjustment-strata">
+          {output.strata.map((stratum) => (
+            <BinaryOutputMatrixCard
+              key={stratum.id}
+              title={stratum.label}
+              subtitle={`weighted n ${formatWeightedCount(stratum.weight)}`}
+              points={stratum.points}
+              cells={stratum.cells}
+              contrast={stratum.contrast}
+              xLabel={xLabel}
+              yLabel={yLabel}
+            />
+          ))}
+        </div>
+      ) : !output.stabilizedIpw ? (
+        <div className="binary-adjustment-empty">
+          <strong>No binary adjusted strata yet</strong>
+          <p>Mark a binary pre-treatment variable as adjusted, or add bins to a continuous adjusted variable, to reveal one matrix per stratum.</p>
+        </div>
+      ) : null}
+      {output.binnedAdjustedNodes.length > 0 && (
+        <div className="binary-adjustment-note active">
+          <strong>Continuous bins active</strong>
+          <span>
+            {output.binnedAdjustedNodes.map((item) => `${nodeDisplayName(item.node)}: ${item.cutpoints.length + 1} bins`).join("; ")}.
+          </span>
+        </div>
+      )}
+      {output.unsupportedAdjustedNodes.length > 0 && (
+        <div className="binary-adjustment-note">
+          <strong>Needs a different adjustment display</strong>
+          <span>
+            {output.unsupportedAdjustedNodes.map((node) => nodeDisplayName(node)).join(", ")} {output.unsupportedAdjustedNodes.length === 1 ? "is" : "are"} adjusted but not binary and has no active bins. Add bins, or use matching neighborhoods/model-based standardization later.
+          </span>
+        </div>
+      )}
+      {output.truncated && (
+        <p className="binary-output-summary">Only the first three binary adjusted variables are expanded to avoid an unreadable matrix grid.</p>
+      )}
+    </div>
+  );
+}
+
+function StabilizedIpwCard({ output }: { output: StabilizedIpwOutput }) {
+  const xLabel = nodeDisplayName(output.exposure);
+  const yLabel = output.outcome ? nodeDisplayName(output.outcome) : "outcome";
+  const adjusted = output.adjustedNodes.map((node) => nodeDisplayName(node)).join(", ");
+  const rawHarm = output.rawDiff !== null && output.rawDiff < 0;
+  const weightedHarm = output.weightedDiff !== null && output.weightedDiff < 0;
+  // TODO(simpson-ipw-math): In the calibrated Simpson DGP the true marginal do
+  // contrast is about +7.3 pp. With the current 0.03..0.97 clipping, stabilized
+  // IPW intentionally reports a clipped/overlap-weighted diagnostic estimate, so
+  // this visual should not imply it has recovered the full DGP estimand.
+  return (
+    <div className="stabilized-ipw-card">
+      <div className="module-card-header">
+        <strong>Stabilized IPW</strong>
+        <span className="module-badge active">{output.adjustedNodes.length} covariate{output.adjustedNodes.length === 1 ? "" : "s"}</span>
+      </div>
+      <div className="ipw-before-fixed">
+        <div className={rawHarm ? "ipw-contrast-row harm" : "ipw-contrast-row"}>
+          <span>Before: unadjusted</span>
+          <strong>{output.rawDiff === null ? "n/a" : formatPercentagePoints(output.rawDiff)}</strong>
+          <small>
+            {binaryShortLabel(yLabel)} at {binaryAxisValueLabel(xLabel, 1)} {output.rawTreated === null ? "n/a" : formatPercent(output.rawTreated)} vs {output.rawUntreated === null ? "n/a" : formatPercent(output.rawUntreated)}
+          </small>
+          <em>{rawHarm ? "looks harmful" : "raw association"}</em>
+        </div>
+        <div className={weightedHarm ? "ipw-contrast-row harm" : "ipw-contrast-row fixed"}>
+          <span>{output.clippedCount > 0 ? "Partly fixed: clipped IPW" : "Fixed: stabilized IPW"}</span>
+          <strong>{output.weightedDiff === null ? "n/a" : formatPercentagePoints(output.weightedDiff)}</strong>
+          <small>
+            {binaryShortLabel(yLabel)} at {binaryAxisValueLabel(xLabel, 1)} {output.weightedTreated === null ? "n/a" : formatPercent(output.weightedTreated)} vs {output.weightedUntreated === null ? "n/a" : formatPercent(output.weightedUntreated)}
+          </small>
+          <em>{weightedHarm ? "still harmful after weighting" : output.clippedCount > 0 ? "clipped overlap estimate" : "no longer raw harm"}</em>
+        </div>
+      </div>
+      {output.balances[0] && <IpwBalanceVisual balance={output.balances[0]} />}
+      {output.weightedPoints.length > 0 && (
+        <BinaryOutputMatrixCard
+          title="Weighted pairwise output"
+          subtitle={`stabilized IPW; ESS ${output.effectiveSampleSize === null ? "n/a" : formatValue(output.effectiveSampleSize)}`}
+          points={output.weightedPoints}
+          cells={output.weightedCells}
+          contrast={output.weightedContrast}
+          xLabel={xLabel}
+          yLabel={yLabel}
+        />
+      )}
+      <p className="binary-output-summary">
+        Logistic propensity for {nodeDisplayName(output.exposure)} from {adjusted}. Weights are stabilized by the marginal treatment rate ({formatPercent(output.treatedShare)}) and propensities clipped to 0.03-0.97.
+      </p>
+      <div className="ipw-diagnostics">
+        <span>ESS {output.effectiveSampleSize === null ? "n/a" : formatValue(output.effectiveSampleSize)}</span>
+        <span>max weight {output.maxWeight === null ? "n/a" : formatValue(output.maxWeight)}</span>
+        <span>clipped {output.clippedCount}</span>
+      </div>
+    </div>
+  );
+}
+
+function IpwBalanceVisual({ balance }: { balance: StabilizedIpwBalance }) {
+  const width = 320;
+  const height = 72;
+  const plot = { x: 50, width: 232 };
+  const [min, max] = balance.domain;
+  const scale = (value: number | null) => {
+    if (value === null || !Number.isFinite(value)) return plot.x;
+    return plot.x + ((value - min) / Math.max(max - min, 1e-9)) * plot.width;
+  };
+  return (
+    <div className="ipw-balance-visual">
+      <div className="module-card-header">
+        <strong>{nodeDisplayName(balance.node)} balance</strong>
+        <span>SMD {balance.rawSmd === null ? "n/a" : formatValue(balance.rawSmd)} to {balance.weightedSmd === null ? "n/a" : formatValue(balance.weightedSmd)}</span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${nodeDisplayName(balance.node)} balance before and after weighting`}>
+        <line className="ipw-balance-axis" x1={plot.x} x2={plot.x + plot.width} y1="22" y2="22" />
+        <line className="ipw-balance-axis" x1={plot.x} x2={plot.x + plot.width} y1="50" y2="50" />
+        <text className="ipw-balance-row-label" x="8" y="26">before</text>
+        <text className="ipw-balance-row-label" x="8" y="54">fixed</text>
+        <line className="ipw-balance-gap raw" x1={scale(balance.rawUntreatedMean)} x2={scale(balance.rawTreatedMean)} y1="22" y2="22" />
+        <circle className="ipw-balance-dot untreated" cx={scale(balance.rawUntreatedMean)} cy="22" r="5" />
+        <circle className="ipw-balance-dot treated" cx={scale(balance.rawTreatedMean)} cy="22" r="5" />
+        <line className="ipw-balance-gap fixed" x1={scale(balance.weightedUntreatedMean)} x2={scale(balance.weightedTreatedMean)} y1="50" y2="50" />
+        <circle className="ipw-balance-dot untreated" cx={scale(balance.weightedUntreatedMean)} cy="50" r="5" />
+        <circle className="ipw-balance-dot treated" cx={scale(balance.weightedTreatedMean)} cy="50" r="5" />
+      </svg>
+    </div>
+  );
+}
+
+function BinaryOutputMatrixCard(props: {
+  title: string;
+  subtitle: string;
+  points: ScatterPoint[];
+  cells?: BinaryCell[];
+  contrast?: BinaryOutcomeContrastSummary;
+  xLabel: string;
+  yLabel: string;
+}) {
+  const cells = props.cells ?? binaryCells(props.points);
+  const contrast = props.contrast ?? binaryOutcomeContrastFromCells(cells);
+  return (
+    <div className="binary-output-matrix-card">
+      <div className="module-card-header">
+        <strong>{props.title}</strong>
+        <span>{props.subtitle}</span>
+      </div>
+      <BinaryPairView points={props.points} cells={cells} contrast={contrast} xLabel={props.xLabel} yLabel={props.yLabel} effectiveSampleSize={null} />
+      <div className="binary-output-contrast">
+        <span>{binaryShortLabel(props.yLabel)} rate at {binaryAxisValueLabel(props.xLabel, 0)} {contrast.yAtX0 === null ? "n/a" : formatPercent(contrast.yAtX0)}</span>
+        <span>{binaryShortLabel(props.yLabel)} rate at {binaryAxisValueLabel(props.xLabel, 1)} {contrast.yAtX1 === null ? "n/a" : formatPercent(contrast.yAtX1)}</span>
+      </div>
+    </div>
+  );
+}
+
+function computeBinaryAdjustmentOutput(context: OutputContext, derived: SimulationDerivedCache): BinaryAdjustmentOutput | null {
+  const exposure = context.document.graph.nodes.find((node) => node.roles.exposure);
+  const outcome = context.document.graph.nodes.find((node) => node.roles.outcome);
+  if (!exposure || !outcome) return null;
+  const exposureState = context.simulation.nodeStates[exposure.id];
+  const outcomeState = context.simulation.nodeStates[outcome.id];
+  if (!isBinaryGraphNode(exposure, exposureState) || !isBinaryGraphNode(outcome, outcomeState)) return null;
+  const rawSummary = pairDerivedSummary(derived, exposure.id, outcome.id);
+  const rawPoints = rawSummary.points;
+  if (rawPoints.length === 0) return null;
+  const adjustedNodes = context.document.graph.nodes.filter((node) => node.roles.adjusted && node.id !== exposure.id && node.id !== outcome.id);
+  const binaryAdjustedNodes = adjustedNodes.filter((node) => isBinaryGraphNode(node, context.simulation.nodeStates[node.id]));
+  const stabilizedIpwNodes = adjustedNodes.filter(isStabilizedIpwNode);
+  const binnedAdjustedNodes = adjustedNodes
+    .filter((node) => !isBinaryGraphNode(node, context.simulation.nodeStates[node.id]) && !isStabilizedIpwNode(node))
+    .map((node) => binnedAdjustmentNode(node, context.simulation.nodeStates[node.id], derived.nodes.get(node.id)))
+    .filter((item): item is BinnedAdjustmentNode => item !== null);
+  const binnedIds = new Set(binnedAdjustedNodes.map((item) => item.node.id));
+  const unsupportedAdjustedNodes = adjustedNodes.filter((node) => (
+    !isBinaryGraphNode(node, context.simulation.nodeStates[node.id]) && !binnedIds.has(node.id) && !isStabilizedIpwNode(node)
+  ));
+  const stabilizedIpw = stabilizedIpwNodes.length > 0
+    ? computeStabilizedIpw(exposure, outcome, stabilizedIpwNodes, context.simulation, derived)
+    : null;
+  const expanders = [
+    ...binaryAdjustedNodes.map((node) => binaryAdjustmentExpander(node, context.simulation.nodeStates[node.id])),
+    ...binnedAdjustedNodes.map((item) => binnedAdjustmentExpander(item))
+  ].filter((item): item is AdjustmentStratumCondition[] => item.length > 0).slice(0, 3);
+  const strataResult = binaryAdjustmentStrata(expanders, exposureState, outcomeState);
+  return {
+    exposure,
+    outcome,
+    rawPoints,
+    rawCells: rawSummary.binaryCells,
+    rawContrast: rawSummary.binaryContrast,
+    adjustedNodes,
+    binaryAdjustedNodes,
+    binnedAdjustedNodes,
+    unsupportedAdjustedNodes,
+    strata: strataResult.items,
+    stabilizedIpw,
+    truncated: binaryAdjustedNodes.length + binnedAdjustedNodes.length > expanders.length || strataResult.truncated
+  };
+}
+
+function AdjustedOutputEmptyState() {
+  return (
+    <div className="adjusted-output-empty">
+      <strong>No adjustment yet</strong>
+      <p>Select a pre-treatment common cause, mark it adjusted, and this panel will show the adjusted comparison or example-specific reveal.</p>
     </div>
   );
 }
@@ -1797,11 +2590,11 @@ function DrawCountControl(props: { value: number; onChange: (sampleSize: number)
   return (
     <div className="draw-count-control">
       <div className="draw-count-head">
-        <strong>Empirical draws</strong>
+        <strong>Empirical samples</strong>
         <span>{props.value.toLocaleString()} per run</span>
       </div>
       <input
-        aria-label="empirical draws"
+        aria-label="empirical samples"
         type="number"
         min={EMPIRICAL_DRAW_MIN}
         max={EMPIRICAL_DRAW_MAX}
@@ -1810,7 +2603,7 @@ function DrawCountControl(props: { value: number; onChange: (sampleSize: number)
         onChange={(event) => update(Number(event.target.value))}
       />
       <input
-        aria-label="empirical draws slider"
+        aria-label="empirical samples slider"
         type="range"
         min={EMPIRICAL_DRAW_MIN}
         max={EMPIRICAL_DRAW_MAX}
@@ -1864,9 +2657,13 @@ function ConditioningEditor(props: {
   simulation: SimulationResult;
   onSelectionCondition: (id: string, condition: SimulationSelectionCondition | null) => void;
 }) {
+  const variable = normalizeVariableModel(props.node.variable);
   const value = props.simulation.values[props.node.id] ?? 0;
   const condition = props.document.simulation.selections[props.node.id];
   const state = props.simulation.nodeStates[props.node.id];
+  const discreteOptions = discreteConditionOptions(variable);
+  const discreteMode = discreteOptions.length > 0;
+  const selectedBinaryNode = props.node.roles.selected && variable.valueType === "binary";
   const [sliderMin, sliderMax] = conditioningSliderBounds(state, condition?.value ?? value);
   const sliderStep = conditioningSliderStep(sliderMin, sliderMax);
   const updateCondition = (patch: Partial<SimulationSelectionCondition>) => {
@@ -1874,87 +2671,161 @@ function ConditioningEditor(props: {
       operator: condition?.operator ?? "at_least",
       value: condition?.value ?? value,
       upper: condition?.upper ?? null,
+      valueRef: null,
+      upperRef: null,
       sampling: condition?.sampling ?? "auto",
       ...patch
     });
   };
+  const updateDiscreteValues = (values: number[]) => {
+    const sorted = [...new Set(values)].sort((a, b) => a - b);
+    if (sorted.length === discreteOptions.length) {
+      props.onSelectionCondition(props.node.id, null);
+      return;
+    }
+    props.onSelectionCondition(props.node.id, {
+      operator: "one_of",
+      value: sorted[0] ?? Number.NaN,
+      upper: null,
+      valueRef: null,
+      upperRef: null,
+      values: sorted,
+      sampling: "rejection"
+    });
+  };
+  const selectedDiscreteValues = discreteMode ? selectedDiscreteConditionValues(condition, discreteOptions) : new Set<number>();
   return (
     <div className={`module-card conditioning-editor ${condition ? "active" : ""}`}>
       <div className="module-card-header">
-        <strong>Conditioning filter</strong>
+        <strong>Selection / conditioning filter</strong>
         <span className={condition ? "module-badge active" : "module-badge"}>{condition ? "active" : "available"}</span>
       </div>
-      <p className="muted">Observational selection, not a structural intervention.</p>
-      <label className="field">
-        <span>condition</span>
-        <select
-          value={condition?.operator ?? "at_least"}
-          onChange={(event) => updateCondition({
-            operator: event.target.value as SimulationSelectionCondition["operator"],
-            upper: event.target.value === "between" ? condition?.upper ?? value : null
-          })}
-        >
-          <option value="at_least">at least</option>
-          <option value="at_most">at most</option>
-          <option value="between">between</option>
-        </select>
-      </label>
-      <label className="field">
-        <span>inference method</span>
-        <select aria-label="inference method" value={condition?.sampling ?? "auto"} onChange={(event) => updateCondition({ sampling: event.target.value as SimulationSelectionCondition["sampling"] })}>
-          <option value="auto">auto</option>
-          <option value="analytic">analytic</option>
-          <option value="importance">importance sampling</option>
-          <option value="rejection">rejection sampling</option>
-        </select>
-      </label>
-      <div className="two-field-grid">
-        <NumberField
-          label={condition?.operator === "between" ? "lower" : "value"}
-          value={condition?.value ?? value}
-          onChange={(nextValue) => updateCondition({ value: nextValue, upper: condition?.operator === "between" ? condition.upper ?? nextValue : null })}
-        />
-        {condition?.operator === "between" && (
+      <p className="muted">Filters observed simulated draws; this is not do({props.node.id}).</p>
+      {discreteMode ? (
+        <div className="discrete-condition-list" role="group" aria-label={`${props.node.id} included categories`}>
+          <span>include categories</span>
+          {discreteOptions.map((option) => (
+            <label className="checkbox-row" key={option.value}>
+              <input
+                type="checkbox"
+                checked={selectedDiscreteValues.has(option.value)}
+                onChange={(event) => {
+                  const next = new Set(selectedDiscreteValues);
+                  if (event.target.checked) next.add(option.value);
+                  else next.delete(option.value);
+                  updateDiscreteValues([...next]);
+                }}
+              />
+              <span>{option.label}</span>
+            </label>
+          ))}
+          <p className="muted">Discrete filters use category membership, not numeric thresholds.</p>
+        </div>
+      ) : (
+        <>
+          <label className="field">
+            <span>condition</span>
+            <select
+              value={condition?.operator === "one_of" ? "at_least" : condition?.operator ?? "at_least"}
+              onChange={(event) => updateCondition({
+                operator: event.target.value as SimulationSelectionCondition["operator"],
+                upper: event.target.value === "between" ? condition?.upper ?? value : null,
+                values: null
+              })}
+            >
+              <option value="at_least">at least</option>
+              <option value="at_most">at most</option>
+              <option value="between">between</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>inference method</span>
+            <select aria-label="inference method" value={condition?.sampling ?? "auto"} onChange={(event) => updateCondition({ sampling: event.target.value as SimulationSelectionCondition["sampling"] })}>
+              <option value="auto">auto</option>
+              <option value="analytic">analytic</option>
+              <option value="importance">importance sampling</option>
+              <option value="rejection">rejection sampling</option>
+            </select>
+          </label>
           <NumberField
-            label="upper"
-            value={condition.upper ?? condition.value}
-            onChange={(upper) => updateCondition({ upper })}
+            label={condition?.operator === "between" ? "lower" : "value"}
+            value={condition?.value ?? value}
+            onChange={(nextValue) => updateCondition({ value: nextValue, upper: condition?.operator === "between" ? condition.upper ?? nextValue : null })}
           />
-        )}
-      </div>
-      <label className="field conditioning-range">
-        <span>{condition?.operator === "between" ? "lower slider" : "value slider"}</span>
-        <input
-          type="range"
-          min={sliderMin}
-          max={sliderMax}
-          step={sliderStep}
-          value={clamp(condition?.value ?? value, sliderMin, sliderMax)}
-          onChange={(event) => {
-            const nextValue = roundToStep(Number(event.target.value), sliderStep);
-            updateCondition({ value: nextValue, upper: condition?.operator === "between" ? condition.upper ?? nextValue : null });
-          }}
-        />
-      </label>
-      {condition?.operator === "between" && (
-        <label className="field conditioning-range">
-          <span>upper slider</span>
-          <input
-            type="range"
-            min={sliderMin}
-            max={sliderMax}
-            step={sliderStep}
-            value={clamp(condition.upper ?? condition.value, sliderMin, sliderMax)}
-            onChange={(event) => updateCondition({ upper: roundToStep(Number(event.target.value), sliderStep) })}
-          />
-        </label>
+          <label className="field conditioning-range">
+            <span>{condition?.operator === "between" ? "lower slider" : "value slider"}</span>
+            <input
+              type="range"
+              min={sliderMin}
+              max={sliderMax}
+              step={sliderStep}
+              value={clamp(condition?.value ?? value, sliderMin, sliderMax)}
+              onChange={(event) => {
+                const nextValue = roundToStep(Number(event.target.value), sliderStep);
+                updateCondition({ value: nextValue, upper: condition?.operator === "between" ? condition.upper ?? nextValue : null });
+              }}
+            />
+          </label>
+          {condition?.operator === "between" && (
+            <>
+              <NumberField
+                label="upper"
+                value={condition.upper ?? condition.value}
+                onChange={(upper) => updateCondition({ upper })}
+              />
+              <label className="field conditioning-range">
+                <span>upper slider</span>
+                <input
+                  type="range"
+                  min={sliderMin}
+                  max={sliderMax}
+                  step={sliderStep}
+                  value={clamp(condition.upper ?? condition.value, sliderMin, sliderMax)}
+                  onChange={(event) => updateCondition({ upper: roundToStep(Number(event.target.value), sliderStep) })}
+                />
+              </label>
+            </>
+          )}
+        </>
       )}
       <div className="button-row">
-        {!condition && <button type="button" onClick={() => props.onSelectionCondition(props.node.id, { operator: "at_least", value, upper: null, sampling: "auto" })}>condition on current</button>}
+        {selectedBinaryNode && !condition && <button type="button" onClick={() => props.onSelectionCondition(props.node.id, { operator: "one_of", value: 1, upper: null, valueRef: null, upperRef: null, values: [1], sampling: "rejection" })}>condition on selected = 1</button>}
+        {!condition && !discreteMode && <button type="button" onClick={() => props.onSelectionCondition(props.node.id, { operator: "at_least", value, upper: null, valueRef: null, upperRef: null, sampling: "auto" })}>condition on current</button>}
         {condition && <button type="button" onClick={() => props.onSelectionCondition(props.node.id, null)}>clear condition</button>}
       </div>
     </div>
   );
+}
+
+function discreteConditionOptions(variable: VariableModel): Array<{ value: number; label: string }> {
+  if (variable.valueType === "binary") {
+    return [
+      { value: 0, label: variable.categories[0] || "0" },
+      { value: 1, label: variable.categories[1] || "1" }
+    ];
+  }
+  if (variable.valueType === "categorical") {
+    const categories = variable.categories.length > 0 ? variable.categories : ["0", "1"];
+    return categories.map((label, index) => ({ value: index, label }));
+  }
+  return [];
+}
+
+function selectedDiscreteConditionValues(
+  condition: SimulationSelectionCondition | undefined,
+  options: Array<{ value: number; label: string }>
+): Set<number> {
+  if (!condition) return new Set(options.map((option) => option.value));
+  if (condition.operator === "one_of") return new Set(condition.values ?? [condition.value]);
+  return new Set(options.filter((option) => conditionAllowsValue(condition, option.value)).map((option) => option.value));
+}
+
+function conditionAllowsValue(condition: SimulationSelectionCondition, value: number): boolean {
+  if (condition.operator === "one_of") return (condition.values ?? [condition.value]).some((candidate) => Math.abs(candidate - value) <= 1e-9);
+  if (condition.operator === "at_least") return value >= condition.value;
+  if (condition.operator === "at_most") return value <= condition.value;
+  const upper = condition.upper ?? condition.value;
+  return value >= condition.value && value <= upper;
 }
 
 function ConditioningMethodPanel({ simulation }: { simulation: SimulationResult }) {
@@ -1973,7 +2844,7 @@ function ConditioningMethodPanel({ simulation }: { simulation: SimulationResult 
             ? <span>{analyticActive ? "analytic active" : "analytic available"} {analyticSummaryLabel(conditioning.analytic)}</span>
             : <span>analytic unavailable</span>}
           <span>empirical check {conditioning.empiricalMethod}</span>
-          <span>empirical draws {conditioning.acceptedSamples} / {conditioning.totalSamples}</span>
+          <span>empirical samples {conditioning.acceptedSamples} / {conditioning.totalSamples}</span>
           {conditioning.effectiveSampleSize !== null && <span>ESS {formatValue(conditioning.effectiveSampleSize)}</span>}
         </>
       ) : (
@@ -2025,9 +2896,11 @@ function RoadmapTodoPanel() {
 }
 
 function SelectionEditor(props: {
+  mode: WorkbenchMode;
   node?: GraphNode;
   edge?: GraphEdge;
   simulation: SimulationResult;
+  derived: SimulationDerivedCache;
   document: GraphDocument;
   onToggleRole: (id: string, role: keyof NodeRoleFlags) => void;
   onRename: (id: string) => void;
@@ -2041,9 +2914,11 @@ function SelectionEditor(props: {
   onEdgeMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
   onDeleteEdge: (edgeId: string) => void;
 }) {
+  if (props.mode === "basic") return <BasicSelectionEditor {...props} />;
   if (props.node) return <VariableEditor
     node={props.node}
     simulation={props.simulation}
+    derived={props.derived}
     document={props.document}
     onToggleRole={props.onToggleRole}
     onRename={props.onRename}
@@ -2069,9 +2944,222 @@ function SelectionEditor(props: {
   );
 }
 
+function BasicSelectionEditor(props: Parameters<typeof SelectionEditor>[0]) {
+  if (props.node) {
+    const node = props.node;
+    const variable = normalizeVariableModel(node.variable);
+    const state = props.simulation.nodeStates[node.id];
+    const value = props.simulation.values[node.id];
+    const activeIntervention = Object.hasOwn(props.document.simulation.overrides ?? {}, node.id);
+    const activeSelection = Object.hasOwn(props.document.simulation.selections ?? {}, node.id);
+    return (
+      <div className="selection-editor basic-selection-editor" aria-label={`Variable ${node.id}`}>
+        <div className="selection-editor-header">
+          <div>
+            <span>Variable</span>
+            <strong>{nodeDisplayName(node)}</strong>
+          </div>
+        </div>
+        <div className="selection-editor-body">
+          <div className="basic-current-card">
+            <span>{valueTypeLabel(variable.valueType)}</span>
+            <strong>{typeof value === "number" && Number.isFinite(value) ? formatValue(value) : "not simulated"}</strong>
+            <small>{nodeMomentLabel(state) || "empirical summary unavailable"}</small>
+          </div>
+
+          <div className="selection-editor-block basic-causal-roles">
+            <strong>Causal role</strong>
+            <p className="muted">Mark what this variable does in the question you want the DAG to answer.</p>
+            <div className="role-toggle-grid">
+              <RoleToggle label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
+              <RoleToggle label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
+              <RoleToggle label="adjust for" checked={node.roles.adjusted} onChange={() => props.onToggleRole(node.id, "adjusted")} />
+              <RoleToggle label="selection" checked={node.roles.selected} onChange={() => props.onToggleRole(node.id, "selected")} />
+              <RoleToggle label="unobserved" checked={node.roles.latent} onChange={() => props.onToggleRole(node.id, "latent")} />
+            </div>
+          </div>
+
+          <div className="basic-causal-module-stack">
+            <details className="basic-causal-module" open={activeIntervention}>
+              <summary>
+                <span>Intervention</span>
+                {activeIntervention && <strong>active</strong>}
+              </summary>
+              <HardDoEditor node={node} document={props.document} simulation={props.simulation} onOverride={props.onOverride} />
+            </details>
+            <details className="basic-causal-module" open={activeSelection || node.roles.selected}>
+              <summary>
+                <span>Selection</span>
+                {activeSelection && <strong>active</strong>}
+              </summary>
+              <ConditioningEditor node={node} document={props.document} simulation={props.simulation} onSelectionCondition={props.onSelectionCondition} />
+            </details>
+            <details className="basic-causal-module" open={node.roles.adjusted}>
+              <summary>
+                <span>Adjustment</span>
+                {node.roles.adjusted && <strong>used</strong>}
+              </summary>
+              <AdjustmentMethodEditor
+                node={node}
+                document={props.document}
+                simulation={props.simulation}
+                derived={props.derived}
+                onVariableChange={props.onVariableChange}
+              />
+            </details>
+          </div>
+
+          <details className="selection-editor-details">
+            <summary>More variable settings</summary>
+            <VariableMechanismPanel
+              node={node}
+              document={props.document}
+              simulation={props.simulation}
+              onMechanism={props.onNodeMechanism}
+              onVariableChange={props.onVariableChange}
+            />
+          </details>
+
+          <div className="button-row">
+            <button type="button" onClick={() => props.onRename(node.id)}>rename</button>
+            <button type="button" onClick={() => props.onDeleteNode(node.id)}>delete</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (props.edge) return <BasicEdgeEditor {...props} edge={props.edge} />;
+  return <BasicCausalGuide />;
+}
+
+function BasicCausalGuide() {
+  return (
+    <div className="selection-empty-state basic-causal-guide">
+      <strong>Build the causal question</strong>
+      <p>Click a variable to mark exposure, outcome, adjustment, selection, or intervention.</p>
+      <div className="basic-guide-steps">
+        <span>Variable adds things to the story.</span>
+        <span>Connect draws arrows between causes and effects.</span>
+        <span>Watch whether the observed relation changes under selection, adjustment, or intervention.</span>
+      </div>
+    </div>
+  );
+}
+
+function BasicEdgeEditor(props: Parameters<typeof SelectionEditor>[0] & { edge: GraphEdge }) {
+  const mechanism = normalizeEdgeMechanism(props.document.simulation.edges[props.edge.id]);
+  const contribution = props.simulation.contributions[props.edge.id] ?? 0;
+  return (
+    <div className="selection-editor basic-selection-editor connection-editor" aria-label={`Connection ${props.edge.source} to ${props.edge.target}`}>
+      <div className="selection-editor-header">
+        <div>
+          <span>Arrow</span>
+          <strong>{props.edge.source} to {props.edge.target}</strong>
+        </div>
+      </div>
+      <div className="selection-editor-body">
+        <div className="basic-current-card">
+          <span>current contribution</span>
+          <strong className={contribution >= 0 ? "positive" : "negative"}>{formatSignedValue(contribution)}</strong>
+          <small>{mechanism.enabled ? "included in the simulation" : "shown but disabled"}</small>
+        </div>
+        <div className="selection-editor-block">
+          <strong>Causal link</strong>
+          <Checkbox label="included in simulation" checked={mechanism.enabled} onChange={(enabled) => props.onEdgeEnabled(props.edge, enabled)} />
+          {mechanism.kind === "linear" && <TactileNumberField
+            label="effect strength"
+            value={mechanism.coefficient}
+            step={0.1}
+            nudge={1}
+            onChange={(coefficient) => props.onCoefficient(props.edge, coefficient)}
+          />}
+        </div>
+        <details className="selection-editor-details">
+          <summary>More arrow settings</summary>
+          <EdgePanel
+            edge={props.edge}
+            document={props.document}
+            simulation={props.simulation}
+            onCoefficient={props.onCoefficient}
+            onEnabled={props.onEdgeEnabled}
+            onMechanism={props.onEdgeMechanism}
+          />
+        </details>
+        <div className="button-row">
+          <button type="button" onClick={() => props.onDeleteEdge(props.edge.id)}>delete</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VariableMechanismPanel(props: {
+  node: GraphNode;
+  document: GraphDocument;
+  simulation: SimulationResult;
+  onMechanism: (id: string, patch: Partial<NodeMechanism>) => void;
+  onVariableChange: (nodeId: string, variable: VariableModel) => void;
+}) {
+  const node = props.node;
+  const variable = normalizeVariableModel(node.variable);
+  const mechanism = normalizeNodeMechanism(props.document.simulation.nodes[node.id]);
+  const state = props.simulation.nodeStates[node.id];
+  const parentIds = props.document.graph.edges.filter((edge) => edge.kind === "directed" && edge.target === node.id).map((edge) => edge.source);
+  const isRoot = parentIds.length === 0;
+  const inferredValueType = inferValueTypeFromMechanism(isRoot, mechanism, variable.valueType);
+  const updateVariable = (patch: Partial<VariableModel>) => props.onVariableChange(node.id, normalizeVariableModel({ ...variable, ...patch }));
+  return (
+    <div className="selection-editor-grid">
+      <div className="selection-editor-block">
+        <div className="selection-editor-block-title">
+          <strong>Distribution</strong>
+          <span className="variable-pill">{valueTypeLabel(inferredValueType)}</span>
+        </div>
+        {isRoot ? (
+          <DistributionEditor
+            label="root distribution"
+            distribution={mechanism.distribution}
+            onChange={(distribution) => props.onMechanism(node.id, { distribution })}
+          />
+        ) : (
+          <>
+            <label className="field">
+              <span>combiner</span>
+              <select value={mechanism.combiner} onChange={(event) => props.onMechanism(node.id, { combiner: event.target.value as NodeCombinerKind })}>
+                {NODE_COMBINERS.map((item) => <option value={item.kind} key={item.kind}>{item.label}</option>)}
+              </select>
+            </label>
+            <DistributionEditor
+              label="noise"
+              distribution={mechanism.noise}
+              onChange={(noise) => props.onMechanism(node.id, { noise })}
+            />
+          </>
+        )}
+        <TactileNumberField
+          label="intercept"
+          value={mechanism.intercept}
+          step={0.1}
+          nudge={1}
+          onChange={(intercept) => props.onMechanism(node.id, { intercept })}
+        />
+      </div>
+      <div className="selection-editor-block">
+        <strong>Notes</strong>
+        <textarea aria-label="description" value={variable.description} rows={3} onChange={(event) => updateVariable({ description: event.target.value })} />
+        <div className="model-facts">
+          <span>parents {parentIds.join(", ") || "none"}</span>
+          <span>analytic {state?.analytic ? analyticDistributionLabel(state.analytic) : "unavailable"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VariableEditor(props: {
   node: GraphNode;
   simulation: SimulationResult;
+  derived: SimulationDerivedCache;
   document: GraphDocument;
   onToggleRole: (id: string, role: keyof NodeRoleFlags) => void;
   onRename: (id: string) => void;
@@ -2114,6 +3202,7 @@ function VariableEditor(props: {
         <div className="variable-tabs" role="tablist" aria-label="Variable sections">
           <button type="button" role="tab" aria-selected={tab === "model"} className={tab === "model" ? "active" : ""} onClick={() => setTab("model")}>model</button>
           <button type="button" role="tab" aria-selected={tab === "interventions"} className={tab === "interventions" ? "active" : ""} onClick={() => setTab("interventions")}>interventions</button>
+          <button type="button" role="tab" aria-selected={tab === "selection"} className={tab === "selection" ? "active" : ""} onClick={() => setTab("selection")}>selection</button>
           <button type="button" role="tab" aria-selected={tab === "adjustment"} className={tab === "adjustment" ? "active" : ""} onClick={() => setTab("adjustment")}>adjustment</button>
         </div>
 
@@ -2181,8 +3270,11 @@ function VariableEditor(props: {
 
         {tab === "interventions" && <div className="variable-tab-panel intervention-tab-panel" role="tabpanel">
           <HardDoEditor node={node} document={props.document} simulation={props.simulation} onOverride={props.onOverride} />
-          <ConditioningEditor node={node} document={props.document} simulation={props.simulation} onSelectionCondition={props.onSelectionCondition} />
           <PlannedModuleSet />
+        </div>}
+
+        {tab === "selection" && <div className="variable-tab-panel selection-tab-panel" role="tabpanel">
+          <ConditioningEditor node={node} document={props.document} simulation={props.simulation} onSelectionCondition={props.onSelectionCondition} />
         </div>}
 
         {tab === "adjustment" && <div className="variable-tab-panel adjustment-tab-panel" role="tabpanel">
@@ -2190,6 +3282,7 @@ function VariableEditor(props: {
             node={node}
             document={props.document}
             simulation={props.simulation}
+            derived={props.derived}
             onVariableChange={props.onVariableChange}
           />
         </div>}
@@ -2230,15 +3323,21 @@ function AdjustmentMethodEditor(props: {
   node: GraphNode;
   document: GraphDocument;
   simulation: SimulationResult;
+  derived: SimulationDerivedCache;
   onVariableChange: (nodeId: string, variable: VariableModel) => void;
 }) {
   const variable = normalizeVariableModel(props.node.variable);
   const state = props.simulation.nodeStates[props.node.id];
   const exposureNode = props.document.graph.nodes.find((node) => node.roles.exposure);
+  const outcomeNode = props.document.graph.nodes.find((node) => node.roles.outcome);
   const exposureState = exposureNode ? props.simulation.nodeStates[exposureNode.id] : undefined;
   const exposureVariable = normalizeVariableModel(exposureNode?.variable);
   const continuousEnough = variable.valueType !== "binary" && variable.valueType !== "categorical" && variable.valueType !== "text";
-  const method = variable.adjustment.method === "none" ? "bins" : variable.adjustment.method;
+  const method = variable.adjustment.method === "propensity_score_todo"
+    ? "stabilized_ipw"
+    : variable.adjustment.method === "none"
+      ? "bins"
+      : variable.adjustment.method;
   const updateAdjustment = (patch: Partial<VariableModel["adjustment"]>) => {
     props.onVariableChange(props.node.id, normalizeVariableModel({
       ...variable,
@@ -2255,19 +3354,23 @@ function AdjustmentMethodEditor(props: {
         <p className="muted">{props.node.roles.adjusted ? "Configure how this adjusted variable will be used in the visible estimand." : "Mark this variable as adjusted to make these settings part of the visible adjustment output."}</p>
         <div className="adjustment-method-choices" role="tablist" aria-label="Adjustment methodology">
           <button type="button" className={method === "bins" ? "active" : ""} onClick={() => updateAdjustment({ method: "bins" })}>Binned standardization</button>
-          <button type="button" className={method === "propensity_score_todo" ? "active planned" : "planned"} onClick={() => updateAdjustment({ method: "propensity_score_todo" })}>Propensity weighting <span>todo</span></button>
+          <button type="button" className={method === "stabilized_ipw" ? "active" : ""} onClick={() => updateAdjustment({ method: "stabilized_ipw" })}>Stabilized IPW</button>
         </div>
       </div>
-      {method === "propensity_score_todo" ? (
-        <div className="selection-editor-block adjustment-todo">
-          <strong>Propensity score weighting</strong>
-          <p className="muted">Planned: estimate treatment probability from adjusted variables, show overlap, trim unsupported regions, and weight the raw comparison. Bins come first because they make positivity visible.</p>
-        </div>
+      {method === "stabilized_ipw" ? (
+        <StabilizedIpwEditorPanel
+          node={props.node}
+          exposureNode={exposureNode}
+          outcomeNode={outcomeNode}
+          simulation={props.simulation}
+          derived={props.derived}
+        />
       ) : (
         <BinnedAdjustmentEditor
           node={props.node}
           variable={variable}
           state={state}
+          summary={props.derived.nodes.get(props.node.id)}
           exposureNode={exposureNode}
           exposureState={exposureState}
           exposureValueType={exposureVariable.valueType}
@@ -2279,10 +3382,58 @@ function AdjustmentMethodEditor(props: {
   );
 }
 
+function StabilizedIpwEditorPanel(props: {
+  node: GraphNode;
+  exposureNode: GraphNode | undefined;
+  outcomeNode: GraphNode | undefined;
+  simulation: SimulationResult;
+  derived: SimulationDerivedCache;
+}) {
+  if (!props.exposureNode) {
+    return (
+      <div className="selection-editor-block adjustment-todo">
+        <strong>Stabilized inverse probability weighting</strong>
+        <p className="warning">Choose one binary exposure before IPW can estimate treatment probabilities.</p>
+      </div>
+    );
+  }
+  const exposureState = props.simulation.nodeStates[props.exposureNode.id];
+  if (!isBinaryGraphNode(props.exposureNode, exposureState)) {
+    return (
+      <div className="selection-editor-block adjustment-todo">
+        <strong>Stabilized inverse probability weighting</strong>
+        <p className="warning">Stabilized IPW currently supports binary exposures only.</p>
+      </div>
+    );
+  }
+  const ipw = computeStabilizedIpw(props.exposureNode, props.outcomeNode ?? null, [props.node], props.simulation, props.derived);
+  return (
+    <div className="selection-editor-block stabilized-ipw-editor">
+      <div className="selection-editor-block-title">
+        <strong>Stabilized inverse probability weighting</strong>
+        <span className="variable-pill">logistic propensity</span>
+      </div>
+      <p className="muted">Estimate P({props.exposureNode.id}=1 | {props.node.id}) with logistic propensity, then use stabilized weights. Propensities are clipped to 0.03-0.97 to avoid one row dominating the comparison.</p>
+      {ipw ? (
+        <div className="ipw-diagnostics">
+          {ipw.weightedDiff !== null && <span>weighted contrast {formatPercentagePoints(ipw.weightedDiff)}</span>}
+          <span>treated share {formatPercent(ipw.treatedShare)}</span>
+          <span>ESS {ipw.effectiveSampleSize === null ? "n/a" : formatValue(ipw.effectiveSampleSize)}</span>
+          <span>max weight {ipw.maxWeight === null ? "n/a" : formatValue(ipw.maxWeight)}</span>
+          <span>clipped {ipw.clippedCount}</span>
+        </div>
+      ) : (
+        <p className="warning">Not enough finite samples are available to fit the propensity model.</p>
+      )}
+    </div>
+  );
+}
+
 function BinnedAdjustmentEditor(props: {
   node: GraphNode;
   variable: VariableModel;
   state: SimulatedNodeState | undefined;
+  summary?: NodeDistributionSummary;
   exposureNode: GraphNode | undefined;
   exposureState: SimulatedNodeState | undefined;
   exposureValueType: VariableModel["valueType"];
@@ -2291,13 +3442,13 @@ function BinnedAdjustmentEditor(props: {
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [draggingCut, setDraggingCut] = useState<number | null>(null);
-  const domain = props.state ? distributionPlotDomain(props.state) : null;
-  const samples = props.state?.empirical.samples.filter(Number.isFinite) ?? [];
+  const domain = props.summary?.domain ?? (props.state ? distributionPlotDomain(props.state) : null);
+  const samples = props.summary?.finiteSamples ?? props.state?.empirical.samples.filter(Number.isFinite) ?? [];
   const cutpoints = domain ? sanitizeCutpoints(props.variable.adjustment.cutpoints, domain) : [];
   const positivity = domain && props.exposureState && props.exposureValueType === "binary"
     ? positivityRows(props.state, props.exposureState, cutpoints, domain)
     : [];
-  const bars = domain ? histogram(samples, domain, 18, props.state?.empirical.weights) : [];
+  const bars = domain ? (props.summary?.histogram18 ?? histogram(samples, domain, 18, props.state?.empirical.weights)) : [];
   const maxBar = Math.max(...bars, 1);
   const width = 320;
   const height = 132;
@@ -2406,7 +3557,7 @@ function BinnedAdjustmentEditor(props: {
 
 function PositivityPanel(props: { exposureNode: GraphNode | undefined; exposureValueType: VariableModel["valueType"]; rows: PositivityRow[] }) {
   if (!props.exposureNode) return <p className="warning">Choose an exposure before positivity can be checked.</p>;
-  if (props.exposureValueType !== "binary") return <p className="warning">Binned positivity currently checks binary exposures; propensity and continuous exposure methods are still planned.</p>;
+  if (props.exposureValueType !== "binary") return <p className="warning">Binned positivity currently checks binary exposures. Stabilized IPW also requires a binary exposure.</p>;
   if (props.rows.length === 0) return <p className="muted">Add bin splits to inspect overlap within each bin.</p>;
   return (
     <div className="positivity-panel">
@@ -2488,8 +3639,6 @@ function EdgePanel(props: {
         <TactileNumberField
           label="coefficient"
           value={mechanism.coefficient}
-          min={-5}
-          max={5}
           step={0.1}
           nudge={1}
           onChange={(coefficient) => props.onCoefficient(props.edge, coefficient)}
@@ -2970,7 +4119,7 @@ function TactileNumberField({
 }
 
 function tactileSliderRange(min: number | undefined, max: number | undefined, value: number, nudge: number): { min: number; max: number } {
-  const magnitude = Math.max(Math.abs(value), Math.abs(nudge) * 10, 10);
+  const magnitude = Math.max(Math.abs(value) * 2, Math.abs(nudge) * 100, 100);
   let safeMin = min ?? value - magnitude;
   let safeMax = max ?? value + magnitude;
   if (safeMin > safeMax) {
@@ -3041,6 +4190,57 @@ function abbreviateLabel(value: string, limit: number): string {
   return `${value.slice(0, Math.max(0, limit - 3))}...`;
 }
 
+function binaryShortLabel(value: string): string {
+  return abbreviateLabel(value.replace(/\s+\([^)]*\)$/u, ""), 14);
+}
+
+function binaryAxisValueLabel(label: string, value: 0 | 1): string {
+  return `${binaryShortLabel(label)}=${value}`;
+}
+
+function buildSimulationDerivedCache(simulation: SimulationResult): SimulationDerivedCache {
+  const nodes = new Map<string, NodeDistributionSummary>();
+  for (const [id, state] of Object.entries(simulation.nodeStates)) {
+    const domain = distributionPlotDomain(state);
+    const finiteSamples = state.empirical.samples.filter(Number.isFinite);
+    nodes.set(id, {
+      domain,
+      finiteSamples,
+      histogram18: domain ? histogram(state.empirical.samples, domain, 18, state.empirical.weights) : [],
+      histogram20: domain ? histogram(state.empirical.samples, domain, 20, state.empirical.weights) : []
+    });
+  }
+  return {
+    simulation,
+    nodes,
+    pairs: new Map()
+  };
+}
+
+function pairDerivedSummary(cache: SimulationDerivedCache, xId: string, yId: string): PairDerivedSummary {
+  const key = `${xId}\u0000${yId}`;
+  const cached = cache.pairs.get(key);
+  if (cached) return cached;
+  const xState = cache.simulation.nodeStates[xId];
+  const yState = cache.simulation.nodeStates[yId];
+  const points = scatterPoints(xState, yState);
+  const xValues = points.map((point) => point.x);
+  const yValues = points.map((point) => point.y);
+  const cells = binaryCells(points);
+  const summary: PairDerivedSummary = {
+    points,
+    stats: weightedScatterStats(points),
+    binaryCells: cells,
+    binaryContrast: binaryOutcomeContrastFromCells(cells),
+    binaryContinuousGroups: binaryContinuousGroups(points),
+    xDomain: scatterDomain(xValues, xState, cache.nodes.get(xId)),
+    yDomain: scatterDomain(yValues, yState, cache.nodes.get(yId)),
+    ySampleDomain: scatterSampleDomain(yValues, yState, cache.nodes.get(yId))
+  };
+  cache.pairs.set(key, summary);
+  return summary;
+}
+
 function scatterPoints(xState: SimulatedNodeState | undefined, yState: SimulatedNodeState | undefined): ScatterPoint[] {
   const xSamples = xState?.empirical.samples ?? [];
   const ySamples = yState?.empirical.samples ?? [];
@@ -3086,10 +4286,10 @@ function binaryContinuousGroups(points: ScatterPoint[]): BinaryContinuousGroup[]
 
 function binaryCells(points: ScatterPoint[]): BinaryCell[] {
   const cells: BinaryCell[] = [
-    { x: 0, y: 0, weight: 0, count: 0, percent: 0 },
-    { x: 1, y: 0, weight: 0, count: 0, percent: 0 },
-    { x: 0, y: 1, weight: 0, count: 0, percent: 0 },
-    { x: 1, y: 1, weight: 0, count: 0, percent: 0 }
+    { x: 0, y: 0, weight: 0, count: 0, percent: 0, columnPercent: 0 },
+    { x: 1, y: 0, weight: 0, count: 0, percent: 0, columnPercent: 0 },
+    { x: 0, y: 1, weight: 0, count: 0, percent: 0, columnPercent: 0 },
+    { x: 1, y: 1, weight: 0, count: 0, percent: 0, columnPercent: 0 }
   ];
   for (const point of points) {
     const x = coerceBinary(point.x) as 0 | 1;
@@ -3100,12 +4300,456 @@ function binaryCells(points: ScatterPoint[]): BinaryCell[] {
     cell.count += 1;
   }
   const totalWeight = cells.reduce((sum, cell) => sum + cell.weight, 0);
-  return cells.map((cell) => ({ ...cell, percent: totalWeight > 0 ? cell.weight / totalWeight : 0 }));
+  const xWeights: Record<0 | 1, number> = {
+    0: cells.filter((cell) => cell.x === 0).reduce((sum, cell) => sum + cell.weight, 0),
+    1: cells.filter((cell) => cell.x === 1).reduce((sum, cell) => sum + cell.weight, 0)
+  };
+  return cells.map((cell) => ({
+    ...cell,
+    percent: totalWeight > 0 ? cell.weight / totalWeight : 0,
+    columnPercent: xWeights[cell.x] > 0 ? cell.weight / xWeights[cell.x] : 0
+  }));
 }
 
-function scatterDomain(values: number[], state: SimulatedNodeState | undefined): [number, number] {
+function binaryOutcomeContrast(points: ScatterPoint[]): BinaryOutcomeContrastSummary {
+  return binaryOutcomeContrastFromCells(binaryCells(points));
+}
+
+function binaryOutcomeContrastFromCells(cells: BinaryCell[]): BinaryOutcomeContrastSummary {
+  const weightAtX0 = cells.filter((cell) => cell.x === 0).reduce((sum, cell) => sum + cell.weight, 0);
+  const weightAtX1 = cells.filter((cell) => cell.x === 1).reduce((sum, cell) => sum + cell.weight, 0);
+  const yAtX0Weight = cells.find((cell) => cell.x === 0 && cell.y === 1)?.weight ?? 0;
+  const yAtX1Weight = cells.find((cell) => cell.x === 1 && cell.y === 1)?.weight ?? 0;
+  const yAtX0 = weightAtX0 > 0 ? yAtX0Weight / weightAtX0 : null;
+  const yAtX1 = weightAtX1 > 0 ? yAtX1Weight / weightAtX1 : null;
+  return {
+    yAtX0,
+    yAtX1,
+    diff: yAtX0 === null || yAtX1 === null ? null : yAtX1 - yAtX0
+  };
+}
+
+function isBinaryGraphNode(node: GraphNode, state?: SimulatedNodeState): boolean {
+  return normalizeVariableModel(node.variable).valueType === "binary" || state?.analytic?.distribution.kind === "bernoulli";
+}
+
+function isStabilizedIpwNode(node: GraphNode): boolean {
+  const method = normalizeVariableModel(node.variable).adjustment.method;
+  return method === "stabilized_ipw" || method === "propensity_score_todo";
+}
+
+function computeStabilizedIpw(
+  exposure: GraphNode,
+  outcome: GraphNode | null,
+  adjustedNodes: GraphNode[],
+  simulation: SimulationResult,
+  derived?: SimulationDerivedCache
+): StabilizedIpwOutput | null {
+  const exposureState = simulation.nodeStates[exposure.id];
+  const outcomeState = outcome ? simulation.nodeStates[outcome.id] : undefined;
+  const adjustedStates = adjustedNodes.map((node) => simulation.nodeStates[node.id]);
+  if (!exposureState || adjustedStates.some((state) => !state)) return null;
+  if (outcome && !outcomeState) return null;
+
+  const exposureSamples = exposureState.empirical.samples;
+  const outcomeSamples = outcomeState?.empirical.samples ?? [];
+  const covariateSamples = adjustedStates.map((state) => state?.empirical.samples ?? []);
+  const length = Math.min(
+    exposureSamples.length,
+    outcome ? outcomeSamples.length : exposureSamples.length,
+    ...covariateSamples.map((samples) => samples.length)
+  );
+  const rows: Array<{ treatment: 0 | 1; outcome: number | null; covariates: number[]; baseWeight: number }> = [];
+  for (let index = 0; index < length; index += 1) {
+    const exposureValue = exposureSamples[index];
+    const outcomeValue = outcome ? outcomeSamples[index] : null;
+    if (exposureValue === undefined || !Number.isFinite(exposureValue)) continue;
+    if (outcome && (outcomeValue === null || outcomeValue === undefined || !Number.isFinite(outcomeValue))) continue;
+    const covariates: number[] = [];
+    let valid = true;
+    for (const samples of covariateSamples) {
+      const value = samples[index];
+      if (value === undefined || !Number.isFinite(value)) {
+        valid = false;
+        break;
+      }
+      covariates.push(value);
+    }
+    if (!valid) continue;
+    rows.push({
+      treatment: coerceBinary(exposureValue) as 0 | 1,
+      outcome: typeof outcomeValue === "number" ? outcomeValue : null,
+      covariates,
+      baseWeight: empiricalWeightAt(index, exposureState, outcomeState, ...adjustedStates)
+    });
+  }
+  if (rows.length < Math.max(20, adjustedNodes.length + 3)) return null;
+
+  const weightSum = rows.reduce((sum, row) => sum + row.baseWeight, 0);
+  if (weightSum <= 0) return null;
+  const treatedShare = rows.reduce((sum, row) => sum + (row.treatment === 1 ? row.baseWeight : 0), 0) / weightSum;
+  if (treatedShare <= 0 || treatedShare >= 1) return null;
+  const standardized = standardizeCovariates(rows);
+  const propensities = fitLogisticPropensity(standardized, rows.map((row) => row.treatment), rows.map((row) => row.baseWeight));
+  if (!propensities) return null;
+
+  const clipMin = 0.03;
+  const clipMax = 0.97;
+  let clippedCount = 0;
+  let maxWeight = 0;
+  const weightedRows = rows.map((row, index) => {
+    const rawPropensity = propensities[index] ?? treatedShare;
+    const propensity = clamp(rawPropensity, clipMin, clipMax);
+    if (Math.abs(propensity - rawPropensity) > 1e-9) clippedCount += 1;
+    const stabilized = row.treatment === 1
+      ? treatedShare / propensity
+      : (1 - treatedShare) / (1 - propensity);
+    const weight = row.baseWeight * stabilized;
+    maxWeight = Math.max(maxWeight, weight);
+    return { ...row, weight };
+  });
+  const weightedTreated = outcome ? weightedOutcomeMean(weightedRows, 1, true) : null;
+  const weightedUntreated = outcome ? weightedOutcomeMean(weightedRows, 0, true) : null;
+  const rawTreated = outcome ? weightedOutcomeMean(weightedRows, 1, false) : null;
+  const rawUntreated = outcome ? weightedOutcomeMean(weightedRows, 0, false) : null;
+  const weightedPoints: ScatterPoint[] = outcome
+    ? weightedRows
+      .filter((row) => row.outcome !== null)
+      .map((row, index) => ({
+        x: row.treatment,
+        y: row.outcome ?? 0,
+        weight: row.weight,
+        index
+      }))
+    : [];
+  const weightedCells = binaryCells(weightedPoints);
+  const weights = weightedRows.map((row) => row.weight);
+  return {
+    exposure,
+    outcome,
+    adjustedNodes,
+    treatedShare,
+    rawTreated,
+    rawUntreated,
+    rawDiff: rawTreated === null || rawUntreated === null ? null : rawTreated - rawUntreated,
+    weightedTreated,
+    weightedUntreated,
+    weightedDiff: weightedTreated === null || weightedUntreated === null ? null : weightedTreated - weightedUntreated,
+    effectiveSampleSize: effectiveSampleSize(weights),
+    maxWeight: Number.isFinite(maxWeight) ? maxWeight : null,
+    clippedCount,
+    sampleCount: rows.length,
+    weightedPoints,
+    weightedCells,
+    weightedContrast: binaryOutcomeContrastFromCells(weightedCells),
+    balances: computeIpwBalances(weightedRows, adjustedNodes)
+  };
+}
+
+function computeIpwBalances(rows: StabilizedIpwRow[], adjustedNodes: GraphNode[]): StabilizedIpwBalance[] {
+  return adjustedNodes.map((node, covariateIndex) => {
+    const rawTreated = weightedCovariateMoment(rows, covariateIndex, 1, false);
+    const rawUntreated = weightedCovariateMoment(rows, covariateIndex, 0, false);
+    const weightedTreated = weightedCovariateMoment(rows, covariateIndex, 1, true);
+    const weightedUntreated = weightedCovariateMoment(rows, covariateIndex, 0, true);
+    const values = rows.map((row) => row.covariates[covariateIndex]).filter((value): value is number => value !== undefined && Number.isFinite(value));
+    const meanValues = [
+      rawTreated.mean,
+      rawUntreated.mean,
+      weightedTreated.mean,
+      weightedUntreated.mean
+    ].filter((value): value is number => value !== null && Number.isFinite(value));
+    const min = Math.min(...values, ...meanValues);
+    const max = Math.max(...values, ...meanValues);
+    const padded = padDomain([min, max]);
+    return {
+      node,
+      domain: padded,
+      rawTreatedMean: rawTreated.mean,
+      rawUntreatedMean: rawUntreated.mean,
+      weightedTreatedMean: weightedTreated.mean,
+      weightedUntreatedMean: weightedUntreated.mean,
+      rawSmd: standardizedMeanDifference(rawTreated, rawUntreated),
+      weightedSmd: standardizedMeanDifference(weightedTreated, weightedUntreated)
+    };
+  });
+}
+
+function weightedCovariateMoment(
+  rows: StabilizedIpwRow[],
+  covariateIndex: number,
+  treatment: 0 | 1,
+  stabilized: boolean
+): { mean: number | null; variance: number | null } {
+  let denominator = 0;
+  let numerator = 0;
+  for (const row of rows) {
+    const value = row.covariates[covariateIndex];
+    if (row.treatment !== treatment || value === undefined || !Number.isFinite(value)) continue;
+    const weight = stabilized ? row.weight : row.baseWeight;
+    numerator += value * weight;
+    denominator += weight;
+  }
+  if (denominator <= 0) return { mean: null, variance: null };
+  const mean = numerator / denominator;
+  const variance = rows.reduce((sum, row) => {
+    const value = row.covariates[covariateIndex];
+    if (row.treatment !== treatment || value === undefined || !Number.isFinite(value)) return sum;
+    const weight = stabilized ? row.weight : row.baseWeight;
+    return sum + weight * (value - mean) * (value - mean);
+  }, 0) / denominator;
+  return { mean, variance };
+}
+
+function standardizedMeanDifference(
+  treated: { mean: number | null; variance: number | null },
+  untreated: { mean: number | null; variance: number | null }
+): number | null {
+  if (treated.mean === null || untreated.mean === null || treated.variance === null || untreated.variance === null) return null;
+  const pooled = Math.sqrt(Math.max((treated.variance + untreated.variance) / 2, 1e-12));
+  return (treated.mean - untreated.mean) / pooled;
+}
+
+function padDomain(domain: [number, number]): [number, number] {
+  const [min, max] = domain;
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [-1, 1];
+  if (Math.abs(max - min) < 1e-9) return [min - 1, max + 1];
+  const pad = (max - min) * 0.08;
+  return [min - pad, max + pad];
+}
+
+function standardizeCovariates(rows: Array<{ covariates: number[]; baseWeight: number }>): number[][] {
+  const width = rows[0]?.covariates.length ?? 0;
+  const weightSum = rows.reduce((sum, row) => sum + row.baseWeight, 0);
+  const means = Array.from({ length: width }, (_, column) => (
+    rows.reduce((sum, row) => sum + (row.covariates[column] ?? 0) * row.baseWeight, 0) / Math.max(weightSum, Number.EPSILON)
+  ));
+  const sds = means.map((mean, column) => {
+    const variance = rows.reduce((sum, row) => {
+      const delta = (row.covariates[column] ?? 0) - mean;
+      return sum + row.baseWeight * delta * delta;
+    }, 0) / Math.max(weightSum, Number.EPSILON);
+    return Math.sqrt(Math.max(variance, 1e-12));
+  });
+  return rows.map((row) => [
+    1,
+    ...row.covariates.map((value, column) => (value - (means[column] ?? 0)) / Math.max(sds[column] ?? 1, 1e-6))
+  ]);
+}
+
+function fitLogisticPropensity(x: number[][], treatment: Array<0 | 1>, weights: number[]): number[] | null {
+  const width = x[0]?.length ?? 0;
+  if (x.length === 0 || width === 0) return null;
+  const treatedShare = treatment.reduce<number>((sum, value, index) => sum + value * (weights[index] ?? 1), 0) /
+    Math.max(weights.reduce((sum, value) => sum + value, 0), Number.EPSILON);
+  let beta = Array.from({ length: width }, (_, index) => index === 0 ? logit(clamp(treatedShare, 1e-4, 1 - 1e-4)) : 0);
+  for (let iteration = 0; iteration < 30; iteration += 1) {
+    const gradient = Array.from({ length: width }, () => 0);
+    const hessian = Array.from({ length: width }, () => Array.from({ length: width }, () => 0));
+    for (let rowIndex = 0; rowIndex < x.length; rowIndex += 1) {
+      const row = x[rowIndex];
+      if (!row) continue;
+      const p = logisticSigmoid(row.reduce((sum, value, column) => sum + value * (beta[column] ?? 0), 0));
+      const weight = weights[rowIndex] ?? 1;
+      const residual = (treatment[rowIndex] ?? 0) - p;
+      const curvature = weight * p * (1 - p);
+      for (let column = 0; column < width; column += 1) {
+        const xColumn = row[column] ?? 0;
+        gradient[column] = (gradient[column] ?? 0) + weight * xColumn * residual;
+        for (let other = 0; other < width; other += 1) {
+          hessian[column]![other] = (hessian[column]![other] ?? 0) + curvature * xColumn * (row[other] ?? 0);
+        }
+      }
+    }
+    for (let index = 1; index < width; index += 1) {
+      hessian[index]![index] = (hessian[index]![index] ?? 0) + 1e-4;
+    }
+    const step = solveLinearSystem(hessian, gradient);
+    if (!step) return null;
+    beta = beta.map((value, index) => value + clamp(step[index] ?? 0, -2, 2));
+    if (step.reduce((max, value) => Math.max(max, Math.abs(value)), 0) < 1e-6) break;
+  }
+  return x.map((row) => logisticSigmoid(row.reduce((sum, value, column) => sum + value * (beta[column] ?? 0), 0)));
+}
+
+function weightedOutcomeMean(
+  rows: Array<{ treatment: 0 | 1; outcome: number | null; baseWeight: number; weight: number }>,
+  treatment: 0 | 1,
+  stabilized: boolean
+): number | null {
+  let numerator = 0;
+  let denominator = 0;
+  for (const row of rows) {
+    if (row.treatment !== treatment || row.outcome === null) continue;
+    const weight = stabilized ? row.weight : row.baseWeight;
+    numerator += row.outcome * weight;
+    denominator += weight;
+  }
+  return denominator > 0 ? numerator / denominator : null;
+}
+
+function effectiveSampleSize(weights: number[]): number | null {
+  const sum = weights.reduce((total, weight) => total + weight, 0);
+  const sumSquares = weights.reduce((total, weight) => total + weight * weight, 0);
+  if (sum <= 0 || sumSquares <= 0) return null;
+  return (sum * sum) / sumSquares;
+}
+
+function logit(probability: number): number {
+  return Math.log(probability / (1 - probability));
+}
+
+function logisticSigmoid(value: number): number {
+  if (value >= 0) {
+    const z = Math.exp(-value);
+    return 1 / (1 + z);
+  }
+  const z = Math.exp(value);
+  return z / (1 + z);
+}
+
+function solveLinearSystem(matrix: number[][], rhs: number[]): number[] | null {
+  const size = rhs.length;
+  const augmented = matrix.map((row, index) => [...row.map((value) => value), rhs[index] ?? 0]);
+  for (let pivot = 0; pivot < size; pivot += 1) {
+    let best = pivot;
+    for (let row = pivot + 1; row < size; row += 1) {
+      if (Math.abs(augmented[row]?.[pivot] ?? 0) > Math.abs(augmented[best]?.[pivot] ?? 0)) best = row;
+    }
+    if (Math.abs(augmented[best]?.[pivot] ?? 0) < 1e-10) return null;
+    const pivotRow = augmented[pivot];
+    const bestRow = augmented[best];
+    if (!pivotRow || !bestRow) return null;
+    augmented[pivot] = bestRow;
+    augmented[best] = pivotRow;
+    const divisor = augmented[pivot]?.[pivot] ?? 1;
+    for (let column = pivot; column <= size; column += 1) {
+      augmented[pivot]![column] = (augmented[pivot]![column] ?? 0) / divisor;
+    }
+    for (let row = 0; row < size; row += 1) {
+      if (row === pivot) continue;
+      const factor = augmented[row]?.[pivot] ?? 0;
+      for (let column = pivot; column <= size; column += 1) {
+        augmented[row]![column] = (augmented[row]![column] ?? 0) - factor * (augmented[pivot]?.[column] ?? 0);
+      }
+    }
+  }
+  return augmented.map((row) => row[size] ?? 0);
+}
+
+function binnedAdjustmentNode(node: GraphNode, state?: SimulatedNodeState, summary?: NodeDistributionSummary): BinnedAdjustmentNode | null {
+  if (!state) return null;
+  const variable = normalizeVariableModel(node.variable);
+  if (variable.adjustment.method !== "bins" || variable.adjustment.cutpoints.length === 0) return null;
+  const domain = summary?.domain ?? distributionPlotDomain(state);
+  if (!domain) return null;
+  const cutpoints = sanitizeCutpoints(variable.adjustment.cutpoints, domain);
+  if (cutpoints.length === 0) return null;
+  return { node, state, domain, cutpoints };
+}
+
+function binaryAdjustmentExpander(node: GraphNode, state?: SimulatedNodeState): AdjustmentStratumCondition[] {
+  if (!state) return [];
+  return [
+    { kind: "binary", node, state, value: 0 },
+    { kind: "binary", node, state, value: 1 }
+  ];
+}
+
+function binnedAdjustmentExpander(item: BinnedAdjustmentNode): AdjustmentStratumCondition[] {
+  const boundaries = [item.domain[0], ...item.cutpoints, item.domain[1]];
+  return boundaries.slice(0, -1).map((lower, index) => ({
+    kind: "bin" as const,
+    node: item.node,
+    state: item.state,
+    lower,
+    upper: boundaries[index + 1] ?? item.domain[1],
+    index,
+    last: index === boundaries.length - 2
+  }));
+}
+
+function binaryAdjustmentStrata(
+  expanders: AdjustmentStratumCondition[][],
+  xState: SimulatedNodeState | undefined,
+  yState: SimulatedNodeState | undefined
+): { items: BinaryAdjustmentStratum[]; truncated: boolean } {
+  if (expanders.length === 0) return { items: [], truncated: false };
+  let combinations: AdjustmentStratumCondition[][] = [[]];
+  for (const levels of expanders) {
+    combinations = combinations.flatMap((base) => levels.map((level) => [...base, level]));
+  }
+  const maxStrata = 16;
+  const truncated = combinations.length > maxStrata;
+  const shownCombinations = combinations.slice(0, maxStrata);
+  return { items: shownCombinations.map((conditions) => {
+    const points = filteredBinaryScatterPoints(xState, yState, conditions);
+    const cells = binaryCells(points);
+    return {
+      id: conditions.map(stratumConditionId).join("__"),
+      label: conditions.map(stratumConditionLabel).join(", "),
+      points,
+      cells,
+      contrast: binaryOutcomeContrastFromCells(cells),
+      weight: points.reduce((sum, point) => sum + point.weight, 0)
+    };
+  }), truncated };
+}
+
+function stratumConditionId(condition: AdjustmentStratumCondition): string {
+  if (condition.kind === "binary") return `${condition.node.id}-${condition.value}`;
+  return `${condition.node.id}-bin-${condition.index}`;
+}
+
+function stratumConditionLabel(condition: AdjustmentStratumCondition): string {
+  if (condition.kind === "binary") return `${condition.node.id}=${condition.value}`;
+  return `${condition.node.id} bin ${condition.index + 1}: ${formatValue(condition.lower)} to ${formatValue(condition.upper)}`;
+}
+
+function filteredBinaryScatterPoints(
+  xState: SimulatedNodeState | undefined,
+  yState: SimulatedNodeState | undefined,
+  conditions: AdjustmentStratumCondition[]
+): ScatterPoint[] {
+  const xSamples = xState?.empirical.samples ?? [];
+  const ySamples = yState?.empirical.samples ?? [];
+  const conditionSamples = conditions.map((condition) => condition.state.empirical.samples);
+  const length = Math.min(xSamples.length, ySamples.length, ...conditionSamples.map((samples) => samples.length));
+  const points: ScatterPoint[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const x = xSamples[index];
+    const y = ySamples[index];
+    if (x === undefined || y === undefined || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const matches = conditions.every((condition) => {
+      const sample = condition.state.empirical.samples[index];
+      if (sample === undefined || !Number.isFinite(sample)) return false;
+      if (condition.kind === "binary") return coerceBinary(sample) === condition.value;
+      return condition.last
+        ? sample >= condition.lower && sample <= condition.upper
+        : sample >= condition.lower && sample < condition.upper;
+    });
+    if (!matches) continue;
+    points.push({
+      x,
+      y,
+      weight: empiricalWeightAt(index, xState, yState, ...conditions.map((condition) => condition.state)),
+      index
+    });
+  }
+  return points;
+}
+
+function empiricalWeightAt(index: number, ...states: Array<SimulatedNodeState | undefined>): number {
+  for (const state of states) {
+    const weight = state?.empirical.weights[index];
+    if (weight !== undefined && Number.isFinite(weight)) return Math.max(0, weight);
+  }
+  return 1;
+}
+
+function scatterDomain(values: number[], state: SimulatedNodeState | undefined, summary?: NodeDistributionSummary): [number, number] {
   const candidates = values.filter(Number.isFinite);
-  const distributionDomain = state ? distributionPlotDomain(state) : null;
+  const distributionDomain = summary?.domain ?? (state ? distributionPlotDomain(state) : null);
   if (distributionDomain) candidates.push(distributionDomain[0], distributionDomain[1]);
   if (candidates.length === 0) return [-1, 1];
   let min = Math.min(...candidates);
@@ -3119,12 +4763,13 @@ function scatterDomain(values: number[], state: SimulatedNodeState | undefined):
   return [min - pad, max + pad];
 }
 
-function scatterSampleDomain(values: number[], state: SimulatedNodeState | undefined): [number, number] {
+function scatterSampleDomain(values: number[], state: SimulatedNodeState | undefined, summary?: NodeDistributionSummary): [number, number] {
   const candidates = values.filter(Number.isFinite);
   if (candidates.length === 0) {
     if (state?.empirical.min !== null && state?.empirical.min !== undefined) candidates.push(state.empirical.min);
     if (state?.empirical.max !== null && state?.empirical.max !== undefined) candidates.push(state.empirical.max);
   }
+  if (candidates.length === 0 && summary?.domain) candidates.push(summary.domain[0], summary.domain[1]);
   if (candidates.length === 0) return [-1, 1];
   let min = Math.min(...candidates);
   let max = Math.max(...candidates);
@@ -3154,13 +4799,7 @@ function deterministicJitter(index: number): number {
   return x - Math.floor(x) - 0.5;
 }
 
-function weightedScatterStats(points: ScatterPoint[]): {
-  meanX: number;
-  meanY: number;
-  correlation: number | null;
-  slope: number;
-  intercept: number;
-} | null {
+function weightedScatterStats(points: ScatterPoint[]): WeightedScatterSummary | null {
   const sumWeight = points.reduce((sum, point) => sum + point.weight, 0);
   if (points.length === 0 || sumWeight <= 0) return null;
   const meanX = points.reduce((sum, point) => sum + point.x * point.weight, 0) / sumWeight;
@@ -3468,25 +5107,22 @@ function normalDensity(value: number, mean: number, sd: number): number {
   return Math.exp(-0.5 * z * z) / (cleanSd * Math.sqrt(2 * Math.PI));
 }
 
-function nodeDistributionAnnotationLines(state: SimulatedNodeState | undefined, value: number | undefined, variable: VariableModel): string[] {
+function nodeDistributionAnnotationLines(state: SimulatedNodeState | undefined, variable: VariableModel): string[] {
   if (isBinaryDistributionState(state, variable)) {
     const lines: string[] = [];
-    if (typeof value === "number" && Number.isFinite(value)) lines.push(binaryNodeValueLabel(value));
     const probability = binaryProbabilityFromState(state);
     if (probability !== null) lines.push(`P(1) ${formatPercent(probability)}`);
-    return lines.map((line) => compactSvgText(line, 28)).slice(0, 2);
+    return lines.map((line) => compactSvgText(line, 28)).slice(0, 1);
   }
   const lines: string[] = [];
-  if (typeof value === "number" && Number.isFinite(value)) lines.push(`draw ${formatValue(value)}`);
   const moment = nodeMomentLabel(state);
   if (moment) lines.push(moment);
   return lines.map((line) => compactSvgText(line, 28)).slice(0, 2);
 }
 
-function nodeDistributionFullSummary(state: SimulatedNodeState | undefined, value: number | undefined, variable: VariableModel): string {
+function nodeDistributionFullSummary(state: SimulatedNodeState | undefined, variable: VariableModel): string {
   const binary = isBinaryDistributionState(state, variable);
   return [
-    typeof value === "number" && Number.isFinite(value) ? (binary ? binaryNodeValueLabel(value) : `chosen draw ${formatValue(value)}`) : "",
     binary ? binaryProbabilitySummary(state) : nodeMomentLabel(state),
     state?.analytic ? distributionParameterLabel(state.analytic.distribution) : "",
     state?.analytic ? `analytic ${analyticDistributionLabel(state.analytic)}` : "",
@@ -3496,11 +5132,6 @@ function nodeDistributionFullSummary(state: SimulatedNodeState | undefined, valu
 
 function isBinaryDistributionState(state: SimulatedNodeState | undefined, variable: VariableModel): boolean {
   return variable.valueType === "binary" || state?.analytic?.distribution.kind === "bernoulli";
-}
-
-function binaryNodeValueLabel(value: number): string {
-  if (Math.abs(value - 0) < 1e-6 || Math.abs(value - 1) < 1e-6) return `draw ${coerceBinary(value)}`;
-  return `value ${formatPercent(clamp(value, 0, 1))}`;
 }
 
 function binaryProbabilitySummary(state: SimulatedNodeState | undefined): string {

@@ -10,21 +10,60 @@ test("loads the editor and creates a variable with the node tool", async ({ page
   await page.goto("/");
   await expect(page.getByText("Nudagitty")).toBeVisible();
   await expect(page.getByLabel("Editable causal graph")).toBeVisible();
+  await expect(page.locator(".graph-legend")).toHaveCount(0);
+  await page.getByRole("button", { name: "Legend" }).click();
   await expect(page.locator(".graph-legend")).toBeVisible();
-  await expect(page.locator(".edge-function-glyph").first()).toBeVisible();
-  await expect(page.locator(".editor-column")).toContainText("Select a node or edge for editing.");
+  await expect(page.locator(".edge-function-glyph").first()).toBeHidden();
+  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Treatment -> Recovery");
+  await expect(page.getByLabel("Exposure outcome relation")).toContainText(/sign flip/i);
+  await expect(page.locator(".editor-column")).toContainText("Build the causal question");
   await expect(page.locator("body")).not.toContainText("Live Node Values");
-  await page.locator(".advanced-drawer summary").click();
-  await expect(page.locator(".advanced-drawer").getByLabel("empirical draws", { exact: true })).toHaveValue("320");
-  await page.locator(".advanced-drawer").getByLabel("empirical draws", { exact: true }).fill("640");
-  await expect(page.locator(".scatterplot-panel")).toContainText("draws 640");
-  await page.locator(".advanced-drawer summary").click();
 
   await page.getByRole("button", { name: "Variable" }).click();
   await page.locator(".graph-canvas").click({ position: { x: 80, y: 320 } });
 
   await expect(page.locator("text.node-label").filter({ hasText: "V" }).first()).toBeVisible();
-  await expect(page.locator(".cm-content")).toContainText("V");
+});
+
+test("basic examples surface the observed versus causal punchline", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Examples").click();
+  await page.getByRole("menuitem").filter({ hasText: "Birthweight paradox" }).click();
+
+  const relation = page.getByLabel("Exposure outcome relation");
+  await expect(relation).toContainText("Smoking -> infant mortality");
+  await expect(relation).toContainText(/sign flip/i);
+  await expect(relation).toContainText(/low-birthweight read/i);
+  await expect(relation).toContainText(/population do effect/i);
+  await expect(relation.locator(".huh-shift-plot")).toBeVisible();
+  await relation.getByRole("button", { name: "full results" }).click();
+  await expect(page.locator(".basic-results-column")).toBeVisible();
+  await page.getByRole("button", { name: "Close results" }).click();
+  await expect(page.locator(".basic-results-column")).toHaveCount(0);
+
+  await page.getByLabel("Examples").click();
+  await page.getByRole("menuitem").filter({ hasText: "Simpson's paradox" }).click();
+  await page.getByRole("button", { name: "Results", exact: true }).click();
+  const results = page.locator(".basic-results-column");
+  await expect(results).toContainText("Pairwise Output");
+  await expect(results).toContainText("Weighted pairwise output");
+  await expect(results).toContainText("Stabilized IPW");
+});
+
+test("example menu stays open while moving from trigger into choices", async ({ page }) => {
+  await page.goto("/");
+  const trigger = page.getByLabel("Examples");
+  await trigger.click();
+  const choice = page.locator(".example-menu-popover").getByRole("menuitem").first();
+  await expect(choice).toBeVisible();
+
+  const triggerBox = await trigger.boundingBox();
+  const choiceBox = await choice.boundingBox();
+  if (!triggerBox || !choiceBox) throw new Error("missing example menu bounds");
+  await page.mouse.move(triggerBox.x + triggerBox.width / 2, triggerBox.y + triggerBox.height / 2);
+  await page.mouse.move(choiceBox.x + 24, choiceBox.y + choiceBox.height / 2, { steps: 16 });
+
+  await expect(choice).toBeVisible();
 });
 
 test("selected connections populate the editor column", async ({ page }) => {
@@ -48,27 +87,57 @@ test("selected connections populate the editor column", async ({ page }) => {
   await expect(page.locator("body")).not.toContainText("Connection Detail");
 });
 
-test("chess example exposes nonlinear practice and elite threshold edges", async ({ page }) => {
+test("paper-shaped chess example exposes nonlinear practice and a non-flipping elite sample", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Domain" }).click();
   await page.getByLabel("Examples").click();
   await page.getByText("Social science / education / psychology").hover();
-  await page.getByRole("menuitem").filter({ hasText: "Does chess need intelligence?" }).click();
+  await page.getByRole("menuitem").filter({ hasText: "selection fails to flip" }).click();
 
-  await expect(page.getByLabel("Examples")).toContainText("TO FIX: CALIBRATE?");
+  await expect(page.getByLabel("Examples")).toContainText("selection fails to flip");
+  await expect(page.getByLabel("Analysis sample")).toContainText("Elite_sample in {1}");
   await expect(page.locator("text.node-label").filter({ hasText: "chess Elo" })).toBeVisible();
   await expect(page.locator("text.node-label").filter({ hasText: "elite sample" })).toBeVisible();
   await expect(page.locator(".edge-value").filter({ hasText: "Hill / Emax" })).toBeVisible();
-  await expect(page.locator(".edge-value").filter({ hasText: "smooth thresh" })).toHaveCount(2);
+  await expect(page.locator(".edge-value").filter({ hasText: "saturating" })).toBeVisible();
+  await expect(page.locator(".edge-value").filter({ hasText: "smooth thresh" })).toHaveCount(1);
 
   const editor = page.locator(".editor-column");
-  await page.locator(".edge-hit").nth(7).dispatchEvent("pointerdown");
+  await page.locator(".edge-hit").nth(9).dispatchEvent("pointerdown");
   await expect(editor).toContainText("Practice_hours to Chess_Elo");
   await expect(editor.getByLabel("function Practice_hours to Chess_Elo")).toContainText("Hill / Emax");
 
-  await page.locator(".edge-hit").nth(8).dispatchEvent("pointerdown");
+  await page.locator(".edge-hit").nth(10).dispatchEvent("pointerdown");
   await expect(editor).toContainText("Chess_Elo to Elite_sample");
   await expect(editor.getByLabel("function Chess_Elo to Elite_sample")).toContainText("smooth threshold");
+});
+
+test("manual chess sign-flip example surfaces elite selection as analysis sample", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Domain" }).click();
+  await page.getByLabel("Examples").click();
+  await page.getByText("Social science / education / psychology").hover();
+  await page.getByRole("menuitem").filter({ hasText: "manual sign flip" }).click();
+
+  const banner = page.getByLabel("Analysis sample");
+  await expect(banner).toContainText("Analysis sample");
+  await expect(banner).toContainText("Elite_sample in {1}");
+  await expect(banner).toContainText("method rejection sampling");
+  await expect(banner).toContainText(/samples \d+ \/ \d+/);
+  await expect(page.locator(".adjusted-output-column")).toHaveCount(0);
+
+  await page.locator("text.node-label").filter({ hasText: "rated / elite sample" }).click({ force: true });
+  const editor = page.locator(".editor-column");
+  await editor.getByRole("tab", { name: "selection" }).click();
+  await expect(editor.locator(".conditioning-editor")).toContainText("active");
+  await expect(editor.locator(".conditioning-editor")).toContainText("not do(Elite_sample)");
+  await expect(editor.locator(".conditioning-editor")).toContainText("Discrete filters use category membership");
+  await expect(editor.locator(".conditioning-editor").getByLabel("Elite_sample included categories").getByLabel("1")).toBeChecked();
+
+  await editor.locator(".conditioning-editor").getByRole("button", { name: "clear condition" }).click();
+  await expect(page.getByLabel("Analysis sample")).toHaveCount(0);
+  await expect(page.locator(".adjusted-output-column")).toHaveCount(0);
+  await expect(editor.locator(".conditioning-editor").getByRole("button", { name: "condition on selected = 1" })).toBeVisible();
 });
 
 test("selected variables populate the editor column", async ({ page }) => {
@@ -89,11 +158,14 @@ test("selected variables populate the editor column", async ({ page }) => {
   await expect(variableEditor.getByLabel("unit")).toHaveCount(0);
   await variableEditor.getByRole("tab", { name: "interventions" }).click();
   await expect(variableEditor.locator(".hard-do-editor")).toContainText("Hard do intervention");
-  await expect(variableEditor.locator(".conditioning-editor")).toContainText("Conditioning filter");
+  await expect(variableEditor.locator(".conditioning-editor")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("Model Inspector");
   await expect(page.locator("body")).not.toContainText("Connection Functions");
   await expect(variableEditor).not.toContainText("Measurement");
   await expect(variableEditor.locator(".planned-module-list")).toContainText("planned");
+  await variableEditor.getByRole("tab", { name: "selection" }).click();
+  await expect(variableEditor.locator(".conditioning-editor")).toContainText("Selection / conditioning filter");
+  await expect(variableEditor.locator(".hard-do-editor")).toHaveCount(0);
   await expect(scenario.locator(".hard-do-editor")).toHaveCount(0);
   await expect(scenario.locator(".conditioning-editor")).toHaveCount(0);
   await expect(scenario.locator(".planned-module-list")).toHaveCount(0);
@@ -124,11 +196,15 @@ test("binary variables update simulation defaults", async ({ page }) => {
   await expect(variableEditor.getByLabel("root distribution")).toHaveValue("bernoulli");
   await expect(variableEditor).toContainText("binary");
   await expect(variableEditor.getByLabel("p slider")).toBeVisible();
+  await expect(page.locator(".binary-adjustment-output")).toContainText("Severity=0");
+  await expect(page.locator(".binary-adjustment-output")).toContainText("Severity=1");
+  await expect(page.locator(".binary-adjustment-output .binary-output-matrix-card")).toHaveCount(2);
   await expect(page.locator(".node.selected .binary-node-distribution-plot")).toBeVisible();
   const binaryLabels = page.locator(".node.selected .node-distribution-annotation text");
-  await expect(binaryLabels).toHaveCount(2);
-  await expect(binaryLabels.nth(0)).toContainText(/^(draw [01]|value \d+%)/);
-  await expect(binaryLabels.nth(1)).toContainText("P(1)");
+  await expect(binaryLabels).toHaveCount(1);
+  await expect(binaryLabels.nth(0)).toContainText("P(1)");
+  expect((await binaryLabels.allTextContents()).join(" ")).not.toContain("draw");
+  expect((await binaryLabels.allTextContents()).join(" ")).not.toContain("value");
   expect((await binaryLabels.allTextContents()).join(" ")).not.toContain("Bernoulli");
 
   await loadExample(page, "Mediation: direct and total effect");
@@ -144,11 +220,11 @@ test("Galton example renders analytic and empirical node distributions", async (
 
   await expect(page.locator("text.node-label").filter({ hasText: "father height" })).toBeVisible();
   await expect(page.locator(".node-distribution-plot")).toHaveCount(6);
-  await expect(page.locator(".node-distribution-annotation").first()).toContainText("draw");
   await expect(page.locator(".node-distribution-annotation").first()).toContainText("mean");
   await expect(page.locator(".node-distribution-annotation").first()).toContainText("sd");
+  await expect(page.locator(".node-distribution-annotation").first()).not.toContainText("draw");
   const galtonAnnotationLabels = page.locator(".node-distribution-annotation").first().locator("text");
-  await expect(galtonAnnotationLabels).toHaveCount(2);
+  await expect(galtonAnnotationLabels).toHaveCount(1);
   expect((await galtonAnnotationLabels.allTextContents()).join(" ")).not.toContain("Normal");
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
   await expect(page.locator(".editor-column")).toContainText("linear Gaussian SEM");
@@ -176,7 +252,12 @@ test("domain mode exposes practitioner examples and recommended modules", async 
 test("Simpson example reports a completed crude versus do contrast", async ({ page }) => {
   await page.goto("/");
   const output = page.locator(".completed-output-card");
+  const binaryOutput = page.locator(".binary-adjustment-output");
 
+  await expect(binaryOutput).toContainText("Binary adjusted output");
+  await expect(binaryOutput).toContainText("Unadjusted harms");
+  await expect(binaryOutput).not.toContainText("Raw matrix");
+  await expect(binaryOutput).toContainText("Needs a different adjustment display");
   await expect(output).toContainText("Simpson ready");
   await expect(output).toContainText("crude association");
   await expect(output).toContainText("do contrast");
@@ -200,12 +281,23 @@ test("adjusted continuous variables expose draggable bin methodology and positiv
 
   await editor.getByRole("button", { name: "quartile splits" }).click();
   await expect(editor.locator(".adjustment-cut-line")).toHaveCount(3);
+  const binaryOutput = page.locator(".binary-adjustment-output");
+  await expect(binaryOutput).toContainText("Severity: 4 bins");
+  await expect(binaryOutput).toContainText("Severity bin 1");
+  await expect(binaryOutput).not.toContainText("Needs a different adjustment display");
+  await expect(binaryOutput.locator(".binary-output-matrix-card")).toHaveCount(4);
   await expect(editor).toContainText("Positivity by bin");
   await expect(editor).toContainText("exposed");
   await expect(editor).toContainText("unexposed");
 
-  await editor.getByRole("button", { name: /Propensity weighting/ }).click();
-  await expect(editor).toContainText("Planned: estimate treatment probability");
+  await editor.getByRole("button", { name: "Stabilized IPW" }).click();
+  await expect(editor).toContainText("Stabilized inverse probability weighting");
+  await expect(editor).toContainText("logistic propensity");
+  await expect(editor).toContainText("weighted contrast");
+  await expect(binaryOutput).toContainText("Stabilized IPW");
+  await expect(binaryOutput).toContainText("Partly fixed: clipped IPW");
+  await expect(binaryOutput).toContainText("Severity balance");
+  await expect(binaryOutput).not.toContainText("Needs a different adjustment display");
 });
 
 test("ICU example reports severity confounding and triage collider warning", async ({ page }) => {
@@ -255,16 +347,23 @@ test("college example reports a raw versus do earnings premium", async ({ page }
 test("tutoring example reports a raw versus do sign flip", async ({ page }) => {
   await page.goto("/");
   await loadExample(page, "Does tutoring hurt test scores (unadjusted)");
-  const output = page.locator(".completed-output-card");
+  const adjustedOutput = page.locator(".adjusted-output-column");
 
   await expect(page.locator("text.node-label").filter({ hasText: "academic need" })).toBeVisible();
   await expect(page.locator("text.node-label").filter({ hasText: "Tutoring" })).toBeVisible();
   await expect(page.locator("text.node-label").filter({ hasText: "test score" })).toBeVisible();
-  await expect(output).toContainText("fix available");
-  await expect(output.locator(".completed-output-body")).toBeHidden();
+  await expect(adjustedOutput).toContainText("No adjustment yet");
+  await expect(adjustedOutput).toContainText("mark it adjusted");
+  await expect(adjustedOutput.locator(".completed-output-card")).toHaveCount(0);
+  await expect(page.locator(".adjusted-pair-graph-card")).toHaveCount(0);
+
+  await page.locator("text.node-label").filter({ hasText: "academic need" }).click({ force: true });
+  await page.locator(".editor-column").getByLabel("adjusted").click();
+  const output = adjustedOutput.locator(".completed-output-card");
+  await expect(output).toContainText("adjusted");
   await output.locator("summary").click();
   await expect(output.locator(".completed-output-body")).toBeVisible();
-  await expect(output).toContainText("Fix target");
+  await expect(output).toContainText("Fix detected");
   await expect(output).toContainText("raw score gap");
   await expect(output).toContainText("do score gain");
   await expect(output).toContainText("need gap");
@@ -272,9 +371,6 @@ test("tutoring example reports a raw versus do sign flip", async ({ page }) => {
   await expect(output).toContainText("Sign reversal");
   await expect(output).toContainText("do(Tutoring=1)");
   await expect(output).toContainText("Adjusted reveal plan");
-  await expect(page.locator(".adjusted-pair-graph-card")).toHaveCount(0);
-  await page.locator("text.node-label").filter({ hasText: "academic need" }).click({ force: true });
-  await page.locator(".editor-column").getByLabel("adjusted").click();
   const adjustedGraph = page.locator(".adjusted-pair-graph-card");
   await expect(adjustedGraph).toBeVisible();
   await expect(adjustedGraph).toContainText("Adjusted pair graph");
@@ -320,8 +416,10 @@ test("binary variable pairs render a colored confusion matrix", async ({ page })
   await expect(panel.getByLabel("x variable")).toHaveValue("Treatment");
   await expect(panel.getByLabel("y variable")).toHaveValue("Recovery");
   await expect(panel.locator(".confusion-matrix")).toBeVisible();
-  await expect(panel.locator(".matrix-cell.agreement").first()).toBeVisible();
-  await expect(panel).toContainText("positive x");
+  await expect(panel.locator(".matrix-cell.outcome-positive").first()).toBeVisible();
+  await expect(panel).toContainText("Treatment=1");
+  await expect(panel).toContainText("Recovery=1");
+  await expect(panel.locator(".matrix-cell").first()).toHaveAttribute("title", /Recovery=0, Treatment=0/);
   await expect(panel.locator(".scatter-point")).toHaveCount(0);
 });
 
@@ -344,7 +442,7 @@ test("conditioning a Galton variable is separate from overriding it", async ({ p
   await loadExample(page, "Galton regression to the mean");
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
 
-  await page.locator(".editor-column").getByRole("tab", { name: "interventions" }).click();
+  await page.locator(".editor-column").getByRole("tab", { name: "selection" }).click();
   const conditioning = page.locator(".editor-column").locator(".conditioning-editor");
   await conditioning.getByRole("button", { name: "condition on current" }).click();
   await conditioning.getByLabel("inference method").selectOption("analytic");
@@ -357,6 +455,7 @@ test("conditioning a Galton variable is separate from overriding it", async ({ p
   });
 
   await page.locator(".advanced-drawer summary").click();
+  await expect(page.getByLabel("Analysis sample")).toContainText("Father_height >= 72");
   await expect(conditioning.getByLabel("inference method")).toHaveValue("analytic");
   await expect(page.locator(".conditioning-summary")).toContainText("Inference Methods");
   await expect(page.locator(".conditioning-summary")).toContainText("Father_height >= 72");
@@ -372,7 +471,7 @@ test("inference selector switches Galton conditioning between rejection and impo
   await loadExample(page, "Galton regression to the mean");
   await page.locator("text.node-label").filter({ hasText: "father height" }).click({ force: true });
 
-  await page.locator(".editor-column").getByRole("tab", { name: "interventions" }).click();
+  await page.locator(".editor-column").getByRole("tab", { name: "selection" }).click();
   const conditioning = page.locator(".editor-column").locator(".conditioning-editor");
   await conditioning.getByRole("button", { name: "condition on current" }).click();
   await conditioning.getByRole("spinbutton", { name: "value" }).fill("72");
@@ -465,9 +564,17 @@ test("mobile layout avoids horizontal overflow", async ({ page }) => {
     innerWidth: window.innerWidth,
     scrollWidth: document.documentElement.scrollWidth,
     canvasHeight: document.querySelector(".canvas-shell")?.getBoundingClientRect().height ?? 0,
-    topbarHeight: document.querySelector(".topbar")?.getBoundingClientRect().height ?? 0
+    topbarHeight: document.querySelector(".topbar")?.getBoundingClientRect().height ?? 0,
+    canvasTop: document.querySelector(".canvas-shell")?.getBoundingClientRect().top ?? 0,
+    pairwiseTop: document.querySelector(".pairwise-column")?.getBoundingClientRect().top ?? 0,
+    adjustedTop: document.querySelector(".adjusted-output-column")?.getBoundingClientRect().top ?? 0,
+    scenarioTop: document.querySelector(".scenario-column")?.getBoundingClientRect().top ?? 0
   }));
   expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.innerWidth + 1);
   expect(metrics.canvasHeight).toBeLessThanOrEqual(430);
   expect(metrics.topbarHeight).toBeLessThanOrEqual(170);
+  expect(metrics.canvasTop).toBeLessThan(metrics.pairwiseTop);
+  expect(metrics.pairwiseTop).toBeLessThan(metrics.adjustedTop);
+  expect(metrics.adjustedTop).toBeLessThan(metrics.scenarioTop);
+  await expect(page.locator(".adjusted-output-column")).toContainText("Adjusted Output");
 });

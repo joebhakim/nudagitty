@@ -1,6 +1,6 @@
 import { parseModel } from "./parser";
-import { defaultEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel } from "./graph";
-import type { EdgeMechanismKind, GraphDocument, NodeDistribution, NodeMechanism, VariableModel } from "./types";
+import { defaultEdgeMechanism, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "./graph";
+import type { EdgeMechanismKind, GraphDocument, NodeDistribution, NodeMechanism, SimulationSelectionCondition, VariableModel } from "./types";
 
 export const EXAMPLE_DOMAINS = [
   { id: "classic", label: "Classic DAG patterns", description: "Compact examples for teaching and fast bias checks." },
@@ -117,6 +117,7 @@ export const EXAMPLES: ExampleModel[] = [
     title: "Smoking, tar, cancer: front door",
     domain: "classic",
     summary: "Mediation-style front-door pattern with latent confounding between exposure and outcome.",
+    outputModule: "front-door-smoking",
     code: `dag {
   Genetic_risk [latent,label="genetic risk",pos="-2,1.15"]
   Smoking [exposure,pos="-1,0"]
@@ -146,16 +147,35 @@ export const EXAMPLES: ExampleModel[] = [
     title: "Birthweight paradox",
     domain: "classic",
     summary: "Collider-style adjustment and latent frailty in a public-health example.",
+    outputModule: "birthweight-paradox",
     code: `dag {
   Smoking [exposure,pos="-2,0.35"]
   Frailty [latent,pos="0,1.3"]
-  Birthweight [adjusted,pos="0,0"]
+  Birthweight [selected,pos="0,0"]
   Infant_mortality [outcome,label="infant mortality",pos="2,0"]
   Smoking -> Birthweight
   Smoking -> Infant_mortality
   Frailty -> Birthweight
   Frailty -> Infant_mortality
   Birthweight -> Infant_mortality
+}`
+  },
+  {
+    id: "obesity-paradox",
+    title: "Obesity paradox: selected disease sample",
+    domain: "classic",
+    summary: "Obesity raises disease and mortality risk in the population, but can look protective after conditioning on having disease.",
+    outputModule: "obesity-paradox",
+    code: `dag {
+  Obesity [exposure,pos="-2,0.35"]
+  Frailty [latent,pos="0,1.25"]
+  Chronic_disease [selected,label="chronic disease",pos="0,0"]
+  Mortality [outcome,pos="2,0"]
+  Obesity -> Chronic_disease
+  Obesity -> Mortality
+  Frailty -> Chronic_disease
+  Frailty -> Mortality
+  Chronic_disease -> Mortality
 }`
   },
   {
@@ -221,6 +241,57 @@ export const EXAMPLES: ExampleModel[] = [
   Risk_factor -> Disease
   Exposure -> Disease
   Disease -> Sampled
+}`
+  },
+  {
+    id: "policing-encounters",
+    title: "Policing encounters: selected data",
+    domain: "classic",
+    summary: "Encounter-only data can reverse a group comparison because police contact is itself selected by surveillance intensity and incident risk.",
+    outputModule: "policing-encounters",
+    code: `dag {
+  Group_A [exposure,label="group A",pos="-2.5,0.25"]
+  Incident_risk [latent,label="incident risk",pos="-0.8,1.2"]
+  Police_contact [selected,label="police contact",pos="-0.25,0"]
+  Use_of_force [outcome,label="use of force",pos="2,0"]
+  Group_A -> Police_contact
+  Group_A -> Use_of_force
+  Incident_risk -> Police_contact
+  Incident_risk -> Use_of_force
+  Police_contact -> Use_of_force
+}`
+  },
+  {
+    id: "m-bias-adjustment",
+    title: "M-bias: adjustment can create bias",
+    domain: "classic",
+    summary: "A pre-treatment collider can make an unrelated exposure and outcome look associated after adjustment.",
+    outputModule: "m-bias-adjustment",
+    code: `dag {
+  Cause_of_exposure [latent,label="cause of exposure",pos="-2.3,1.1"]
+  Cause_of_outcome [latent,label="cause of outcome",pos="1.0,1.1"]
+  Exposure [exposure,pos="-2.0,0"]
+  Collider_score [adjusted,label="collider score",pos="-0.45,0.2"]
+  Outcome [outcome,pos="1.7,0"]
+  Cause_of_exposure -> Exposure
+  Cause_of_exposure -> Collider_score
+  Cause_of_outcome -> Collider_score
+  Cause_of_outcome -> Outcome
+}`
+  },
+  {
+    id: "lords-paradox",
+    title: "Lord's paradox: baseline adjustment",
+    domain: "classic",
+    summary: "Change-score and baseline-adjusted comparisons can disagree because they answer different causal questions.",
+    outputModule: "lords-paradox",
+    code: `dag {
+  Baseline_weight [adjusted,label="baseline weight",pos="-2,0.9"]
+  Program [exposure,label="group / program",pos="-0.25,0"]
+  Final_weight [outcome,label="final weight",pos="1.8,0"]
+  Baseline_weight -> Final_weight
+  Baseline_weight -> Program
+  Program -> Final_weight
 }`
   },
   {
@@ -383,26 +454,46 @@ export const EXAMPLES: ExampleModel[] = [
   },
   {
     id: "chess-intelligence-practice",
-    title: "Does chess need intelligence? [TO FIX: CALIBRATE?]",
+    title: "Does chess need intelligence? (selection fails to flip)",
     domain: "social",
-    summary: "TO FIX: CALIBRATE? Stylized youth chess SEM after Bilalic, McLeod, and Gobet (2007, Intelligence, doi:10.1016/j.intell.2006.09.005); coefficients are not calibrated to the paper.",
+    summary: "Paper-shaped youth chess SEM drawn from Bilalic, McLeod, and Gobet (2007): nonlinear practice returns plus Elo-driven elite selection. It deliberately shows a failure case: conditioning on the generated elite sample attenuates the IQ-rating association but does not reproduce the paper's negative selected-sample sign flip.",
     code: `dag {
-  Academic_pull [latent,label="academic pull",pos="-3,1.25"]
-  Coaching_access [adjusted,label="coaching access",pos="-3,-0.5"]
-  Experience_years [adjusted,label="years experience",pos="-1.55,-1.25"]
-  Intelligence [exposure,label="intelligence",pos="-1.25,0.9"]
-  Practice_hours [adjusted,label="deliberate practice",pos="-0.9,-0.15"]
-  Chess_Elo [outcome,label="chess Elo",pos="1.15,0"]
-  Elite_sample [selected,label="elite sample",pos="2.8,0.85"]
-  Academic_pull -> Intelligence
-  Academic_pull -> Practice_hours
-  Coaching_access -> Practice_hours
-  Coaching_access -> Chess_Elo
+  Age [adjusted,label="age (years)",pos="-3.4,0.4"]
+  Gender [adjusted,label="gender (1=boy)",pos="-3.4,-0.7"]
+  Intelligence [exposure,label="intelligence (IQ)",pos="-1.6,1.2"]
+  Experience_years [adjusted,label="years experience",pos="-2.0,-1.4"]
+  Practice_hours [adjusted,label="deliberate practice",pos="-0.6,-0.2"]
+  Chess_Elo [outcome,label="chess Elo",pos="1.4,0"]
+  Elite_sample [selected,label="elite sample",pos="3.0,0.9"]
+  Age -> Experience_years
+  Age -> Practice_hours
+  Age -> Chess_Elo
+  Gender -> Practice_hours
+  Gender -> Chess_Elo
+  Intelligence -> Practice_hours
+  Intelligence -> Chess_Elo
   Experience_years -> Practice_hours
   Experience_years -> Chess_Elo
-  Intelligence -> Chess_Elo
   Practice_hours -> Chess_Elo
   Chess_Elo -> Elite_sample
+}`
+  },
+  {
+    id: "chess-intelligence-practice-simple-flip",
+    title: "Does chess need intelligence? (manual sign flip)",
+    domain: "social",
+    summary: "A deliberately specified four-node compensatory-selection model that succeeds at reproducing the paper's selected-sample sign flip: intelligence helps rating in the full population, practice helps more, and the rated/elite sample selects children who arrive through either route.",
+    outputModule: "chess-intelligence-practice-simple-flip",
+    code: `dag {
+  Intelligence [exposure,label="intelligence (IQ)",pos="-2.3,0.6"]
+  Practice_hours [adjusted,label="practice (log hours)",pos="-2.3,-0.7"]
+  Chess_Elo [outcome,label="chess rating",pos="0.1,0"]
+  Elite_sample [selected,label="rated / elite sample",pos="2.3,0"]
+  Intelligence -> Practice_hours
+  Intelligence -> Chess_Elo
+  Practice_hours -> Chess_Elo
+  Intelligence -> Elite_sample
+  Practice_hours -> Elite_sample
 }`
   },
   {
@@ -802,6 +893,162 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
           "Say: the birthweight-adjusted contrast is not the causal total effect of smoking.",
           "Do not say: low birthweight adjustment proves smoking is protective.",
           "Make the estimand switch explicit if reporting a controlled direct effect."
+        ]
+      }
+    ]
+  },
+  "obesity-paradox": {
+    module: "Selection / collider bias",
+    punchline: "Among people who already have chronic disease, obesity can look protective because disease status is a selected collider reached through obesity or latent frailty.",
+    estimand: "Population total effect of Obesity on Mortality, contrasted with the selected diseased-sample association.",
+    primaryOutput: "Before/after comparison: diseased-sample mortality contrast versus population do(Obesity) contrast, plus frailty imbalance inside the diseased sample.",
+    validity: "Credible as a teaching example if Chronic_disease is understood as a selected analysis sample caused by both Obesity and Frailty.",
+    nextAction: "Use the example to explain why disease-restricted samples can invert risk-factor associations.",
+    sections: [
+      {
+        title: "Claim packet",
+        defaultOpen: true,
+        items: [
+          "State the target as Obesity -> Mortality in the population.",
+          "Mark Chronic_disease as the selected sample, not a harmless restriction.",
+          "Show that Obesity and latent Frailty are alternative routes into the diseased cohort.",
+          "Report the diseased-sample contrast separately from the population causal contrast."
+        ]
+      },
+      {
+        title: "Diagnostics to show",
+        defaultOpen: true,
+        items: [
+          "Analysis-sample banner for Chronic_disease=1.",
+          "Frailty imbalance between obese and non-obese people inside the diseased sample.",
+          "Diseased-sample mortality contrast.",
+          "Population do(Obesity=1) versus do(Obesity=0) contrast."
+        ]
+      },
+      {
+        title: "Threats and failure modes",
+        items: [
+          "Real obesity-paradox examples can involve measurement, treatment, survival, and reverse-causation issues too.",
+          "The graph only demonstrates one selection mechanism.",
+          "If the target population is diseased patients, the estimand must be stated as such.",
+          "Latent Frailty bundles many unmeasured risk processes."
+        ]
+      }
+    ]
+  },
+  "policing-encounters": {
+    module: "Selection / observed-data denominator",
+    punchline: "An encounter-only comparison is already conditioned on police contact, and police contact is caused by group-linked surveillance and latent incident risk.",
+    estimand: "Synthetic structural disparity contrast for Use_of_force, contrasted with the encounter-only observed-data contrast.",
+    primaryOutput: "Before/after comparison: use-of-force difference among police contacts versus the model's population structural contrast, plus incident-risk imbalance inside contacts.",
+    validity: "This is a synthetic teaching graph, not a factual claim about any jurisdiction; it is valid only as an illustration of selected denominators.",
+    nextAction: "Use careful wording: encounter data answer questions about contacts, not the whole upstream policing process.",
+    sections: [
+      {
+        title: "Claim packet",
+        defaultOpen: true,
+        items: [
+          "State that Police_contact is selected observed data.",
+          "Name Incident_risk as a latent route into both contact and force.",
+          "Explain that Group_A changes contact probability in the toy DGP, so the encounter denominator is not neutral.",
+          "Avoid interpreting the group contrast as a literal individual-level intervention."
+        ]
+      },
+      {
+        title: "Diagnostics to show",
+        defaultOpen: true,
+        items: [
+          "Analysis-sample banner for Police_contact=1.",
+          "Incident_risk imbalance inside contacts.",
+          "Encounter-only use-of-force contrast.",
+          "Population structural contrast under the toy DGP."
+        ]
+      },
+      {
+        title: "Threats and failure modes",
+        items: [
+          "Race, neighborhood, police deployment, dispatch, reporting, and incident context are not interchangeable.",
+          "Real data need temporal and institutional detail.",
+          "The graph is for denominator reasoning, not for making empirical claims.",
+          "Policy reporting should separate upstream contact risk from conditional force risk."
+        ]
+      }
+    ]
+  },
+  "m-bias-adjustment": {
+    module: "Adjustment / bad-control warning",
+    punchline: "Exposure and Outcome are unrelated until the analyst adjusts for Collider_score, a pre-treatment common effect of two latent causes.",
+    estimand: "Null total effect of Exposure on Outcome, contrasted with the biased association created by conditioning on Collider_score.",
+    primaryOutput: "Before/after comparison: raw Exposure-Outcome association near zero versus collider-conditioned association away from zero.",
+    validity: "Credible as an M-bias demonstration if Collider_score is a common effect and there is no causal path from Exposure to Outcome.",
+    nextAction: "Use this to teach that pre-treatment does not automatically mean safe to adjust.",
+    sections: [
+      {
+        title: "Claim packet",
+        defaultOpen: true,
+        items: [
+          "State that Exposure has no directed path to Outcome in this DAG.",
+          "Show Collider_score as Cause_of_exposure -> Collider_score <- Cause_of_outcome.",
+          "Report the raw association and the collider-conditioned association side by side.",
+          "Name the adjustment as harmful, not merely unnecessary."
+        ]
+      },
+      {
+        title: "Diagnostics to show",
+        defaultOpen: true,
+        items: [
+          "No causal path from Exposure to Outcome.",
+          "Closed path through the collider before adjustment.",
+          "Opened path after conditioning on Collider_score.",
+          "No-adjustment-is-better verdict."
+        ]
+      },
+      {
+        title: "Threats and failure modes",
+        items: [
+          "If Collider_score also measures a real confounder, the decision becomes a tradeoff.",
+          "M-bias is often small in real settings unless the collider relationships are strong.",
+          "The example is deliberately tuned so the sign is visible.",
+          "Use causal structure, not variable timing alone, to choose controls."
+        ]
+      }
+    ]
+  },
+  "lords-paradox": {
+    module: "Estimand / baseline adjustment",
+    punchline: "A change-score comparison and a baseline-adjusted final-outcome comparison can disagree because they are answering different questions.",
+    estimand: "Effect of Program on Final_weight at comparable Baseline_weight, contrasted with the raw change-score comparison.",
+    primaryOutput: "Before/after comparison: Program group change score versus do(Program) final-weight contrast, plus baseline imbalance.",
+    validity: "Credible if Baseline_weight is truly pre-program and the target question is about final outcomes at comparable baseline values.",
+    nextAction: "Ask the causal question before choosing change scores or baseline adjustment.",
+    sections: [
+      {
+        title: "Claim packet",
+        defaultOpen: true,
+        items: [
+          "State whether the target is change from baseline or final outcome at comparable baseline.",
+          "Name Baseline_weight as a pre-treatment difference between groups.",
+          "Show how regression toward the mean makes change scores non-equivalent to baseline-adjusted final outcomes.",
+          "Report both outputs as different estimands, not as one model winning by default."
+        ]
+      },
+      {
+        title: "Diagnostics to show",
+        defaultOpen: true,
+        items: [
+          "Baseline imbalance by Program.",
+          "Raw change-score contrast.",
+          "do(Program=1) versus do(Program=0) final-outcome contrast.",
+          "Question-first warning before interpreting either number."
+        ]
+      },
+      {
+        title: "Threats and failure modes",
+        items: [
+          "Baseline may be affected by earlier causes that also affect group assignment.",
+          "Measurement error in baseline can make adjustment noisy.",
+          "If the causal question is literally weight change, the change-score contrast may be descriptive but still confounded.",
+          "The example is meant to force estimand language."
         ]
       }
     ]
@@ -1348,40 +1595,42 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
     ]
   },
   "chess-intelligence-practice": {
-    module: "Nonlinear SEM / selection on skill / TO FIX: CALIBRATE?",
-    punchline: "Practice can dominate chess skill while intelligence still has a smaller, threshold-like contribution; selecting only elite Elo players can make the observed intelligence-skill association look weak or even reversed.",
-    estimand: "Total effect of Intelligence on Chess_Elo in the youth-player population represented by the graph, with Practice_hours and Experience_years shown as competing explanatory mechanisms rather than linear nuisances.",
-    primaryOutput: "Nonlinear mechanism packet: saturating practice-to-Elo edge, smooth intelligence threshold, and selected elite sample caused by an Elo cutoff.",
-    validity: "TO FIX: CALIBRATE? This is a clean-room teaching model inspired by Bilalic, McLeod, and Gobet (2007), doi:10.1016/j.intell.2006.09.005, not a reconstruction of their fitted coefficients; it is credible only as a demonstration of nonlinear mechanisms and selection effects.",
-    nextAction: "Use it to show why the edge-function menu matters: linear practice effects miss diminishing returns, and linear selection misses the elite-threshold mechanism.",
+    module: "Paper-shaped chess DGP / selection failure case",
+    punchline: "This is the failure example: a fairly plausible nonlinear chess DGP with Elo-driven elite selection does not reproduce the paper's negative within-elite IQ-rating association. The selection effect attenuates the association, but the sign does not flip.",
+    estimand: "Compare full-population r(Intelligence, Chess_Elo) with selected-sample r(Intelligence, Chess_Elo | Elite_sample = 1) under a paper-shaped youth chess SEM with Age, Gender, Experience_years, and Practice_hours.",
+    primaryOutput: "Active selection filter: Elite_sample in {1}. Mechanism packet: saturating Practice -> Elo (Hill/Emax), saturating Experience -> Elo, linear IQ -> Elo plus IQ -> Practice, smooth_threshold Elo -> Elite_sample.",
+    validity: "Calibrated to roughly match the marginal means and SDs reported in Table 1 of Bilalic, McLeod, and Gobet (2007), Intelligence 35(5):457-470. The nonlinear edge functions force forward simulation/rejection sampling rather than the linear-Gaussian analytic shortcut. Coefficients remain illustrative rather than refit from the original data.",
+    nextAction: "Use this as the honest baseline: plausible paper-shaped structure plus nonlinear mechanisms is not enough to get the sign flip. Then load the manual sign-flip example to see what additional, deliberately specified selection structure is needed.",
     sections: [
       {
-        title: "Citation and calibration status",
+        title: "Failure result",
         defaultOpen: true,
         items: [
-          "TO FIX: CALIBRATE? The current parameters are illustrative and should not be read as estimates from the source paper.",
-          "Citation: Bilalic, M., McLeod, P., & Gobet, F. (2007). Does chess need intelligence? Intelligence, 35(5), 457-470. doi:10.1016/j.intell.2006.09.005.",
-          "Next calibration pass should decide whether to match reported signs/rank ordering only, or attempt rough marginal distributions for Elo, practice, and intelligence."
+          "The generated Elite_sample is selected through an Elo threshold, and this example ships with Elite_sample in {1} active.",
+          "Within that selected sample, the IQ-rating association should stay positive or only attenuate; it is the counterexample to an automatic Simpson-style sign flip.",
+          "The paper reports a negative elite-subsample relation in a small restricted stratum. This DGP says: that sign flip is not a generic consequence of selecting high-rated players.",
+          "Citation: Bilalic, M., McLeod, P., & Gobet, F. (2007). Does chess need intelligence? Intelligence, 35(5), 457-470. doi:10.1016/j.intell.2006.09.005."
         ]
       },
       {
-        title: "Claim packet",
+        title: "Mechanism",
         defaultOpen: true,
         items: [
-          "State the motivating question as Intelligence -> Chess_Elo, while keeping practice and experience explicit.",
-          "Show that Practice_hours has a saturating dose-response: early practice moves Elo more than later practice.",
-          "Show that Intelligence contributes through a smooth threshold rather than a constant linear slope.",
-          "Show Elite_sample as selection on Chess_Elo, not as a clean population variable."
+          "Practice_hours has a saturating Hill/Emax dose-response: early practice moves Elo more than later practice.",
+          "Experience_years has diminishing returns into Elo.",
+          "Intelligence has a direct positive contribution to Elo and a positive indirect path through Practice_hours.",
+          "Elite_sample is a generated selected node driven by an Elo smooth threshold, then the analysis sample conditions on Elite_sample = 1."
         ]
       },
       {
         title: "Diagnostics to show",
         defaultOpen: true,
         items: [
-          "Open paths from Intelligence and Practice_hours into Chess_Elo.",
+          "The analysis sample banner: Elite_sample in {1}.",
+          "The selected-sample pairwise correlation between Intelligence and Chess_Elo.",
           "The nonlinear function on Practice_hours -> Chess_Elo.",
           "The smooth threshold on Chess_Elo -> Elite_sample.",
-          "Conditioning on Elite_sample can change the apparent relation among intelligence, practice, and skill."
+          "Clear the Elite_sample condition to compare the selected sample to the full population."
         ]
       },
       {
@@ -1390,15 +1639,53 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
           "The example is a stylized SEM, not a claim that the actual paper estimated these exact functions.",
           "Practice quality, motivation, parental support, tournament access, and age-at-start are compressed into a few nodes.",
           "Conditioning on elite players is a selection operation and should not be interpreted as the population relationship.",
-          "A linear edge from practice to Elo would overstate gains at the high-practice end."
+          "Because this fails to reproduce the sign flip, it should not be presented as an explanation of the paper's elite-subsample coefficient."
         ]
       },
       {
         title: "Report language",
         items: [
-          "Say: this toy graph uses the chess paper to motivate nonlinear edge functions and selected-subsample reasoning.",
-          "Do not say: the app has reproduced the original article's coefficient estimates.",
-          "Say: practice dominates in this model, intelligence has a smaller nonlinear contribution, and elite selection changes what correlations mean."
+          "Say: this paper-shaped DGP does not reproduce the paper's selected-sample sign flip.",
+          "Say: selection changes the association, but the direction depends on the exact selection mechanism.",
+          "Do not say: selecting elite players mechanically makes intelligence look harmful."
+        ]
+      }
+    ]
+  },
+  "chess-intelligence-practice-simple-flip": {
+    module: "Manual compensatory selection / success case",
+    punchline: "This is the success example: a negative IQ-rating association appears after selecting a rated/elite sample even though IQ helps in the full population. The catch is that the DAG is deliberately specified so intelligence and practice are substitute routes into selection.",
+    estimand: "Compare the full-population association r(Intelligence, Chess_Elo) with the selected-sample association r(Intelligence, Chess_Elo | Elite_sample = 1).",
+    primaryOutput: "Active selection filter: Elite_sample in {1}. The diagnostic comparison is full population versus selected sample for IQ-rating, IQ-practice, and practice-rating correlations.",
+    validity: "Stylized DGP for the paper's qualitative explanation, not a refit of the paper. It keeps only the core ingredients: IQ, practice, rating, and selected elite/rated membership, and it manually encodes compensatory selection.",
+    nextAction: "Compare this against the paper-shaped failure example. The contrast is the lesson: reproducing the paper's sign flip is possible, but it depends on a deliberately chosen selection structure rather than falling out of any plausible chess SEM.",
+    sections: [
+      {
+        title: "Mechanism",
+        defaultOpen: true,
+        items: [
+          "Intelligence has a small direct positive path to rating and a positive path into practice.",
+          "Practice has the dominant positive path to rating.",
+          "Elite_sample is a selected collider with compensatory entry routes: high intelligence or high practice can get a child into the rated/elite analysis sample.",
+          "Conditioning on Elite_sample = 1 makes intelligence and practice compete inside the selected stratum."
+        ]
+      },
+      {
+        title: "Why this succeeds",
+        defaultOpen: true,
+        items: [
+          "Bilalic et al. report positive full-sample relations among IQ, practice, and chess-skill measures.",
+          "In the elite subsample, IQ and practice were negatively correlated, and practice remained the stronger predictor.",
+          "This toy DGP isolates that explanation without adding age, gender, experience, motivation, coaching, or tournament-drive nodes.",
+          "The success is therefore informative but fragile: it depends on manually making selected membership a compensatory function of IQ and practice."
+        ]
+      },
+      {
+        title: "Report language",
+        items: [
+          "Say: the sign flip is a selected-sample association, not evidence that intelligence causally harms chess skill.",
+          "Say: practice dominates rating in the selected group, while IQ and practice partly substitute as routes into selection.",
+          "Do not say: this reproduces the original coefficients or sample design exactly."
         ]
       }
     ]
@@ -1478,10 +1765,14 @@ function configureClassicExample(document: GraphDocument, id: string): GraphDocu
   if (id === "front-door-smoking") return configureFrontDoorSmoking(next);
   if (id === "berkson-hospital") return configureBerksonHospital(next);
   if (id === "birthweight-paradox") return configureBirthweightParadox(next);
+  if (id === "obesity-paradox") return configureObesityParadox(next);
   if (id === "instrumental-encouragement") return configureInstrumentalEncouragement(next);
   if (id === "mediation-direct-total") return configureMediationDirectTotal(next);
   if (id === "measurement-error-latent") return configureMeasurementErrorLatent(next);
   if (id === "case-control-selection") return configureCaseControlSelection(next);
+  if (id === "policing-encounters") return configurePolicingEncounters(next);
+  if (id === "m-bias-adjustment") return configureMBiasAdjustment(next);
+  if (id === "lords-paradox") return configureLordsParadox(next);
   return next;
 }
 
@@ -1494,19 +1785,25 @@ function configurePractitionerExample(document: GraphDocument, id: string): Grap
   if (id === "ops-root-cause") return configureOpsRootCause(next);
   if (id === "education-mediation") return configureEducationMediation(next);
   if (id === "chess-intelligence-practice") return configureChessIntelligencePractice(next);
+  if (id === "chess-intelligence-practice-simple-flip") return configureChessIntelligenceSimpleFlip(next);
   return next;
 }
 
 function configureSimpsonSeverity(document: GraphDocument): GraphDocument {
   setContinuousVariable(document, "Severity", "Baseline severity. Sicker patients are more likely to receive treatment and less likely to recover.", "severity z-score");
+  setVariable(document, "Severity", { adjustment: { method: "stabilized_ipw", cutpoints: [] } });
   setBinaryVariable(document, "Treatment", "Observed treatment assignment. Treatment is more common among severe cases.", "treated");
   setBinaryVariable(document, "Recovery", "Observed recovery indicator. Treatment helps, but severity hurts recovery.", "recovered");
   setNode(document, "Severity", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
   setLogitNode(document, "Treatment", -0.15);
   setLogitNode(document, "Recovery", 0.45);
-  setLinearCoefficient(document, "Severity", "Treatment", 1.4);
-  setLinearCoefficient(document, "Severity", "Recovery", -1.5);
-  setLinearCoefficient(document, "Treatment", "Recovery", 0.9);
+  // TODO(simpson-ipw-math): The DGP-implied marginal do contrast is about +7.3 pp
+  // while the raw observational contrast is about -43.8 pp. Stabilized IPW with the
+  // current 0.03..0.97 propensity clipping targets a clipped/overlap-ish estimand
+  // closer to +1 pp in large samples, not the full DGP do contrast.
+  setLinearCoefficient(document, "Severity", "Treatment", 2.8);
+  setLinearCoefficient(document, "Severity", "Recovery", -3.0);
+  setLinearCoefficient(document, "Treatment", "Recovery", 0.65);
   return document;
 }
 
@@ -1548,7 +1845,7 @@ function configureTutoringScores(document: GraphDocument): GraphDocument {
   setLogitNode(document, "Tutoring", -1.25);
   setNode(document, "Test_score", { intercept: 78, noise: { kind: "normal", mean: 0, sd: 5.5 } });
   setLinearCoefficient(document, "Academic_need", "Tutoring", 2.8);
-  setLinearCoefficient(document, "Academic_need", "Test_score", -18);
+  setLinearCoefficient(document, "Academic_need", "Test_score", -50);
   setLinearCoefficient(document, "Tutoring", "Test_score", 7);
   return document;
 }
@@ -1589,12 +1886,40 @@ function configureBirthweightParadox(document: GraphDocument): GraphDocument {
   setNode(document, "Smoking", { distribution: { kind: "bernoulli", p: 0.3 }, noise: ZERO_NOISE });
   setNode(document, "Frailty", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
   setNode(document, "Birthweight", { intercept: 3300, noise: { kind: "normal", mean: 0, sd: 150 } });
-  setLogitNode(document, "Infant_mortality", 1.0);
-  setLinearCoefficient(document, "Smoking", "Birthweight", -220);
-  setLinearCoefficient(document, "Frailty", "Birthweight", -350);
-  setLinearCoefficient(document, "Smoking", "Infant_mortality", 0.35);
-  setLinearCoefficient(document, "Frailty", "Infant_mortality", 1.2);
-  setLinearCoefficient(document, "Birthweight", "Infant_mortality", -0.001);
+  setLogitNode(document, "Infant_mortality", -0.2);
+  setLinearCoefficient(document, "Smoking", "Birthweight", -260);
+  setLinearCoefficient(document, "Frailty", "Birthweight", -420);
+  setLinearCoefficient(document, "Smoking", "Infant_mortality", 0.45);
+  setLinearCoefficient(document, "Frailty", "Infant_mortality", 1.55);
+  setLinearCoefficient(document, "Birthweight", "Infant_mortality", -0.0011);
+  setSelection(document, "Birthweight", {
+    operator: "at_most",
+    value: 2500,
+    sampling: "importance"
+  });
+  return document;
+}
+
+function configureObesityParadox(document: GraphDocument): GraphDocument {
+  setBinaryVariable(document, "Obesity", "Obesity indicator. In the population it increases chronic-disease risk and modestly increases mortality.", "obese");
+  setContinuousVariable(document, "Frailty", "Latent disease severity and background mortality risk.", "frailty z-score", ["latent"]);
+  setBinaryVariable(document, "Chronic_disease", "Selected disease cohort. Obesity and latent frailty are alternative routes into the diseased sample.", "diseased");
+  setBinaryVariable(document, "Mortality", "Mortality indicator after disease ascertainment.", "death");
+  setNode(document, "Obesity", { distribution: { kind: "bernoulli", p: 0.34 }, noise: ZERO_NOISE });
+  setNode(document, "Frailty", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "Chronic_disease", -2.0);
+  setLogitNode(document, "Mortality", -2.8);
+  setLinearCoefficient(document, "Obesity", "Chronic_disease", 2.0);
+  setLinearCoefficient(document, "Frailty", "Chronic_disease", 1.85);
+  setLinearCoefficient(document, "Obesity", "Mortality", 0.45);
+  setLinearCoefficient(document, "Frailty", "Mortality", 1.55);
+  setLinearCoefficient(document, "Chronic_disease", "Mortality", 0.75);
+  setSelection(document, "Chronic_disease", {
+    operator: "one_of",
+    value: 1,
+    values: [1],
+    sampling: "rejection"
+  });
   return document;
 }
 
@@ -1660,6 +1985,61 @@ function configureCaseControlSelection(document: GraphDocument): GraphDocument {
   setLinearCoefficient(document, "Risk_factor", "Disease", 1.0);
   setLinearCoefficient(document, "Exposure", "Disease", 1.0);
   setLinearCoefficient(document, "Disease", "Sampled", 3.0);
+  return document;
+}
+
+function configurePolicingEncounters(document: GraphDocument): GraphDocument {
+  setBinaryVariable(document, "Group_A", "Synthetic group indicator used to demonstrate selected encounter data. Treat this as a structural disparity example, not a literal intervention recommendation.", "group A");
+  setContinuousVariable(document, "Incident_risk", "Latent incident risk / situational severity that affects both police contact and force.", "risk z-score", ["latent"]);
+  setBinaryVariable(document, "Police_contact", "Observed police encounter. This is selected data, not a neutral denominator.", "contact");
+  setBinaryVariable(document, "Use_of_force", "Use-of-force indicator among all simulated people, observed only after contact in many datasets.", "force");
+  setNode(document, "Group_A", { distribution: { kind: "bernoulli", p: 0.45 }, noise: ZERO_NOISE });
+  setNode(document, "Incident_risk", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "Police_contact", -2.2);
+  setLogitNode(document, "Use_of_force", -3.4);
+  setLinearCoefficient(document, "Group_A", "Police_contact", 2.7);
+  setLinearCoefficient(document, "Incident_risk", "Police_contact", 1.7);
+  setLinearCoefficient(document, "Group_A", "Use_of_force", 0.18);
+  setLinearCoefficient(document, "Incident_risk", "Use_of_force", 1.65);
+  setLinearCoefficient(document, "Police_contact", "Use_of_force", 0.9);
+  setSelection(document, "Police_contact", {
+    operator: "one_of",
+    value: 1,
+    values: [1],
+    sampling: "rejection"
+  });
+  return document;
+}
+
+function configureMBiasAdjustment(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 5000);
+  setContinuousVariable(document, "Cause_of_exposure", "Latent cause of the exposure and the collider score.", "u1", ["latent"]);
+  setContinuousVariable(document, "Cause_of_outcome", "Latent cause of the outcome and the collider score.", "u2", ["latent"]);
+  setBinaryVariable(document, "Exposure", "Exposure with no causal path to the outcome in this DAG.", "exposed");
+  setContinuousVariable(document, "Collider_score", "Pre-treatment common effect of two latent causes. Adjusting for it opens a noncausal path.", "score");
+  setContinuousVariable(document, "Outcome", "Outcome affected by its own latent cause, not by Exposure.", "outcome");
+  setNode(document, "Cause_of_exposure", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Cause_of_outcome", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "Exposure", -0.1);
+  setNode(document, "Collider_score", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.45 } });
+  setNode(document, "Outcome", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.75 } });
+  setLinearCoefficient(document, "Cause_of_exposure", "Exposure", 1.4);
+  setLinearCoefficient(document, "Cause_of_exposure", "Collider_score", 1.0);
+  setLinearCoefficient(document, "Cause_of_outcome", "Collider_score", 1.0);
+  setLinearCoefficient(document, "Cause_of_outcome", "Outcome", 1.2);
+  return document;
+}
+
+function configureLordsParadox(document: GraphDocument): GraphDocument {
+  setBinaryVariable(document, "Program", "Group or program indicator. The groups differ at baseline before the final outcome is measured.", "group 1");
+  setContinuousVariable(document, "Baseline_weight", "Baseline measurement before the final outcome. It differs by group and strongly predicts final weight.", "kg");
+  setContinuousVariable(document, "Final_weight", "Final measurement after the program period.", "kg");
+  setNode(document, "Baseline_weight", { distribution: { kind: "normal", mean: 70, sd: 5 }, noise: ZERO_NOISE });
+  setLogitNode(document, "Program", -84);
+  setNode(document, "Final_weight", { intercept: 18, noise: { kind: "normal", mean: 0, sd: 2.2 } });
+  setLinearCoefficient(document, "Baseline_weight", "Program", 1.2);
+  setLinearCoefficient(document, "Baseline_weight", "Final_weight", 0.75);
+  setLinearCoefficient(document, "Program", "Final_weight", 1.2);
   return document;
 }
 
@@ -1843,47 +2223,78 @@ function configureEducationMediation(document: GraphDocument): GraphDocument {
 }
 
 function configureChessIntelligencePractice(document: GraphDocument): GraphDocument {
-  setContinuousVariable(document, "Academic_pull", "Latent academic pull: stronger school identity raises measured intelligence but competes with chess practice time.", "z-score", ["latent"]);
-  setContinuousVariable(document, "Coaching_access", "Family, club, and coaching access that makes practice easier and improves tournament skill.", "access z-score");
-  setContinuousVariable(document, "Experience_years", "Years of tournament chess experience.", "years");
-  setContinuousVariable(document, "Intelligence", "Measured general cognitive ability, analogous to the WISC-style construct in the motivating study.", "IQ");
-  setContinuousVariable(document, "Practice_hours", "Cumulative deliberate chess practice. The effect on Elo is configured as diminishing returns.", "hours");
-  setContinuousVariable(document, "Chess_Elo", "Elo-like chess skill rating. The nonlinear edge functions intentionally make this more than a linear regression example.", "Elo");
-  setBinaryVariable(document, "Elite_sample", "Indicator for being included in an elite subsample after crossing a high Elo threshold.", "selected");
+  setContinuousVariable(document, "Age", "Child age at testing. Bilalic et al. (2007) sample mean 10.7 years (SD 1.2).", "years");
+  setBinaryVariable(document, "Gender", "Gender indicator (1=boy). Sample was 77% boys; boys practiced more and rated higher.", "boy");
+  setContinuousVariable(document, "Experience_years", "Years of tournament chess experience. Sample mean 4.3 (SD 1.8).", "years");
+  setContinuousVariable(document, "Intelligence", "WISC-III composite IQ. Sample mean 121.6 (SD 16.7); above population norms because the study recruited from chess clubs.", "IQ");
+  setContinuousVariable(document, "Practice_hours", "Cumulative deliberate chess practice in hours. Paper log10-transformed (M=2.1, SD=0.6 in log10 hours); modeled here on the raw scale with a wide normal stand-in. Effect on Elo is saturating.", "hours");
+  setContinuousVariable(document, "Chess_Elo", "Elo-like chess skill rating. Average rated player ~1500 (SD 200); paper's elite subsample averaged 1603 (range 1390-1835).", "Elo");
+  setBinaryVariable(document, "Elite_sample", "Indicator for being in the tournament-active elite subsample. Selection is on Elo above ~1400.", "selected");
 
-  setNode(document, "Academic_pull", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
-  setNode(document, "Coaching_access", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
-  setNode(document, "Experience_years", { distribution: { kind: "gamma", shape: 2.3, scale: 1.45 }, noise: ZERO_NOISE });
-  setNode(document, "Intelligence", { intercept: 100, noise: { kind: "normal", mean: 0, sd: 9 } });
-  setNode(document, "Practice_hours", { intercept: 1600, noise: { kind: "normal", mean: 0, sd: 240 } });
-  setNode(document, "Chess_Elo", { intercept: 870, noise: { kind: "normal", mean: 0, sd: 80 } });
-  setLogitNode(document, "Elite_sample", -5.6);
+  setNode(document, "Age", { distribution: { kind: "normal", mean: 10.7, sd: 1.2 }, noise: ZERO_NOISE });
+  setNode(document, "Gender", { distribution: { kind: "bernoulli", p: 0.77 }, noise: ZERO_NOISE });
+  setNode(document, "Intelligence", { distribution: { kind: "normal", mean: 121, sd: 15 }, noise: ZERO_NOISE });
+  setNode(document, "Experience_years", { intercept: -5.4, noise: { kind: "normal", mean: 0, sd: 1.0 } });
+  setNode(document, "Practice_hours", { intercept: -2900, noise: { kind: "normal", mean: 0, sd: 400 } });
+  setNode(document, "Chess_Elo", { intercept: 700, noise: { kind: "normal", mean: 0, sd: 90 } });
+  setLogitNode(document, "Elite_sample", -4.5);
 
-  setLinearCoefficient(document, "Academic_pull", "Intelligence", 10);
-  setLinearCoefficient(document, "Academic_pull", "Practice_hours", -380);
-  setLinearCoefficient(document, "Coaching_access", "Practice_hours", 520);
-  setLinearCoefficient(document, "Coaching_access", "Chess_Elo", 55);
-  setLinearCoefficient(document, "Experience_years", "Practice_hours", 620);
+  setLinearCoefficient(document, "Age", "Experience_years", 0.95);
+  setLinearCoefficient(document, "Age", "Practice_hours", 130);
+  setLinearCoefficient(document, "Age", "Chess_Elo", 8);
+  setLinearCoefficient(document, "Gender", "Practice_hours", 250);
+  setLinearCoefficient(document, "Gender", "Chess_Elo", 50);
+  setLinearCoefficient(document, "Intelligence", "Practice_hours", 22);
+  setLinearCoefficient(document, "Intelligence", "Chess_Elo", 3.2);
+  setLinearCoefficient(document, "Experience_years", "Practice_hours", 200);
   setEdgeMechanism(document, "Experience_years", "Chess_Elo", "saturating", {
-    scale: 210,
-    midpoint: 3.1,
-    steepness: 0.42
-  });
-  setEdgeMechanism(document, "Intelligence", "Chess_Elo", "smooth_threshold", {
-    threshold: 100,
-    scale: 170,
-    steepness: 0.09
+    scale: 80,
+    midpoint: 3.5,
+    steepness: 0.6
   });
   setEdgeMechanism(document, "Practice_hours", "Chess_Elo", "hill_emax", {
     baseline: 0,
-    maxEffect: 820,
-    ec50: 2300,
-    exponent: 1.45
+    maxEffect: 500,
+    ec50: 800,
+    exponent: 1.5
   });
   setEdgeMechanism(document, "Chess_Elo", "Elite_sample", "smooth_threshold", {
-    threshold: 1800,
+    threshold: 1650,
     scale: 9,
-    steepness: 0.018
+    steepness: 0.04
+  });
+  setSelection(document, "Elite_sample", {
+    operator: "one_of",
+    value: 1,
+    values: [1],
+    sampling: "rejection"
+  });
+  return document;
+}
+
+function configureChessIntelligenceSimpleFlip(document: GraphDocument): GraphDocument {
+  setContinuousVariable(document, "Intelligence", "WISC-III-like composite IQ. In the full player population it helps rating directly and also predicts somewhat more practice.", "IQ");
+  setContinuousVariable(document, "Practice_hours", "Cumulative chess practice on the paper's log10-hours scale. Practice is the dominant driver of rating.", "log10 hours");
+  setContinuousVariable(document, "Chess_Elo", "Elo-like chess rating / skill. Practice dominates; intelligence has a smaller positive contribution.", "Elo");
+  setBinaryVariable(document, "Elite_sample", "Rated/elite analysis sample. This is a selected collider: children can enter through high IQ, high practice, or both.", "selected");
+
+  setNode(document, "Intelligence", { distribution: { kind: "normal", mean: 121, sd: 15 }, noise: ZERO_NOISE });
+  setNode(document, "Practice_hours", { intercept: -0.078, noise: { kind: "normal", mean: 0, sd: 0.58 } });
+  setNode(document, "Chess_Elo", { intercept: 650, noise: { kind: "normal", mean: 0, sd: 100 } });
+  setLogitNode(document, "Elite_sample", -78.4);
+
+  setLinearCoefficient(document, "Intelligence", "Practice_hours", 0.018);
+  setLinearCoefficient(document, "Intelligence", "Chess_Elo", 0.6);
+  setLinearCoefficient(document, "Practice_hours", "Chess_Elo", 430);
+  // Elite/rated status is modeled as a compensatory threshold on standardized
+  // IQ plus standardized practice: either route can get a child into the sample.
+  setLinearCoefficient(document, "Intelligence", "Elite_sample", 0.4);
+  setLinearCoefficient(document, "Practice_hours", "Elite_sample", 10);
+  setSelection(document, "Elite_sample", {
+    operator: "one_of",
+    value: 1,
+    values: [1],
+    sampling: "rejection"
   });
   return document;
 }
@@ -2045,6 +2456,22 @@ function setVariable(document: GraphDocument, id: string, patch: VariablePatch) 
   });
 }
 
+function setExampleSampleSize(document: GraphDocument, sampleSize: number) {
+  document.graph.nodes = document.graph.nodes.map((node) => {
+    const variable = normalizeVariableModel(node.variable);
+    return {
+      ...node,
+      variable: normalizeVariableModel({
+        ...variable,
+        simulation: {
+          ...variable.simulation,
+          sampleSize
+        }
+      })
+    };
+  });
+}
+
 function setNode(document: GraphDocument, id: string, mechanism: Partial<NodeMechanism>) {
   document.simulation.nodes[id] = normalizeNodeMechanism(mechanism);
 }
@@ -2069,6 +2496,10 @@ function setEdgeMechanism(
   const edge = document.graph.edges.find((candidate) => candidate.source === source && candidate.target === target);
   if (!edge) return;
   document.simulation.edges[edge.id] = { ...defaultEdgeMechanism(kind), ...patch };
+}
+
+function setSelection(document: GraphDocument, id: string, condition: Partial<SimulationSelectionCondition>) {
+  document.simulation.selections[id] = normalizeSelectionCondition(condition);
 }
 
 function exampleSeed(id: string): number {

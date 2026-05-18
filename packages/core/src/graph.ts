@@ -98,6 +98,7 @@ const SIMULATION_DISPLAY_MODES: ReadonlySet<SimulationDisplayMode> = new Set([
 const ADJUSTMENT_METHOD_KINDS: ReadonlySet<AdjustmentMethodKind> = new Set([
   "none",
   "bins",
+  "stabilized_ipw",
   "propensity_score_todo"
 ]);
 
@@ -369,13 +370,23 @@ export function normalizeNodeDistribution(distribution: Partial<NodeDistribution
 }
 
 export function normalizeSelectionCondition(condition: Partial<SimulationSelectionCondition> | undefined): SimulationSelectionCondition {
-  const operator = condition?.operator === "at_most" || condition?.operator === "between" ? condition.operator : "at_least";
+  const operator = condition?.operator === "at_most" || condition?.operator === "between" || condition?.operator === "one_of" ? condition.operator : "at_least";
   const value = numberOr(condition?.value, 0);
   const rawUpper = nullableNumber(condition?.upper);
+  const valueRef = typeof condition?.valueRef === "string" && condition.valueRef.length > 0 ? condition.valueRef : null;
+  const upperRef = typeof condition?.upperRef === "string" && condition.upperRef.length > 0 ? condition.upperRef : null;
   const sampling = condition?.sampling === "rejection" || condition?.sampling === "importance" || condition?.sampling === "analytic" ? condition.sampling : "auto";
-  if (operator !== "between") return { operator, value, upper: null, sampling };
+  if (operator === "one_of") {
+    const values = Array.isArray(condition?.values)
+      ? [...new Set(condition.values.filter((item) => Number.isFinite(item)).map((item) => Number(item)))].sort((a, b) => a - b)
+      : [value];
+    return { operator, value: values[0] ?? value, upper: null, valueRef: null, upperRef: null, values, sampling: "rejection" };
+  }
+  if (operator !== "between") return { operator, value, upper: null, valueRef, upperRef: null, sampling };
   const upper = rawUpper ?? value;
-  return value <= upper ? { operator, value, upper, sampling } : { operator, value: upper, upper: value, sampling };
+  // Only swap literal bounds for ordering when neither side is a ref - we cannot compare refs at normalization time.
+  if (valueRef || upperRef) return { operator, value, upper, valueRef, upperRef, sampling };
+  return value <= upper ? { operator, value, upper, valueRef: null, upperRef: null, sampling } : { operator, value: upper, upper: value, valueRef: null, upperRef: null, sampling };
 }
 
 function isNodeCombinerKind(value: unknown): value is NodeMechanism["combiner"] {

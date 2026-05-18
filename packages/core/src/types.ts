@@ -66,6 +66,7 @@ export type SimulationDisplayMode =
 export type AdjustmentMethodKind =
   | "none"
   | "bins"
+  | "stabilized_ipw"
   | "propensity_score_todo";
 
 export interface VariableMeasurementModel {
@@ -206,7 +207,7 @@ export interface SimulationSpec {
   selections: Record<string, SimulationSelectionCondition>;
 }
 
-export type SimulationSelectionOperator = "at_least" | "at_most" | "between";
+export type SimulationSelectionOperator = "at_least" | "at_most" | "between" | "one_of";
 export type SimulationInferenceMode = "auto" | "analytic" | "rejection" | "importance";
 export type SimulationSamplingMode = SimulationInferenceMode;
 
@@ -214,6 +215,12 @@ export interface SimulationSelectionCondition {
   operator: SimulationSelectionOperator;
   value: number;
   upper: number | null;
+  // Optional node-id references that override the literal `value` / `upper` per draw.
+  // When set, the bound is read from the current draw's value of that node, enabling
+  // conditions like `Practice >= population_mean_Practice`. Forces rejection sampling.
+  valueRef: string | null;
+  upperRef: string | null;
+  values?: number[] | null;
   sampling: SimulationSamplingMode;
 }
 
