@@ -102,7 +102,6 @@ import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
 import type { OutputContext } from "./outputs/types";
 import { DenouementPanel } from "./outputs/DenouementPanel";
 import { ExampleMenu } from "./examples/ExampleMenu";
-import { ModeToggle } from "./examples/ModeToggle";
 import { MODE_LABELS } from "./shared/workbench";
 import type { WorkbenchMode } from "./shared/workbench";
 
@@ -575,8 +574,8 @@ export function App() {
   const [showCausal, setShowCausal] = useState(true);
   const [showBiasing, setShowBiasing] = useState(true);
   const [showAncestors, setShowAncestors] = useState(true);
-  const [workbenchMode, setWorkbenchMode] = useState<WorkbenchMode>("basic");
-  const [basicResultsOpen, setBasicResultsOpen] = useState(false);
+  const workbenchMode: WorkbenchMode = "basic";
+  const [basicResultsOpen, setBasicResultsOpen] = useState(true);
   const [activeExampleId, setActiveExampleId] = useState<string | null>(EXAMPLES[0]?.id ?? null);
   const [modelText, setModelText] = useState(() => serializeModel(document));
   const [modelDirty, setModelDirty] = useState(false);
@@ -616,7 +615,7 @@ export function App() {
     [activeExample?.outputModule, completedOutput, outputContext, simulationDerived]
   );
   const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null);
-  const isBasicMode = workbenchMode === "basic";
+  const isBasicMode = true;
 
   useEffect(() => {
     const worker = new Worker(new URL("./analysis.worker.ts", import.meta.url), { type: "module" });
@@ -937,7 +936,7 @@ export function App() {
   }, [commit, document]);
 
   return (
-    <div className={`app-shell mode-${workbenchMode}`}>
+    <div className={`app-shell mode-${workbenchMode} ${basicResultsOpen ? "results-open" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <Sigma size={20} />
@@ -958,7 +957,7 @@ export function App() {
             setSelection(null);
           }}><FilePlus2 size={18} /></IconButton>
           <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
-          {isBasicMode && <IconButton label={basicResultsOpen ? "Hide results" : "Results"} active={basicResultsOpen} onClick={() => setBasicResultsOpen((open) => !open)}><BarChart3 size={18} /></IconButton>}
+          {isBasicMode && <IconButton label="Results" active={basicResultsOpen} onClick={() => setBasicResultsOpen((open) => !open)}><BarChart3 size={18} /></IconButton>}
           {!isBasicMode && <>
             <IconButton label="Save" onClick={() => window.localStorage.setItem(STORAGE_KEY, JSON.stringify(document))}><Save size={18} /></IconButton>
             <IconButton label="Share" onClick={() => copyShareUrl(document)}><Share2 size={18} /></IconButton>
@@ -966,7 +965,6 @@ export function App() {
             <IconButton label="PNG" onClick={() => exportBitmap("png")}><Camera size={18} /></IconButton>
           </>}
         </div>
-        <ModeToggle value={workbenchMode} onChange={setWorkbenchMode} />
       </header>
       <AnalysisSampleBanner simulation={simulation} onClearSelections={clearSelections} />
 
@@ -1466,10 +1464,6 @@ function GraphCanvas(props: {
         <button type="button" onClick={() => setViewport(fittedViewport)}>reset</button>
       </div>
       {props.mode === "basic" && <CanvasCoachmark tool={props.tool} edgeSource={props.edgeSource} selection={props.selection} nodeCount={props.sourceGraph.nodes.length} />}
-      {props.mode === "basic" && <div className="canvas-causal-controls">
-        <span>live causal propagation</span>
-        <button type="button" onClick={props.onResample}><RefreshCw size={14} /> refresh sample</button>
-      </div>}
       {props.mode !== "basic" && <div className="canvas-status">
         <span>{props.tool === "edge" ? (props.edgeSource ? `connect from ${props.edgeSource}` : "click a source variable") : "double-click canvas to add variable"}</span>
       </div>}
