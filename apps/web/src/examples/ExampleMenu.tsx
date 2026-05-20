@@ -5,6 +5,7 @@ import type { WorkbenchMode } from "../shared/workbench";
 
 const BASIC_EXAMPLE_IDS = [
   "simpson-severity",
+  "tutoring-scores",
   "front-door-smoking",
   "birthweight-paradox",
   "m-bias-adjustment",
@@ -12,7 +13,7 @@ const BASIC_EXAMPLE_IDS = [
   "chess-intelligence-practice-simple-flip"
 ];
 
-export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: string | null; onSelect: (id: string) => void }) {
+export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: string | null; onSelect: (id: string) => void; compact?: boolean }) {
   const activeExample = EXAMPLES.find((example) => example.id === props.activeExampleId);
   const basicMode = props.mode === "basic";
   const domains = exampleDomainsForMode(props.mode);
@@ -40,8 +41,8 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
         onClick={() => setOpen((current) => !current)}
       >
         <span className="example-menu-trigger-text">
-          <span className="example-menu-label">Examples</span>
-          <span className="example-menu-title">{activeExample?.title ?? "Choose one"}</span>
+          <span className="example-menu-label">{props.compact ? "More examples" : "Examples"}</span>
+          {!props.compact && <span className="example-menu-title">{activeExample?.title ?? "Choose one"}</span>}
         </span>
       </button>
       {open && (
@@ -62,7 +63,7 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
           <div className="example-choice-list">
             <div className="example-choice-head">
               <strong>{basicMode ? "Core causal patterns" : highlighted?.label}</strong>
-              <span>{basicMode ? "A short punchline tour: confounding, front door, selection, bad controls, estimand splits, and a chess sign flip." : highlighted?.description}</span>
+              <span>{basicMode ? "Start with the two sign flips, then use the rest as follow-up patterns." : highlighted?.description}</span>
             </div>
             {examples.map((example) => (
               <button

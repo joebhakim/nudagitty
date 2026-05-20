@@ -326,6 +326,8 @@ const PLANNED_CAUSAL_MODULES = [
   { id: "policy", label: "Policy rule" }
 ] as const;
 
+const FRONTLINE_EXAMPLE_IDS = ["simpson-severity", "tutoring-scores"] as const;
+
 const DESIGN_MODULES: Array<{
   id: string;
   label: string;
@@ -575,7 +577,7 @@ export function App() {
   const [showBiasing, setShowBiasing] = useState(true);
   const [showAncestors, setShowAncestors] = useState(true);
   const workbenchMode: WorkbenchMode = "basic";
-  const [basicResultsOpen, setBasicResultsOpen] = useState(true);
+  const [basicResultsOpen, setBasicResultsOpen] = useState(false);
   const [activeExampleId, setActiveExampleId] = useState<string | null>(EXAMPLES[0]?.id ?? null);
   const [modelText, setModelText] = useState(() => serializeModel(document));
   const [modelDirty, setModelDirty] = useState(false);
@@ -942,23 +944,25 @@ export function App() {
           <Sigma size={20} />
           <span>Nudagitty</span>
         </div>
-        <div className="toolbar" aria-label="Main tools">
+        {!isBasicMode && <div className="toolbar" aria-label="Main tools">
           <IconButton label="Select" active={tool === "select"} onClick={() => setTool("select")}><MousePointer2 size={18} /></IconButton>
           <IconButton label="Variable" active={tool === "node"} onClick={() => setTool("node")}><CirclePlus size={18} /></IconButton>
           <IconButton label="Connect" active={tool === "edge"} onClick={() => setTool("edge")}><ArrowRight size={18} /></IconButton>
           <IconButton label="Delete" onClick={deleteSelection} disabled={!selection}><Trash2 size={18} /></IconButton>
           <IconButton label="Undo" onClick={undo} disabled={history.length === 0}><Undo2 size={18} /></IconButton>
           <IconButton label="Redo" onClick={redo} disabled={future.length === 0}><Redo2 size={18} /></IconButton>
-        </div>
+        </div>}
         <div className="toolbar" aria-label="Model actions">
-          <IconButton label="New" onClick={() => {
-            commit(emptyDocument());
-            setActiveExampleId(null);
-            setSelection(null);
-          }}><FilePlus2 size={18} /></IconButton>
-          <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
-          {isBasicMode && <IconButton label="Results" active={basicResultsOpen} onClick={() => setBasicResultsOpen((open) => !open)}><BarChart3 size={18} /></IconButton>}
-          {!isBasicMode && <>
+          {isBasicMode ? <>
+            <BasicExampleTabs activeExampleId={activeExampleId} onSelect={loadExample} />
+            <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} compact />
+          </> : <>
+            <IconButton label="New" onClick={() => {
+              commit(emptyDocument());
+              setActiveExampleId(null);
+              setSelection(null);
+            }}><FilePlus2 size={18} /></IconButton>
+            <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
             <IconButton label="Save" onClick={() => window.localStorage.setItem(STORAGE_KEY, JSON.stringify(document))}><Save size={18} /></IconButton>
             <IconButton label="Share" onClick={() => copyShareUrl(document)}><Share2 size={18} /></IconButton>
             <IconButton label="SVG" onClick={() => exportSvg()}><Download size={18} /></IconButton>
@@ -1449,21 +1453,20 @@ function GraphCanvas(props: {
           {legendOpen && <GraphLegend x={legendX} y={legendY} width={legendWidth} height={legendHeight} />}
         </g>
       </svg>
-      <button
+      {props.mode !== "basic" && <button
         type="button"
         className={legendOpen ? "canvas-legend-toggle active" : "canvas-legend-toggle"}
         aria-expanded={legendOpen}
         onClick={() => setLegendOpen((open) => !open)}
       >
         Legend
-      </button>
-      <div className="canvas-zoom-controls" aria-label="Canvas zoom controls">
+      </button>}
+      {props.mode !== "basic" && <div className="canvas-zoom-controls" aria-label="Canvas zoom controls">
         <button type="button" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>-</button>
         <span>{Math.round(viewport.zoom * 100)}%</span>
         <button type="button" aria-label="Zoom in" onClick={() => zoomBy(1.2)}>+</button>
         <button type="button" onClick={() => setViewport(fittedViewport)}>reset</button>
-      </div>
-      {props.mode === "basic" && <CanvasCoachmark tool={props.tool} edgeSource={props.edgeSource} selection={props.selection} nodeCount={props.sourceGraph.nodes.length} />}
+      </div>}
       {props.mode !== "basic" && <div className="canvas-status">
         <span>{props.tool === "edge" ? (props.edgeSource ? `connect from ${props.edgeSource}` : "click a source variable") : "double-click canvas to add variable"}</span>
       </div>}
@@ -2036,6 +2039,27 @@ function AnalysisSampleBanner(props: {
       <span>samples {conditioning.acceptedSamples} / {conditioning.totalSamples}</span>
       {conditioning.effectiveSampleSize !== null && <span>ESS {formatValue(conditioning.effectiveSampleSize)}</span>}
       <button type="button" onClick={props.onClearSelections}>clear conditions</button>
+    </div>
+  );
+}
+
+function BasicExampleTabs(props: { activeExampleId: string | null; onSelect: (id: string) => void }) {
+  const examples = FRONTLINE_EXAMPLE_IDS
+    .map((id) => EXAMPLES.find((example) => example.id === id))
+    .filter((example): example is typeof EXAMPLES[number] => example !== undefined);
+  return (
+    <div className="basic-example-tabs" aria-label="Start here">
+      {examples.map((example, index) => (
+        <button
+          type="button"
+          className={example.id === props.activeExampleId ? "active" : ""}
+          onClick={() => props.onSelect(example.id)}
+          key={example.id}
+        >
+          <span>{index + 1}</span>
+          <strong>{example.id === "simpson-severity" ? "Simpson" : "Tutoring"}</strong>
+        </button>
+      ))}
     </div>
   );
 }
@@ -2941,9 +2965,6 @@ function SelectionEditor(props: {
 function BasicSelectionEditor(props: Parameters<typeof SelectionEditor>[0]) {
   if (props.node) {
     const node = props.node;
-    const variable = normalizeVariableModel(node.variable);
-    const state = props.simulation.nodeStates[node.id];
-    const value = props.simulation.values[node.id];
     const activeIntervention = Object.hasOwn(props.document.simulation.overrides ?? {}, node.id);
     const activeSelection = Object.hasOwn(props.document.simulation.selections ?? {}, node.id);
     return (
@@ -2955,15 +2976,9 @@ function BasicSelectionEditor(props: Parameters<typeof SelectionEditor>[0]) {
           </div>
         </div>
         <div className="selection-editor-body">
-          <div className="basic-current-card">
-            <span>{valueTypeLabel(variable.valueType)}</span>
-            <strong>{typeof value === "number" && Number.isFinite(value) ? formatValue(value) : "not simulated"}</strong>
-            <small>{nodeMomentLabel(state) || "empirical summary unavailable"}</small>
-          </div>
-
           <div className="selection-editor-block basic-causal-roles">
-            <strong>Causal role</strong>
-            <p className="muted">Mark what this variable does in the question you want the DAG to answer.</p>
+            <strong>Use this variable</strong>
+            <p className="muted">For the first two examples, pick the common cause and turn on adjustment.</p>
             <div className="role-toggle-grid">
               <RoleToggle label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
               <RoleToggle label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
@@ -2976,21 +2991,21 @@ function BasicSelectionEditor(props: Parameters<typeof SelectionEditor>[0]) {
           <div className="basic-causal-module-stack">
             <details className="basic-causal-module" open={activeIntervention}>
               <summary>
-                <span>Intervention</span>
+                <span>Intervene</span>
                 {activeIntervention && <strong>active</strong>}
               </summary>
               <HardDoEditor node={node} document={props.document} simulation={props.simulation} onOverride={props.onOverride} />
             </details>
             <details className="basic-causal-module" open={activeSelection || node.roles.selected}>
               <summary>
-                <span>Selection</span>
+                <span>Selection filter</span>
                 {activeSelection && <strong>active</strong>}
               </summary>
               <ConditioningEditor node={node} document={props.document} simulation={props.simulation} onSelectionCondition={props.onSelectionCondition} />
             </details>
-            <details className="basic-causal-module" open={node.roles.adjusted}>
+            <details className="basic-causal-module">
               <summary>
-                <span>Adjustment</span>
+                <span>Adjustment method</span>
                 {node.roles.adjusted && <strong>used</strong>}
               </summary>
               <AdjustmentMethodEditor
@@ -3001,22 +3016,6 @@ function BasicSelectionEditor(props: Parameters<typeof SelectionEditor>[0]) {
                 onVariableChange={props.onVariableChange}
               />
             </details>
-          </div>
-
-          <details className="selection-editor-details">
-            <summary>More variable settings</summary>
-            <VariableMechanismPanel
-              node={node}
-              document={props.document}
-              simulation={props.simulation}
-              onMechanism={props.onNodeMechanism}
-              onVariableChange={props.onVariableChange}
-            />
-          </details>
-
-          <div className="button-row">
-            <button type="button" onClick={() => props.onRename(node.id)}>rename</button>
-            <button type="button" onClick={() => props.onDeleteNode(node.id)}>delete</button>
           </div>
         </div>
       </div>
@@ -3029,13 +3028,8 @@ function BasicSelectionEditor(props: Parameters<typeof SelectionEditor>[0]) {
 function BasicCausalGuide() {
   return (
     <div className="selection-empty-state basic-causal-guide">
-      <strong>Build the causal question</strong>
-      <p>Click a variable to mark exposure, outcome, adjustment, selection, or intervention.</p>
-      <div className="basic-guide-steps">
-        <span>Variable adds things to the story.</span>
-        <span>Connect draws arrows between causes and effects.</span>
-        <span>Watch whether the observed relation changes under selection, adjustment, or intervention.</span>
-      </div>
+      <strong>Try the flip</strong>
+      <p>Click the common cause in the graph, then turn on adjust for. Watch the comparison above change.</p>
     </div>
   );
 }

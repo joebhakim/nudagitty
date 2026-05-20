@@ -13,6 +13,7 @@ const VIEWPORTS = [
 ] as const;
 const MINIMAL_SCREENSHOT_EXAMPLE_IDS = [
   "simpson-severity",
+  "tutoring-scores",
   "front-door-smoking",
   "birthweight-paradox",
   "m-bias-adjustment",

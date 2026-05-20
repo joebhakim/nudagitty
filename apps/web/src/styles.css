@@ -358,7 +358,7 @@ textarea {
 }
 
 .mode-basic .workspace {
-  grid-template-columns: minmax(560px, 1fr) minmax(320px, 390px);
+  grid-template-columns: minmax(680px, 1fr) minmax(340px, 390px);
   grid-template-rows: minmax(0, 1fr);
   grid-template-areas: "canvas editor";
 }
@@ -368,12 +368,65 @@ textarea {
   grid-template-areas: "results canvas editor";
 }
 
-.mode-basic .toolbar[aria-label="Main tools"] .icon-button:disabled {
-  display: none;
+.mode-basic .toolbar[aria-label="Model actions"] {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  margin-left: auto;
+  min-width: 0;
 }
 
-.mode-basic .toolbar[aria-label="Model actions"] {
-  margin-left: auto;
+.mode-basic .topbar {
+  flex-wrap: nowrap;
+  min-height: 50px;
+}
+
+.mode-basic .brand {
+  min-width: 118px;
+}
+
+.basic-example-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.basic-example-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px 0 8px;
+  border-color: #bfd1cf;
+  background: #fff;
+  color: #263133;
+  font-weight: 800;
+}
+
+.basic-example-tabs button span {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #eef6f4;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.basic-example-tabs button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.mode-basic .example-menu {
+  width: auto;
+  min-width: 0;
+}
+
+.mode-basic .example-menu-trigger {
+  min-width: 132px;
 }
 
 .example-menu-popover.basic {
@@ -1901,8 +1954,8 @@ textarea {
 .basic-causal-guide {
   display: grid;
   align-content: center;
-  gap: 10px;
-  min-height: 360px;
+  gap: 8px;
+  min-height: 132px;
   text-align: left;
 }
 
@@ -1973,7 +2026,7 @@ textarea {
 
 .basic-causal-module-stack {
   display: grid;
-  gap: 8px;
+  gap: 7px;
 }
 
 .basic-causal-module {
@@ -1987,7 +2040,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 38px;
+  min-height: 34px;
   padding: 0 10px;
   cursor: pointer;
   color: #3d464e;
