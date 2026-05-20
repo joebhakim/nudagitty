@@ -427,6 +427,9 @@ test("binary variable pairs render a colored confusion matrix", async ({ page })
   const panel = page.locator(".scatterplot-panel");
   await expect(panel.getByLabel("x variable")).toHaveValue("Treatment");
   await expect(panel.getByLabel("y variable")).toHaveValue("Recovery");
+  await expect(panel).toContainText("Observed gap");
+  await expect(panel).toContainText("-47.2 pp");
+  await expect(panel).toContainText("Each column is one Treatment group and sums to 100%");
   await expect(panel.locator(".confusion-matrix")).toBeVisible();
   await expect(panel.locator(".matrix-cell.outcome-positive").first()).toBeVisible();
   await expect(panel).toContainText("Treatment=1");

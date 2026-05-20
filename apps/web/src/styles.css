@@ -2715,14 +2715,85 @@ textarea {
 
 .binary-pair-view {
   display: grid;
-  gap: 10px;
+  gap: 8px;
+}
+
+.binary-pair-headline {
+  display: grid;
+  grid-template-columns: minmax(118px, 0.82fr) minmax(0, 1fr);
+  gap: 7px;
+  align-items: stretch;
+}
+
+.binary-pair-gap,
+.binary-pair-rate-grid > div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.binary-pair-gap {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+}
+
+.binary-pair-gap span,
+.binary-pair-rate-grid span,
+.binary-pair-rate-grid small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 13px;
+  text-transform: uppercase;
+}
+
+.binary-pair-gap strong {
+  color: #202428;
+  font-size: 24px;
+  line-height: 28px;
+}
+
+.binary-pair-gap.positive strong {
+  color: var(--ok);
+}
+
+.binary-pair-gap.negative strong {
+  color: var(--bias);
+}
+
+.binary-pair-gap p {
+  margin: 0;
+  color: #52616d;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.binary-pair-rate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.binary-pair-rate-grid > div {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+}
+
+.binary-pair-rate-grid strong {
+  color: #202428;
+  font-size: 20px;
+  line-height: 24px;
 }
 
 .confusion-matrix {
   display: grid;
-  grid-template-columns: 44px repeat(2, minmax(86px, 1fr));
-  grid-template-rows: 22px repeat(2, minmax(72px, 1fr));
-  gap: 5px;
+  grid-template-columns: 38px repeat(2, minmax(72px, 1fr));
+  grid-template-rows: 18px repeat(2, minmax(48px, 1fr));
+  gap: 4px;
   align-items: stretch;
 }
 
@@ -2736,9 +2807,9 @@ textarea {
   justify-content: center;
   min-width: 0;
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 13px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 12px;
   overflow-wrap: anywhere;
   text-align: center;
 }
@@ -2753,9 +2824,9 @@ textarea {
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
-  min-height: 72px;
+  min-height: 48px;
   border: 1px solid var(--line);
   border-radius: 6px;
   color: #172028;
@@ -2763,13 +2834,14 @@ textarea {
 }
 
 .matrix-cell strong {
-  font-size: 20px;
-  line-height: 24px;
+  font-size: 16px;
+  line-height: 19px;
 }
 
 .matrix-cell span {
   color: #394149;
-  font-size: 12px;
+  font-size: 10px;
+  line-height: 13px;
 }
 
 .matrix-cell.outcome-positive {
@@ -2778,6 +2850,13 @@ textarea {
 
 .matrix-cell.outcome-negative {
   border-color: rgba(178, 69, 103, 0.35);
+}
+
+.binary-matrix-explainer {
+  margin: 0;
+  color: #52616d;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .canvas-shell {

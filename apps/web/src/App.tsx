@@ -1948,6 +1948,12 @@ function BinaryPairView(props: {
   const yPositive = cell(1, 1).weight + cell(0, 1).weight;
   const xPositive = cell(1, 1).weight + cell(1, 0).weight;
   const contrast = props.summary?.binaryContrast ?? props.contrast ?? binaryOutcomeContrastFromCells(cells);
+  const yPositiveLabel = binaryAxisValueLabel(props.yLabel, 1);
+  const xZeroLabel = binaryAxisValueLabel(props.xLabel, 0);
+  const xOneLabel = binaryAxisValueLabel(props.xLabel, 1);
+  const diffTone = metricTone(contrast.diff);
+  const xZeroRate = contrast.yAtX0 === null ? "n/a" : formatPercent(contrast.yAtX0);
+  const xOneRate = contrast.yAtX1 === null ? "n/a" : formatPercent(contrast.yAtX1);
 
   if (points.length === 0 || totalWeight <= 0) {
     return <p className="muted">No finite paired samples are available for this variable pair.</p>;
@@ -1955,6 +1961,25 @@ function BinaryPairView(props: {
 
   return (
     <div className="binary-pair-view">
+      <div className="binary-pair-headline">
+        <div className={`binary-pair-gap ${diffTone}`}>
+          <span>Observed gap</span>
+          <strong>{contrast.diff === null ? "n/a" : formatPercentagePoints(contrast.diff)}</strong>
+          <p>{yPositiveLabel} at {xOneLabel} vs {xZeroLabel}</p>
+        </div>
+        <div className="binary-pair-rate-grid" aria-label={`${props.yLabel} rates by ${props.xLabel}`}>
+          <div>
+            <span>{xZeroLabel}</span>
+            <strong>{xZeroRate}</strong>
+            <small>{yPositiveLabel}</small>
+          </div>
+          <div>
+            <span>{xOneLabel}</span>
+            <strong>{xOneRate}</strong>
+            <small>{yPositiveLabel}</small>
+          </div>
+        </div>
+      </div>
       <div className="confusion-matrix" role="img" aria-label={`Confusion matrix of ${props.xLabel} and ${props.yLabel}`}>
         <div className="matrix-corner" />
         <div className="matrix-axis-label">{binaryAxisValueLabel(props.xLabel, 0)}</div>
@@ -1985,14 +2010,15 @@ function BinaryPairView(props: {
           </Fragment>
         ))}
       </div>
+      <p className="binary-matrix-explainer">Each column is one {binaryShortLabel(props.xLabel)} group and sums to 100%. The headline compares the {yPositiveLabel} row across columns; the other row is included so the table is complete.</p>
 
       <div className="scatter-stats">
         <span>samples {points.length}</span>
-        <span>{binaryShortLabel(props.yLabel)} at {binaryAxisValueLabel(props.xLabel, 0)} {contrast.yAtX0 === null ? "n/a" : formatPercent(contrast.yAtX0)}</span>
-        <span>{binaryShortLabel(props.yLabel)} at {binaryAxisValueLabel(props.xLabel, 1)} {contrast.yAtX1 === null ? "n/a" : formatPercent(contrast.yAtX1)}</span>
+        <span>{binaryShortLabel(props.yLabel)} at {xZeroLabel} {xZeroRate}</span>
+        <span>{binaryShortLabel(props.yLabel)} at {xOneLabel} {xOneRate}</span>
         <span>risk diff {contrast.diff === null ? "n/a" : formatPercentagePoints(contrast.diff)}</span>
-        <span>{binaryAxisValueLabel(props.xLabel, 1)} share {formatPercent(xPositive / totalWeight)}</span>
-        <span>{binaryAxisValueLabel(props.yLabel, 1)} share {formatPercent(yPositive / totalWeight)}</span>
+        <span>{xOneLabel} share {formatPercent(xPositive / totalWeight)}</span>
+        <span>{yPositiveLabel} share {formatPercent(yPositive / totalWeight)}</span>
         {props.effectiveSampleSize !== null && <span>ESS {formatValue(props.effectiveSampleSize)}</span>}
       </div>
     </div>
