@@ -741,7 +741,7 @@ function CompletedOutputShell(props: { badge: string; conclusion: string; childr
   return (
     <details className="completed-output-card">
       <summary className="module-card-header completed-output-summary">
-        <strong>Completed output</strong>
+        <strong>What this shows</strong>
         <span className="module-badge active">{props.badge}</span>
       </summary>
       <div className="completed-output-body">
@@ -756,7 +756,7 @@ function fallbackOutput(badge: string, message: string) {
   return (
     <details className="completed-output-card">
       <summary className="module-card-header completed-output-summary">
-        <strong>Completed output</strong>
+        <strong>What this shows</strong>
         <span className="module-badge planned">{badge}</span>
       </summary>
       <div className="completed-output-body">
