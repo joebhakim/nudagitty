@@ -421,12 +421,12 @@ textarea {
 }
 
 .mode-basic .example-menu {
-  width: auto;
-  min-width: 0;
+  width: min(360px, 34vw);
+  min-width: 260px;
 }
 
 .mode-basic .example-menu-trigger {
-  min-width: 132px;
+  min-width: 0;
 }
 
 .example-menu-popover.basic {
@@ -1792,6 +1792,47 @@ textarea {
   line-height: 16px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+}
+
+.basic-demo-context-bar {
+  display: grid;
+  gap: 6px;
+}
+
+.basic-demo-context-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid #b7d4d0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.basic-demo-context-group span {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.basic-demo-context-group strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #263133;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.basic-demo-context-group button {
+  min-height: 24px;
+  margin-left: auto;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .basic-relation-compare {

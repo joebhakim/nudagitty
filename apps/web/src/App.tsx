@@ -119,6 +119,10 @@ type BasicRelationSummary = {
   comparison: BasicOutputPunchlineMetric | null;
   note: string;
 };
+type BasicDemoContext = {
+  interventions: string[];
+  selections: string[];
+};
 type WeightedScatterSummary = {
   meanX: number;
   meanY: number;
@@ -616,6 +620,10 @@ export function App() {
     () => computeBasicRelationSummary({ ...outputContext, moduleId: activeExample?.outputModule ?? null }, completedOutput, simulationDerived),
     [activeExample?.outputModule, completedOutput, outputContext, simulationDerived]
   );
+  const basicDemoContext = useMemo<BasicDemoContext>(() => ({
+    interventions: formatActiveInterventions(document),
+    selections: simulation.conditioning.activeConditions
+  }), [document.graph, document.simulation.overrides, simulation.conditioning.activeConditions]);
   const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null);
   const isBasicMode = true;
 
@@ -955,7 +963,7 @@ export function App() {
         <div className="toolbar" aria-label="Model actions">
           {isBasicMode ? <>
             <BasicExampleTabs activeExampleId={activeExampleId} onSelect={loadExample} />
-            <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} compact />
+            <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
           </> : <>
             <IconButton label="New" onClick={() => {
               commit(emptyDocument());
@@ -1069,7 +1077,10 @@ export function App() {
           {isBasicMode && (
             <BasicRelationPanel
               summary={basicRelationSummary}
+              context={basicDemoContext}
               onOpenResults={() => setBasicResultsOpen(true)}
+              onClearOverrides={clearOverrides}
+              onClearSelections={clearSelections}
             />
           )}
           <SelectionEditor
@@ -2064,7 +2075,14 @@ function BasicExampleTabs(props: { activeExampleId: string | null; onSelect: (id
   );
 }
 
-function BasicRelationPanel(props: { summary: BasicRelationSummary | null; onOpenResults: () => void }) {
+function BasicRelationPanel(props: {
+  summary: BasicRelationSummary | null;
+  context: BasicDemoContext;
+  onOpenResults: () => void;
+  onClearOverrides: () => void;
+  onClearSelections: () => void;
+}) {
+  const hasContext = props.context.interventions.length > 0 || props.context.selections.length > 0;
   if (!props.summary) {
     return (
       <section className="basic-relation-panel empty" aria-label="Exposure outcome relation">
@@ -2072,6 +2090,7 @@ function BasicRelationPanel(props: { summary: BasicRelationSummary | null; onOpe
           <strong>Exposure {"->"} outcome</strong>
           <span className="module-badge planned">pick roles</span>
         </div>
+        {hasContext && <BasicDemoContextBar context={props.context} onClearOverrides={props.onClearOverrides} onClearSelections={props.onClearSelections} />}
         <p>Mark one exposure and one outcome to put the main comparison here.</p>
       </section>
     );
@@ -2084,6 +2103,7 @@ function BasicRelationPanel(props: { summary: BasicRelationSummary | null; onOpe
         <strong>{summary.relationLabel}</strong>
         <span className={status === "sign flip" ? "module-badge active punchline-flip" : "module-badge active"}>{status}</span>
       </div>
+      {hasContext && <BasicDemoContextBar context={props.context} onClearOverrides={props.onClearOverrides} onClearSelections={props.onClearSelections} />}
       <div className={summary.comparison ? "basic-relation-compare" : "basic-relation-compare single"}>
         <BasicRelationMetricView metric={summary.observed} role="observed" />
         {summary.comparison ? (
@@ -2099,6 +2119,31 @@ function BasicRelationPanel(props: { summary: BasicRelationSummary | null; onOpe
       <p>{summary.note}</p>
       <button type="button" className="mini-button" onClick={props.onOpenResults}><BarChart3 size={14} /> full results</button>
     </section>
+  );
+}
+
+function BasicDemoContextBar(props: {
+  context: BasicDemoContext;
+  onClearOverrides: () => void;
+  onClearSelections: () => void;
+}) {
+  return (
+    <div className="basic-demo-context-bar" aria-label="Active demo state">
+      {props.context.interventions.length > 0 && (
+        <div className="basic-demo-context-group">
+          <span>intervention</span>
+          {props.context.interventions.map((label) => <strong key={label}>{label}</strong>)}
+          <button type="button" onClick={props.onClearOverrides}>clear</button>
+        </div>
+      )}
+      {props.context.selections.length > 0 && (
+        <div className="basic-demo-context-group">
+          <span>selected sample</span>
+          {props.context.selections.map((label) => <strong key={label}>{label}</strong>)}
+          <button type="button" onClick={props.onClearSelections}>clear</button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2159,6 +2204,10 @@ function computeBasicRelationSummary(
   completedOutput: ComputedCompletedOutput | null,
   derived: SimulationDerivedCache
 ): BasicRelationSummary | null {
+  const activeInterventionSummary = computeInterventionRelationSummary(context);
+  if (activeInterventionSummary) return activeInterventionSummary;
+  const activeSelectionSummary = computeSelectionRelationSummary(context, derived);
+  if (activeSelectionSummary) return activeSelectionSummary;
   const modulePunchline = completedOutput?.moduleId === context.moduleId
     ? basicOutputPunchlineFromResult(context.moduleId, completedOutput.result)
     : null;
@@ -2174,6 +2223,65 @@ function computeBasicRelationSummary(
   return computeObservedRelationSummary(context.document.graph, context.simulation, derived);
 }
 
+function computeInterventionRelationSummary(context: OutputContext & { moduleId: string | null }): BasicRelationSummary | null {
+  const overrideEntries = Object.entries(context.document.simulation.overrides ?? {});
+  if (overrideEntries.length === 0) return null;
+  const graph = context.document.graph;
+  const pair = defaultScatterPair(graph);
+  const outcomeNode = graph.nodes.find((node) => node.roles.outcome) ?? graph.nodes.find((node) => node.id === pair.y);
+  if (!outcomeNode) return null;
+  const outcomeState = context.simulation.nodeStates[outcomeNode.id];
+  const currentMean = outcomeState?.empirical.mean;
+  if (currentMean === null || currentMean === undefined) return null;
+  const baselineSimulation = runSimulation(graph, { ...context.document.simulation, overrides: {}, selections: {} });
+  const baselineMean = baselineSimulation.nodeStates[outcomeNode.id]?.empirical.mean;
+  if (baselineMean === null || baselineMean === undefined) return null;
+  const diff = currentMean - baselineMean;
+  const outcomeLabel = shortNodeLabel(outcomeNode);
+  const interventionLabels = formatActiveInterventions(context.document);
+  const outcomeValue = formatOutcomeMean(outcomeNode, outcomeState, currentMean);
+  const baselineValue = formatOutcomeMean(outcomeNode, baselineSimulation.nodeStates[outcomeNode.id], baselineMean);
+  return {
+    relationLabel: basicRelationLabel(graph),
+    observed: {
+      label: "Intervention result",
+      value: outcomeValue,
+      detail: `${outcomeLabel} under ${interventionLabels.join(", ")}`,
+      numericValue: currentMean
+    },
+    comparison: {
+      label: "Change from baseline",
+      value: formatOutcomeDifference(outcomeNode, diff),
+      detail: `baseline ${outcomeLabel} ${baselineValue}`,
+      numericValue: diff
+    },
+    note: `The graph is now answering an intervention question: what changes downstream after ${interventionLabels.join(", ")}. Clear the intervention to return to the observed association.`
+  };
+}
+
+function computeSelectionRelationSummary(
+  context: OutputContext & { moduleId: string | null },
+  derived: SimulationDerivedCache
+): BasicRelationSummary | null {
+  if (context.simulation.conditioning.activeConditions.length === 0) return null;
+  const current = computeObservedRelationSummary(context.document.graph, context.simulation, derived);
+  if (!current) return null;
+  const baselineSimulation = runSimulation(context.document.graph, { ...context.document.simulation, overrides: {}, selections: {} });
+  const baseline = computeObservedRelationSummary(context.document.graph, baselineSimulation, buildSimulationDerivedCache(baselineSimulation));
+  return {
+    relationLabel: current.relationLabel,
+    observed: {
+      ...current.observed,
+      label: "Selected sample"
+    },
+    comparison: baseline ? {
+      ...baseline.observed,
+      label: "Full sample"
+    } : null,
+    note: `Selection changed the rows in the analysis sample: ${context.simulation.conditioning.activeConditions.join(", ")}. The DAG is unchanged; the displayed association is now conditional on that filter.`
+  };
+}
+
 function basicRelationLabel(graph: GraphModel): string {
   const exposure = graph.nodes.find((node) => node.roles.exposure);
   const outcome = graph.nodes.find((node) => node.roles.outcome);
@@ -2183,6 +2291,21 @@ function basicRelationLabel(graph: GraphModel): string {
   const yNode = graph.nodes.find((node) => node.id === pair.y);
   if (xNode && yNode) return `${shortNodeLabel(xNode)} -> ${shortNodeLabel(yNode)}`;
   return "Exposure -> outcome";
+}
+
+function formatActiveInterventions(document: GraphDocument): string[] {
+  return Object.entries(document.simulation.overrides ?? {}).map(([id, value]) => {
+    const node = findNode(document.graph, id);
+    return `do(${node ? shortNodeLabel(node) : id}=${formatValue(value)})`;
+  });
+}
+
+function formatOutcomeMean(node: GraphNode, state: SimulatedNodeState | undefined, value: number): string {
+  return isBinaryGraphNode(node, state) ? formatPercent(value) : formatValue(value);
+}
+
+function formatOutcomeDifference(node: GraphNode, value: number): string {
+  return normalizeVariableModel(node.variable).valueType === "binary" ? formatPercentagePoints(value) : formatSignedValue(value);
 }
 
 function computeObservedRelationSummary(graph: GraphModel, simulation: SimulationResult, derived: SimulationDerivedCache): BasicRelationSummary | null {

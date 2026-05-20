@@ -41,8 +41,9 @@ test("basic examples surface the observed versus causal punchline", async ({ pag
   const relation = page.getByLabel("Exposure outcome relation");
   await expect(relation).toContainText("Smoking -> infant mortality");
   await expect(relation).toContainText(/sign flip/i);
-  await expect(relation).toContainText(/low-birthweight read/i);
-  await expect(relation).toContainText(/population do effect/i);
+  await expect(relation).toContainText(/selected sample/i);
+  await expect(relation).toContainText(/Full sample/i);
+  await expect(relation).toContainText(/Birthweight <= 2500/i);
   await expect(relation.locator(".huh-shift-plot")).toBeVisible();
   await relation.getByRole("button", { name: "full results" }).click();
   await expect(page.locator(".basic-results-column")).toBeVisible();
@@ -134,6 +135,8 @@ test("manual chess sign-flip example surfaces elite selection as analysis sample
   await expect(banner).toContainText("Elite_sample in {1}");
   await expect(banner).toContainText("method rejection sampling");
   await expect(banner).toContainText(/samples \d+ \/ \d+/);
+  await expect(page.getByLabel("Active demo state")).toContainText("selected sample");
+  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Selected sample");
   await expect(page.locator(".adjusted-output-column")).toHaveCount(0);
 
   await page.locator("text.node-label").filter({ hasText: "rated / elite sample" }).click({ force: true });
@@ -187,8 +190,12 @@ test("hard do controls share one override state", async ({ page }) => {
 
   await expect(hardDo).toContainText("active");
   await expect(hardDo.getByLabel("hard do value")).toHaveValue("2");
+  await expect(page.getByLabel("Active demo state")).toContainText("intervention");
+  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Intervention result");
+  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Change from baseline");
   await hardDo.getByRole("button", { name: "release hard do" }).click();
   await expect(hardDo).toContainText("available");
+  await expect(page.getByLabel("Active demo state")).toHaveCount(0);
 });
 
 test.skip("binary variables update simulation defaults", async ({ page }) => {
