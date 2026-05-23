@@ -1898,6 +1898,10 @@ textarea {
   line-height: 14px;
 }
 
+.basic-relation-metric .basic-relation-ci {
+  color: #52616d;
+}
+
 .basic-relation-metric.positive strong {
   color: var(--ok);
 }

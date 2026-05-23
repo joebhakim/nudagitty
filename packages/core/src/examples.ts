@@ -56,7 +56,7 @@ export const EXAMPLES: ExampleModel[] = [
     summary: "Fast explanation of confounding and why unadjusted group comparisons can reverse.",
     outputModule: "simpson-severity",
     code: `dag {
-  Severity [adjusted,pos="-2,1.1"]
+  Severity [pos="-2,1.1"]
   Treatment [exposure,pos="-0.3,0"]
   Recovery [outcome,pos="2,0"]
   Severity -> Treatment

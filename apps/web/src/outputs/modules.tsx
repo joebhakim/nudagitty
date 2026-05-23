@@ -26,6 +26,7 @@ type SimpsonCompletedOutput = {
   visualRead: string;
   paradox: string;
   conclusion: string;
+  severityAdjusted: boolean;
 };
 
 type IcuCompletedOutput = {
@@ -373,7 +374,11 @@ function metricForPunchline(metric: HuhMetric): BasicOutputPunchlineMetric {
 
 function renderSimpsonOutput(output: SimpsonCompletedOutput) {
   return (
-    <CompletedOutputShell badge="Simpson ready" conclusion={output.conclusion}>
+    <CompletedOutputShell badge={output.severityAdjusted ? "Simpson ready" : "fix target"} conclusion={output.conclusion}>
+      <div className="completed-fix-prompt">
+        <strong>{output.severityAdjusted ? "Fix detected" : "Fix target"}</strong>
+        <span>{output.severityAdjusted ? "Severity is adjusted. The stabilized-IPW comparison and diagnostics can now appear below." : "Mark Severity as adjust for, then compare the raw graph against the fixed association reveal."}</span>
+      </div>
       <div className="completed-metric-grid">
         <div>
           <span>crude association</span>
@@ -803,6 +808,7 @@ function computeSimpsonCompletedOutput(context: OutputContext): SimpsonCompleted
   const causalDirection = causalDiff >= 0 ? "raises" : "lowers";
   const crudeDirection = crudeDiff >= 0 ? "higher" : "lower";
   const conclusion = `Observed treated cases have a recovery rate ${formatPercentagePointMagnitude(crudeDiff)} ${crudeDirection} than untreated cases in the crude comparison. Because Severity drives both treatment and recovery, the reportable causal contrast is do(Treatment=1) versus do(Treatment=0): under this DAG, treatment ${causalDirection} recovery by ${formatPercentagePointMagnitude(causalDiff)}.`;
+  const severityAdjusted = document.graph.nodes.find((node) => node.id === "Severity")?.roles.adjusted ?? false;
 
   return {
     crudeTreatedRecovery: treatedRecovery,
@@ -817,7 +823,8 @@ function computeSimpsonCompletedOutput(context: OutputContext): SimpsonCompleted
     adjustmentSet,
     visualRead,
     paradox,
-    conclusion
+    conclusion,
+    severityAdjusted
   };
 }
 

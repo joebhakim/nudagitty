@@ -26,7 +26,9 @@ test("loads the desktop guided basic shell", async ({ page }) => {
   await expect(page.locator(".canvas-zoom-controls")).toHaveCount(0);
   await expect(page.locator(".edge-function-glyph").first()).toBeHidden();
   await expect(page.getByLabel("Exposure outcome relation")).toContainText("Treatment -> Recovery");
-  await expect(page.getByLabel("Exposure outcome relation")).toContainText(/sign flip/i);
+  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Observed risk diff");
+  await expect(page.getByLabel("Exposure outcome relation")).toContainText("95% CI");
+  await expect(page.getByLabel("Exposure outcome relation")).not.toContainText("Fixed: stabilized IPW");
   await expect(page.locator(".editor-column")).toContainText("Try the flip");
   await expect(page.locator(".basic-results-column")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("Live Node Values");
@@ -54,6 +56,12 @@ test("basic examples surface the observed versus causal punchline", async ({ pag
 
   await page.getByLabel("Examples").click();
   await page.getByRole("menuitem").filter({ hasText: "Simpson's paradox" }).click();
+  await expect(relation).toContainText("Observed risk diff");
+  await expect(relation).not.toContainText("Fixed: stabilized IPW");
+  await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
+  await page.locator(".editor-column").getByLabel("adjust for").click();
+  await expect(relation).toContainText(/fixed: .*IPW/i);
+  await expect(relation.locator(".huh-shift-plot")).toBeVisible();
   await relation.getByRole("button", { name: "full results" }).click();
   const results = page.locator(".basic-results-column");
   await expect(results).toContainText("Pairwise Output");
@@ -260,6 +268,8 @@ test.skip("domain mode exposes practitioner examples and recommended modules", a
 
 test("Simpson example reports a completed crude versus do contrast", async ({ page }) => {
   await page.goto("/");
+  await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
+  await page.locator(".editor-column").getByLabel("adjust for").click();
   await page.getByLabel("Exposure outcome relation").getByRole("button", { name: "full results" }).click();
   const output = page.locator(".completed-output-card");
   const binaryOutput = page.locator(".binary-adjustment-output");
@@ -284,6 +294,7 @@ test("adjusted continuous variables expose draggable bin methodology and positiv
   await page.getByLabel("Exposure outcome relation").getByRole("button", { name: "full results" }).click();
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
   const editor = page.locator(".editor-column");
+  await editor.getByLabel("adjust for").click();
 
   await editor.locator("summary").filter({ hasText: "Adjustment method" }).click();
   await expect(editor).toContainText("Adjustment methodology");

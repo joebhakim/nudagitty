@@ -80,6 +80,7 @@ describe("example catalog", () => {
     const recovery = result.nodeStates.Recovery;
     const severity = result.nodeStates.Severity;
     if (!treatment || !recovery || !severity) throw new Error("missing Simpson node state");
+    expect(document.graph.nodes.find((node) => node.id === "Severity")?.roles.adjusted).toBe(false);
 
     const treatedRecovery = conditionalMean(treatment.empirical.samples, recovery.empirical.samples, 1);
     const untreatedRecovery = conditionalMean(treatment.empirical.samples, recovery.empirical.samples, 0);

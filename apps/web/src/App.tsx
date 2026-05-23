@@ -618,8 +618,8 @@ export function App() {
   const completedOutput = useMemo(() => computeCompletedOutput(outputContext, activeExample?.outputModule ?? null), [activeExample?.outputModule, outputContext]);
   const binaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived), [outputContext, simulationDerived]);
   const basicRelationSummary = useMemo(
-    () => computeBasicRelationSummary({ ...outputContext, moduleId: activeExample?.outputModule ?? null }, completedOutput, simulationDerived),
-    [activeExample?.outputModule, completedOutput, outputContext, simulationDerived]
+    () => computeBasicRelationSummary({ ...outputContext, moduleId: activeExample?.outputModule ?? null }, completedOutput, simulationDerived, binaryAdjustmentOutput),
+    [activeExample?.outputModule, binaryAdjustmentOutput, completedOutput, outputContext, simulationDerived]
   );
   const basicDemoContext = useMemo<BasicDemoContext>(() => ({
     interventions: formatActiveInterventions(document),
@@ -2176,13 +2176,21 @@ function BasicDemoContextBar(props: {
 }
 
 function BasicRelationMetricView(props: { metric: BasicOutputPunchlineMetric; role: "observed" | "comparison" }) {
+  const interval = metricIntervalLabel(props.metric);
   return (
     <div className={`basic-relation-metric ${props.role} ${metricTone(props.metric.numericValue)}`}>
       <span>{props.metric.label}</span>
       <strong>{props.metric.value}</strong>
       <small>{props.metric.detail}</small>
+      {interval && <small className="basic-relation-ci">{interval}</small>}
     </div>
   );
+}
+
+function metricIntervalLabel(metric: BasicOutputPunchlineMetric): string | null {
+  if (metric.lower === undefined || metric.upper === undefined) return null;
+  const formatter = metric.value.includes("pp") ? formatPercentagePoints : formatSignedValue;
+  return `95% CI ${formatter(metric.lower)} to ${formatter(metric.upper)}`;
 }
 
 function BasicRelationShiftPlot(props: { before: BasicOutputPunchlineMetric; after: BasicOutputPunchlineMetric }) {
@@ -2203,6 +2211,7 @@ function BasicRelationShiftPlot(props: { before: BasicOutputPunchlineMetric; aft
   const maxAbs = Math.max(0.1, ...values.map((value) => Math.abs(value)));
   const domain = maxAbs * 1.18;
   const x = (value: number) => plot.left + ((value + domain) / (2 * domain)) * (width - plot.left - plot.right);
+  const axisFormatter = props.before.value.includes("pp") || props.after.value.includes("pp") ? formatPercentagePoints : formatSignedValue;
   const rows = [
     { key: "before", label: "before", metric: props.before, value: beforeValue, y: plot.top + 13 },
     { key: "after", label: "after", metric: props.after, value: afterValue, y: plot.top + 13 + plot.rowGap }
@@ -2211,8 +2220,8 @@ function BasicRelationShiftPlot(props: { before: BasicOutputPunchlineMetric; aft
     <svg className="huh-shift-plot basic" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${props.before.label} compared with ${props.after.label}`}>
       <line className="huh-shift-axis" x1={plot.left} y1={height - 18} x2={width - plot.right} y2={height - 18} />
       <line className="huh-shift-zero" x1={x(0)} y1="10" x2={x(0)} y2={height - 16} />
-      <text className="huh-shift-axis-label" x={plot.left} y={height - 3}>{formatSignedValue(-domain)}</text>
-      <text className="huh-shift-axis-label end" x={width - plot.right} y={height - 3}>{formatSignedValue(domain)}</text>
+      <text className="huh-shift-axis-label" x={plot.left} y={height - 3}>{axisFormatter(-domain)}</text>
+      <text className="huh-shift-axis-label end" x={width - plot.right} y={height - 3}>{axisFormatter(domain)}</text>
       {rows.map((row) => (
         <g key={row.key}>
           <text className="huh-shift-row-label" x="8" y={row.y + 4}>{row.label}</text>
@@ -2230,17 +2239,20 @@ function BasicRelationShiftPlot(props: { before: BasicOutputPunchlineMetric; aft
 function computeBasicRelationSummary(
   context: OutputContext & { moduleId: string | null },
   completedOutput: ComputedCompletedOutput | null,
-  derived: SimulationDerivedCache
+  derived: SimulationDerivedCache,
+  binaryAdjustmentOutput: BinaryAdjustmentOutput | null
 ): BasicRelationSummary | null {
   const activeInterventionSummary = computeInterventionRelationSummary(context);
   if (activeInterventionSummary) return activeInterventionSummary;
   const activeSelectionSummary = computeSelectionRelationSummary(context, derived);
   if (activeSelectionSummary) return activeSelectionSummary;
+  const activeAdjustmentSummary = computeAdjustmentRelationSummary(context, completedOutput, derived, binaryAdjustmentOutput);
+  if (activeAdjustmentSummary) return activeAdjustmentSummary;
   const modulePunchline = completedOutput?.moduleId === context.moduleId
     ? basicOutputPunchlineFromResult(context.moduleId, completedOutput.result)
     : null;
   const relationLabel = basicRelationLabel(context.document.graph);
-  if (modulePunchline) {
+  if (modulePunchline && shouldShowModulePunchlineBeforeUserFix(context.moduleId)) {
     return {
       relationLabel,
       observed: modulePunchline.observed,
@@ -2249,6 +2261,73 @@ function computeBasicRelationSummary(
     };
   }
   return computeObservedRelationSummary(context.document.graph, context.simulation, derived);
+}
+
+function shouldShowModulePunchlineBeforeUserFix(moduleId: string | null): boolean {
+  return moduleId !== "simpson-severity" && moduleId !== "tutoring-scores";
+}
+
+function computeAdjustmentRelationSummary(
+  context: OutputContext & { moduleId: string | null },
+  completedOutput: ComputedCompletedOutput | null,
+  derived: SimulationDerivedCache,
+  binaryAdjustmentOutput: BinaryAdjustmentOutput | null
+): BasicRelationSummary | null {
+  if (context.moduleId === "simpson-severity") {
+    const ipw = binaryAdjustmentOutput?.stabilizedIpw;
+    if (!ipw || ipw.rawDiff === null || ipw.weightedDiff === null) return null;
+    const rawInterval = weightedMeanDifferenceInterval(binaryAdjustmentOutput.rawPoints);
+    const weightedInterval = weightedMeanDifferenceInterval(ipw.weightedPoints);
+    const xLabel = shortNodeLabel(ipw.exposure);
+    const yLabel = ipw.outcome ? shortNodeLabel(ipw.outcome) : "outcome";
+    return {
+      relationLabel: basicRelationLabel(context.document.graph),
+      observed: {
+        label: "Observed association",
+        value: formatPercentagePoints(ipw.rawDiff),
+        detail: `${yLabel} at ${xLabel}=1 ${ipw.rawTreated === null ? "n/a" : formatPercent(ipw.rawTreated)} vs ${ipw.rawUntreated === null ? "n/a" : formatPercent(ipw.rawUntreated)}`,
+        numericValue: ipw.rawDiff,
+        lower: rawInterval?.lower,
+        upper: rawInterval?.upper
+      },
+      comparison: {
+        label: ipw.clippedCount > 0 ? "Partly fixed: clipped IPW" : "Fixed: stabilized IPW",
+        value: formatPercentagePoints(ipw.weightedDiff),
+        detail: `weighted ${yLabel} ${ipw.weightedTreated === null ? "n/a" : formatPercent(ipw.weightedTreated)} vs ${ipw.weightedUntreated === null ? "n/a" : formatPercent(ipw.weightedUntreated)}`,
+        numericValue: ipw.weightedDiff,
+        lower: weightedInterval?.lower,
+        upper: weightedInterval?.upper
+      },
+      note: "Severity is now marked adjust for. The displayed association changes from the raw treatment comparison to a stabilized-IPW comparison; open Results for the DGP do contrast and diagnostics."
+    };
+  }
+
+  if (context.moduleId === "tutoring-scores" && isTutoringCompletedResult(completedOutput?.result)) {
+    const output = completedOutput.result;
+    if (!output.academicNeedAdjusted || output.adjustedPairGap === null) return null;
+    const pair = defaultScatterPair(context.document.graph);
+    const rawInterval = weightedMeanDifferenceInterval(pairDerivedSummary(derived, pair.x, pair.y).points);
+    return {
+      relationLabel: basicRelationLabel(context.document.graph),
+      observed: {
+        label: "Observed score gap",
+        value: formatSignedValue(output.crudeGap),
+        detail: `tutored ${formatValue(output.crudeTutoredScore)} vs untutored ${formatValue(output.crudeUntutoredScore)}`,
+        numericValue: output.crudeGap,
+        lower: rawInterval?.lower,
+        upper: rawInterval?.upper
+      },
+      comparison: {
+        label: "Fixed: adjusted gap",
+        value: formatSignedValue(output.adjustedPairGap),
+        detail: "weighted within Academic_need strata",
+        numericValue: output.adjustedPairGap
+      },
+      note: "Academic_need is now marked adjust for. The fixed association compares tutored and untutored students within comparable need groups instead of mixing the groups together."
+    };
+  }
+
+  return null;
 }
 
 function computeInterventionRelationSummary(context: OutputContext & { moduleId: string | null }): BasicRelationSummary | null {
@@ -2354,13 +2433,16 @@ function computeObservedRelationSummary(graph: GraphModel, simulation: Simulatio
   if (xIsBinary && yIsBinary) {
     const contrast = pairSummary.binaryContrast;
     if (contrast.diff === null) return null;
+    const interval = weightedMeanDifferenceInterval(points);
     return {
       relationLabel: `${xLabel} -> ${yLabel}`,
       observed: {
         label: "Observed risk diff",
         value: formatPercentagePoints(contrast.diff),
         detail: `${yLabel} at ${xLabel}=1 ${contrast.yAtX1 === null ? "n/a" : formatPercent(contrast.yAtX1)} vs ${contrast.yAtX0 === null ? "n/a" : formatPercent(contrast.yAtX0)}`,
-        numericValue: contrast.diff
+        numericValue: contrast.diff,
+        lower: interval?.lower,
+        upper: interval?.upper
       },
       comparison: null,
       note: `This is the raw exposure/outcome relation in the ${sampleLabel}. Add adjustment, selection, or an intervention to see whether the causal read changes.`
@@ -2374,13 +2456,16 @@ function computeObservedRelationSummary(graph: GraphModel, simulation: Simulatio
     const groupOneMean = groupOne?.mean;
     if (groupZeroMean === null || groupZeroMean === undefined || groupOneMean === null || groupOneMean === undefined) return null;
     const gap = groupOneMean - groupZeroMean;
+    const interval = weightedMeanDifferenceInterval(points);
     return {
       relationLabel: `${xLabel} -> ${yLabel}`,
       observed: {
         label: "Observed mean gap",
         value: formatSignedValue(gap),
         detail: `${xLabel}=1 mean ${formatValue(groupOneMean)} vs ${xLabel}=0 mean ${formatValue(groupZeroMean)}`,
-        numericValue: gap
+        numericValue: gap,
+        lower: interval?.lower,
+        upper: interval?.upper
       },
       comparison: null,
       note: `This is the raw exposure/outcome relation in the ${sampleLabel}. Open Results for the plot and mark covariates when this is not the causal comparison.`
@@ -2413,6 +2498,59 @@ function relationChangeLabel(observed: number | null, comparison: number | null)
 function signForPunchline(value: number | null): -1 | 0 | 1 {
   if (value === null || Math.abs(value) < 0.005) return 0;
   return value < 0 ? -1 : 1;
+}
+
+function isTutoringCompletedResult(value: unknown): value is {
+  crudeTutoredScore: number;
+  crudeUntutoredScore: number;
+  crudeGap: number;
+  academicNeedAdjusted: boolean;
+  adjustedPairGap: number | null;
+} {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.crudeTutoredScore === "number" &&
+    typeof candidate.crudeUntutoredScore === "number" &&
+    typeof candidate.crudeGap === "number" &&
+    typeof candidate.academicNeedAdjusted === "boolean" &&
+    (typeof candidate.adjustedPairGap === "number" || candidate.adjustedPairGap === null)
+  );
+}
+
+function weightedMeanDifferenceInterval(points: ScatterPoint[]): { lower: number; upper: number } | null {
+  const group0 = weightedPointMoments(points, 0);
+  const group1 = weightedPointMoments(points, 1);
+  if (!group0 || !group1 || group0.nEff <= 1 || group1.nEff <= 1) return null;
+  const diff = group1.mean - group0.mean;
+  const se = Math.sqrt(group1.variance / group1.nEff + group0.variance / group0.nEff);
+  if (!Number.isFinite(se)) return null;
+  return {
+    lower: diff - 1.96 * se,
+    upper: diff + 1.96 * se
+  };
+}
+
+function weightedPointMoments(points: ScatterPoint[], groupValue: 0 | 1): { mean: number; variance: number; nEff: number } | null {
+  let sumWeight = 0;
+  let sumWeightSquared = 0;
+  let sum = 0;
+  const retained: Array<{ value: number; weight: number }> = [];
+  for (const point of points) {
+    if (coerceBinary(point.x) !== groupValue || point.weight <= 0) continue;
+    retained.push({ value: point.y, weight: point.weight });
+    sumWeight += point.weight;
+    sumWeightSquared += point.weight * point.weight;
+    sum += point.y * point.weight;
+  }
+  if (sumWeight <= 0 || sumWeightSquared <= 0) return null;
+  const mean = sum / sumWeight;
+  const variance = retained.reduce((acc, item) => acc + item.weight * (item.value - mean) ** 2, 0) / sumWeight;
+  return {
+    mean,
+    variance,
+    nEff: sumWeight * sumWeight / sumWeightSquared
+  };
 }
 
 function metricTone(value: number | null): "negative" | "neutral" | "positive" {
