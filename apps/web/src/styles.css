@@ -167,7 +167,6 @@ textarea {
   padding: 0 8px;
   font-size: 12px;
   font-weight: 700;
-  text-transform: uppercase;
 }
 
 .mode-toggle button.active {

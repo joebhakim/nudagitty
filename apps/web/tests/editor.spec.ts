@@ -10,8 +10,10 @@ test("loads the desktop guided basic shell", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Nudagitty")).toBeVisible();
   await expect(page.getByLabel("Editable causal graph")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Domain" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Pro" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Demo" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Demo" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Domain" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pro" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Select" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Variable" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Connect" })).toHaveCount(0);

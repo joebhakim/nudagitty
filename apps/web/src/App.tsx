@@ -102,6 +102,7 @@ import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
 import type { OutputContext } from "./outputs/types";
 import { DenouementPanel } from "./outputs/DenouementPanel";
 import { ExampleMenu } from "./examples/ExampleMenu";
+import { ModeToggle } from "./examples/ModeToggle";
 import { MODE_LABELS } from "./shared/workbench";
 import type { WorkbenchMode } from "./shared/workbench";
 
@@ -580,7 +581,7 @@ export function App() {
   const [showCausal, setShowCausal] = useState(true);
   const [showBiasing, setShowBiasing] = useState(true);
   const [showAncestors, setShowAncestors] = useState(true);
-  const workbenchMode: WorkbenchMode = "basic";
+  const [workbenchMode, setWorkbenchMode] = useState<WorkbenchMode>("basic");
   const [basicResultsOpen, setBasicResultsOpen] = useState(false);
   const [activeExampleId, setActiveExampleId] = useState<string | null>(EXAMPLES[0]?.id ?? null);
   const [modelText, setModelText] = useState(() => serializeModel(document));
@@ -625,7 +626,7 @@ export function App() {
     selections: simulation.conditioning.activeConditions
   }), [document.graph, document.simulation.overrides, simulation.conditioning.activeConditions]);
   const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null);
-  const isBasicMode = true;
+  const isBasicMode = workbenchMode === "basic";
 
   useEffect(() => {
     const worker = new Worker(new URL("./analysis.worker.ts", import.meta.url), { type: "module" });
@@ -977,6 +978,7 @@ export function App() {
             <IconButton label="PNG" onClick={() => exportBitmap("png")}><Camera size={18} /></IconButton>
           </>}
         </div>
+        <ModeToggle value={workbenchMode} onChange={setWorkbenchMode} />
       </header>
       <AnalysisSampleBanner simulation={simulation} onClearSelections={clearSelections} />
 
