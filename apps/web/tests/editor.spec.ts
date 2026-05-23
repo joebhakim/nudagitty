@@ -69,6 +69,31 @@ test("basic examples surface the observed versus causal punchline", async ({ pag
   await expect(results).toContainText("Stabilized IPW");
 });
 
+test("demo comparison states track adjustment and selection choices", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "2 Tutoring" }).click();
+  const relation = page.getByLabel("Exposure outcome relation");
+
+  await expect(relation).toContainText("Comparison states");
+  await expect(relation).toContainText("Academic_need unadjusted");
+  await expect(relation).toContainText("Observed mean gap");
+
+  await page.locator("text.node-label").filter({ hasText: "academic need" }).click({ force: true });
+  const editor = page.locator(".editor-column");
+  await editor.getByLabel("adjust for").click();
+  await expect(relation).toContainText("Adjusted estimate");
+  await expect(relation).toContainText("Adjusted for Academic_need");
+  await expect(relation).toContainText("DGP do contrast");
+
+  await editor.getByLabel("adjust for").click();
+  await editor.getByLabel("selection").click();
+  const categories = editor.getByLabel("Academic_need included categories");
+  await categories.getByLabel("0").uncheck();
+  await expect(relation).toContainText("Selected sample");
+  await expect(relation).toContainText("Academic_need in {1}");
+  await expect(relation).toContainText("Academic_need fixed by selection");
+});
+
 test("example menu stays open while moving from trigger into choices", async ({ page }) => {
   await page.goto("/");
   const trigger = page.getByLabel("Examples");

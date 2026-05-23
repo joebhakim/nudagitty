@@ -1917,6 +1917,99 @@ textarea {
   font-weight: 800;
 }
 
+.comparison-ledger {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #d9e7e4;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.comparison-ledger > .module-card-header strong {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.comparison-ledger > .module-card-header span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.comparison-ledger-rows {
+  display: grid;
+  gap: 5px;
+}
+
+.comparison-ledger-row {
+  display: grid;
+  grid-template-columns: minmax(74px, 0.95fr) minmax(92px, 1.25fr) minmax(58px, auto);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 6px 0;
+  border-top: 1px solid #edf2f4;
+}
+
+.comparison-ledger-row:first-child {
+  border-top: 0;
+}
+
+.comparison-ledger-row div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.comparison-ledger-row strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #263133;
+  font-size: 12px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comparison-ledger-row > strong {
+  justify-self: end;
+  font-size: 14px;
+  line-height: 17px;
+}
+
+.comparison-ledger-row > strong.positive {
+  color: var(--ok);
+}
+
+.comparison-ledger-row > strong.negative {
+  color: var(--bias);
+}
+
+.comparison-ledger-row span,
+.comparison-ledger-row small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comparison-ledger-row.adjusted,
+.comparison-ledger-row.dgp {
+  background: linear-gradient(90deg, rgba(233, 247, 244, 0.7), rgba(255, 255, 255, 0));
+}
+
+.comparison-ledger-row.selected {
+  background: linear-gradient(90deg, rgba(242, 247, 252, 0.75), rgba(255, 255, 255, 0));
+}
+
+.comparison-ledger-plot {
+  min-height: 98px;
+}
+
 .conditioning-range input {
   padding: 0;
 }

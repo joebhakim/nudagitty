@@ -97,7 +97,7 @@ import {
   formatWeightedCount
 } from "./shared/formatting";
 import { basicOutputPunchlineFromResult, computeCompletedOutput } from "./outputs/modules";
-import type { BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
+import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
 import type { OutputContext } from "./outputs/types";
 import { DenouementPanel } from "./outputs/DenouementPanel";
@@ -118,7 +118,17 @@ type BasicRelationSummary = {
   relationLabel: string;
   observed: BasicOutputPunchlineMetric;
   comparison: BasicOutputPunchlineMetric | null;
+  ledgerRows?: BasicComparisonLedgerRow[];
   note: string;
+};
+type BasicComparisonLedgerRow = {
+  id: string;
+  label: string;
+  sample: string;
+  adjustment: string;
+  method: string;
+  status: "raw" | "adjusted" | "selected" | "intervention" | "dgp";
+  metric: BasicOutputPunchlineMetric;
 };
 type BasicDemoContext = {
   interventions: string[];
@@ -2125,6 +2135,7 @@ function BasicRelationPanel(props: {
   }
   const summary = props.summary;
   const status = relationChangeLabel(summary.observed.numericValue, summary.comparison?.numericValue ?? null);
+  const ledgerRows = summary.ledgerRows && summary.ledgerRows.length > 0 ? summary.ledgerRows : fallbackLedgerRows(summary);
   return (
     <section className="basic-relation-panel" aria-label="Exposure outcome relation">
       <div className="module-card-header">
@@ -2142,8 +2153,9 @@ function BasicRelationPanel(props: {
         ) : null}
       </div>
       {summary.comparison && (
-        <BasicRelationShiftPlot before={summary.observed} after={summary.comparison} />
+        <BasicComparisonLedgerPlot rows={ledgerRows} />
       )}
+      <BasicComparisonLedger rows={ledgerRows} />
       <p>{summary.note}</p>
       <button type="button" className="mini-button" onClick={props.onOpenResults}><BarChart3 size={14} /> full results</button>
     </section>
@@ -2193,47 +2205,206 @@ function metricIntervalLabel(metric: BasicOutputPunchlineMetric): string | null 
   return `95% CI ${formatter(metric.lower)} to ${formatter(metric.upper)}`;
 }
 
-function BasicRelationShiftPlot(props: { before: BasicOutputPunchlineMetric; after: BasicOutputPunchlineMetric }) {
-  const beforeValue = props.before.numericValue;
-  const afterValue = props.after.numericValue;
-  if (beforeValue === null || afterValue === null) return null;
+function BasicComparisonLedger(props: { rows: BasicComparisonLedgerRow[] }) {
+  if (props.rows.length === 0) return null;
+  return (
+    <div className="comparison-ledger" aria-label="Comparison states">
+      <div className="module-card-header">
+        <strong>Comparison states</strong>
+        <span>same exposure/outcome contrast</span>
+      </div>
+      <div className="comparison-ledger-rows">
+        {props.rows.map((row) => (
+          <div className={`comparison-ledger-row ${row.status}`} key={row.id}>
+            <div>
+              <strong>{row.label}</strong>
+              <span>{row.sample}</span>
+            </div>
+            <div>
+              <span>{row.adjustment}</span>
+              <small>{row.method}</small>
+            </div>
+            <strong className={metricTone(row.metric.numericValue)}>{row.metric.value}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BasicComparisonLedgerPlot(props: { rows: BasicComparisonLedgerRow[] }) {
+  const rows = props.rows.filter((row) => row.metric.numericValue !== null);
+  if (rows.length < 2) return null;
   const width = 320;
-  const height = 92;
-  const plot = { left: 66, right: 24, top: 15, rowGap: 28 };
-  const values = [
-    beforeValue,
-    afterValue,
-    props.before.lower,
-    props.before.upper,
-    props.after.lower,
-    props.after.upper
-  ].filter((value): value is number => value !== undefined && Number.isFinite(value));
+  const rowGap = 24;
+  const height = 42 + rows.length * rowGap;
+  const plot = { left: 104, right: 24, top: 17 };
+  const values = rows.flatMap((row) => [
+    row.metric.numericValue,
+    row.metric.lower,
+    row.metric.upper
+  ]).filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value));
   const maxAbs = Math.max(0.1, ...values.map((value) => Math.abs(value)));
   const domain = maxAbs * 1.18;
   const x = (value: number) => plot.left + ((value + domain) / (2 * domain)) * (width - plot.left - plot.right);
-  const axisFormatter = props.before.value.includes("pp") || props.after.value.includes("pp") ? formatPercentagePoints : formatSignedValue;
-  const rows = [
-    { key: "before", label: "before", metric: props.before, value: beforeValue, y: plot.top + 13 },
-    { key: "after", label: "after", metric: props.after, value: afterValue, y: plot.top + 13 + plot.rowGap }
-  ] as const;
+  const axisFormatter = rows.some((row) => row.metric.value.includes("pp")) ? formatPercentagePoints : formatSignedValue;
   return (
-    <svg className="huh-shift-plot basic" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${props.before.label} compared with ${props.after.label}`}>
+    <svg className="huh-shift-plot basic comparison-ledger-plot" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Comparison states plotted on one axis">
       <line className="huh-shift-axis" x1={plot.left} y1={height - 18} x2={width - plot.right} y2={height - 18} />
       <line className="huh-shift-zero" x1={x(0)} y1="10" x2={x(0)} y2={height - 16} />
       <text className="huh-shift-axis-label" x={plot.left} y={height - 3}>{axisFormatter(-domain)}</text>
       <text className="huh-shift-axis-label end" x={width - plot.right} y={height - 3}>{axisFormatter(domain)}</text>
-      {rows.map((row) => (
-        <g key={row.key}>
-          <text className="huh-shift-row-label" x="8" y={row.y + 4}>{row.label}</text>
-          {row.metric.lower !== undefined && row.metric.upper !== undefined && (
-            <line className="huh-shift-interval" x1={x(row.metric.lower)} y1={row.y} x2={x(row.metric.upper)} y2={row.y} />
-          )}
-          <circle className={`huh-shift-dot ${row.key} ${metricTone(row.value)}`} cx={x(row.value)} cy={row.y} r="5" />
-          <text className="huh-shift-value" x={Math.min(width - 8, x(row.value) + 9)} y={row.y + 4}>{row.metric.value}</text>
-        </g>
-      ))}
+      {rows.map((row, index) => {
+        const value = row.metric.numericValue ?? 0;
+        const y = plot.top + index * rowGap;
+        return (
+          <g key={row.id}>
+            <text className="huh-shift-row-label" x="8" y={y + 4}>{row.label}</text>
+            {row.metric.lower !== undefined && row.metric.upper !== undefined && (
+              <line className="huh-shift-interval" x1={x(row.metric.lower)} y1={y} x2={x(row.metric.upper)} y2={y} />
+            )}
+            <circle className={`huh-shift-dot ${row.status} ${metricTone(value)}`} cx={x(value)} cy={y} r="5" />
+            <text className="huh-shift-value" x={Math.min(width - 8, x(value) + 9)} y={y + 4}>{row.metric.value}</text>
+          </g>
+        );
+      })}
     </svg>
   );
+}
+
+function fallbackLedgerRows(summary: BasicRelationSummary): BasicComparisonLedgerRow[] {
+  return [
+    {
+      id: "observed",
+      label: "Observed",
+      sample: "current sample",
+      adjustment: "as displayed",
+      method: "raw contrast",
+      status: "raw",
+      metric: summary.observed
+    },
+    ...(summary.comparison ? [{
+      id: "comparison",
+      label: "Comparison",
+      sample: "reference state",
+      adjustment: "as displayed",
+      method: "comparison contrast",
+      status: "adjusted" as const,
+      metric: summary.comparison
+    }] : [])
+  ];
+}
+
+function ledgerRowsFromPunchline(
+  context: OutputContext & { moduleId: string | null },
+  punchline: BasicOutputPunchline
+): BasicComparisonLedgerRow[] {
+  return [
+    rawLedgerRow(context, punchline.observed, "Observed sample"),
+    {
+      id: "module-comparison",
+      label: punchline.comparison.label.toLowerCase().includes("do") ? "DGP do contrast" : "Comparison",
+      sample: punchline.comparison.label.toLowerCase().includes("do") ? "intervention world" : "reference state",
+      adjustment: punchline.comparison.label.toLowerCase().includes("do") ? "DGP intervention" : "module comparison",
+      method: punchline.comparison.label.toLowerCase().includes("do") ? "do simulation" : "example-specific estimator",
+      status: punchline.comparison.label.toLowerCase().includes("do") ? "dgp" : "adjusted",
+      metric: punchline.comparison
+    }
+  ];
+}
+
+function rawLedgerRow(
+  context: OutputContext & { moduleId: string | null },
+  metric: BasicOutputPunchlineMetric,
+  sample: string
+): BasicComparisonLedgerRow {
+  return {
+    id: `raw-${sample.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    label: sample,
+    sample,
+    adjustment: rawAdjustmentLabel(context),
+    method: "raw association",
+    status: "raw",
+    metric
+  };
+}
+
+function selectedLedgerRow(
+  context: OutputContext & { moduleId: string | null },
+  metric: BasicOutputPunchlineMetric
+): BasicComparisonLedgerRow {
+  return {
+    id: "selected-sample",
+    label: "Selected sample",
+    sample: context.simulation.conditioning.activeConditions.join(", ") || "selected rows",
+    adjustment: selectedAdjustmentLabel(context),
+    method: "raw contrast within selected rows",
+    status: "selected",
+    metric
+  };
+}
+
+function dgpLedgerRowFromCompletedOutput(
+  context: OutputContext & { moduleId: string | null },
+  completedOutput: ComputedCompletedOutput | null
+): BasicComparisonLedgerRow | null {
+  if (!completedOutput || completedOutput.moduleId !== context.moduleId) return null;
+  const punchline = basicOutputPunchlineFromResult(context.moduleId, completedOutput.result);
+  if (!punchline) return null;
+  return {
+    id: "dgp-do",
+    label: "DGP do contrast",
+    sample: "intervention world",
+    adjustment: "DGP intervention",
+    method: "do simulation",
+    status: "dgp",
+    metric: punchline.comparison
+  };
+}
+
+function rawAdjustmentLabel(context: OutputContext & { moduleId: string | null }): string {
+  if (context.moduleId === "simpson-severity") return nodeAdjusted(context.document.graph, "Severity") ? "Severity adjusted" : "Severity unadjusted";
+  if (context.moduleId === "tutoring-scores") return nodeAdjusted(context.document.graph, "Academic_need") ? "Academic_need adjusted" : "Academic_need unadjusted";
+  const adjustedNames = context.document.graph.nodes.filter((node) => node.roles.adjusted).map(shortNodeLabel);
+  return adjustedNames.length > 0 ? `Adjusted for ${adjustedNames.join(", ")}` : "Unadjusted";
+}
+
+function selectedAdjustmentLabel(context: OutputContext & { moduleId: string | null }): string {
+  const selectedIds = Object.keys(context.document.simulation.selections ?? {});
+  if (context.moduleId === "tutoring-scores" && selectedIds.includes("Academic_need")) return "Academic_need fixed by selection";
+  if (context.moduleId === "simpson-severity" && selectedIds.includes("Severity")) return "Severity fixed by selection";
+  const selectedNames = selectedIds.map((id) => {
+    const node = findNode(context.document.graph, id);
+    return node ? shortNodeLabel(node) : id;
+  });
+  return selectedNames.length > 0 ? `Conditioned on ${selectedNames.join(", ")}` : "Selection filter";
+}
+
+function nodeAdjusted(graph: GraphModel, id: string): boolean {
+  return graph.nodes.find((node) => node.id === id)?.roles.adjusted ?? false;
+}
+
+function binnedOrStratifiedAdjustmentMetric(
+  output: BinaryAdjustmentOutput,
+  yLabel: string
+): { metric: BasicOutputPunchlineMetric; method: string } | null {
+  const usable = output.strata.filter((stratum) => stratum.contrast.diff !== null && stratum.weight > 0);
+  const totalWeight = usable.reduce((sum, stratum) => sum + stratum.weight, 0);
+  if (totalWeight <= 0) return null;
+  const diff = usable.reduce((sum, stratum) => sum + (stratum.contrast.diff ?? 0) * stratum.weight, 0) / totalWeight;
+  const binned = output.binnedAdjustedNodes.length > 0;
+  const adjustmentDetail = binned
+    ? output.binnedAdjustedNodes.map((item) => `${shortNodeLabel(item.node)} ${item.cutpoints.length + 1} bins`).join(", ")
+    : output.binaryAdjustedNodes.map(shortNodeLabel).join(", ");
+  return {
+    metric: {
+      label: binned ? "Fixed: binned adjustment" : "Fixed: stratified adjustment",
+      value: formatPercentagePoints(diff),
+      detail: `${yLabel} contrast averaged across ${adjustmentDetail}`,
+      numericValue: diff
+    },
+    method: binned ? "binned standardization" : "stratified standardization"
+  };
 }
 
 function computeBasicRelationSummary(
@@ -2244,7 +2415,7 @@ function computeBasicRelationSummary(
 ): BasicRelationSummary | null {
   const activeInterventionSummary = computeInterventionRelationSummary(context);
   if (activeInterventionSummary) return activeInterventionSummary;
-  const activeSelectionSummary = computeSelectionRelationSummary(context, derived);
+  const activeSelectionSummary = computeSelectionRelationSummary(context, derived, completedOutput);
   if (activeSelectionSummary) return activeSelectionSummary;
   const activeAdjustmentSummary = computeAdjustmentRelationSummary(context, completedOutput, derived, binaryAdjustmentOutput);
   if (activeAdjustmentSummary) return activeAdjustmentSummary;
@@ -2257,10 +2428,15 @@ function computeBasicRelationSummary(
       relationLabel,
       observed: modulePunchline.observed,
       comparison: modulePunchline.comparison,
+      ledgerRows: ledgerRowsFromPunchline(context, modulePunchline),
       note: modulePunchline.note
     };
   }
-  return computeObservedRelationSummary(context.document.graph, context.simulation, derived);
+  const observed = computeObservedRelationSummary(context.document.graph, context.simulation, derived);
+  return observed ? {
+    ...observed,
+    ledgerRows: [rawLedgerRow(context, observed.observed, "Full sample")]
+  } : null;
 }
 
 function shouldShowModulePunchlineBeforeUserFix(moduleId: string | null): boolean {
@@ -2275,30 +2451,56 @@ function computeAdjustmentRelationSummary(
 ): BasicRelationSummary | null {
   if (context.moduleId === "simpson-severity") {
     const ipw = binaryAdjustmentOutput?.stabilizedIpw;
-    if (!ipw || ipw.rawDiff === null || ipw.weightedDiff === null) return null;
-    const rawInterval = weightedMeanDifferenceInterval(binaryAdjustmentOutput.rawPoints);
-    const weightedInterval = weightedMeanDifferenceInterval(ipw.weightedPoints);
-    const xLabel = shortNodeLabel(ipw.exposure);
-    const yLabel = ipw.outcome ? shortNodeLabel(ipw.outcome) : "outcome";
+    const rawInterval = binaryAdjustmentOutput ? weightedMeanDifferenceInterval(binaryAdjustmentOutput.rawPoints) : null;
+    const xLabel = binaryAdjustmentOutput?.exposure ? shortNodeLabel(binaryAdjustmentOutput.exposure) : "exposure";
+    const yLabel = binaryAdjustmentOutput?.outcome ? shortNodeLabel(binaryAdjustmentOutput.outcome) : "outcome";
+    const rawDiff = ipw?.rawDiff ?? binaryAdjustmentOutput?.rawContrast.diff ?? null;
+    if (rawDiff === null) return null;
+    const rawTreated = ipw?.rawTreated ?? binaryAdjustmentOutput?.rawContrast.yAtX1 ?? null;
+    const rawUntreated = ipw?.rawUntreated ?? binaryAdjustmentOutput?.rawContrast.yAtX0 ?? null;
+    const adjusted = ipw && ipw.weightedDiff !== null
+      ? {
+          metric: {
+            label: ipw.clippedCount > 0 ? "Partly fixed: clipped IPW" : "Fixed: stabilized IPW",
+            value: formatPercentagePoints(ipw.weightedDiff),
+            detail: `weighted ${yLabel} ${ipw.weightedTreated === null ? "n/a" : formatPercent(ipw.weightedTreated)} vs ${ipw.weightedUntreated === null ? "n/a" : formatPercent(ipw.weightedUntreated)}`,
+            numericValue: ipw.weightedDiff,
+            lower: weightedMeanDifferenceInterval(ipw.weightedPoints)?.lower,
+            upper: weightedMeanDifferenceInterval(ipw.weightedPoints)?.upper
+          },
+          method: ipw.clippedCount > 0 ? "stabilized IPW, clipped propensities" : "stabilized IPW"
+        }
+      : binaryAdjustmentOutput && binaryAdjustmentOutput.strata.length > 0
+        ? binnedOrStratifiedAdjustmentMetric(binaryAdjustmentOutput, yLabel)
+        : null;
+    if (!adjusted) return null;
+    const rawMetric: BasicOutputPunchlineMetric = {
+      label: "Observed association",
+      value: formatPercentagePoints(rawDiff),
+      detail: `${yLabel} at ${xLabel}=1 ${rawTreated === null ? "n/a" : formatPercent(rawTreated)} vs ${rawUntreated === null ? "n/a" : formatPercent(rawUntreated)}`,
+      numericValue: rawDiff,
+      lower: rawInterval?.lower,
+      upper: rawInterval?.upper
+    };
+    const dgpRow = dgpLedgerRowFromCompletedOutput(context, completedOutput);
     return {
       relationLabel: basicRelationLabel(context.document.graph),
-      observed: {
-        label: "Observed association",
-        value: formatPercentagePoints(ipw.rawDiff),
-        detail: `${yLabel} at ${xLabel}=1 ${ipw.rawTreated === null ? "n/a" : formatPercent(ipw.rawTreated)} vs ${ipw.rawUntreated === null ? "n/a" : formatPercent(ipw.rawUntreated)}`,
-        numericValue: ipw.rawDiff,
-        lower: rawInterval?.lower,
-        upper: rawInterval?.upper
-      },
-      comparison: {
-        label: ipw.clippedCount > 0 ? "Partly fixed: clipped IPW" : "Fixed: stabilized IPW",
-        value: formatPercentagePoints(ipw.weightedDiff),
-        detail: `weighted ${yLabel} ${ipw.weightedTreated === null ? "n/a" : formatPercent(ipw.weightedTreated)} vs ${ipw.weightedUntreated === null ? "n/a" : formatPercent(ipw.weightedUntreated)}`,
-        numericValue: ipw.weightedDiff,
-        lower: weightedInterval?.lower,
-        upper: weightedInterval?.upper
-      },
-      note: "Severity is now marked adjust for. The displayed association changes from the raw treatment comparison to a stabilized-IPW comparison; open Results for the DGP do contrast and diagnostics."
+      observed: rawMetric,
+      comparison: adjusted.metric,
+      ledgerRows: [
+        rawLedgerRow(context, rawMetric, "Full sample"),
+        {
+          id: "adjusted",
+          label: "Adjusted estimate",
+          sample: "Full sample",
+          adjustment: "Severity adjusted",
+          method: adjusted.method,
+          status: "adjusted",
+          metric: adjusted.metric
+        },
+        ...(dgpRow ? [dgpRow] : [])
+      ],
+      note: "Severity is now marked adjust for. The displayed association changes from the raw treatment comparison to a model-based adjusted comparison; open Results for the DGP do contrast and diagnostics."
     };
   }
 
@@ -2307,22 +2509,38 @@ function computeAdjustmentRelationSummary(
     if (!output.academicNeedAdjusted || output.adjustedPairGap === null) return null;
     const pair = defaultScatterPair(context.document.graph);
     const rawInterval = weightedMeanDifferenceInterval(pairDerivedSummary(derived, pair.x, pair.y).points);
+    const rawMetric: BasicOutputPunchlineMetric = {
+      label: "Observed score gap",
+      value: formatSignedValue(output.crudeGap),
+      detail: `tutored ${formatValue(output.crudeTutoredScore)} vs untutored ${formatValue(output.crudeUntutoredScore)}`,
+      numericValue: output.crudeGap,
+      lower: rawInterval?.lower,
+      upper: rawInterval?.upper
+    };
+    const adjustedMetric: BasicOutputPunchlineMetric = {
+      label: "Fixed: adjusted gap",
+      value: formatSignedValue(output.adjustedPairGap),
+      detail: "weighted within Academic_need strata",
+      numericValue: output.adjustedPairGap
+    };
+    const dgpRow = dgpLedgerRowFromCompletedOutput(context, completedOutput);
     return {
       relationLabel: basicRelationLabel(context.document.graph),
-      observed: {
-        label: "Observed score gap",
-        value: formatSignedValue(output.crudeGap),
-        detail: `tutored ${formatValue(output.crudeTutoredScore)} vs untutored ${formatValue(output.crudeUntutoredScore)}`,
-        numericValue: output.crudeGap,
-        lower: rawInterval?.lower,
-        upper: rawInterval?.upper
-      },
-      comparison: {
-        label: "Fixed: adjusted gap",
-        value: formatSignedValue(output.adjustedPairGap),
-        detail: "weighted within Academic_need strata",
-        numericValue: output.adjustedPairGap
-      },
+      observed: rawMetric,
+      comparison: adjustedMetric,
+      ledgerRows: [
+        rawLedgerRow(context, rawMetric, "Full sample"),
+        {
+          id: "adjusted",
+          label: "Adjusted estimate",
+          sample: "Full sample",
+          adjustment: "Adjusted for Academic_need",
+          method: "stratified standardization",
+          status: "adjusted",
+          metric: adjustedMetric
+        },
+        ...(dgpRow ? [dgpRow] : [])
+      ],
       note: "Academic_need is now marked adjust for. The fixed association compares tutored and untutored students within comparable need groups instead of mixing the groups together."
     };
   }
@@ -2348,43 +2566,74 @@ function computeInterventionRelationSummary(context: OutputContext & { moduleId:
   const interventionLabels = formatActiveInterventions(context.document);
   const outcomeValue = formatOutcomeMean(outcomeNode, outcomeState, currentMean);
   const baselineValue = formatOutcomeMean(outcomeNode, baselineSimulation.nodeStates[outcomeNode.id], baselineMean);
+  const interventionMetric: BasicOutputPunchlineMetric = {
+    label: "Intervention result",
+    value: outcomeValue,
+    detail: `${outcomeLabel} under ${interventionLabels.join(", ")}`,
+    numericValue: currentMean
+  };
+  const changeMetric: BasicOutputPunchlineMetric = {
+    label: "Change from baseline",
+    value: formatOutcomeDifference(outcomeNode, diff),
+    detail: `baseline ${outcomeLabel} ${baselineValue}`,
+    numericValue: diff
+  };
   return {
     relationLabel: basicRelationLabel(graph),
-    observed: {
-      label: "Intervention result",
-      value: outcomeValue,
-      detail: `${outcomeLabel} under ${interventionLabels.join(", ")}`,
-      numericValue: currentMean
-    },
-    comparison: {
-      label: "Change from baseline",
-      value: formatOutcomeDifference(outcomeNode, diff),
-      detail: `baseline ${outcomeLabel} ${baselineValue}`,
-      numericValue: diff
-    },
+    observed: interventionMetric,
+    comparison: changeMetric,
+    ledgerRows: [
+      {
+        id: "intervention-result",
+        label: "Intervention world",
+        sample: interventionLabels.join(", "),
+        adjustment: "do operator",
+        method: "hard intervention",
+        status: "intervention",
+        metric: interventionMetric
+      },
+      {
+        id: "intervention-change",
+        label: "Change",
+        sample: "vs baseline simulation",
+        adjustment: "baseline held by DGP",
+        method: "difference from no intervention",
+        status: "dgp",
+        metric: changeMetric
+      }
+    ],
     note: `The graph is now answering an intervention question: what changes downstream after ${interventionLabels.join(", ")}. Clear the intervention to return to the observed association.`
   };
 }
 
 function computeSelectionRelationSummary(
   context: OutputContext & { moduleId: string | null },
-  derived: SimulationDerivedCache
+  derived: SimulationDerivedCache,
+  completedOutput: ComputedCompletedOutput | null
 ): BasicRelationSummary | null {
   if (context.simulation.conditioning.activeConditions.length === 0) return null;
   const current = computeObservedRelationSummary(context.document.graph, context.simulation, derived);
   if (!current) return null;
   const baselineSimulation = runSimulation(context.document.graph, { ...context.document.simulation, overrides: {}, selections: {} });
   const baseline = computeObservedRelationSummary(context.document.graph, baselineSimulation, buildSimulationDerivedCache(baselineSimulation));
+  const selectedMetric: BasicOutputPunchlineMetric = {
+    ...current.observed,
+    label: "Selected sample"
+  };
+  const fullMetric = baseline ? {
+    ...baseline.observed,
+    label: "Full sample"
+  } : null;
+  const dgpRow = dgpLedgerRowFromCompletedOutput(context, completedOutput);
   return {
     relationLabel: current.relationLabel,
-    observed: {
-      ...current.observed,
-      label: "Selected sample"
-    },
-    comparison: baseline ? {
-      ...baseline.observed,
-      label: "Full sample"
-    } : null,
+    observed: selectedMetric,
+    comparison: fullMetric,
+    ledgerRows: [
+      ...(fullMetric ? [rawLedgerRow(context, fullMetric, "Full sample")] : []),
+      selectedLedgerRow(context, selectedMetric),
+      ...(dgpRow ? [dgpRow] : [])
+    ],
     note: `Selection changed the rows in the analysis sample: ${context.simulation.conditioning.activeConditions.join(", ")}. The DAG is unchanged; the displayed association is now conditional on that filter.`
   };
 }
