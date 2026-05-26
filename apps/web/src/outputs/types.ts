@@ -11,6 +11,10 @@ export interface CompletedOutputModule<Result> {
   id: string;
   label: string;
   compute: (context: OutputContext) => Result | null;
-  render: (result: Result) => ReactNode;
+  render: (result: Result, options?: CompletedOutputRenderOptions) => ReactNode;
   fallback: ReactNode;
 }
+
+export type CompletedOutputRenderOptions = {
+  hideOracle?: boolean;
+};

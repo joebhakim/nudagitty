@@ -1,9 +1,10 @@
 import { EXAMPLES, EXAMPLE_DOMAINS } from "@nudagitty/core";
 import type { ExampleDomain } from "@nudagitty/core";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { WorkbenchMode } from "../shared/workbench";
 
 const BASIC_EXAMPLE_IDS = [
+  "tutoring-scores",
   "simpson-severity",
   "front-door-smoking",
   "birthweight-paradox",
@@ -12,7 +13,7 @@ const BASIC_EXAMPLE_IDS = [
   "chess-intelligence-practice-simple-flip"
 ];
 
-export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: string | null; onSelect: (id: string) => void }) {
+export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: string | null; onSelect: (id: string) => void; compact?: boolean }) {
   const activeExample = EXAMPLES.find((example) => example.id === props.activeExampleId);
   const basicMode = props.mode === "basic";
   const domains = exampleDomainsForMode(props.mode);
@@ -30,7 +31,7 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
     ? BASIC_EXAMPLE_IDS.map((id) => EXAMPLES.find((example) => example.id === id)).filter((example): example is typeof EXAMPLES[number] => example !== undefined)
     : EXAMPLES.filter((example) => example.domain === highlighted?.id);
   return (
-    <div className="example-menu" onMouseLeave={() => setOpen(false)}>
+    <div className="example-menu">
       <button
         type="button"
         aria-label="Examples"
@@ -40,47 +41,63 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
         onClick={() => setOpen((current) => !current)}
       >
         <span className="example-menu-trigger-text">
-          <span className="example-menu-label">Examples</span>
-          <span className="example-menu-title">{activeExample?.title ?? "Choose one"}</span>
+          <span className="example-menu-label">{props.compact ? "More examples" : "Examples"}</span>
+          {!props.compact && <span className="example-menu-title">{activeExample?.title ?? "Choose one"}</span>}
         </span>
       </button>
       {open && (
-        <div className={basicMode ? "example-menu-popover basic" : "example-menu-popover"} role="menu">
-          {!basicMode && <div className="example-domain-list" aria-label="Example domains">
-            {domains.map((domain) => (
-              <button
-                type="button"
-                className={domain.id === highlightedDomain ? "active" : ""}
-                onMouseEnter={() => setHighlightedDomain(domain.id)}
-                onFocus={() => setHighlightedDomain(domain.id)}
-                key={domain.id}
-              >
-                <span>{domain.label}</span>
-              </button>
-            ))}
-          </div>}
-          <div className="example-choice-list">
-            <div className="example-choice-head">
-              <strong>{basicMode ? "Core causal patterns" : highlighted?.label}</strong>
-              <span>{basicMode ? "A short punchline tour: confounding, front door, selection, bad controls, estimand splits, and a chess sign flip." : highlighted?.description}</span>
+        <>
+          <button type="button" className="example-menu-backdrop" aria-label="Close menu" onClick={() => setOpen(false)} />
+          <div className={basicMode ? "example-menu-popover basic" : "example-menu-popover"} role="menu">
+            <div className="example-sheet-head">
+              <div>
+                <strong>Examples</strong>
+                <span>{basicMode ? "Start with Simpson or tutoring." : highlighted?.label}</span>
+              </div>
+              <button type="button" aria-label="Close menu" onClick={() => setOpen(false)}>close</button>
             </div>
-            {examples.map((example) => (
-              <button
-                type="button"
-                role="menuitem"
-                className={example.id === props.activeExampleId ? "active" : ""}
-                onClick={() => {
-                  props.onSelect(example.id);
-                  setOpen(false);
-                }}
-                key={example.id}
-              >
-                <strong>{example.title}</strong>
-                <span>{example.summary}</span>
-              </button>
-            ))}
+            {!basicMode && <div className="example-domain-list" aria-label="Example domains">
+              {domains.map((domain) => (
+                <button
+                  type="button"
+                  className={domain.id === highlightedDomain ? "active" : ""}
+                  onMouseEnter={() => setHighlightedDomain(domain.id)}
+                  onFocus={() => setHighlightedDomain(domain.id)}
+                  key={domain.id}
+                >
+                  <span>{domain.label}</span>
+                </button>
+              ))}
+            </div>}
+            <div className="example-choice-list">
+              <div className="example-choice-head">
+                <strong>{basicMode ? "Core causal patterns" : highlighted?.label}</strong>
+                <span>{basicMode ? "Start with the two sign flips, then use the rest as follow-up patterns." : highlighted?.description}</span>
+              </div>
+              {examples.map((example, index) => (
+                <Fragment key={example.id}>
+                  {basicMode && index === 2 && <div className="example-more-divider">More examples</div>}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={[
+                      example.id === props.activeExampleId ? "active" : "",
+                      basicMode && index < 2 ? "frontline" : "",
+                      basicMode && index >= 2 ? "secondary" : ""
+                    ].filter(Boolean).join(" ")}
+                    onClick={() => {
+                      props.onSelect(example.id);
+                      setOpen(false);
+                    }}
+                  >
+                    <strong>{example.title}</strong>
+                    <span>{example.summary}</span>
+                  </button>
+                </Fragment>
+              ))}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

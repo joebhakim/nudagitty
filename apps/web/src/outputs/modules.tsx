@@ -10,7 +10,7 @@ import {
   formatWeightedCount
 } from "../shared/formatting";
 import { empiricalSampleWeight, formatAdjustmentSet, weightedBinaryShare, weightedConditionalMean, weightedJointConditionalMean } from "./helpers";
-import type { CompletedOutputModule, OutputContext } from "./types";
+import type { CompletedOutputModule, CompletedOutputRenderOptions, OutputContext } from "./types";
 
 type SimpsonCompletedOutput = {
   crudeTreatedRecovery: number;
@@ -26,6 +26,7 @@ type SimpsonCompletedOutput = {
   visualRead: string;
   paradox: string;
   conclusion: string;
+  severityAdjusted: boolean;
 };
 
 type IcuCompletedOutput = {
@@ -158,7 +159,7 @@ export const completedOutputModules: CompletedOutputModule<unknown>[] = [
     id: "simpson-severity",
     label: "Simpson ready",
     compute: computeSimpsonCompletedOutput,
-    render: (result) => renderSimpsonOutput(result as SimpsonCompletedOutput),
+    render: (result, options) => renderSimpsonOutput(result as SimpsonCompletedOutput, options),
     fallback: fallbackOutput("needs roles", "This completed Simpson output needs Treatment, Recovery, and Severity in the graph.")
   },
   {
@@ -179,7 +180,7 @@ export const completedOutputModules: CompletedOutputModule<unknown>[] = [
     id: "tutoring-scores",
     label: "fix available",
     compute: computeTutoringCompletedOutput,
-    render: (result) => renderTutoringOutput(result as TutoringCompletedOutput),
+    render: (result, options) => renderTutoringOutput(result as TutoringCompletedOutput, options),
     fallback: fallbackOutput("needs roles", "This completed tutoring output needs Academic_need, Tutoring, and Test_score in the graph.")
   },
   {
@@ -243,8 +244,8 @@ export function computeCompletedOutput(context: OutputContext, moduleId: string 
   };
 }
 
-export function renderCompletedOutput(computed: ComputedCompletedOutput) {
-  return computed.result === null ? computed.module.fallback : computed.module.render(computed.result);
+export function renderCompletedOutput(computed: ComputedCompletedOutput, options?: CompletedOutputRenderOptions) {
+  return computed.result === null ? computed.module.fallback : computed.module.render(computed.result, options);
 }
 
 export function computeBasicOutputPunchline(context: OutputContext, moduleId: string | null): BasicOutputPunchline | null {
@@ -371,20 +372,27 @@ function metricForPunchline(metric: HuhMetric): BasicOutputPunchlineMetric {
   };
 }
 
-function renderSimpsonOutput(output: SimpsonCompletedOutput) {
+function renderSimpsonOutput(output: SimpsonCompletedOutput, options?: CompletedOutputRenderOptions) {
+  const hideOracle = options?.hideOracle === true;
+  const crudeDirection = output.crudeDiff >= 0 ? "higher" : "lower";
+  const demoConclusion = `Observed treated cases have a recovery rate ${formatPercentagePointMagnitude(output.crudeDiff)} ${crudeDirection} than untreated cases in the raw comparison. Severity drives both treatment and recovery, so this demo uses the adjusted estimate as the visible repair.`;
   return (
-    <CompletedOutputShell badge="Simpson ready" conclusion={output.conclusion}>
+    <CompletedOutputShell badge={output.severityAdjusted ? "Simpson ready" : "fix target"} conclusion={hideOracle ? demoConclusion : output.conclusion}>
+      <div className="completed-fix-prompt">
+        <strong>{output.severityAdjusted ? "Fix detected" : "Fix target"}</strong>
+        <span>{output.severityAdjusted ? "Severity is adjusted. The stabilized-IPW comparison and diagnostics can now appear below." : "Mark Severity as adjust for, then compare the raw graph against the fixed association reveal."}</span>
+      </div>
       <div className="completed-metric-grid">
         <div>
           <span>crude association</span>
           <strong>{formatPercentagePoints(output.crudeDiff)}</strong>
           <small>treated {formatPercent(output.crudeTreatedRecovery)} vs untreated {formatPercent(output.crudeUntreatedRecovery)}</small>
         </div>
-        <div>
+        {!hideOracle && <div>
           <span>do contrast</span>
           <strong>{formatPercentagePoints(output.causalDiff)}</strong>
           <small>do(1) {formatPercent(output.causalTreatedRecovery)} vs do(0) {formatPercent(output.causalUntreatedRecovery)}</small>
-        </div>
+        </div>}
         <div>
           <span>severity separation</span>
           <strong>{formatSignedValue(output.severityDiff)}</strong>
@@ -395,7 +403,7 @@ function renderSimpsonOutput(output: SimpsonCompletedOutput) {
         <li><strong>Fast visual read:</strong> {output.visualRead}</li>
         <li><strong>Backdoor:</strong> Treatment &lt;- Severity -&gt; Recovery is the reason the aggregate comparison is not decisive.</li>
         <li><strong>Adjustment set:</strong> {output.adjustmentSet}</li>
-        <li><strong>Paradox check:</strong> {output.paradox}</li>
+        {!hideOracle && <li><strong>Paradox check:</strong> {output.paradox}</li>}
       </ul>
     </CompletedOutputShell>
   );
@@ -539,10 +547,13 @@ function CollegeBinnedAdjustmentGraph({ output }: { output: CollegeCompletedOutp
   );
 }
 
-function renderTutoringOutput(output: TutoringCompletedOutput) {
+function renderTutoringOutput(output: TutoringCompletedOutput, options?: CompletedOutputRenderOptions) {
+  const hideOracle = options?.hideOracle === true;
+  const rawDirection = output.crudeGap >= 0 ? "higher" : "lower";
+  const demoConclusion = `Tutored students score ${formatValue(Math.abs(output.crudeGap))} points ${rawDirection} than non-tutored students in the raw comparison. Academic_need drives both tutoring and lower scores, so this demo uses the within-need adjusted comparison as the visible repair.`;
   return (
     <>
-      <CompletedOutputShell badge={output.academicNeedAdjusted ? "adjusted" : "fix available"} conclusion={output.conclusion}>
+      <CompletedOutputShell badge={output.academicNeedAdjusted ? "adjusted" : "fix available"} conclusion={hideOracle ? demoConclusion : output.conclusion}>
         <div className="completed-fix-prompt">
           <strong>{output.academicNeedAdjusted ? "Fix detected" : "Fix target"}</strong>
           <span>{output.academicNeedAdjusted ? "Academic_need is adjusted. The within-need pair graph is now visible below." : "Mark Academic_need as adjusted, then compare the raw graph against the adjusted pair graph reveal."}</span>
@@ -553,11 +564,11 @@ function renderTutoringOutput(output: TutoringCompletedOutput) {
             <strong>{formatSignedValue(output.crudeGap)}</strong>
             <small>tutored {formatValue(output.crudeTutoredScore)} vs not tutored {formatValue(output.crudeUntutoredScore)}</small>
           </div>
-          <div>
+          {!hideOracle && <div>
             <span>do score gain</span>
             <strong>{formatSignedValue(output.causalGap)}</strong>
             <small>do(tutoring) {formatValue(output.causalTutoredScore)} vs do(no tutoring) {formatValue(output.causalUntutoredScore)}</small>
-          </div>
+          </div>}
           <div>
             <span>need gap</span>
             <strong>{formatPercentagePoints(output.needDiff)}</strong>
@@ -568,7 +579,7 @@ function renderTutoringOutput(output: TutoringCompletedOutput) {
           <li><strong>Fast visual read:</strong> {output.visualRead}</li>
           <li><strong>Backdoor:</strong> Tutoring &lt;- Academic_need -&gt; Test_score makes the raw score gap point the wrong way.</li>
           <li><strong>Adjustment set:</strong> {output.adjustmentSet}</li>
-          <li><strong>Verdict:</strong> {output.verdict}</li>
+          {!hideOracle && <li><strong>Verdict:</strong> {output.verdict}</li>}
           <li><strong>Adjusted reveal plan:</strong> when Academic_need is selected as adjusted, show a second graph with two within-need treatment pairs.</li>
         </ul>
       </CompletedOutputShell>
@@ -741,7 +752,7 @@ function CompletedOutputShell(props: { badge: string; conclusion: string; childr
   return (
     <details className="completed-output-card">
       <summary className="module-card-header completed-output-summary">
-        <strong>Completed output</strong>
+        <strong>What this shows</strong>
         <span className="module-badge active">{props.badge}</span>
       </summary>
       <div className="completed-output-body">
@@ -756,7 +767,7 @@ function fallbackOutput(badge: string, message: string) {
   return (
     <details className="completed-output-card">
       <summary className="module-card-header completed-output-summary">
-        <strong>Completed output</strong>
+        <strong>What this shows</strong>
         <span className="module-badge planned">{badge}</span>
       </summary>
       <div className="completed-output-body">
@@ -803,6 +814,7 @@ function computeSimpsonCompletedOutput(context: OutputContext): SimpsonCompleted
   const causalDirection = causalDiff >= 0 ? "raises" : "lowers";
   const crudeDirection = crudeDiff >= 0 ? "higher" : "lower";
   const conclusion = `Observed treated cases have a recovery rate ${formatPercentagePointMagnitude(crudeDiff)} ${crudeDirection} than untreated cases in the crude comparison. Because Severity drives both treatment and recovery, the reportable causal contrast is do(Treatment=1) versus do(Treatment=0): under this DAG, treatment ${causalDirection} recovery by ${formatPercentagePointMagnitude(causalDiff)}.`;
+  const severityAdjusted = document.graph.nodes.find((node) => node.id === "Severity")?.roles.adjusted ?? false;
 
   return {
     crudeTreatedRecovery: treatedRecovery,
@@ -817,7 +829,8 @@ function computeSimpsonCompletedOutput(context: OutputContext): SimpsonCompleted
     adjustmentSet,
     visualRead,
     paradox,
-    conclusion
+    conclusion,
+    severityAdjusted
   };
 }
 
