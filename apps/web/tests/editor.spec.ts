@@ -43,6 +43,19 @@ test("loads the desktop guided basic shell", async ({ page }) => {
   await expect(page.locator("body")).not.toContainText("Live Node Values");
 });
 
+test("ignores legacy saved documents when opening the demo", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("nudagitty.document.v1", JSON.stringify({ schemaVersion: 1, title: "Legacy saved DAG" }));
+  });
+  await page.goto("/");
+
+  await expect(page.getByRole("button", { name: "1 Tutoring" })).toBeVisible();
+  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Tutoring -> test score");
+  await expect(page.locator("body")).not.toContainText("Legacy saved DAG");
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem("nudagitty.document.v1"))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem("nudagitty.document.v2"))).not.toBeNull();
+});
+
 test("demo layout keeps guidance left and expanded results right", async ({ page }) => {
   await page.goto("/");
   const editorBox = await page.locator(".editor-column").boundingBox();

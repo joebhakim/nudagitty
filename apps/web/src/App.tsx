@@ -245,7 +245,8 @@ type DragState =
   | null;
 type PointerScreenPoint = { clientX: number; clientY: number };
 
-const STORAGE_KEY = "nudagitty.document.v1";
+const STORAGE_KEY = "nudagitty.document.v2";
+const LEGACY_STORAGE_KEYS = ["nudagitty.document.v1"];
 const BASE_VIEWBOX = { width: 1000, height: 700 };
 const DEFAULT_VIEWPORT: CanvasViewport = { cx: 0, cy: 0, zoom: 1 };
 const NODE_VIEW_MARGIN = { x: 100, top: 110, bottom: 130 };
@@ -6077,6 +6078,7 @@ function loadInitialDocument(): GraphDocument {
       window.localStorage.removeItem(STORAGE_KEY);
     }
   }
+  for (const key of LEGACY_STORAGE_KEYS) window.localStorage.removeItem(key);
   return initialDocument();
 }
 
