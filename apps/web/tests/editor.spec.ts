@@ -18,28 +18,54 @@ test("loads the desktop guided basic shell", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Variable" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Connect" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "New" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "1 Simpson" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "2 Tutoring" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "1 Tutoring" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "2 Simpson" })).toBeVisible();
   await expect(page.getByLabel("Examples")).toBeVisible();
   await expect(page.locator(".graph-legend")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Legend" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Legend" })).toBeVisible();
+  await page.getByRole("button", { name: "Legend" }).click();
+  await expect(page.locator(".graph-legend")).toBeVisible();
+  await expect(page.locator(".graph-legend")).toContainText("Exposure");
+  await expect(page.locator(".graph-legend")).toContainText("Outcome");
+  await expect(page.locator(".graph-legend")).not.toContainText("arrow");
+  await page.getByRole("button", { name: "Legend" }).click();
+  await expect(page.locator(".graph-legend")).toHaveCount(0);
   await expect(page.locator(".canvas-zoom-controls")).toHaveCount(0);
   await expect(page.locator(".edge-function-glyph").first()).toBeHidden();
-  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Treatment -> Recovery");
-  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Observed risk diff");
+  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Tutoring -> test score");
+  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Observed mean gap");
   await expect(page.getByLabel("Exposure outcome relation")).toContainText("95% CI");
   await expect(page.getByLabel("Exposure outcome relation")).not.toContainText("Fixed: stabilized IPW");
   await expect(page.locator(".editor-column")).toContainText("Try the flip");
-  await expect(page.locator(".basic-results-column")).toHaveCount(0);
+  await expect(page.locator(".basic-results-column")).toBeVisible();
+  await expect(page.locator(".basic-results-column")).toContainText("Pairwise Output");
+  await expect(page.getByRole("button", { name: "Close results" })).toBeVisible();
   await expect(page.locator("body")).not.toContainText("Live Node Values");
+});
+
+test("demo layout keeps guidance left and expanded results right", async ({ page }) => {
+  await page.goto("/");
+  const editorBox = await page.locator(".editor-column").boundingBox();
+  const canvasBox = await page.locator(".canvas-shell").boundingBox();
+  const resultsBox = await page.locator(".basic-results-column").boundingBox();
+  if (!editorBox || !canvasBox || !resultsBox) throw new Error("missing demo layout bounds");
+  expect(editorBox.x + editorBox.width).toBeLessThanOrEqual(canvasBox.x + 1);
+  expect(canvasBox.x + canvasBox.width).toBeLessThanOrEqual(resultsBox.x + 1);
+
+  await page.getByRole("button", { name: "Close results" }).click();
+  await expect(page.locator(".basic-results-column")).toHaveCount(0);
+  const closedEditorBox = await page.locator(".editor-column").boundingBox();
+  const closedCanvasBox = await page.locator(".canvas-shell").boundingBox();
+  if (!closedEditorBox || !closedCanvasBox) throw new Error("missing closed demo layout bounds");
+  expect(closedEditorBox.x + closedEditorBox.width).toBeLessThanOrEqual(closedCanvasBox.x + 1);
 });
 
 test("basic examples surface the observed versus causal punchline", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Examples").click();
   const basicItems = page.locator(".example-choice-list").getByRole("menuitem");
-  await expect(basicItems.nth(0)).toContainText("Simpson's paradox");
-  await expect(basicItems.nth(1)).toContainText("Does tutoring hurt test scores");
+  await expect(basicItems.nth(0)).toContainText("Does tutoring hurt test scores");
+  await expect(basicItems.nth(1)).toContainText("Simpson's paradox");
   await page.getByRole("menuitem").filter({ hasText: "Birthweight paradox" }).click();
 
   const relation = page.getByLabel("Exposure outcome relation");
@@ -61,17 +87,20 @@ test("basic examples surface the observed versus causal punchline", async ({ pag
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
   await page.locator(".editor-column").getByLabel("adjust for").click();
   await expect(relation).toContainText(/fixed: .*IPW/i);
+  await expect(relation).not.toContainText("DGP do contrast");
   await expect(relation.locator(".huh-shift-plot")).toBeVisible();
   await relation.getByRole("button", { name: "full results" }).click();
   const results = page.locator(".basic-results-column");
   await expect(results).toContainText("Pairwise Output");
   await expect(results).toContainText("Weighted pairwise output");
   await expect(results).toContainText("Stabilized IPW");
+  await expect(results).not.toContainText("do contrast");
+  await expect(results).not.toContainText("do(Treatment=1)");
 });
 
 test("demo comparison states track adjustment and selection choices", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "2 Tutoring" }).click();
+  await page.getByRole("button", { name: "1 Tutoring" }).click();
   const relation = page.getByLabel("Exposure outcome relation");
 
   await expect(relation).toContainText("Comparison states");
@@ -83,7 +112,7 @@ test("demo comparison states track adjustment and selection choices", async ({ p
   await editor.getByLabel("adjust for").click();
   await expect(relation).toContainText("Adjusted estimate");
   await expect(relation).toContainText("Adjusted for Academic_need");
-  await expect(relation).toContainText("DGP do contrast");
+  await expect(relation).not.toContainText("DGP do contrast");
 
   await editor.getByLabel("adjust for").click();
   await editor.getByLabel("selection").click();
@@ -92,6 +121,21 @@ test("demo comparison states track adjustment and selection choices", async ({ p
   await expect(relation).toContainText("Selected sample");
   await expect(relation).toContainText("Academic_need in {1}");
   await expect(relation).toContainText("Academic_need fixed by selection");
+});
+
+test("results panes mark output as updating while analysis recomputes", async ({ page }) => {
+  await page.route(/analysis\.worker/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.continue();
+  });
+  await page.goto("/");
+  await page.getByLabel("Exposure outcome relation").getByRole("button", { name: "full results" }).click();
+  await page.locator("text.node-label").filter({ hasText: "academic need" }).click({ force: true });
+  await page.locator(".editor-column").getByLabel("adjust for").click();
+
+  await expect(page.getByLabel("Exposure outcome relation").locator(".pending-chip")).toContainText("updating");
+  await expect(page.locator(".basic-results-column")).toContainText("Updating adjusted output");
+  await expect(page.locator(".canvas-computation-status")).toContainText("updating paths");
 });
 
 test("example menu stays open while moving from trigger into choices", async ({ page }) => {
@@ -116,17 +160,17 @@ test("selected connections populate the editor column", async ({ page }) => {
   const editor = page.locator(".editor-column");
 
   await expect(editor).toContainText("Arrow");
-  await expect(editor).toContainText("Severity to Treatment");
+  await expect(editor).toContainText("Academic_need to Tutoring");
   await expect(editor.getByRole("button", { name: "effect strength decrease 10 percent" })).toBeVisible();
   await expect(editor.getByRole("button", { name: "effect strength increase 1", exact: true })).toBeVisible();
   await editor.locator("summary").filter({ hasText: "More arrow settings" }).click();
-  await editor.getByLabel("function Severity to Treatment").click();
+  await editor.getByLabel("function Academic_need to Tutoring").click();
   await page.getByRole("option", { name: /Hill \/ Emax/ }).click();
 
   await expect(editor.locator(".edge-panel")).toContainText("EC50");
   await expect(editor.getByRole("button", { name: "max effect increase 1", exact: true })).toBeVisible();
   await expect(editor.getByLabel("EC50 slider")).toBeVisible();
-  await expect(editor.getByLabel("function Severity to Treatment")).toContainText("Hill / Emax");
+  await expect(editor.getByLabel("function Academic_need to Tutoring")).toContainText("Hill / Emax");
   await expect(page.locator(".edge-value").filter({ hasText: "Hill / Emax" })).toHaveCount(1);
   await expect(page.locator("body")).not.toContainText("Connection Functions");
   await expect(page.locator("body")).not.toContainText("Connection Detail");
@@ -189,12 +233,12 @@ test("manual chess sign-flip example surfaces elite selection as analysis sample
 
 test("selected variables populate the editor column", async ({ page }) => {
   await page.goto("/");
-  await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
+  await page.locator("text.node-label").filter({ hasText: "academic need" }).click({ force: true });
   const variableEditor = page.locator(".editor-column");
   const scenario = page.locator(".scenario-column");
 
   await expect(variableEditor).toContainText("Variable");
-  await expect(variableEditor).toContainText("Severity");
+  await expect(variableEditor).toContainText("academic need");
   await expect(variableEditor).toContainText("Use this variable");
   await expect(variableEditor).toContainText("Intervene");
   await expect(variableEditor).toContainText("Selection filter");
@@ -215,6 +259,7 @@ test("selected variables populate the editor column", async ({ page }) => {
 
 test("hard do controls share one override state", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: "2 Simpson" }).click();
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
 
   const editor = page.locator(".editor-column");
@@ -293,11 +338,13 @@ test.skip("domain mode exposes practitioner examples and recommended modules", a
 
 test("Simpson example reports a completed crude versus do contrast", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: "Domain" }).click();
+  await loadExample(page, "Simpson's paradox: treatment by severity");
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
-  await page.locator(".editor-column").getByLabel("adjust for").click();
-  await page.getByLabel("Exposure outcome relation").getByRole("button", { name: "full results" }).click();
-  const output = page.locator(".completed-output-card");
-  const binaryOutput = page.locator(".binary-adjustment-output");
+  await page.locator(".editor-column").getByLabel("adjusted").click();
+  const adjustedOutput = page.locator(".adjusted-output-column");
+  const output = adjustedOutput.locator(".completed-output-card");
+  const binaryOutput = adjustedOutput.locator(".binary-adjustment-output");
 
   await expect(binaryOutput).toContainText("Binary adjusted output");
   await expect(binaryOutput).toContainText("Before: unadjusted");
@@ -316,6 +363,7 @@ test("Simpson example reports a completed crude versus do contrast", async ({ pa
 
 test("adjusted continuous variables expose draggable bin methodology and positivity warnings", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: "2 Simpson" }).click();
   await page.getByLabel("Exposure outcome relation").getByRole("button", { name: "full results" }).click();
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
   const editor = page.locator(".editor-column");
@@ -606,7 +654,7 @@ test("mobile layout avoids horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
-  await expect(page.getByRole("button", { name: "1 Simpson" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "1 Tutoring" })).toBeVisible();
   await expect(page.getByLabel("Examples")).toBeVisible();
 
   const metrics = await page.evaluate(() => ({
@@ -615,13 +663,15 @@ test("mobile layout avoids horizontal overflow", async ({ page }) => {
     canvasHeight: document.querySelector(".canvas-shell")?.getBoundingClientRect().height ?? 0,
     topbarHeight: document.querySelector(".topbar")?.getBoundingClientRect().height ?? 0,
     canvasTop: document.querySelector(".canvas-shell")?.getBoundingClientRect().top ?? 0,
+    resultsTop: document.querySelector(".basic-results-column")?.getBoundingClientRect().top ?? 0,
     editorTop: document.querySelector(".editor-column")?.getBoundingClientRect().top ?? 0
   }));
   expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.innerWidth + 1);
   expect(metrics.canvasHeight).toBeLessThanOrEqual(430);
   expect(metrics.topbarHeight).toBeLessThanOrEqual(170);
-  expect(metrics.editorTop).toBeGreaterThanOrEqual(metrics.canvasTop);
-  await expect(page.locator(".basic-results-column")).toHaveCount(0);
+  expect(metrics.resultsTop).toBeGreaterThanOrEqual(metrics.canvasTop);
+  expect(metrics.editorTop).toBeGreaterThanOrEqual(metrics.resultsTop);
+  await expect(page.locator(".basic-results-column")).toBeVisible();
   await expect(page.locator(".scenario-column")).toHaveCount(0);
   await expect(page.locator(".advanced-drawer")).toHaveCount(0);
 });

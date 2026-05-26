@@ -5,10 +5,10 @@ import { runSimulation } from "./simulation";
 describe("example catalog", () => {
   it("uses the classic example set and keeps Galton", () => {
     expect(EXAMPLES.map((example) => example.id)).toEqual([
+      "tutoring-scores",
       "simpson-severity",
       "icu-mortality-triage",
       "college-earnings",
-      "tutoring-scores",
       "front-door-smoking",
       "berkson-hospital",
       "birthweight-paradox",
@@ -53,6 +53,36 @@ describe("example catalog", () => {
       expect(denouement?.punchline.length).toBeGreaterThan(40);
       expect(denouement?.sections.length).toBeGreaterThanOrEqual(3);
       expect(denouement?.sections.some((section) => section.defaultOpen)).toBe(true);
+    }
+  });
+
+  it("lays out every example with directed edges flowing top to bottom", () => {
+    for (const example of EXAMPLES) {
+      const document = exampleDocument(example.id);
+      if (!document) throw new Error(`missing ${example.id}`);
+      const nodes = new Map(document.graph.nodes.map((node) => [node.id, node]));
+      for (const edge of document.graph.edges.filter((candidate) => candidate.kind === "directed" || candidate.kind === "partialDirected")) {
+        const source = nodes.get(edge.source);
+        const target = nodes.get(edge.target);
+        if (!source || !target) throw new Error(`missing node for ${example.id} ${edge.id}`);
+        expect(source.position.y, `${example.id}: ${edge.source} -> ${edge.target}`).toBeLessThan(target.position.y);
+      }
+    }
+  });
+
+  it("keeps the three-node sign-flip examples from collapsing into a diagonal line", () => {
+    for (const [id, commonCauseId, exposureId, outcomeId] of [
+      ["simpson-severity", "Severity", "Treatment", "Recovery"],
+      ["tutoring-scores", "Academic_need", "Tutoring", "Test_score"]
+    ] as const) {
+      const document = exampleDocument(id);
+      if (!document) throw new Error(`missing ${id}`);
+      const nodes = new Map(document.graph.nodes.map((node) => [node.id, node]));
+      const commonCause = nodes.get(commonCauseId);
+      const exposure = nodes.get(exposureId);
+      const outcome = nodes.get(outcomeId);
+      if (!commonCause || !exposure || !outcome) throw new Error(`missing triangle nodes for ${id}`);
+      expect(triangleArea(commonCause.position, exposure.position, outcome.position), id).toBeGreaterThan(15000);
     }
   });
 
@@ -381,6 +411,10 @@ describe("example catalog", () => {
   });
 
 });
+
+function triangleArea(a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }): number {
+  return Math.abs(((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) / 2);
+}
 
 function conditionalMean(condition: number[], outcome: number[], value: 0 | 1): number {
   let count = 0;

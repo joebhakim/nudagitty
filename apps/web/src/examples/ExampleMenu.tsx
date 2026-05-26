@@ -4,8 +4,8 @@ import { Fragment, useEffect, useState } from "react";
 import type { WorkbenchMode } from "../shared/workbench";
 
 const BASIC_EXAMPLE_IDS = [
-  "simpson-severity",
   "tutoring-scores",
+  "simpson-severity",
   "front-door-smoking",
   "birthweight-paradox",
   "m-bias-adjustment",

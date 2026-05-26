@@ -371,14 +371,14 @@ textarea {
 }
 
 .mode-basic .workspace {
-  grid-template-columns: minmax(680px, 1fr) minmax(340px, 390px);
+  grid-template-columns: minmax(340px, 390px) minmax(680px, 1fr);
   grid-template-rows: minmax(0, 1fr);
-  grid-template-areas: "canvas editor";
+  grid-template-areas: "editor canvas";
 }
 
 .mode-basic.results-open .workspace {
-  grid-template-columns: minmax(320px, 410px) minmax(500px, 1fr) minmax(320px, 390px);
-  grid-template-areas: "results canvas editor";
+  grid-template-columns: minmax(320px, 390px) minmax(500px, 1fr) minmax(320px, 410px);
+  grid-template-areas: "editor canvas results";
 }
 
 .mode-basic .toolbar[aria-label="Model actions"] {
@@ -451,7 +451,7 @@ textarea {
   grid-area: results;
   min-width: 0;
   overflow: auto;
-  border-right: 1px solid var(--line);
+  border-left: 1px solid var(--line);
 }
 
 .basic-results-header {
@@ -475,6 +475,13 @@ textarea {
   text-transform: uppercase;
 }
 
+.basic-results-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .basic-results-header button {
   min-width: 30px;
   width: 30px;
@@ -490,6 +497,8 @@ textarea {
   display: grid;
   align-content: start;
   gap: 12px;
+  border-right: 1px solid var(--line);
+  border-left: 0;
 }
 
 .side-panel {
@@ -557,8 +566,17 @@ textarea {
   border-bottom: 1px solid var(--line);
 }
 
-.panel-section h2 {
+.panel-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
   margin: 0 0 10px;
+}
+
+.panel-section h2 {
+  margin: 0;
   font-size: 13px;
   line-height: 18px;
   letter-spacing: 0;
@@ -1784,6 +1802,79 @@ textarea {
   border-style: dashed;
 }
 
+.pending-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  min-height: 19px;
+  padding: 2px 6px;
+  border: 1px solid #bfd6d2;
+  border-radius: 999px;
+  background: #f6fbfa;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 13px;
+  text-transform: uppercase;
+}
+
+.pending-spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(35, 113, 111, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: pending-spin 720ms linear infinite;
+}
+
+.results-pending-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #bfd6d2;
+  border-radius: 6px;
+  background: #f6fbfa;
+}
+
+.results-pending-notice .pending-spinner {
+  width: 14px;
+  height: 14px;
+}
+
+.results-pending-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.results-pending-copy strong {
+  color: #3d464e;
+  font-size: 12px;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.results-pending-copy span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+@keyframes pending-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending-spinner {
+    animation: none;
+  }
+}
+
 .basic-relation-panel {
   display: grid;
   gap: 9px;
@@ -3004,6 +3095,14 @@ textarea {
   font-size: 12px;
 }
 
+.canvas-computation-status {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  pointer-events: none;
+}
+
 .canvas-coachmark {
   position: absolute;
   top: 14px;
@@ -3105,6 +3204,11 @@ textarea {
   color: var(--accent);
 }
 
+.mode-basic .canvas-legend-toggle {
+  top: 12px;
+  right: 12px;
+}
+
 .edge-hit {
   fill: none;
   stroke: transparent;
@@ -3117,6 +3221,10 @@ textarea {
   stroke: var(--line-strong);
   stroke-width: 2px;
   stroke-linecap: round;
+}
+
+.edge-line.with-arrow {
+  stroke-linecap: butt;
 }
 
 .edge.disabled {
@@ -3223,13 +3331,19 @@ textarea {
   stroke: #6b7780;
 }
 
+.graph-canvas.dense-edges .edge:not(.selected):not(:hover) .edge-value,
+.graph-canvas.dense-edges .edge:not(.selected):not(:hover) .edge-function-glyph {
+  display: none;
+}
+
 .mode-basic .edge-value,
 .mode-basic .edge-function-glyph {
   display: none;
 }
 
-marker path {
-  fill: #52616d;
+.arrow-head {
+  fill: context-stroke;
+  stroke: none;
 }
 
 .node {
@@ -3314,9 +3428,16 @@ marker path {
   stroke-width: 1.6px;
 }
 
-.graph-legend-node.latent {
-  fill: #f5f3f0;
-  stroke-dasharray: 4 3;
+.graph-legend-node.role {
+  stroke-width: 2px;
+}
+
+.graph-legend-node-label {
+  fill: #26333d;
+  font-size: 9.5px;
+  font-weight: 850;
+  text-anchor: middle;
+  pointer-events: none;
 }
 
 .graph-legend-adjusted {
@@ -3333,14 +3454,11 @@ marker path {
   stroke-linejoin: round;
 }
 
-.graph-legend-arrow {
-  fill: none;
-  stroke: #52616d;
-  stroke-width: 2px;
-  stroke-linecap: round;
-}
-
 .node-value {
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.98);
+  stroke-width: 4px;
+  stroke-linejoin: round;
   text-anchor: middle;
   font-size: 11px;
   fill: var(--accent);
@@ -3349,6 +3467,10 @@ marker path {
 }
 
 .node-distribution-label {
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.98);
+  stroke-width: 3px;
+  stroke-linejoin: round;
   text-anchor: middle;
   font-size: 9px;
   fill: #4f5b65;
@@ -3363,8 +3485,13 @@ marker path {
   pointer-events: none;
 }
 
+.distribution-backdrop {
+  fill: #fff;
+  opacity: 0.96;
+}
+
 .distribution-frame {
-  fill: rgba(255, 255, 255, 0.94);
+  fill: #fff;
   stroke: #8fa0ad;
   stroke-width: 1.2px;
 }

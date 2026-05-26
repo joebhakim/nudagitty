@@ -177,6 +177,10 @@ type BinaryAdjustmentOutput = {
   stabilizedIpw: StabilizedIpwOutput | null;
   truncated: boolean;
 };
+type ResultPendingState = {
+  analysis: boolean;
+  simulation: boolean;
+};
 type StabilizedIpwOutput = {
   exposure: GraphNode;
   outcome: GraphNode | null;
@@ -245,10 +249,21 @@ const STORAGE_KEY = "nudagitty.document.v1";
 const BASE_VIEWBOX = { width: 1000, height: 700 };
 const DEFAULT_VIEWPORT: CanvasViewport = { cx: 0, cy: 0, zoom: 1 };
 const NODE_VIEW_MARGIN = { x: 100, top: 110, bottom: 130 };
+const BASIC_NODE_VIEW_MARGIN = { x: 66, top: 86, bottom: 86 };
+const BASIC_VIEWPORT_ZOOM_BONUS = 1.12;
 const EMPIRICAL_DRAW_MIN = 80;
 const EMPIRICAL_DRAW_DEFAULT = 320;
 const EMPIRICAL_DRAW_MAX = 5000;
 const EMPIRICAL_DRAW_STEP = 80;
+const EDGE_SOURCE_CLEARANCE = 1.5;
+const EDGE_ARROW_TIP_EXTENSION_FACTOR = 1.25;
+const EDGE_ARROW_NODE_OVERLAP = 1.2;
+const EDGE_CROWDED_FAN_THRESHOLD = 3;
+const EDGE_CROWDED_FAN_SPACING = 20;
+const EDGE_CROWDED_FAN_MAX_OFFSET = 52;
+const EDGE_OUTGOING_FAN_THRESHOLD = 2;
+const EDGE_OUTGOING_FAN_SPACING = 14;
+const EDGE_OUTGOING_FAN_MAX_OFFSET = 36;
 
 function graphViewportSignature(graph: GraphModel): string {
   const nodes = graph.nodes.map((node) => `${node.id}:${node.label}`).join("|");
@@ -280,15 +295,18 @@ function graphOutputSignature(graph: GraphModel): string {
   return `${graph.kind}::${nodes}::${edges}`;
 }
 
-function fitViewportToGraph(graph: GraphModel): CanvasViewport {
+function fitViewportToGraph(graph: GraphModel, mode: WorkbenchMode = "domain"): CanvasViewport {
   if (graph.nodes.length === 0) return DEFAULT_VIEWPORT;
-  const minX = Math.min(...graph.nodes.map((node) => node.position.x)) - NODE_VIEW_MARGIN.x;
-  const maxX = Math.max(...graph.nodes.map((node) => node.position.x)) + NODE_VIEW_MARGIN.x;
-  const minY = Math.min(...graph.nodes.map((node) => node.position.y)) - NODE_VIEW_MARGIN.top;
-  const maxY = Math.max(...graph.nodes.map((node) => node.position.y)) + NODE_VIEW_MARGIN.bottom;
-  const width = Math.max(240, maxX - minX);
-  const height = Math.max(220, maxY - minY);
-  const zoom = clamp(Math.min(BASE_VIEWBOX.width / width, BASE_VIEWBOX.height / height), 0.55, 1.85);
+  const demoMode = mode === "basic";
+  const margin = demoMode ? BASIC_NODE_VIEW_MARGIN : NODE_VIEW_MARGIN;
+  const minX = Math.min(...graph.nodes.map((node) => node.position.x)) - margin.x;
+  const maxX = Math.max(...graph.nodes.map((node) => node.position.x)) + margin.x;
+  const minY = Math.min(...graph.nodes.map((node) => node.position.y)) - margin.top;
+  const maxY = Math.max(...graph.nodes.map((node) => node.position.y)) + margin.bottom;
+  const width = Math.max(demoMode ? 210 : 240, maxX - minX);
+  const height = Math.max(demoMode ? 200 : 220, maxY - minY);
+  const rawZoom = Math.min(BASE_VIEWBOX.width / width, BASE_VIEWBOX.height / height) * (demoMode ? BASIC_VIEWPORT_ZOOM_BONUS : 1);
+  const zoom = clamp(rawZoom, 0.55, demoMode ? 2.1 : 1.85);
   return {
     cx: (minX + maxX) / 2,
     cy: (minY + maxY) / 2,
@@ -341,7 +359,7 @@ const PLANNED_CAUSAL_MODULES = [
   { id: "policy", label: "Policy rule" }
 ] as const;
 
-const FRONTLINE_EXAMPLE_IDS = ["simpson-severity", "tutoring-scores"] as const;
+const FRONTLINE_EXAMPLE_IDS = ["tutoring-scores", "simpson-severity"] as const;
 
 const DESIGN_MODULES: Array<{
   id: string;
@@ -592,7 +610,7 @@ export function App() {
   const [showBiasing, setShowBiasing] = useState(true);
   const [showAncestors, setShowAncestors] = useState(true);
   const [workbenchMode, setWorkbenchMode] = useState<WorkbenchMode>("basic");
-  const [basicResultsOpen, setBasicResultsOpen] = useState(false);
+  const [basicResultsOpen, setBasicResultsOpen] = useState(true);
   const [activeExampleId, setActiveExampleId] = useState<string | null>(EXAMPLES[0]?.id ?? null);
   const [modelText, setModelText] = useState(() => serializeModel(document));
   const [modelDirty, setModelDirty] = useState(false);
@@ -603,10 +621,17 @@ export function App() {
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
   const analysisSignature = graphAnalysisSignature(document.graph);
   const analysisGraph = useMemo(() => document.graph, [analysisSignature]);
-  const simulationSignature = graphSimulationSignature(document.graph);
-  const simulationGraph = useMemo(() => document.graph, [simulationSignature]);
+  const [analysisResultSignature, setAnalysisResultSignature] = useState(() => analysisSignature);
+  const simulationGraphSignature = graphSimulationSignature(document.graph);
+  const simulationGraph = useMemo(() => document.graph, [simulationGraphSignature]);
+  const simulationSignature = useMemo(() => `${simulationGraphSignature}::${JSON.stringify(document.simulation)}`, [document.simulation, simulationGraphSignature]);
+  const [simulationResultSignature, setSimulationResultSignature] = useState(() => simulationSignature);
   const outputSignature = graphOutputSignature(document.graph);
   const outputGraph = useMemo(() => document.graph, [outputSignature]);
+  const analysisPending = analysisResultSignature !== analysisSignature;
+  const simulationPending = simulationResultSignature !== simulationSignature;
+  const resultsPending: ResultPendingState = { analysis: analysisPending, simulation: simulationPending };
+  const pairwisePending: ResultPendingState = { analysis: false, simulation: simulationPending };
   const computationDocument = useMemo<GraphDocument>(() => ({
     ...document,
     graph: outputGraph
@@ -622,35 +647,51 @@ export function App() {
   const activeExample = EXAMPLES.find((example) => example.id === activeExampleId) ?? null;
   const activeDomain = activeExample?.domain ?? "classic";
   const activeDenouement = activeExample ? exampleDenouement(activeExample.id) : null;
+  const isBasicMode = workbenchMode === "basic";
   const empiricalDraws = graphEmpiricalDraws(document.graph);
   const highlightedEdges = useMemo(() => computeHighlightedEdges(document.graph, analysis, showCausal, showBiasing), [analysis, document.graph, showBiasing, showCausal]);
   const ancestorIds = useMemo(() => showAncestors ? new Set(analysis.causalPaths.flat()) : new Set<string>(), [analysis.causalPaths, showAncestors]);
   const completedOutput = useMemo(() => computeCompletedOutput(outputContext, activeExample?.outputModule ?? null), [activeExample?.outputModule, outputContext]);
   const binaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived), [outputContext, simulationDerived]);
   const basicRelationSummary = useMemo(
-    () => computeBasicRelationSummary({ ...outputContext, moduleId: activeExample?.outputModule ?? null }, completedOutput, simulationDerived, binaryAdjustmentOutput),
-    [activeExample?.outputModule, binaryAdjustmentOutput, completedOutput, outputContext, simulationDerived]
+    () => computeBasicRelationSummary({ ...outputContext, moduleId: activeExample?.outputModule ?? null }, completedOutput, simulationDerived, binaryAdjustmentOutput, { hideOracle: isBasicMode }),
+    [activeExample?.outputModule, binaryAdjustmentOutput, completedOutput, isBasicMode, outputContext, simulationDerived]
   );
   const basicDemoContext = useMemo<BasicDemoContext>(() => ({
     interventions: formatActiveInterventions(document),
     selections: simulation.conditioning.activeConditions
   }), [document.graph, document.simulation.overrides, simulation.conditioning.activeConditions]);
   const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null);
-  const isBasicMode = workbenchMode === "basic";
 
   useEffect(() => {
     const worker = new Worker(new URL("./analysis.worker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (event: MessageEvent<AnalysisReport>) => setAnalysis(event.data);
+    const requestSignature = analysisSignature;
+    worker.onmessage = (event: MessageEvent<AnalysisReport>) => {
+      setAnalysis(event.data);
+      setAnalysisResultSignature(requestSignature);
+    };
+    worker.onerror = () => {
+      setAnalysis(analyzeGraph(analysisGraph));
+      setAnalysisResultSignature(requestSignature);
+    };
     worker.postMessage(analysisGraph);
     return () => worker.terminate();
-  }, [analysisGraph]);
+  }, [analysisGraph, analysisSignature]);
 
   useEffect(() => {
     const worker = new Worker(new URL("./sim.worker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (event: MessageEvent<SimulationResult>) => setSimulation(event.data);
+    const requestSignature = simulationSignature;
+    worker.onmessage = (event: MessageEvent<SimulationResult>) => {
+      setSimulation(event.data);
+      setSimulationResultSignature(requestSignature);
+    };
+    worker.onerror = () => {
+      setSimulation(runSimulation(simulationGraph, document.simulation));
+      setSimulationResultSignature(requestSignature);
+    };
     worker.postMessage({ graph: simulationGraph, spec: document.simulation });
     return () => worker.terminate();
-  }, [document.simulation, simulationGraph]);
+  }, [document.simulation, simulationGraph, simulationSignature]);
 
   useEffect(() => {
     setScatterPair((pair) => reconcileScatterPair(document.graph, pair));
@@ -990,7 +1031,7 @@ export function App() {
         </div>
         <ModeToggle value={workbenchMode} onChange={setWorkbenchMode} />
       </header>
-      <AnalysisSampleBanner simulation={simulation} onClearSelections={clearSelections} />
+      <AnalysisSampleBanner simulation={simulation} pending={simulationPending} onClearSelections={clearSelections} />
 
       <main className="workspace">
         {!isBasicMode && <aside className="side-panel scenario-column">
@@ -998,6 +1039,7 @@ export function App() {
             <ScenarioPanel
               document={document}
               simulation={simulation}
+              pending={simulationPending}
               onResample={resample}
               onClearOverrides={clearOverrides}
               onClearSelections={clearSelections}
@@ -1010,12 +1052,13 @@ export function App() {
         </aside>}
 
         {!isBasicMode && <aside className="side-panel pairwise-column">
-          <Section title="Pairwise Output">
+          <Section title="Pairwise Output" pending={simulationPending}>
             <ScatterplotPanel
               graph={document.graph}
               simulation={simulation}
               derived={simulationDerived}
               pair={scatterPair}
+              pending={pairwisePending}
               onPair={setScatterPair}
               onSelectNode={selectNode}
             />
@@ -1024,11 +1067,13 @@ export function App() {
 
         {!isBasicMode && showAdjustedOutputColumn && (
           <aside className="side-panel adjusted-output-column">
-            <Section title="Adjusted Output">
+            <Section title="Adjusted Output" pending={resultPendingActive(resultsPending)}>
               <AdjustedOutputPanel
                 moduleId={activeExample?.outputModule ?? null}
                 computedOutput={completedOutput}
                 binaryOutput={binaryAdjustmentOutput}
+                pending={resultsPending}
+                hideOracle={false}
               />
             </Section>
           </aside>
@@ -1037,26 +1082,32 @@ export function App() {
         {isBasicMode && basicResultsOpen && (
           <aside className="side-panel basic-results-column" aria-label="Results">
             <div className="basic-results-header">
-              <strong>Results</strong>
+              <div className="basic-results-title">
+                <strong>Results</strong>
+                <PendingChip pending={resultPendingActive(resultsPending)} />
+              </div>
               <button type="button" aria-label="Close results" onClick={() => setBasicResultsOpen(false)}>
                 <X size={16} />
               </button>
             </div>
-            <Section title="Pairwise Output">
+            <Section title="Pairwise Output" pending={simulationPending}>
               <ScatterplotPanel
                 graph={document.graph}
                 simulation={simulation}
                 derived={simulationDerived}
                 pair={scatterPair}
+                pending={pairwisePending}
                 onPair={setScatterPair}
                 onSelectNode={selectNode}
               />
             </Section>
-            {showAdjustedOutputColumn && <Section title="Adjustment">
+            {showAdjustedOutputColumn && <Section title="Adjustment" pending={resultPendingActive(resultsPending)}>
               <AdjustedOutputPanel
                 moduleId={activeExample?.outputModule ?? null}
                 computedOutput={completedOutput}
                 binaryOutput={binaryAdjustmentOutput}
+                pending={resultsPending}
+                hideOracle
               />
             </Section>}
           </aside>
@@ -1076,6 +1127,7 @@ export function App() {
           disabledEdgeIds={new Set(Object.entries(document.simulation.edges).filter(([, mechanism]) => !mechanism.enabled).map(([id]) => id))}
           highlightedEdges={highlightedEdges}
           ancestorIds={ancestorIds}
+          pending={resultsPending}
           onSelect={setSelection}
           onAddNode={addNodeAt}
           onMoveNode={(id, position) => replaceGraph(updateNode(document.graph, id, { position }))}
@@ -1090,6 +1142,7 @@ export function App() {
             <BasicRelationPanel
               summary={basicRelationSummary}
               context={basicDemoContext}
+              pending={resultPendingActive(resultsPending)}
               onOpenResults={() => setBasicResultsOpen(true)}
               onClearOverrides={clearOverrides}
               onClearSelections={clearSelections}
@@ -1133,7 +1186,7 @@ export function App() {
                 <Checkbox label="biasing paths" checked={showBiasing} onChange={setShowBiasing} />
                 <Checkbox label="ancestral structure" checked={showAncestors} onChange={setShowAncestors} />
               </Section>
-              <Section title="Simulation Diagnostics">
+              <Section title="Simulation Diagnostics" pending={simulationPending}>
                 <SimulationDiagnosticsPanel
                   document={document}
                   simulation={simulation}
@@ -1141,7 +1194,7 @@ export function App() {
                   onEmpiricalDraws={updateEmpiricalDraws}
                 />
               </Section>
-              <Section title="Causal Effect Identification">
+              <Section title="Causal Effect Identification" pending={analysisPending}>
                 <select value={effectKind} onChange={(event) => setEffectKind(event.target.value as EffectKind)}>
                   <option value="total">Adjustment (total effect)</option>
                   <option value="direct">Adjustment (direct effect)</option>
@@ -1150,7 +1203,7 @@ export function App() {
                 </select>
                 <EffectPanel effectKind={effectKind} analysis={analysis} />
               </Section>
-              <Section title="Testable Implications">
+              <Section title="Testable Implications" pending={analysisPending}>
                 <ImplicationPanel analysis={analysis} />
               </Section>
               <Section title="Model Code">
@@ -1165,7 +1218,7 @@ export function App() {
                 />
                 {modelDirty && <button type="button" onClick={updateModelFromText}><Braces size={15} /> Update DAG</button>}
               </Section>
-              <Section title="Summary">
+              <Section title="Summary" pending={analysisPending}>
                 <SummaryPanel analysis={analysis} />
               </Section>
               <Section title="Bibliography">
@@ -1201,6 +1254,7 @@ function GraphCanvas(props: {
   disabledEdgeIds: Set<string>;
   highlightedEdges: Map<string, "causal" | "biasing">;
   ancestorIds: Set<string>;
+  pending: ResultPendingState;
   onSelect: (selection: Selection) => void;
   onAddNode: (point: Point) => void;
   onMoveNode: (id: string, position: Point) => void;
@@ -1215,15 +1269,21 @@ function GraphCanvas(props: {
   const activePointersRef = useRef(new Map<number, PointerScreenPoint>());
   const pinchRef = useRef<{ distance: number; center: PointerScreenPoint } | null>(null);
   const viewportSignature = useMemo(() => graphViewportSignature(props.graph), [props.graph.nodes, props.graph.edges]);
-  const fittedViewport = useMemo(() => fitViewportToGraph(props.graph), [viewportSignature]);
-  const [viewport, setViewport] = useState<CanvasViewport>(() => fitViewportToGraph(props.graph));
+  const fittedViewport = useMemo(() => fitViewportToGraph(props.graph, props.mode), [props.mode, viewportSignature]);
+  const [viewport, setViewport] = useState<CanvasViewport>(() => fitViewportToGraph(props.graph, props.mode));
   const viewBoxWidth = BASE_VIEWBOX.width / viewport.zoom;
   const viewBoxHeight = BASE_VIEWBOX.height / viewport.zoom;
   const viewBox = `${viewport.cx - viewBoxWidth / 2} ${viewport.cy - viewBoxHeight / 2} ${viewBoxWidth} ${viewBoxHeight}`;
-  const legendWidth = 172;
-  const legendHeight = 124;
+  const legendWidth = 210;
+  const legendHeight = 100;
   const legendX = viewport.cx + viewBoxWidth / 2 - legendWidth - 18;
-  const legendY = viewport.cy + viewBoxHeight / 2 - legendHeight - 18;
+  const legendY = viewport.cy - viewBoxHeight / 2 + (props.mode === "basic" ? 54 : 96);
+  const canvasClassName = [
+    "graph-canvas",
+    drag?.kind === "pan" ? "panning" : "",
+    props.graph.edges.length > 7 ? "dense-edges" : ""
+  ].filter(Boolean).join(" ");
+  const denseEdges = props.graph.edges.length > 7;
 
   useEffect(() => {
     setViewport(fittedViewport);
@@ -1328,7 +1388,7 @@ function GraphCanvas(props: {
     <section className="canvas-shell" aria-label="Graph editor">
       <svg
         ref={svgRef}
-        className={drag?.kind === "pan" ? "graph-canvas panning" : "graph-canvas"}
+        className={canvasClassName}
         role="img"
         aria-label="Editable causal graph"
         viewBox={viewBox}
@@ -1373,14 +1433,14 @@ function GraphCanvas(props: {
         }}
       >
         <defs>
-          <marker id="arrow" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="12" markerHeight="12" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
-            <path d="M 0 0 L 12 6 L 0 12 z" />
+          <marker id="arrow" viewBox="0 0 10 10" refX="5.6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse" markerUnits="strokeWidth">
+            <path className="arrow-head" d="M 0.7 0.8 L 9.5 5 L 0.7 9.2 z" />
           </marker>
-          <marker id="arrow-bias" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="12" markerHeight="12" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
-            <path d="M 0 0 L 12 6 L 0 12 z" />
+          <marker id="arrow-bias" viewBox="0 0 10 10" refX="5.6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse" markerUnits="strokeWidth">
+            <path className="arrow-head" d="M 0.7 0.8 L 9.5 5 L 0.7 9.2 z" />
           </marker>
-          <marker id="legend-arrow" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse">
-            <path d="M 0 0 L 12 6 L 0 12 z" />
+          <marker id="legend-arrow" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="10" markerHeight="10" orient="auto" markerUnits="userSpaceOnUse">
+            <path className="arrow-head" d="M 0.7 0.8 L 9.5 5 L 0.7 9.2 z" />
           </marker>
         </defs>
         <g>
@@ -1393,8 +1453,8 @@ function GraphCanvas(props: {
             const semantic = props.highlightedEdges.get(edge.id);
             const mechanism = normalizeEdgeMechanism(props.edgeMechanisms[edge.id]);
             const edgeStrength = edgeMechanismDisplayStrength(mechanism);
-            const width = Math.min(8, 1.8 + Math.abs(edgeStrength) * 1.2);
-            const geometry = edgeGeometry(edge, source, target, props.graph.edges);
+            const width = edgeStrokeWidth(edgeStrength, denseEdges);
+            const geometry = edgeGeometry(edge, source, target, width, props.graph.edges, nodesById);
             const enabled = !props.disabledEdgeIds.has(edge.id);
             const edgeLabel = edgeMechanismCanvasLabel(mechanism);
             const showEdgeLabel = enabled && (mechanism.kind !== "linear" || Math.abs(edgeStrength) > 0.001);
@@ -1412,7 +1472,7 @@ function GraphCanvas(props: {
                 />
                 <path
                   d={geometry.path}
-                  className="edge-line"
+                  className={`edge-line ${edge.kind === "directed" || edge.kind === "bidirected" ? "with-arrow" : ""}`}
                   style={{ strokeWidth: width }}
                   markerEnd={edge.kind === "directed" || edge.kind === "bidirected" ? "url(#arrow)" : undefined}
                   markerStart={edge.kind === "bidirected" ? "url(#arrow)" : undefined}
@@ -1476,14 +1536,14 @@ function GraphCanvas(props: {
           {legendOpen && <GraphLegend x={legendX} y={legendY} width={legendWidth} height={legendHeight} />}
         </g>
       </svg>
-      {props.mode !== "basic" && <button
+      <button
         type="button"
         className={legendOpen ? "canvas-legend-toggle active" : "canvas-legend-toggle"}
         aria-expanded={legendOpen}
         onClick={() => setLegendOpen((open) => !open)}
       >
         Legend
-      </button>}
+      </button>
       {props.mode !== "basic" && <div className="canvas-zoom-controls" aria-label="Canvas zoom controls">
         <button type="button" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>-</button>
         <span>{Math.round(viewport.zoom * 100)}%</span>
@@ -1493,6 +1553,11 @@ function GraphCanvas(props: {
       {props.mode !== "basic" && <div className="canvas-status">
         <span>{props.tool === "edge" ? (props.edgeSource ? `connect from ${props.edgeSource}` : "click a source variable") : "double-click canvas to add variable"}</span>
       </div>}
+      {resultPendingActive(props.pending) && (
+        <div className="canvas-computation-status" role="status">
+          <PendingChip pending label={resultPendingShortLabel(props.pending)} />
+        </div>
+      )}
     </section>
   );
 }
@@ -1544,24 +1609,17 @@ function GraphLegend({ x, y, width, height }: { x: number; y: number; width: num
     <g className="graph-legend" transform={`translate(${x}, ${y})`} aria-hidden="true">
       <rect className="graph-legend-card" x="0" y="0" width={width} height={height} rx="7" />
       <text className="graph-legend-heading" x="12" y="18">Legend</text>
-      <circle className="graph-legend-node" cx="29" cy="34" r="10" />
-      <rect className="graph-legend-adjusted" x="16" y="21" width="26" height="26" rx="4" />
-      <text className="graph-legend-text" x="54" y="38">adjusted variable</text>
-      <circle className="graph-legend-node" cx="29" cy="55" r="10" />
-      <path className="graph-legend-selected-mark" d="M 17 67 L 29 74 L 41 67" />
-      <text className="graph-legend-text" x="54" y="59">selected variable</text>
-      <circle className="graph-legend-node latent" cx="29" cy="77" r="10" />
-      <text className="graph-legend-text" x="54" y="81">unobserved variable</text>
-      <line className="graph-legend-arrow" x1="14" y1="98" x2="44" y2="98" markerEnd="url(#legend-arrow)" />
-      <text className="graph-legend-text" x="54" y="102">directed edge</text>
-      <g transform="translate(14 108) scale(0.82)">
-        <rect className="edge-function-glyph-card" x="0" y="0" width="28" height="18" rx="4" />
-        <g transform="translate(0 -1) scale(0.875 0.9)">
-          <path className="edge-function-glyph-axis" d="M 3 17 H 29 M 4 18 V 3" />
-          <path className="edge-function-glyph-curve" d={functionGlyphPath("smooth_threshold")} />
-        </g>
-      </g>
-      <text className="graph-legend-text" x="54" y="120">edge mechanism</text>
+      <circle className="graph-legend-node role" cx="60" cy="46" r="24" />
+      <text className="graph-legend-node-label" x="60" y="49">Exposure</text>
+      <circle className="graph-legend-node role" cx="154" cy="46" r="24" />
+      <text className="graph-legend-node-label" x="154" y="49">Outcome</text>
+
+      <circle className="graph-legend-node" cx="24" cy="80" r="8" />
+      <rect className="graph-legend-adjusted" x="12" y="68" width="24" height="24" rx="4" />
+      <text className="graph-legend-text" x="42" y="84">adjusted</text>
+      <circle className="graph-legend-node" cx="124" cy="80" r="8" />
+      <path className="graph-legend-selected-mark" d="M 112 88 L 124 94 L 136 88" />
+      <text className="graph-legend-text" x="142" y="84">selected</text>
     </g>
   );
 }
@@ -1622,6 +1680,13 @@ function edgeMechanismDisplayStrength(mechanism: EdgeMechanism): number {
   return 0;
 }
 
+function edgeStrokeWidth(edgeStrength: number, denseEdges: boolean): number {
+  const strength = Math.abs(edgeStrength);
+  return denseEdges
+    ? Math.min(5.6, 1.55 + strength * 0.72)
+    : Math.min(7.2, 1.8 + strength * 1.05);
+}
+
 const NODE_DISTRIBUTION_PLOT_X = -48;
 const NODE_DISTRIBUTION_PLOT_Y = -72;
 const NODE_DISTRIBUTION_ANNOTATION_Y = -28;
@@ -1645,6 +1710,7 @@ function NodeDistributionMiniPlot({ state, variable, summary }: { state?: Simula
   return (
     <g className="node-distribution-plot" transform={`translate(${NODE_DISTRIBUTION_PLOT_X} ${NODE_DISTRIBUTION_PLOT_Y})`} aria-hidden="true">
       <title>{title}</title>
+      <rect className="distribution-backdrop" x="-5" y="-5" width={width + 10} height={height + 10} rx="7" />
       <rect className="distribution-frame" x="0" y="0" width={width} height={height} rx="4" />
       {bins.map((count, index) => {
         const barWidth = width / bins.length;
@@ -1681,6 +1747,7 @@ function BinaryNodeDistributionMiniPlot({ state }: { state: SimulatedNodeState }
   return (
     <g className="node-distribution-plot binary-node-distribution-plot" transform={`translate(${NODE_DISTRIBUTION_PLOT_X} ${NODE_DISTRIBUTION_PLOT_Y})`} aria-hidden="true">
       <title>{title}</title>
+      <rect className="distribution-backdrop" x="-5" y="-5" width={width + 10} height={height + 10} rx="7" />
       <rect className="distribution-frame" x="0" y="0" width={width} height={height} rx="4" />
       <line className="distribution-binary-axis" x1="13" y1={baseline} x2={width - 13} y2={baseline} />
       {probabilities.map((p, index) => {
@@ -1723,6 +1790,7 @@ function ScatterplotPanel(props: {
   simulation: SimulationResult;
   derived: SimulationDerivedCache;
   pair: ScatterPair;
+  pending?: ResultPendingState;
   onPair: (pair: ScatterPair) => void;
   onSelectNode: (id: string) => void;
 }) {
@@ -1763,7 +1831,7 @@ function ScatterplotPanel(props: {
   if (nodes.length < 2) return <p className="muted">Add at least two variables to compare simulated observations.</p>;
 
   return (
-    <div className="scatterplot-panel">
+    <div className="scatterplot-panel" aria-busy={resultPendingActive(props.pending)}>
       <div className="scatter-controls">
         <label className="field">
           <span>x variable</span>
@@ -1786,6 +1854,7 @@ function ScatterplotPanel(props: {
           </select>
         </label>
       </div>
+      <ResultsPendingNotice pending={props.pending} label="Updating pairwise output" />
 
       {binaryPair ? (
         <BinaryPairView
@@ -2040,6 +2109,7 @@ function BinaryPairView(props: {
 function ScenarioPanel(props: {
   document: GraphDocument;
   simulation: SimulationResult;
+  pending: boolean;
   onResample: () => void;
   onClearOverrides: () => void;
   onClearSelections: () => void;
@@ -2053,9 +2123,10 @@ function ScenarioPanel(props: {
   const selections = Object.keys(props.document.simulation.selections ?? {});
   return (
     <div className="simulation-panel">
-      <div className="simulation-status">
+      <div className="simulation-status" aria-busy={props.pending}>
         <span className={blocked ? "status-dot blocked" : "status-dot active"} />
         <span>{blocked ? "blocked" : "live propagation"}</span>
+        <PendingChip pending={props.pending} />
       </div>
       <div className="button-row">
         <button type="button" onClick={props.onResample}><RefreshCw size={15} /> resample</button>
@@ -2074,13 +2145,15 @@ function ScenarioPanel(props: {
 
 function AnalysisSampleBanner(props: {
   simulation: SimulationResult;
+  pending: boolean;
   onClearSelections: () => void;
 }) {
   const conditioning = props.simulation.conditioning;
   if (conditioning.activeConditions.length === 0) return null;
   return (
-    <div className="analysis-sample-banner" role="status" aria-label="Analysis sample">
+    <div className="analysis-sample-banner" role="status" aria-label="Analysis sample" aria-busy={props.pending}>
       <strong>Analysis sample</strong>
+      {props.pending && <PendingChip pending label="updating sample" />}
       {conditioning.activeConditions.map((condition) => (
         <span className="analysis-sample-chip" key={condition}>{condition}</span>
       ))}
@@ -2116,6 +2189,7 @@ function BasicExampleTabs(props: { activeExampleId: string | null; onSelect: (id
 function BasicRelationPanel(props: {
   summary: BasicRelationSummary | null;
   context: BasicDemoContext;
+  pending: boolean;
   onOpenResults: () => void;
   onClearOverrides: () => void;
   onClearSelections: () => void;
@@ -2123,9 +2197,10 @@ function BasicRelationPanel(props: {
   const hasContext = props.context.interventions.length > 0 || props.context.selections.length > 0;
   if (!props.summary) {
     return (
-      <section className="basic-relation-panel empty" aria-label="Exposure outcome relation">
+      <section className="basic-relation-panel empty" aria-label="Exposure outcome relation" aria-busy={props.pending}>
         <div className="module-card-header">
           <strong>Exposure {"->"} outcome</strong>
+          <PendingChip pending={props.pending} />
           <span className="module-badge planned">pick roles</span>
         </div>
         {hasContext && <BasicDemoContextBar context={props.context} onClearOverrides={props.onClearOverrides} onClearSelections={props.onClearSelections} />}
@@ -2137,9 +2212,10 @@ function BasicRelationPanel(props: {
   const status = relationChangeLabel(summary.observed.numericValue, summary.comparison?.numericValue ?? null);
   const ledgerRows = summary.ledgerRows && summary.ledgerRows.length > 0 ? summary.ledgerRows : fallbackLedgerRows(summary);
   return (
-    <section className="basic-relation-panel" aria-label="Exposure outcome relation">
+    <section className="basic-relation-panel" aria-label="Exposure outcome relation" aria-busy={props.pending}>
       <div className="module-card-header">
         <strong>{summary.relationLabel}</strong>
+        <PendingChip pending={props.pending} />
         <span className={status === "sign flip" ? "module-badge active punchline-flip" : "module-badge active"}>{status}</span>
       </div>
       {hasContext && <BasicDemoContextBar context={props.context} onClearOverrides={props.onClearOverrides} onClearSelections={props.onClearSelections} />}
@@ -2411,13 +2487,14 @@ function computeBasicRelationSummary(
   context: OutputContext & { moduleId: string | null },
   completedOutput: ComputedCompletedOutput | null,
   derived: SimulationDerivedCache,
-  binaryAdjustmentOutput: BinaryAdjustmentOutput | null
+  binaryAdjustmentOutput: BinaryAdjustmentOutput | null,
+  options: { hideOracle?: boolean } = {}
 ): BasicRelationSummary | null {
   const activeInterventionSummary = computeInterventionRelationSummary(context);
   if (activeInterventionSummary) return activeInterventionSummary;
-  const activeSelectionSummary = computeSelectionRelationSummary(context, derived, completedOutput);
+  const activeSelectionSummary = computeSelectionRelationSummary(context, derived, completedOutput, options);
   if (activeSelectionSummary) return activeSelectionSummary;
-  const activeAdjustmentSummary = computeAdjustmentRelationSummary(context, completedOutput, derived, binaryAdjustmentOutput);
+  const activeAdjustmentSummary = computeAdjustmentRelationSummary(context, completedOutput, derived, binaryAdjustmentOutput, options);
   if (activeAdjustmentSummary) return activeAdjustmentSummary;
   const modulePunchline = completedOutput?.moduleId === context.moduleId
     ? basicOutputPunchlineFromResult(context.moduleId, completedOutput.result)
@@ -2447,7 +2524,8 @@ function computeAdjustmentRelationSummary(
   context: OutputContext & { moduleId: string | null },
   completedOutput: ComputedCompletedOutput | null,
   derived: SimulationDerivedCache,
-  binaryAdjustmentOutput: BinaryAdjustmentOutput | null
+  binaryAdjustmentOutput: BinaryAdjustmentOutput | null,
+  options: { hideOracle?: boolean } = {}
 ): BasicRelationSummary | null {
   if (context.moduleId === "simpson-severity") {
     const ipw = binaryAdjustmentOutput?.stabilizedIpw;
@@ -2482,7 +2560,7 @@ function computeAdjustmentRelationSummary(
       lower: rawInterval?.lower,
       upper: rawInterval?.upper
     };
-    const dgpRow = dgpLedgerRowFromCompletedOutput(context, completedOutput);
+    const dgpRow = options.hideOracle ? null : dgpLedgerRowFromCompletedOutput(context, completedOutput);
     return {
       relationLabel: basicRelationLabel(context.document.graph),
       observed: rawMetric,
@@ -2500,7 +2578,9 @@ function computeAdjustmentRelationSummary(
         },
         ...(dgpRow ? [dgpRow] : [])
       ],
-      note: "Severity is now marked adjust for. The displayed association changes from the raw treatment comparison to a model-based adjusted comparison; open Results for the DGP do contrast and diagnostics."
+      note: options.hideOracle
+        ? "Severity is now marked adjust for. The displayed association changes from the raw treatment comparison to the stabilized-IPW adjusted comparison."
+        : "Severity is now marked adjust for. The displayed association changes from the raw treatment comparison to a model-based adjusted comparison; open Results for the DGP do contrast and diagnostics."
     };
   }
 
@@ -2523,7 +2603,7 @@ function computeAdjustmentRelationSummary(
       detail: "weighted within Academic_need strata",
       numericValue: output.adjustedPairGap
     };
-    const dgpRow = dgpLedgerRowFromCompletedOutput(context, completedOutput);
+    const dgpRow = options.hideOracle ? null : dgpLedgerRowFromCompletedOutput(context, completedOutput);
     return {
       relationLabel: basicRelationLabel(context.document.graph),
       observed: rawMetric,
@@ -2609,7 +2689,8 @@ function computeInterventionRelationSummary(context: OutputContext & { moduleId:
 function computeSelectionRelationSummary(
   context: OutputContext & { moduleId: string | null },
   derived: SimulationDerivedCache,
-  completedOutput: ComputedCompletedOutput | null
+  completedOutput: ComputedCompletedOutput | null,
+  options: { hideOracle?: boolean } = {}
 ): BasicRelationSummary | null {
   if (context.simulation.conditioning.activeConditions.length === 0) return null;
   const current = computeObservedRelationSummary(context.document.graph, context.simulation, derived);
@@ -2624,7 +2705,7 @@ function computeSelectionRelationSummary(
     ...baseline.observed,
     label: "Full sample"
   } : null;
-  const dgpRow = dgpLedgerRowFromCompletedOutput(context, completedOutput);
+  const dgpRow = options.hideOracle ? null : dgpLedgerRowFromCompletedOutput(context, completedOutput);
   return {
     relationLabel: current.relationLabel,
     observed: selectedMetric,
@@ -2809,6 +2890,47 @@ function metricTone(value: number | null): "negative" | "neutral" | "positive" {
   return "neutral";
 }
 
+function resultPendingActive(pending?: ResultPendingState): boolean {
+  return Boolean(pending?.analysis || pending?.simulation);
+}
+
+function resultPendingShortLabel(pending?: ResultPendingState): string {
+  if (pending?.analysis && pending.simulation) return "updating model";
+  if (pending?.analysis) return "updating paths";
+  if (pending?.simulation) return "updating sample";
+  return "updating";
+}
+
+function resultPendingDetail(pending?: ResultPendingState): string {
+  if (pending?.analysis && pending.simulation) return "Graph paths and simulated data are recalculating.";
+  if (pending?.analysis) return "Graph paths are recalculating.";
+  if (pending?.simulation) return "Simulated data are recalculating.";
+  return "Displayed values will refresh shortly.";
+}
+
+function PendingChip({ pending, label }: { pending: boolean; label?: string }) {
+  if (!pending) return null;
+  return (
+    <span className="pending-chip">
+      <span className="pending-spinner" aria-hidden="true" />
+      {label ?? "updating"}
+    </span>
+  );
+}
+
+function ResultsPendingNotice({ pending, label }: { pending?: ResultPendingState; label: string }) {
+  if (!resultPendingActive(pending)) return null;
+  return (
+    <div className="results-pending-notice" role="status">
+      <span className="pending-spinner" aria-hidden="true" />
+      <span className="results-pending-copy">
+        <strong>{label}</strong>
+        <span>{resultPendingDetail(pending)}</span>
+      </span>
+    </div>
+  );
+}
+
 function shortNodeLabel(node: GraphNode): string {
   return abbreviateLabel(node.label || node.id, 24);
 }
@@ -2817,34 +2939,54 @@ function AdjustedOutputPanel(props: {
   moduleId: string | null;
   computedOutput: ComputedCompletedOutput | null;
   binaryOutput: BinaryAdjustmentOutput | null;
+  pending?: ResultPendingState;
+  hideOracle?: boolean;
 }) {
   const adjustedNodes = props.binaryOutput?.adjustedNodes ?? [];
   const binaryOutput = props.binaryOutput;
+  const pendingNotice = <ResultsPendingNotice pending={props.pending} label="Updating adjusted output" />;
   if (props.moduleId) {
     return (
-      <div className="adjusted-output-stack">
-        <CompletedOutputPanel moduleId={props.moduleId} computedOutput={props.computedOutput} />
+      <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
+        {pendingNotice}
+        <CompletedOutputPanel moduleId={props.moduleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
         {binaryOutput && shouldRenderBinaryAdjustmentOutput(binaryOutput) && <BinaryAdjustmentOutputCard output={binaryOutput} />}
       </div>
     );
   }
   if (binaryOutput) {
     return (
-      <div className="adjusted-output-stack">
+      <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
+        {pendingNotice}
         <BinaryAdjustmentOutputCard output={binaryOutput} />
       </div>
     );
   }
-  if (adjustedNodes.length === 0) return <AdjustedOutputEmptyState />;
-  if (!props.moduleId) {
+  if (adjustedNodes.length === 0) {
     return (
-      <div className="adjusted-output-empty">
-        <strong>Adjusted variables selected</strong>
-        <p>{adjustedNodes.map((node) => node.label).join(", ")} marked adjusted. This custom graph does not have a specialized adjusted-output module yet.</p>
+      <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
+        {pendingNotice}
+        <AdjustedOutputEmptyState />
       </div>
     );
   }
-  return <CompletedOutputPanel moduleId={props.moduleId} computedOutput={props.computedOutput} />;
+  if (!props.moduleId) {
+    return (
+      <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
+        {pendingNotice}
+        <div className="adjusted-output-empty">
+          <strong>Adjusted variables selected</strong>
+          <p>{adjustedNodes.map((node) => node.label).join(", ")} marked adjusted. This custom graph does not have a specialized adjusted-output module yet.</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
+      {pendingNotice}
+      <CompletedOutputPanel moduleId={props.moduleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
+    </div>
+  );
 }
 
 function shouldRenderBinaryAdjustmentOutput(output: BinaryAdjustmentOutput): boolean {
@@ -4543,8 +4685,16 @@ function BibliographyPanel(props: { topic: BibliographyTopic; onTopic: (topic: B
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="panel-section"><h2>{title}</h2>{children}</section>;
+function Section({ title, pending, children }: { title: string; pending?: boolean; children: React.ReactNode }) {
+  return (
+    <section className="panel-section" aria-busy={pending}>
+      <div className="panel-section-title">
+        <h2>{title}</h2>
+        <PendingChip pending={Boolean(pending)} />
+      </div>
+      {children}
+    </section>
+  );
 }
 
 function IconButton({ label, active, disabled, onClick, children }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -5364,34 +5514,48 @@ function addPathEdges(graph: GraphModel, paths: string[][], out: Map<string, "ca
   }
 }
 
-function edgeGeometry(edge: GraphEdge, source: GraphNode, target: GraphNode, edges: GraphEdge[]): { path: string; control: Point } {
-  const control = edge.control ?? automaticControlPoint(edge, source.position, target.position, edges);
-  const curved = !!edge.control || hasReciprocalDirectedEdge(edge, edges);
-  const startRadius = nodeRadius(source) + 6;
-  const endRadius = nodeRadius(target) + (edge.kind === "directed" || edge.kind === "bidirected" ? 12 : 6);
+function edgeGeometry(edge: GraphEdge, source: GraphNode, target: GraphNode, strokeWidth: number, edges: GraphEdge[], nodesById: Map<string, GraphNode>): { path: string; control: Point } {
+  const automaticControl = automaticControlPoint(edge, source, target, edges, nodesById);
+  const control = edge.control ?? automaticControl.point;
+  const curved = !!edge.control || automaticControl.curved;
+  const arrowClearance = edgeArrowClearance(strokeWidth);
+  const startClearance = edge.kind === "bidirected" ? arrowClearance : EDGE_SOURCE_CLEARANCE;
+  const endClearance = edge.kind === "directed" || edge.kind === "bidirected" ? arrowClearance : EDGE_SOURCE_CLEARANCE;
   if (!curved) {
-    const start = moveToward(source.position, target.position, startRadius);
-    const end = moveToward(target.position, source.position, endRadius);
+    const start = nodeBoundaryPoint(source, target.position, startClearance, { includeDistribution: edge.kind === "bidirected" });
+    const end = nodeBoundaryPoint(target, source.position, endClearance, { includeDistribution: edge.kind === "bidirected" });
     return { path: `M ${start.x} ${start.y} L ${end.x} ${end.y}`, control };
   }
-  const start = moveToward(source.position, control, startRadius);
-  const end = moveToward(target.position, control, endRadius);
+  const start = nodeBoundaryPoint(source, control, startClearance, { includeDistribution: edge.kind === "bidirected" });
+  const end = nodeBoundaryPoint(target, control, endClearance, { includeDistribution: edge.kind === "bidirected" });
   return { path: `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`, control };
+}
+
+function edgeArrowClearance(strokeWidth: number): number {
+  return Math.max(1.25, strokeWidth * EDGE_ARROW_TIP_EXTENSION_FACTOR - EDGE_ARROW_NODE_OVERLAP);
 }
 
 function midpoint(a: Point, b: Point): Point {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-function automaticControlPoint(edge: GraphEdge, source: Point, target: Point, edges: GraphEdge[]): Point {
-  const mid = midpoint(source, target);
-  if (!hasReciprocalDirectedEdge(edge, edges)) return mid;
-  const dx = target.x - source.x;
-  const dy = target.y - source.y;
+function automaticControlPoint(edge: GraphEdge, source: GraphNode, target: GraphNode, edges: GraphEdge[], nodesById: Map<string, GraphNode>): { point: Point; curved: boolean } {
+  const mid = midpoint(source.position, target.position);
+  if (hasReciprocalDirectedEdge(edge, edges)) {
+    const dx = target.position.x - source.position.x;
+    const dy = target.position.y - source.position.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const normal = { x: -dy / length, y: dx / length };
+    const sign = edge.source < edge.target ? 1 : -1;
+    return { point: { x: mid.x + normal.x * 44 * sign, y: mid.y + normal.y * 44 * sign }, curved: true };
+  }
+  const fanOffset = crowdedEdgeFanOffset(edge, edges, nodesById);
+  if (Math.abs(fanOffset) <= 1e-6) return { point: mid, curved: false };
+  const dx = target.position.x - source.position.x;
+  const dy = target.position.y - source.position.y;
   const length = Math.hypot(dx, dy) || 1;
   const normal = { x: -dy / length, y: dx / length };
-  const sign = edge.source < edge.target ? 1 : -1;
-  return { x: mid.x + normal.x * 44 * sign, y: mid.y + normal.y * 44 * sign };
+  return { point: { x: mid.x + normal.x * fanOffset, y: mid.y + normal.y * fanOffset }, curved: true };
 }
 
 function hasReciprocalDirectedEdge(edge: GraphEdge, edges: GraphEdge[]): boolean {
@@ -5399,15 +5563,129 @@ function hasReciprocalDirectedEdge(edge: GraphEdge, edges: GraphEdge[]): boolean
   return edges.some((candidate) => candidate.kind === "directed" && candidate.source === edge.target && candidate.target === edge.source);
 }
 
+function crowdedEdgeFanOffset(edge: GraphEdge, edges: GraphEdge[], nodesById: Map<string, GraphNode>): number {
+  if (edge.kind !== "directed" && edge.kind !== "bidirected") return 0;
+  const target = nodesById.get(edge.target);
+  const source = nodesById.get(edge.source);
+  if (!target || !source) return 0;
+  const incoming = edges
+    .filter((candidate) => (candidate.kind === "directed" || candidate.kind === "bidirected") && candidate.target === edge.target)
+    .map((candidate) => {
+      const source = nodesById.get(candidate.source);
+      if (!source) return null;
+      return {
+        key: candidate.id,
+        angle: positiveAngle(Math.atan2(source.position.y - target.position.y, source.position.x - target.position.x))
+      };
+    })
+    .filter((candidate): candidate is { key: string; angle: number } => candidate !== null);
+  const targetOffset = incoming.length >= EDGE_CROWDED_FAN_THRESHOLD
+    ? edgeFanOffset(edge.id, incoming, EDGE_CROWDED_FAN_SPACING, EDGE_CROWDED_FAN_MAX_OFFSET)
+    : 0;
+  const outgoing = edges
+    .filter((candidate) => (candidate.kind === "directed" || candidate.kind === "bidirected") && candidate.source === edge.source)
+    .map((candidate) => {
+      const target = nodesById.get(candidate.target);
+      if (!target) return null;
+      return {
+        key: candidate.id,
+        angle: positiveAngle(Math.atan2(target.position.y - source.position.y, target.position.x - source.position.x))
+      };
+    })
+    .filter((candidate): candidate is { key: string; angle: number } => candidate !== null);
+  const sourceOffset = outgoing.length >= EDGE_OUTGOING_FAN_THRESHOLD
+    ? edgeFanOffset(edge.id, outgoing, EDGE_OUTGOING_FAN_SPACING, EDGE_OUTGOING_FAN_MAX_OFFSET)
+    : 0;
+  return targetOffset + sourceOffset;
+}
+
+function edgeFanOffset(edgeId: string, ports: Array<{ key: string; angle: number }>, spacing: number, maxOffset: number): number {
+  const ordered = orderCircularArrowPorts(ports);
+  const index = ordered.findIndex((candidate) => candidate.key === edgeId);
+  if (index < 0) return 0;
+  return clamp((index - (ordered.length - 1) / 2) * spacing, -maxOffset, maxOffset);
+}
+
 function nodeRadius(node: GraphNode): number {
   return node.roles.exposure || node.roles.outcome ? 25 : 21;
 }
 
-function moveToward(from: Point, toward: Point, distance: number): Point {
+function nodeBoundaryPoint(node: GraphNode, toward: Point, clearance: number, options: { includeDistribution: boolean }): Point {
+  const unit = unitVector(node.position, toward);
+  const distance = nodeBoundaryDistance(node, unit, clearance, options);
+  return {
+    x: node.position.x + unit.x * distance,
+    y: node.position.y + unit.y * distance
+  };
+}
+
+function nodeBoundaryDistance(node: GraphNode, unit: Point, clearance: number, options: { includeDistribution: boolean }): number {
+  const circleBoundary = nodeRadius(node) + clearance;
+  const adjustedBoundary = node.roles.adjusted ? rayCenteredRectDistance(unit, 28 + clearance, 28 + clearance) : 0;
+  const selectedBoundary = node.roles.selected ? rayRectExitDistance(unit, { left: -23 - clearance, right: 23 + clearance, top: 22 - clearance, bottom: 36 + clearance }) : 0;
+  const distributionBoundary = options.includeDistribution
+    ? rayRectExitDistance(unit, { left: NODE_DISTRIBUTION_PLOT_X - clearance, right: 48 + clearance, top: NODE_DISTRIBUTION_PLOT_Y - clearance, bottom: -18 + clearance })
+    : 0;
+  return Math.max(circleBoundary, adjustedBoundary, selectedBoundary, distributionBoundary);
+}
+
+function rayCenteredRectDistance(unit: Point, halfWidth: number, halfHeight: number): number {
+  const xDistance = Math.abs(unit.x) > 1e-6 ? halfWidth / Math.abs(unit.x) : Number.POSITIVE_INFINITY;
+  const yDistance = Math.abs(unit.y) > 1e-6 ? halfHeight / Math.abs(unit.y) : Number.POSITIVE_INFINITY;
+  return Math.min(xDistance, yDistance);
+}
+
+function rayRectExitDistance(unit: Point, rect: { left: number; right: number; top: number; bottom: number }): number {
+  let enter = 0;
+  let exit = Number.POSITIVE_INFINITY;
+  if (Math.abs(unit.x) < 1e-6) {
+    if (rect.left > 0 || rect.right < 0) return 0;
+  } else {
+    const t1 = rect.left / unit.x;
+    const t2 = rect.right / unit.x;
+    enter = Math.max(enter, Math.min(t1, t2));
+    exit = Math.min(exit, Math.max(t1, t2));
+  }
+  if (Math.abs(unit.y) < 1e-6) {
+    if (rect.top > 0 || rect.bottom < 0) return 0;
+  } else {
+    const t1 = rect.top / unit.y;
+    const t2 = rect.bottom / unit.y;
+    enter = Math.max(enter, Math.min(t1, t2));
+    exit = Math.min(exit, Math.max(t1, t2));
+  }
+  return exit >= enter && exit > 0 ? exit : 0;
+}
+
+function orderCircularArrowPorts<T extends { angle: number; key: string }>(ports: T[]): T[] {
+  const ordered = [...ports].sort((a, b) => {
+    const angleDelta = a.angle - b.angle;
+    return Math.abs(angleDelta) > 1e-6 ? angleDelta : a.key.localeCompare(b.key);
+  });
+  if (ordered.length <= 2) return ordered;
+  let largestGap = -1;
+  let startIndex = 0;
+  for (let index = 0; index < ordered.length; index += 1) {
+    const current = ordered[index]!;
+    const next = ordered[(index + 1) % ordered.length]!;
+    const gap = (next.angle - current.angle + Math.PI * 2) % (Math.PI * 2);
+    if (gap > largestGap) {
+      largestGap = gap;
+      startIndex = (index + 1) % ordered.length;
+    }
+  }
+  return [...ordered.slice(startIndex), ...ordered.slice(0, startIndex)];
+}
+
+function positiveAngle(angle: number): number {
+  return angle < 0 ? angle + Math.PI * 2 : angle;
+}
+
+function unitVector(from: Point, toward: Point): Point {
   const dx = toward.x - from.x;
   const dy = toward.y - from.y;
   const length = Math.hypot(dx, dy) || 1;
-  return { x: from.x + (dx / length) * distance, y: from.y + (dy / length) * distance };
+  return { x: dx / length, y: dy / length };
 }
 
 function conditioningSliderBounds(state: SimulatedNodeState | undefined, value: number): [number, number] {
