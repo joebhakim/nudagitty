@@ -1,7 +1,21 @@
 import CodeMirror from "@uiw/react-codemirror";
 import {
+  Background,
+  BackgroundVariant,
+  Controls,
+  ReactFlow,
+  ReactFlowProvider,
+  applyNodeChanges,
+  Handle,
+  Position,
+  useReactFlow,
+  useStore
+} from "@xyflow/react";
+import type { Edge as FlowEdge, EdgeProps as FlowEdgeProps, Node as FlowNode, NodeChange, NodeProps as FlowNodeProps } from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
+import {
   ArrowRight,
-  BarChart3,
   Braces,
   Camera,
   CirclePlus,
@@ -25,7 +39,6 @@ import {
   addNode,
   adjusted,
   analyzeGraph,
-  cloneDocument,
   correlationGraph,
   createNewNodeId,
   createNode,
@@ -42,7 +55,6 @@ import {
   findEdge,
   findNode,
   graphWithKind,
-  initialDocument,
   moralGraph,
   normalizeVariableModel,
   outcomes,
@@ -105,12 +117,13 @@ import { ExampleMenu } from "./examples/ExampleMenu";
 import { ModeToggle } from "./examples/ModeToggle";
 import { MODE_LABELS } from "./shared/workbench";
 import type { WorkbenchMode } from "./shared/workbench";
+import { STORAGE_KEY } from "./shared/appState";
+import type { BibliographyTopic, Selection, ToolMode } from "./shared/appState";
+import { defaultScatterPair, reconcileScatterPair } from "./shared/pairs";
+import type { ScatterPair } from "./shared/pairs";
+import { useWorkbenchStore } from "./store/workbenchStore";
 
-type ToolMode = "select" | "node" | "edge";
-type Selection = { kind: "node"; id: string } | { kind: "edge"; id: string } | null;
-type BibliographyTopic = "sem" | "nonlinear" | "probability" | "deep";
 type CanvasViewport = { cx: number; cy: number; zoom: number };
-type ScatterPair = { x: string; y: string };
 type ScatterPoint = { x: number; y: number; weight: number; index: number };
 type BinaryCell = { x: 0 | 1; y: 0 | 1; weight: number; count: number; percent: number; columnPercent: number };
 type BinaryContinuousGroup = { value: 0 | 1; count: number; weight: number; mean: number | null; share: number };
@@ -177,6 +190,22 @@ type BinaryAdjustmentOutput = {
   stabilizedIpw: StabilizedIpwOutput | null;
   truncated: boolean;
 };
+type BinaryContinuousAdjustmentOutput = {
+  exposure: GraphNode;
+  outcome: GraphNode;
+  rawPoints: ScatterPoint[];
+  rawGroups: BinaryContinuousGroup[];
+  rawGap: number | null;
+  yDomain: [number, number];
+  adjustedNodes: GraphNode[];
+  binaryAdjustedNodes: GraphNode[];
+  binnedAdjustedNodes: BinnedAdjustmentNode[];
+  unsupportedAdjustedNodes: GraphNode[];
+  strata: BinaryContinuousAdjustmentStratum[];
+  stabilizedIpw: StabilizedIpwOutput | null;
+  adjustedGap: number | null;
+  truncated: boolean;
+};
 type ResultPendingState = {
   analysis: boolean;
   simulation: boolean;
@@ -223,6 +252,7 @@ type BinnedAdjustmentNode = {
   state: SimulatedNodeState;
   domain: [number, number];
   cutpoints: number[];
+  automatic?: boolean;
 };
 type BinaryAdjustmentStratum = {
   id: string;
@@ -230,6 +260,15 @@ type BinaryAdjustmentStratum = {
   points: ScatterPoint[];
   cells: BinaryCell[];
   contrast: BinaryOutcomeContrastSummary;
+  weight: number;
+};
+type BinaryContinuousAdjustmentStratum = {
+  id: string;
+  label: string;
+  displayLabels: string[];
+  points: ScatterPoint[];
+  groups: BinaryContinuousGroup[];
+  gap: number | null;
   weight: number;
 };
 type AdjustmentStratumCondition =
@@ -244,26 +283,47 @@ type DragState =
   | { kind: "pan"; pointerId: number; lastPoint: Point; moved: boolean }
   | null;
 type PointerScreenPoint = { clientX: number; clientY: number };
+type EdgeGeometry = { path: string; control: Point; start: Point; end: Point };
+type FlowGraphNodeData = Record<string, unknown> & {
+  node: GraphNode;
+  selected: boolean;
+  edgeSource: boolean;
+  ancestor: boolean;
+  changed: boolean;
+  value?: number;
+  state?: SimulatedNodeState;
+  summary?: NodeDistributionSummary;
+  onNodeClick: (id: string) => void;
+};
+type FlowGraphEdgeData = Record<string, unknown> & {
+  edge: GraphEdge;
+  source: GraphNode;
+  target: GraphNode;
+  mechanism: EdgeMechanism;
+  geometry: EdgeGeometry;
+  semantic?: "causal" | "biasing";
+  enabled: boolean;
+  denseEdges: boolean;
+  onSelect: (id: string) => void;
+};
 
-const STORAGE_KEY = "nudagitty.document.v2";
-const LEGACY_STORAGE_KEYS = ["nudagitty.document.v1"];
 const BASE_VIEWBOX = { width: 1000, height: 700 };
 const DEFAULT_VIEWPORT: CanvasViewport = { cx: 0, cy: 0, zoom: 1 };
 const NODE_VIEW_MARGIN = { x: 100, top: 110, bottom: 130 };
-const BASIC_NODE_VIEW_MARGIN = { x: 66, top: 86, bottom: 86 };
+const BASIC_NODE_VIEW_MARGIN = { x: 66, top: 86, bottom: 118 };
 const BASIC_VIEWPORT_ZOOM_BONUS = 1.12;
 const EMPIRICAL_DRAW_MIN = 80;
 const EMPIRICAL_DRAW_DEFAULT = 320;
 const EMPIRICAL_DRAW_MAX = 5000;
 const EMPIRICAL_DRAW_STEP = 80;
 const EDGE_SOURCE_CLEARANCE = 1.5;
-const EDGE_ARROW_TIP_EXTENSION_FACTOR = 1.25;
+const EDGE_ARROW_TIP_EXTENSION_FACTOR = 1.88;
 const EDGE_ARROW_NODE_OVERLAP = 1.2;
-const EDGE_CROWDED_FAN_THRESHOLD = 3;
-const EDGE_CROWDED_FAN_SPACING = 20;
+const EDGE_CROWDED_FAN_THRESHOLD = 2;
+const EDGE_CROWDED_FAN_SPACING = 34;
 const EDGE_CROWDED_FAN_MAX_OFFSET = 52;
 const EDGE_OUTGOING_FAN_THRESHOLD = 2;
-const EDGE_OUTGOING_FAN_SPACING = 14;
+const EDGE_OUTGOING_FAN_SPACING = 24;
 const EDGE_OUTGOING_FAN_MAX_OFFSET = 36;
 
 function graphViewportSignature(graph: GraphModel): string {
@@ -598,25 +658,44 @@ const BIBLIOGRAPHY_TOPICS: Array<{ id: BibliographyTopic; label: string }> = [
 ];
 
 export function App() {
-  const [document, setDocument] = useState<GraphDocument>(() => loadInitialDocument());
-  const [history, setHistory] = useState<GraphDocument[]>([]);
-  const [future, setFuture] = useState<GraphDocument[]>([]);
-  const [selection, setSelection] = useState<Selection>(null);
-  const [tool, setTool] = useState<ToolMode>("select");
-  const [edgeSource, setEdgeSource] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("normal");
-  const [effectKind, setEffectKind] = useState<EffectKind>("total");
-  const [bibliographyTopic, setBibliographyTopic] = useState<BibliographyTopic>("sem");
-  const [showCausal, setShowCausal] = useState(true);
-  const [showBiasing, setShowBiasing] = useState(true);
-  const [showAncestors, setShowAncestors] = useState(true);
-  const [workbenchMode, setWorkbenchMode] = useState<WorkbenchMode>("basic");
-  const [basicResultsOpen, setBasicResultsOpen] = useState(true);
-  const [activeExampleId, setActiveExampleId] = useState<string | null>(EXAMPLES[0]?.id ?? null);
-  const [modelText, setModelText] = useState(() => serializeModel(document));
-  const [modelDirty, setModelDirty] = useState(false);
+  const document = useWorkbenchStore((state) => state.document);
+  const history = useWorkbenchStore((state) => state.history);
+  const future = useWorkbenchStore((state) => state.future);
+  const selection = useWorkbenchStore((state) => state.selection);
+  const tool = useWorkbenchStore((state) => state.tool);
+  const edgeSource = useWorkbenchStore((state) => state.edgeSource);
+  const viewMode = useWorkbenchStore((state) => state.viewMode);
+  const effectKind = useWorkbenchStore((state) => state.effectKind);
+  const bibliographyTopic = useWorkbenchStore((state) => state.bibliographyTopic);
+  const showCausal = useWorkbenchStore((state) => state.showCausal);
+  const showBiasing = useWorkbenchStore((state) => state.showBiasing);
+  const showAncestors = useWorkbenchStore((state) => state.showAncestors);
+  const workbenchMode = useWorkbenchStore((state) => state.workbenchMode);
+  const basicResultsOpen = useWorkbenchStore((state) => state.basicResultsOpen);
+  const activeExampleId = useWorkbenchStore((state) => state.activeExampleId);
+  const modelText = useWorkbenchStore((state) => state.modelText);
+  const modelDirty = useWorkbenchStore((state) => state.modelDirty);
+  const scatterPair = useWorkbenchStore((state) => state.scatterPair);
+  const commit = useWorkbenchStore((state) => state.commit);
+  const undo = useWorkbenchStore((state) => state.undo);
+  const redo = useWorkbenchStore((state) => state.redo);
+  const replaceGraph = useWorkbenchStore((state) => state.replaceGraph);
+  const setSelection = useWorkbenchStore((state) => state.setSelection);
+  const setTool = useWorkbenchStore((state) => state.setTool);
+  const setEdgeSource = useWorkbenchStore((state) => state.setEdgeSource);
+  const setViewMode = useWorkbenchStore((state) => state.setViewMode);
+  const setEffectKind = useWorkbenchStore((state) => state.setEffectKind);
+  const setBibliographyTopic = useWorkbenchStore((state) => state.setBibliographyTopic);
+  const setShowCausal = useWorkbenchStore((state) => state.setShowCausal);
+  const setShowBiasing = useWorkbenchStore((state) => state.setShowBiasing);
+  const setShowAncestors = useWorkbenchStore((state) => state.setShowAncestors);
+  const setWorkbenchMode = useWorkbenchStore((state) => state.setWorkbenchMode);
+  const setBasicResultsOpen = useWorkbenchStore((state) => state.setBasicResultsOpen);
+  const setActiveExampleId = useWorkbenchStore((state) => state.setActiveExampleId);
+  const setModelText = useWorkbenchStore((state) => state.setModelText);
+  const setModelDirty = useWorkbenchStore((state) => state.setModelDirty);
+  const setScatterPair = useWorkbenchStore((state) => state.setScatterPair);
   const [simulation, setSimulation] = useState<SimulationResult>(() => runSimulation(document.graph, document.simulation));
-  const [scatterPair, setScatterPair] = useState<ScatterPair>(() => defaultScatterPair(document.graph));
 
   const [analysis, setAnalysis] = useState<AnalysisReport>(() => analyzeGraph(document.graph));
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
@@ -649,20 +728,26 @@ export function App() {
   const activeDomain = activeExample?.domain ?? "classic";
   const activeDenouement = activeExample ? exampleDenouement(activeExample.id) : null;
   const isBasicMode = workbenchMode === "basic";
+  const compactWorkspace = useMediaQuery("(max-width: 1120px)");
   const empiricalDraws = graphEmpiricalDraws(document.graph);
   const highlightedEdges = useMemo(() => computeHighlightedEdges(document.graph, analysis, showCausal, showBiasing), [analysis, document.graph, showBiasing, showCausal]);
   const ancestorIds = useMemo(() => showAncestors ? new Set(analysis.causalPaths.flat()) : new Set<string>(), [analysis.causalPaths, showAncestors]);
   const completedOutput = useMemo(() => computeCompletedOutput(outputContext, activeExample?.outputModule ?? null), [activeExample?.outputModule, outputContext]);
-  const binaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived), [outputContext, simulationDerived]);
+  const activeOutputPair = useMemo(() => reconcileScatterPair(computationDocument.graph, scatterPair), [computationDocument.graph, scatterPair]);
+  const defaultOutputPair = useMemo(() => defaultScatterPair(computationDocument.graph), [computationDocument.graph]);
+  const binaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived, activeOutputPair), [activeOutputPair, outputContext, simulationDerived]);
+  const binaryContinuousAdjustmentOutput = useMemo(() => computeBinaryContinuousAdjustmentOutput(outputContext, simulationDerived, activeOutputPair), [activeOutputPair, outputContext, simulationDerived]);
+  const demoBinaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived, defaultOutputPair), [defaultOutputPair, outputContext, simulationDerived]);
   const basicRelationSummary = useMemo(
-    () => computeBasicRelationSummary({ ...outputContext, moduleId: activeExample?.outputModule ?? null }, completedOutput, simulationDerived, binaryAdjustmentOutput, { hideOracle: isBasicMode }),
-    [activeExample?.outputModule, binaryAdjustmentOutput, completedOutput, isBasicMode, outputContext, simulationDerived]
+    () => computeBasicRelationSummary({ ...outputContext, moduleId: activeExample?.outputModule ?? null }, completedOutput, simulationDerived, demoBinaryAdjustmentOutput, { hideOracle: isBasicMode }),
+    [activeExample?.outputModule, completedOutput, demoBinaryAdjustmentOutput, isBasicMode, outputContext, simulationDerived]
   );
   const basicDemoContext = useMemo<BasicDemoContext>(() => ({
     interventions: formatActiveInterventions(document),
     selections: simulation.conditioning.activeConditions
   }), [document.graph, document.simulation.overrides, simulation.conditioning.activeConditions]);
-  const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null);
+  const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null, activeOutputPair);
+  const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
   useEffect(() => {
     const worker = new Worker(new URL("./analysis.worker.ts", import.meta.url), { type: "module" });
@@ -696,15 +781,7 @@ export function App() {
 
   useEffect(() => {
     setScatterPair((pair) => reconcileScatterPair(document.graph, pair));
-  }, [document.graph]);
-
-  const commit = useCallback((next: GraphDocument) => {
-    setHistory((items) => [...items.slice(-80), cloneDocument(document)]);
-    setFuture([]);
-    setDocument(next);
-    setModelText(serializeModel(next));
-    setModelDirty(false);
-  }, [document]);
+  }, [document.graph, setScatterPair]);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(document));
@@ -741,34 +818,6 @@ export function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   });
-
-  const undo = useCallback(() => {
-    setHistory((items) => {
-      const previous = items.at(-1);
-      if (!previous) return items;
-      setFuture((futureItems) => [cloneDocument(document), ...futureItems]);
-      setDocument(previous);
-      setModelText(serializeModel(previous));
-      setModelDirty(false);
-      return items.slice(0, -1);
-    });
-  }, [document]);
-
-  const redo = useCallback(() => {
-    setFuture((items) => {
-      const next = items[0];
-      if (!next) return items;
-      setHistory((historyItems) => [...historyItems, cloneDocument(document)]);
-      setDocument(next);
-      setModelText(serializeModel(next));
-      setModelDirty(false);
-      return items.slice(1);
-    });
-  }, [document]);
-
-  const replaceGraph = useCallback((graph: GraphModel) => {
-    commit(withGraph(document, graph));
-  }, [commit, document]);
 
   const deleteNodeById = useCallback((nodeId: string) => {
     const graph = deleteNode(document.graph, nodeId);
@@ -998,6 +1047,175 @@ export function App() {
     commit({ ...document, simulation: { ...document.simulation, selections } });
   }, [commit, document]);
 
+  const renderWorkspaceHandle = (key: string, vertical = compactWorkspace) => (
+    <PanelResizeHandle key={key} className={vertical ? "workspace-resize-handle vertical" : "workspace-resize-handle"} />
+  );
+
+  const renderEditorPane = (order: number) => (
+    <Panel id="editor" defaultSize={compactWorkspace ? 30 : isBasicMode ? 22 : 28} minSize={compactWorkspace ? 22 : 18} className="workspace-panel editor-pane" key="editor">
+      <aside className="side-panel editor-column" aria-label="Selection editor">
+        {isBasicMode && !basicResultsOpen && (
+          <button type="button" className="demo-show-result-button" onClick={() => setBasicResultsOpen(true)}>
+            Show result
+          </button>
+        )}
+        <SelectionEditor
+          mode={workbenchMode}
+          node={selectedNode}
+          edge={selectedEdge}
+          simulation={simulation}
+          derived={simulationDerived}
+          document={document}
+          outputPair={isBasicMode ? defaultOutputPair : activeOutputPair}
+          onToggleRole={toggleRole}
+          onRename={renameNodeById}
+          onDeleteNode={deleteNodeById}
+          onNodeMechanism={updateNodeMechanism}
+          onVariableChange={updateVariableModel}
+          onOverride={setOverride}
+          onSelectionCondition={setSelectionCondition}
+          onCoefficient={updateEdgeCoefficient}
+          onEdgeEnabled={updateEdgeEnabled}
+          onEdgeMechanism={updateEdgeMechanism}
+          onDeleteEdge={deleteEdgeById}
+        />
+      </aside>
+    </Panel>
+  );
+
+  const renderCanvasPane = (order: number) => (
+    <Panel id="canvas" defaultSize={compactWorkspace ? 42 : isBasicMode ? (basicResultsOpen ? 48 : 78) : 44} minSize={compactWorkspace ? 32 : 32} className="workspace-panel canvas-panel" key="canvas">
+      <FlowGraphCanvas
+        mode={workbenchMode}
+        graph={visibleGraph}
+        sourceGraph={document.graph}
+        selection={selection}
+        tool={tool}
+        edgeSource={edgeSource}
+        analysis={analysis}
+        simulation={simulation}
+        derived={simulationDerived}
+        edgeMechanisms={document.simulation.edges}
+        disabledEdgeIds={new Set(Object.entries(document.simulation.edges).filter(([, mechanism]) => !mechanism.enabled).map(([id]) => id))}
+        highlightedEdges={highlightedEdges}
+        ancestorIds={ancestorIds}
+        pending={resultsPending}
+        onSelect={setSelection}
+        onAddNode={addNodeAt}
+        onMoveNode={(id, position) => replaceGraph(updateNode(document.graph, id, { position }))}
+        onNodeClick={(id) => tool === "edge" ? createOrSelectEdge(id) : selectNode(id)}
+        onEdgeClick={selectEdge}
+        onEdgeControl={(edge) => replaceGraph(upsertEdge(document.graph, edge))}
+        onResample={resample}
+      />
+    </Panel>
+  );
+
+  const renderDemoResultsPane = (order: number) => (
+    <Panel id="demo-results" defaultSize={compactWorkspace ? 28 : 30} minSize={compactWorkspace ? 24 : 22} className="workspace-panel results-pane" key="demo-results">
+      <aside className="side-panel basic-results-column" aria-label="Results">
+        <div className="basic-results-header">
+          <div className="basic-results-title">
+            <strong>Result</strong>
+            <PendingChip pending={resultPendingActive(resultsPending)} />
+          </div>
+          <button type="button" aria-label="Close results" onClick={() => setBasicResultsOpen(false)}>
+            <X size={16} />
+          </button>
+        </div>
+        <DemoResultPanel
+          graph={document.graph}
+          simulation={simulation}
+          derived={simulationDerived}
+          pair={defaultOutputPair}
+          summary={basicRelationSummary}
+          context={basicDemoContext}
+          pending={resultsPending}
+          moduleId={activeExample?.outputModule ?? null}
+          computedOutput={completedOutput}
+          binaryOutput={demoBinaryAdjustmentOutput}
+          recommendedAdjustmentId={basicRecommendedAdjustmentId}
+          onPair={setScatterPair}
+          onSelectNode={selectNode}
+          onAdjustRecommended={(id) => {
+            if (!nodeAdjusted(document.graph, id)) toggleRole(id, "adjusted");
+            selectNode(id);
+          }}
+          onClearOverrides={clearOverrides}
+          onClearSelections={clearSelections}
+        />
+      </aside>
+    </Panel>
+  );
+
+  const renderProOutputsPane = (order: number) => (
+    <Panel id="outputs" defaultSize={compactWorkspace ? 28 : 28} minSize={compactWorkspace ? 24 : 22} className="workspace-panel outputs-panel" key="outputs">
+      <PanelGroup orientation="vertical" className="workspace-output-panel-group">
+        <Panel id="scenario" defaultSize={22} minSize={14} className="workspace-panel">
+          <aside className="side-panel scenario-column">
+            <Section title="Scenario Builder">
+              <ScenarioPanel
+                document={document}
+                simulation={simulation}
+                pending={simulationPending}
+                onResample={resample}
+                onClearOverrides={clearOverrides}
+                onClearSelections={clearSelections}
+              />
+            </Section>
+          </aside>
+        </Panel>
+        {renderWorkspaceHandle("scenario-pairwise", true)}
+        <Panel id="pairwise" defaultSize={showAdjustedOutputColumn ? 38 : 78} minSize={24} className="workspace-panel">
+          <aside className="side-panel pairwise-column">
+            <Section title="Pairwise Output" pending={simulationPending}>
+              <ScatterplotPanel
+                graph={document.graph}
+                simulation={simulation}
+                derived={simulationDerived}
+                pair={activeOutputPair}
+                pending={pairwisePending}
+                onPair={setScatterPair}
+                onSelectNode={selectNode}
+              />
+            </Section>
+          </aside>
+        </Panel>
+        {showAdjustedOutputColumn && (
+          <>
+            {renderWorkspaceHandle("pairwise-adjusted", true)}
+            <Panel id="adjusted" defaultSize={40} minSize={24} className="workspace-panel">
+              <aside className="side-panel adjusted-output-column">
+                <Section title="Adjusted Output" pending={resultPendingActive(resultsPending)}>
+                  <AdjustedOutputPanel
+                    moduleId={activeExample?.outputModule ?? null}
+                    computedOutput={completedOutput}
+                    binaryOutput={binaryAdjustmentOutput}
+                    continuousOutput={binaryContinuousAdjustmentOutput}
+                    pending={resultsPending}
+                    hideOracle={false}
+                  />
+                </Section>
+              </aside>
+            </Panel>
+          </>
+        )}
+      </PanelGroup>
+    </Panel>
+  );
+
+  const renderPractitionerModulesDrawer = () => (
+    <section className="advanced-drawer practitioner-modules-drawer">
+      <details>
+        <summary>Practitioner modules</summary>
+        <div className="practitioner-modules-grid">
+          <DenouementPanel denouement={activeDenouement ?? CUSTOM_DENOUEMENT} title={activeExample?.title ?? document.title} />
+          <DesignModulePanel mode={workbenchMode} domain={activeDomain} />
+        </div>
+      </details>
+    </section>
+  );
+
   return (
     <div className={`app-shell mode-${workbenchMode} ${basicResultsOpen ? "results-open" : ""}`}>
       <header className="topbar">
@@ -1035,140 +1253,47 @@ export function App() {
       <AnalysisSampleBanner simulation={simulation} pending={simulationPending} onClearSelections={clearSelections} />
 
       <main className="workspace">
-        {!isBasicMode && <aside className="side-panel scenario-column">
-          <Section title="Scenario Builder">
-            <ScenarioPanel
-              document={document}
-              simulation={simulation}
-              pending={simulationPending}
-              onResample={resample}
-              onClearOverrides={clearOverrides}
-              onClearSelections={clearSelections}
-              mode={workbenchMode}
-              domain={activeDomain}
-              denouement={activeDenouement ?? CUSTOM_DENOUEMENT}
-              denouementTitle={activeExample?.title ?? document.title}
-            />
-          </Section>
-        </aside>}
-
-        {!isBasicMode && <aside className="side-panel pairwise-column">
-          <Section title="Pairwise Output" pending={simulationPending}>
-            <ScatterplotPanel
-              graph={document.graph}
-              simulation={simulation}
-              derived={simulationDerived}
-              pair={scatterPair}
-              pending={pairwisePending}
-              onPair={setScatterPair}
-              onSelectNode={selectNode}
-            />
-          </Section>
-        </aside>}
-
-        {!isBasicMode && showAdjustedOutputColumn && (
-          <aside className="side-panel adjusted-output-column">
-            <Section title="Adjusted Output" pending={resultPendingActive(resultsPending)}>
-              <AdjustedOutputPanel
-                moduleId={activeExample?.outputModule ?? null}
-                computedOutput={completedOutput}
-                binaryOutput={binaryAdjustmentOutput}
-                pending={resultsPending}
-                hideOracle={false}
-              />
-            </Section>
-          </aside>
-        )}
-
-        {isBasicMode && basicResultsOpen && (
-          <aside className="side-panel basic-results-column" aria-label="Results">
-            <div className="basic-results-header">
-              <div className="basic-results-title">
-                <strong>Results</strong>
-                <PendingChip pending={resultPendingActive(resultsPending)} />
-              </div>
-              <button type="button" aria-label="Close results" onClick={() => setBasicResultsOpen(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            <Section title="Pairwise Output" pending={simulationPending}>
-              <ScatterplotPanel
-                graph={document.graph}
-                simulation={simulation}
-                derived={simulationDerived}
-                pair={scatterPair}
-                pending={pairwisePending}
-                onPair={setScatterPair}
-                onSelectNode={selectNode}
-              />
-            </Section>
-            {showAdjustedOutputColumn && <Section title="Adjustment" pending={resultPendingActive(resultsPending)}>
-              <AdjustedOutputPanel
-                moduleId={activeExample?.outputModule ?? null}
-                computedOutput={completedOutput}
-                binaryOutput={binaryAdjustmentOutput}
-                pending={resultsPending}
-                hideOracle
-              />
-            </Section>}
-          </aside>
-        )}
-
-        <GraphCanvas
-          mode={workbenchMode}
-          graph={visibleGraph}
-          sourceGraph={document.graph}
-          selection={selection}
-          tool={tool}
-          edgeSource={edgeSource}
-          analysis={analysis}
-          simulation={simulation}
-          derived={simulationDerived}
-          edgeMechanisms={document.simulation.edges}
-          disabledEdgeIds={new Set(Object.entries(document.simulation.edges).filter(([, mechanism]) => !mechanism.enabled).map(([id]) => id))}
-          highlightedEdges={highlightedEdges}
-          ancestorIds={ancestorIds}
-          pending={resultsPending}
-          onSelect={setSelection}
-          onAddNode={addNodeAt}
-          onMoveNode={(id, position) => replaceGraph(updateNode(document.graph, id, { position }))}
-          onNodeClick={(id) => tool === "edge" ? createOrSelectEdge(id) : selectNode(id)}
-          onEdgeClick={selectEdge}
-          onEdgeControl={(edge) => replaceGraph(upsertEdge(document.graph, edge))}
-          onResample={resample}
-        />
-
-        <aside className="side-panel editor-column" aria-label="Selection editor">
-          {isBasicMode && (
-            <BasicRelationPanel
-              summary={basicRelationSummary}
-              context={basicDemoContext}
-              pending={resultPendingActive(resultsPending)}
-              onOpenResults={() => setBasicResultsOpen(true)}
-              onClearOverrides={clearOverrides}
-              onClearSelections={clearSelections}
-            />
+        <PanelGroup orientation={compactWorkspace ? "vertical" : "horizontal"} className="workspace-panel-group">
+          {compactWorkspace ? (
+            <>
+              {renderCanvasPane(1)}
+              {isBasicMode && basicResultsOpen && (
+                <>
+                  {renderWorkspaceHandle("canvas-results")}
+                  {renderDemoResultsPane(2)}
+                </>
+              )}
+              {!isBasicMode && (
+                <>
+                  {renderWorkspaceHandle("canvas-outputs")}
+                  {renderProOutputsPane(2)}
+                </>
+              )}
+              {renderWorkspaceHandle("before-editor")}
+              {renderEditorPane(3)}
+            </>
+          ) : (
+            <>
+              {renderEditorPane(1)}
+              {renderWorkspaceHandle("editor-canvas")}
+              {renderCanvasPane(2)}
+              {isBasicMode && basicResultsOpen && (
+                <>
+                  {renderWorkspaceHandle("canvas-results")}
+                  {renderDemoResultsPane(3)}
+                </>
+              )}
+              {!isBasicMode && (
+                <>
+                  {renderWorkspaceHandle("canvas-outputs")}
+                  {renderProOutputsPane(3)}
+                </>
+              )}
+            </>
           )}
-          <SelectionEditor
-            mode={workbenchMode}
-            node={selectedNode}
-            edge={selectedEdge}
-            simulation={simulation}
-            derived={simulationDerived}
-            document={document}
-            onToggleRole={toggleRole}
-            onRename={renameNodeById}
-            onDeleteNode={deleteNodeById}
-            onNodeMechanism={updateNodeMechanism}
-            onVariableChange={updateVariableModel}
-            onOverride={setOverride}
-            onSelectionCondition={setSelectionCondition}
-            onCoefficient={updateEdgeCoefficient}
-            onEdgeEnabled={updateEdgeEnabled}
-            onEdgeMechanism={updateEdgeMechanism}
-            onDeleteEdge={deleteEdgeById}
-          />
-        </aside>
+        </PanelGroup>
+
+        {!isBasicMode && renderPractitionerModulesDrawer()}
 
         {!isBasicMode && <section className="advanced-drawer">
           <details>
@@ -1239,6 +1364,343 @@ export function App() {
       </main>
     </div>
   );
+}
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [query]);
+  return matches;
+}
+
+const FLOW_NODE_WIDTH = 142;
+const FLOW_NODE_HEIGHT = 150;
+const FLOW_NODE_CENTER_X = 71;
+const FLOW_NODE_CENTER_Y = (42 / 152) * FLOW_NODE_HEIGHT;
+const FLOW_NODE_TYPES = { graphNode: FlowGraphNode };
+const FLOW_EDGE_TYPES = { graphEdge: FlowGraphEdge };
+
+type FlowGraphNode = FlowNode<FlowGraphNodeData, "graphNode">;
+type FlowGraphEdge = FlowEdge<FlowGraphEdgeData, "graphEdge">;
+
+function FlowGraphCanvas(props: React.ComponentProps<typeof GraphCanvas>) {
+  return (
+    <ReactFlowProvider>
+      <FlowGraphCanvasInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function FlowGraphCanvasInner(props: React.ComponentProps<typeof GraphCanvas>) {
+  const flow = useReactFlow<FlowGraphNode, FlowGraphEdge>();
+  const panZoom = useStore((state) => state.panZoom);
+  const touchScrollViewport = useMediaQuery("(max-width: 700px)");
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const nodesById = useMemo(() => new Map(props.graph.nodes.map((node) => [node.id, node])), [props.graph.nodes]);
+  const denseEdges = props.graph.edges.length > 7;
+  const viewportSignature = useMemo(() => graphViewportSignature(props.graph), [props.graph]);
+  const computedNodes = useMemo<FlowGraphNode[]>(() => props.graph.nodes.map((node) => {
+    const selected = props.selection?.kind === "node" && props.selection.id === node.id;
+    return {
+      id: node.id,
+      type: "graphNode",
+      position: graphPointToFlowPoint(node.position),
+      width: FLOW_NODE_WIDTH,
+      height: FLOW_NODE_HEIGHT,
+      initialWidth: FLOW_NODE_WIDTH,
+      initialHeight: FLOW_NODE_HEIGHT,
+      handles: [
+        { id: null, type: "target", position: Position.Left, x: FLOW_NODE_CENTER_X, y: FLOW_NODE_CENTER_Y, width: 1, height: 1 },
+        { id: null, type: "source", position: Position.Right, x: FLOW_NODE_CENTER_X, y: FLOW_NODE_CENTER_Y, width: 1, height: 1 }
+      ],
+      data: {
+        node,
+        selected,
+        edgeSource: props.edgeSource === node.id,
+        ancestor: props.ancestorIds.has(node.id),
+        changed: props.simulation.changedNodes.includes(node.id),
+        value: props.simulation.values[node.id],
+        state: props.simulation.nodeStates[node.id],
+        summary: props.derived.nodes.get(node.id),
+        onNodeClick: props.onNodeClick
+      },
+      selected,
+      draggable: true,
+      focusable: true
+    };
+  }), [props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.onNodeClick, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values]);
+  const computedEdges = useMemo<FlowGraphEdge[]>(() => props.graph.edges.map((edge) => {
+    const source = nodesById.get(edge.source);
+    const target = nodesById.get(edge.target);
+    const mechanism = normalizeEdgeMechanism(props.edgeMechanisms[edge.id]);
+    const enabled = !props.disabledEdgeIds.has(edge.id);
+    const edgeStrength = edgeMechanismDisplayStrength(mechanism);
+    const width = edgeStrokeWidth(edgeStrength, denseEdges);
+    return {
+      id: edge.id,
+      type: "graphEdge",
+      source: edge.source,
+      target: edge.target,
+      selected: props.selection?.kind === "edge" && props.selection.id === edge.id,
+      data: {
+        edge,
+        source: source ?? createNode(edge.source, { x: 0, y: 0 }),
+        target: target ?? createNode(edge.target, { x: 0, y: 0 }),
+        mechanism,
+        geometry: source && target ? edgeGeometry(edge, source, target, width, props.graph.edges, nodesById) : {
+          path: `M 0 0 L 0 0`,
+          control: { x: 0, y: 0 },
+          start: { x: 0, y: 0 },
+          end: { x: 0, y: 0 }
+        },
+        semantic: props.highlightedEdges.get(edge.id),
+        enabled,
+        denseEdges,
+        onSelect: props.onEdgeClick
+      }
+    };
+  }), [denseEdges, nodesById, props.disabledEdgeIds, props.edgeMechanisms, props.graph.edges, props.highlightedEdges, props.onEdgeClick, props.selection]);
+  const [nodes, setNodes] = useState<FlowGraphNode[]>(computedNodes);
+  const [legendOpen, setLegendOpen] = useState(false);
+
+  useEffect(() => {
+    setNodes(computedNodes);
+  }, [computedNodes]);
+
+  useEffect(() => {
+    if (!panZoom || !frameRef.current || props.graph.nodes.length === 0) return undefined;
+    window.setTimeout(() => {
+      const rect = frameRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return;
+      const positions = props.graph.nodes.map((node) => graphPointToFlowPoint(node.position));
+      const minX = Math.min(...positions.map((point) => point.x));
+      const minY = Math.min(...positions.map((point) => point.y));
+      const maxX = Math.max(...positions.map((point) => point.x + FLOW_NODE_WIDTH));
+      const maxY = Math.max(...positions.map((point) => point.y + FLOW_NODE_HEIGHT));
+      const graphWidth = Math.max(1, maxX - minX);
+      const graphHeight = Math.max(1, maxY - minY);
+      const padding = 0.18;
+      const zoom = clamp(Math.min(rect.width / (graphWidth * (1 + padding * 2)), rect.height / (graphHeight * (1 + padding * 2))), 0.25, 3);
+      const x = (rect.width - graphWidth * zoom) / 2 - minX * zoom;
+      const y = (rect.height - graphHeight * zoom) / 2 - minY * zoom;
+      const viewport = { x, y, zoom };
+      void flow.setViewport(viewport);
+    }, 0);
+    return undefined;
+  }, [flow, panZoom, props.graph.nodes, props.mode, viewportSignature]);
+
+  const onNodesChange = useCallback((changes: NodeChange<FlowGraphNode>[]) => {
+    setNodes((items) => applyNodeChanges(changes, items));
+  }, []);
+  const onCanvasDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest(".react-flow__node, .react-flow__edge")) return;
+    const point = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    props.onAddNode(point);
+  }, [flow, props]);
+
+  return (
+    <section className="canvas-shell flow-canvas-shell" aria-label="Graph editor">
+      <div ref={frameRef} className="flow-canvas-frame" role="application" aria-label="Editable causal graph" onDoubleClick={onCanvasDoubleClick}>
+        <ReactFlow<FlowGraphNode, FlowGraphEdge>
+          className={`graph-canvas flow-graph-canvas ${denseEdges ? "dense-edges" : ""}`}
+          nodes={nodes}
+          edges={computedEdges}
+          nodeTypes={FLOW_NODE_TYPES}
+          edgeTypes={FLOW_EDGE_TYPES}
+          minZoom={0.25}
+          maxZoom={3}
+          nodesDraggable={props.mode !== "basic" && !touchScrollViewport}
+          nodesConnectable={false}
+          elementsSelectable
+          panOnDrag={!touchScrollViewport}
+          preventScrolling={!touchScrollViewport}
+          selectNodesOnDrag={false}
+          zoomOnDoubleClick={!touchScrollViewport}
+          zoomOnPinch={!touchScrollViewport}
+          zoomOnScroll={!touchScrollViewport}
+          onNodesChange={onNodesChange}
+          onNodeClick={(_, node) => props.tool === "edge" ? props.onNodeClick(node.id) : props.onNodeClick(node.id)}
+          onNodeDragStop={(_, node) => props.onMoveNode(node.id, flowNodePositionToGraphPoint(node.position))}
+          onEdgeClick={(_, edge) => props.onEdgeClick(edge.id)}
+          onPaneClick={() => props.onSelect(null)}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} />
+          {props.mode !== "basic" && <Controls className="canvas-zoom-controls react-flow-controls" showInteractive={false} />}
+        </ReactFlow>
+      </div>
+      <button
+        type="button"
+        className={`canvas-legend-toggle ${legendOpen ? "active" : ""}`}
+        aria-expanded={legendOpen}
+        onClick={() => setLegendOpen((current) => !current)}
+      >
+        Legend
+      </button>
+      {legendOpen && <FlowGraphLegend />}
+      {props.mode !== "basic" && <div className="canvas-status">
+        <span>{props.tool === "edge" ? (props.edgeSource ? `connect from ${props.edgeSource}` : "click a source variable") : "double-click canvas to add variable"}</span>
+      </div>}
+      {resultPendingActive(props.pending) && (
+        <div className="canvas-computation-status" role="status">
+          <PendingChip pending label={resultPendingShortLabel(props.pending)} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function FlowGraphLegend() {
+  return (
+    <div className="graph-legend flow-graph-legend" aria-hidden="true">
+      <div className="flow-graph-legend-title">Legend</div>
+      <div className="flow-graph-legend-row">
+        <span className="flow-graph-legend-node role" />
+        <span>Exposure</span>
+      </div>
+      <div className="flow-graph-legend-row">
+        <span className="flow-graph-legend-node role" />
+        <span>Outcome</span>
+      </div>
+      <div className="flow-graph-legend-row">
+        <span className="flow-graph-legend-node adjusted" />
+        <span>adjusted</span>
+      </div>
+      <div className="flow-graph-legend-row">
+        <span className="flow-graph-legend-node selected" />
+        <span>selected</span>
+      </div>
+    </div>
+  );
+}
+
+function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
+  const { node, selected, edgeSource, ancestor, changed, value, state, summary, onNodeClick } = props.data;
+  const variable = normalizeVariableModel(node.variable);
+  const labelLines = nodeLabelLines(node.label);
+  const labelY = labelLines.length === 1 ? 4 : -((labelLines.length - 1) * 6);
+  const className = [
+    "flow-graph-node",
+    "node",
+    selected || props.selected ? "selected" : "",
+    node.roles.latent ? "latent" : "",
+    ancestor ? "ancestor" : "",
+    changed ? "changed" : "",
+    edgeSource ? "edge-source" : ""
+  ].filter(Boolean).join(" ");
+  const handleSelect = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    onNodeClick(node.id);
+  };
+  const handleLabelPointerDown = (event: React.PointerEvent<SVGTextElement>) => {
+    event.stopPropagation();
+    onNodeClick(node.id);
+  };
+  return (
+    <div
+      className={className}
+      onClick={handleSelect}
+    >
+      <Handle type="target" position={Position.Left} className="flow-node-handle" />
+      <Handle type="source" position={Position.Right} className="flow-node-handle" />
+      <svg viewBox="-76 -42 152 152" className="flow-node-svg" aria-hidden="true" onClick={handleSelect}>
+        <circle r={node.roles.exposure || node.roles.outcome ? 25 : 21} />
+        {node.roles.adjusted && <rect className="adjusted-ring" x="-27" y="-27" width="54" height="54" rx="6" />}
+        {node.roles.selected && <path className="selected-mark" d="M -20 24 L 0 34 L 20 24" />}
+        <text className="node-label" y={labelY} onClick={handleSelect} onPointerDown={handleLabelPointerDown}>
+          {labelLines.map((line, index) => (
+            <tspan x="0" dy={index === 0 ? 0 : 12} key={`${line}-${index}`}>
+              {line}{index < labelLines.length - 1 ? " " : ""}
+            </tspan>
+          ))}
+        </text>
+        <NodeDistributionMiniPlot state={state} variable={variable} summary={summary} />
+        <NodeDistributionAnnotation state={state} value={value} variable={variable} />
+      </svg>
+    </div>
+  );
+}
+
+function FlowGraphEdge(props: FlowEdgeProps<FlowGraphEdge>) {
+  const data = props.data;
+  if (!data) return null;
+  const { path, control, start, end } = data.geometry;
+  const edgeStrength = edgeMechanismDisplayStrength(data.mechanism);
+  const width = edgeStrokeWidth(edgeStrength, data.denseEdges);
+  const edgeLabel = edgeMechanismCanvasLabel(data.mechanism);
+  const showEdgeLabel = data.enabled && (data.mechanism.kind !== "linear" || Math.abs(edgeStrength) > 0.001);
+  const coefficientClass = edgeStrength > 0 ? "coefficient-positive" : edgeStrength < 0 ? "coefficient-negative" : "coefficient-zero";
+  const showEndArrow = data.edge.kind === "directed" || data.edge.kind === "bidirected";
+  const showStartArrow = data.edge.kind === "bidirected";
+  const startReference = control;
+  const endReference = control;
+  return (
+    <g className={`edge ${coefficientClass} ${props.selected ? "selected" : ""} ${data.semantic ?? ""} ${data.enabled ? "" : "disabled"}`}>
+      <title>{edgeMechanismTitle(data.edge, data.source, data.target, data.mechanism)}</title>
+      <path
+        d={path}
+        className="edge-hit"
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          data.onSelect(props.id);
+        }}
+      />
+      <path
+        d={path}
+        className={`edge-line ${data.edge.kind === "directed" || data.edge.kind === "bidirected" ? "with-arrow" : ""}`}
+        style={{ strokeWidth: width }}
+      />
+      {showStartArrow && <path className="edge-arrow-head" d={arrowHeadPath(start, startReference, width)} />}
+      {showEndArrow && <path className="edge-arrow-head" d={arrowHeadPath(end, endReference, width)} />}
+      {showEdgeLabel && (
+        <text className="edge-value" x={control.x} y={control.y - 15}>
+          <tspan className="edge-value-context" x={control.x}>{edgeLabel.context}</tspan>
+          <tspan className="edge-value-number" x={control.x} dy="13">{edgeLabel.value}</tspan>
+        </text>
+      )}
+      <EdgeFunctionGlyph kind={data.mechanism.kind} x={control.x} y={control.y} />
+    </g>
+  );
+}
+
+function graphPointToFlowPoint(point: Point): Point {
+  return {
+    x: point.x - FLOW_NODE_CENTER_X,
+    y: point.y - FLOW_NODE_CENTER_Y
+  };
+}
+
+function flowNodePositionToGraphPoint(point: Point): Point {
+  return {
+    x: point.x + FLOW_NODE_CENTER_X,
+    y: point.y + FLOW_NODE_CENTER_Y
+  };
+}
+
+function arrowHeadPath(tip: Point, from: Point, strokeWidth: number): string {
+  const direction = unitVector(from, tip);
+  const length = clamp(strokeWidth * 3.1, 7.5, 11);
+  const halfWidth = clamp(strokeWidth * 1.55, 3.8, 5.8);
+  const base = {
+    x: tip.x - direction.x * length,
+    y: tip.y - direction.y * length
+  };
+  const normal = { x: -direction.y, y: direction.x };
+  const left = {
+    x: base.x + normal.x * halfWidth,
+    y: base.y + normal.y * halfWidth
+  };
+  const right = {
+    x: base.x - normal.x * halfWidth,
+    y: base.y - normal.y * halfWidth
+  };
+  return `M ${tip.x} ${tip.y} L ${left.x} ${left.y} L ${right.x} ${right.y} Z`;
 }
 
 function GraphCanvas(props: {
@@ -1434,10 +1896,10 @@ function GraphCanvas(props: {
         }}
       >
         <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="5.6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse" markerUnits="strokeWidth">
+          <marker id="arrow" viewBox="0 0 10 10" refX="5.6" refY="5" markerWidth="4.8" markerHeight="4.8" orient="auto-start-reverse" markerUnits="strokeWidth">
             <path className="arrow-head" d="M 0.7 0.8 L 9.5 5 L 0.7 9.2 z" />
           </marker>
-          <marker id="arrow-bias" viewBox="0 0 10 10" refX="5.6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse" markerUnits="strokeWidth">
+          <marker id="arrow-bias" viewBox="0 0 10 10" refX="5.6" refY="5" markerWidth="4.8" markerHeight="4.8" orient="auto-start-reverse" markerUnits="strokeWidth">
             <path className="arrow-head" d="M 0.7 0.8 L 9.5 5 L 0.7 9.2 z" />
           </marker>
           <marker id="legend-arrow" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="10" markerHeight="10" orient="auto" markerUnits="userSpaceOnUse">
@@ -1689,8 +2151,16 @@ function edgeStrokeWidth(edgeStrength: number, denseEdges: boolean): number {
 }
 
 const NODE_DISTRIBUTION_PLOT_X = -48;
-const NODE_DISTRIBUTION_PLOT_Y = -72;
-const NODE_DISTRIBUTION_ANNOTATION_Y = -28;
+const NODE_DISTRIBUTION_PLOT_Y = 40;
+const NODE_DISTRIBUTION_PLOT_WIDTH = 96;
+const NODE_DISTRIBUTION_PLOT_HEIGHT = 32;
+const NODE_DISTRIBUTION_ANNOTATION_Y = 86;
+const NODE_DISTRIBUTION_BOUNDS = {
+  left: NODE_DISTRIBUTION_PLOT_X - 5,
+  right: NODE_DISTRIBUTION_PLOT_X + NODE_DISTRIBUTION_PLOT_WIDTH + 5,
+  top: NODE_DISTRIBUTION_PLOT_Y - 5,
+  bottom: NODE_DISTRIBUTION_ANNOTATION_Y + 16
+};
 
 function NodeDistributionMiniPlot({ state, variable, summary }: { state?: SimulatedNodeState; variable: VariableModel; summary?: NodeDistributionSummary }) {
   const samples = state?.empirical.samples ?? [];
@@ -1698,8 +2168,8 @@ function NodeDistributionMiniPlot({ state, variable, summary }: { state?: Simula
   if (isBinaryDistributionState(state, variable)) return <BinaryNodeDistributionMiniPlot state={state} />;
   const domain = summary?.domain ?? distributionPlotDomain(state);
   if (!domain) return null;
-  const width = 96;
-  const height = 32;
+  const width = NODE_DISTRIBUTION_PLOT_WIDTH;
+  const height = NODE_DISTRIBUTION_PLOT_HEIGHT;
   const bins = summary?.histogram20 ?? histogram(samples, domain, 20, state.empirical.weights);
   const maxBin = Math.max(...bins, 1);
   const analyticPath = state.analytic ? analyticDistributionPath(state.analytic, domain, width, height) : null;
@@ -1735,8 +2205,8 @@ function NodeDistributionMiniPlot({ state, variable, summary }: { state?: Simula
 function BinaryNodeDistributionMiniPlot({ state }: { state: SimulatedNodeState }) {
   const probability = binaryProbabilityFromState(state);
   if (probability === null) return null;
-  const width = 96;
-  const height = 32;
+  const width = NODE_DISTRIBUTION_PLOT_WIDTH;
+  const height = NODE_DISTRIBUTION_PLOT_HEIGHT;
   const baseline = height - 7;
   const maxBarHeight = height - 11;
   const probabilities = [1 - probability, probability];
@@ -1792,6 +2262,8 @@ function ScatterplotPanel(props: {
   derived: SimulationDerivedCache;
   pair: ScatterPair;
   pending?: ResultPendingState;
+  pendingLabel?: string;
+  variant?: "default" | "demo";
   onPair: (pair: ScatterPair) => void;
   onSelectNode: (id: string) => void;
 }) {
@@ -1830,10 +2302,11 @@ function ScatterplotPanel(props: {
     : null;
 
   if (nodes.length < 2) return <p className="muted">Add at least two variables to compare simulated observations.</p>;
+  const demoVariant = props.variant === "demo";
 
   return (
-    <div className="scatterplot-panel" aria-busy={resultPendingActive(props.pending)}>
-      <div className="scatter-controls">
+    <div className={demoVariant ? "scatterplot-panel demo-scatterplot" : "scatterplot-panel"} aria-busy={resultPendingActive(props.pending)}>
+      {!demoVariant && <div className="scatter-controls">
         <label className="field">
           <span>x variable</span>
           <select
@@ -1854,8 +2327,8 @@ function ScatterplotPanel(props: {
             {nodes.map((node) => <option value={node.id} key={node.id}>{nodeDisplayName(node)}</option>)}
           </select>
         </label>
-      </div>
-      <ResultsPendingNotice pending={props.pending} label="Updating pairwise output" />
+      </div>}
+      <ResultsPendingNotice pending={props.pending} label={props.pendingLabel ?? "Updating pairwise output"} />
 
       {binaryPair ? (
         <BinaryPairView
@@ -1865,7 +2338,7 @@ function ScatterplotPanel(props: {
           effectiveSampleSize={props.simulation.conditioning.effectiveSampleSize}
         />
       ) : binaryContinuousPair ? (
-        <BinaryContinuousPairView summary={pairSummary} xLabel={xLabel} yLabel={yLabel} />
+        <BinaryContinuousPairView summary={pairSummary} xNode={xNode} xLabel={xLabel} yLabel={yLabel} orientation={demoVariant ? "vertical" : "horizontal"} />
       ) : (
         <>
           <svg
@@ -1921,15 +2394,24 @@ function ScatterplotPanel(props: {
         </>
       )}
 
-      <div className="button-row">
+      {!demoVariant && <div className="button-row">
         <button type="button" className="mini-button" onClick={() => props.onSelectNode(pair.x)}>edit x</button>
         <button type="button" className="mini-button" onClick={() => props.onSelectNode(pair.y)}>edit y</button>
-      </div>
+      </div>}
     </div>
   );
 }
 
-function BinaryContinuousPairView(props: { summary: PairDerivedSummary; xLabel: string; yLabel: string }) {
+function BinaryContinuousPairView(props: {
+  summary: PairDerivedSummary;
+  xNode?: GraphNode;
+  xLabel: string;
+  yLabel: string;
+  orientation?: "horizontal" | "vertical";
+}) {
+  if (props.orientation === "vertical") {
+    return <BinaryContinuousVerticalPairView summary={props.summary} xNode={props.xNode} xLabel={props.xLabel} yLabel={props.yLabel} />;
+  }
   const points = props.summary.points;
   const groups = props.summary.binaryContinuousGroups;
   const groupZero = groups[0];
@@ -1938,19 +2420,21 @@ function BinaryContinuousPairView(props: { summary: PairDerivedSummary; xLabel: 
   const gap = groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined
     ? groupOne.mean - groupZero.mean
     : null;
-  const width = 280;
-  const height = 220;
-  const margin = { left: 38, right: 12, top: 14, bottom: 40 };
+  const width = 420;
+  const height = 148;
+  const margin = { left: 126, right: 54, top: 22, bottom: 28 };
   const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
   const yDomain = props.summary.ySampleDomain;
+  const [min, max] = yDomain;
   const maxWeight = Math.max(...points.map((point) => point.weight), 1);
-  const toX = (value: 0 | 1, index: number) => {
-    const center = value === 0 ? margin.left + plotWidth * 0.25 : margin.left + plotWidth * 0.75;
-    return center + deterministicJitter(index) * 20;
-  };
-  const groupCenter = (value: 0 | 1) => value === 0 ? margin.left + plotWidth * 0.25 : margin.left + plotWidth * 0.75;
-  const toY = (value: number) => margin.top + plotHeight - ((value - yDomain[0]) / (yDomain[1] - yDomain[0] || 1)) * plotHeight;
+  const valueToX = (value: number) => margin.left + ((value - min) / Math.max(max - min, 1e-9)) * plotWidth;
+  const y = margin.top + 46;
+  const groupZeroY = y - 11;
+  const groupOneY = y + 11;
+  const pointGroups = [
+    { value: 0 as const, centerY: groupZeroY, label: binaryAxisValueLabel(props.xLabel, 0), points: binaryContinuousPointsForGroup(points, 0), mean: groupZero?.mean ?? null },
+    { value: 1 as const, centerY: groupOneY, label: binaryAxisValueLabel(props.xLabel, 1), points: binaryContinuousPointsForGroup(points, 1), mean: groupOne?.mean ?? null }
+  ];
 
   if (points.length === 0 || totalWeight <= 0) {
     return <p className="muted">No finite paired samples are available for this variable pair.</p>;
@@ -1962,42 +2446,36 @@ function BinaryContinuousPairView(props: { summary: PairDerivedSummary; xLabel: 
         className="scatterplot-svg binary-continuous-svg"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`Two-group plot of ${props.yLabel} by ${props.xLabel}`}
+        aria-label={`Horizontal comparison plot of ${props.yLabel} by ${props.xLabel}`}
       >
-        <rect className="scatter-plot-background" x={margin.left} y={margin.top} width={plotWidth} height={plotHeight} />
-        <line className="scatter-axis" x1={margin.left} y1={margin.top + plotHeight} x2={margin.left + plotWidth} y2={margin.top + plotHeight} />
-        <line className="scatter-axis" x1={margin.left} y1={margin.top} x2={margin.left} y2={margin.top + plotHeight} />
-        <text className="scatter-tick-label y-start" x={margin.left - 7} y={margin.top + plotHeight}>{formatValue(yDomain[0])}</text>
-        <text className="scatter-tick-label y-end" x={margin.left - 7} y={margin.top + 4}>{formatValue(yDomain[1])}</text>
-        <text className="binary-group-label" x={groupCenter(0)} y={height - 22}>0</text>
-        <text className="binary-group-label" x={groupCenter(1)} y={height - 22}>1</text>
-        <text className="scatter-axis-label x" x={margin.left + plotWidth / 2} y={height - 3}>{abbreviateLabel(props.xLabel, 28)}</text>
-        <text className="scatter-axis-label y" x={12} y={margin.top + plotHeight / 2} transform={`rotate(-90 12 ${margin.top + plotHeight / 2})`}>{abbreviateLabel(props.yLabel, 24)}</text>
-        {points.map((point) => {
-          const x = coerceBinary(point.x) as 0 | 1;
-          const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
-          return (
-            <circle
-              className="scatter-point binary-continuous-point"
-              key={point.index}
-              cx={toX(x, point.index)}
-              cy={toY(point.y)}
-              r={1.6 + normalizedWeight * 2.2}
-              style={{ opacity: 0.18 + normalizedWeight * 0.58 }}
-            />
-          );
-        })}
-        {groups.map((group) => group.mean !== null && (
-          <g className="binary-group-mean" key={group.value}>
-            <line
-              x1={groupCenter(group.value) - 33}
-              y1={toY(group.mean)}
-              x2={groupCenter(group.value) + 33}
-              y2={toY(group.mean)}
-            />
-            <text x={groupCenter(group.value)} y={toY(group.mean) - 5}>mean {formatValue(group.mean)}</text>
+        <line className="continuous-strata-axis" x1={margin.left} x2={margin.left + plotWidth} y1={height - margin.bottom + 2} y2={height - margin.bottom + 2} />
+        <text className="continuous-strata-tick" x={margin.left} y={height - 5}>{formatValue(min)}</text>
+        <text className="continuous-strata-tick end" x={margin.left + plotWidth} y={height - 5}>{formatValue(max)}</text>
+        <text className="scatter-axis-label x" x={margin.left + plotWidth / 2} y={height - 3}>{abbreviateLabel(props.yLabel, 28)}</text>
+        {pointGroups.map((group) => (
+          <g className="continuous-strata-arm" key={group.value}>
+            <text className={`continuous-strata-arm-label ${group.value === 1 ? "treated" : "untreated"}`} x={margin.left - 10} y={group.centerY + 4}>{group.label}</text>
+            <line className="continuous-strata-row-guide" x1={margin.left} x2={margin.left + plotWidth} y1={group.centerY} y2={group.centerY} />
+            {group.points.map((point) => {
+              const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
+              return (
+                <circle
+                  className={`continuous-strata-point ${group.value === 1 ? "treated" : "untreated"}`}
+                  cx={valueToX(point.y)}
+                  cy={group.centerY + deterministicStrataJitter(point.index, group.value, 0) * 8.5}
+                  r={2.15 + normalizedWeight * 1.35}
+                  key={`${group.value}-${point.index}`}
+                  style={{ opacity: 0.46 + normalizedWeight * 0.32 }}
+                />
+              );
+            })}
+            {group.mean !== null && <circle className={`continuous-strata-mean ${group.value === 1 ? "treated" : "untreated"}`} cx={valueToX(group.mean)} cy={group.centerY} r="5.5" />}
           </g>
         ))}
+        {groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined && (
+          <line className="continuous-strata-gap-line" x1={valueToX(groupZero.mean)} x2={valueToX(groupOne.mean)} y1={groupZeroY} y2={groupOneY} />
+        )}
+        <text className="continuous-strata-gap-text" x={width - 4} y={y + 4}>{gap === null ? "n/a" : formatSignedValue(gap)}</text>
       </svg>
 
       <div className="scatter-stats binary-continuous-stats">
@@ -2013,6 +2491,84 @@ function BinaryContinuousPairView(props: { summary: PairDerivedSummary; xLabel: 
   );
 }
 
+function BinaryContinuousVerticalPairView(props: { summary: PairDerivedSummary; xNode?: GraphNode; xLabel: string; yLabel: string }) {
+  const points = props.summary.points;
+  const groups = props.summary.binaryContinuousGroups;
+  const groupZero = groups[0];
+  const groupOne = groups[1];
+  const totalWeight = groups.reduce((sum, group) => sum + group.weight, 0);
+  const gap = groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined
+    ? groupOne.mean - groupZero.mean
+    : null;
+  const [minScore, maxScore] = props.summary.ySampleDomain;
+  const yScale = (score: number) => 150 - ((score - minScore) / Math.max(maxScore - minScore, 1e-9)) * 106;
+  const groupColumns = [
+    { value: 0 as const, x: 122, label: binaryDisplayValueLabel(props.xNode, props.xLabel, 0), points: binaryContinuousPointsForGroup(points, 0), mean: groupZero?.mean ?? null },
+    { value: 1 as const, x: 218, label: binaryDisplayValueLabel(props.xNode, props.xLabel, 1), points: binaryContinuousPointsForGroup(points, 1), mean: groupOne?.mean ?? null }
+  ];
+
+  if (points.length === 0 || totalWeight <= 0) {
+    return <p className="muted">No finite paired samples are available for this variable pair.</p>;
+  }
+
+  return (
+    <div className="binary-continuous-pair-view">
+      <svg
+        className="adjusted-pair-graph binary-continuous-vertical-svg"
+        viewBox="0 0 340 184"
+        role="img"
+        aria-label={`Vertical comparison plot of ${props.yLabel} by ${props.xLabel}`}
+      >
+        <line className="adjusted-pair-axis" x1="36" y1="44" x2="36" y2="150" />
+        <text className="adjusted-pair-axis-label" x="32" y="48">{formatValue(maxScore)}</text>
+        <text className="adjusted-pair-axis-label" x="32" y="154">{formatValue(minScore)}</text>
+        {gap !== null && (
+          <g className={gap >= 0 ? "adjusted-pair-row positive" : "adjusted-pair-row negative"}>
+            <text className="adjusted-pair-label" x="170" y="22">raw gap</text>
+            <text className="adjusted-pair-gap" x="170" y="36">{formatSignedValue(gap)}</text>
+          </g>
+        )}
+        {groupColumns.map((group) => (
+          <g className="adjusted-strip-column" key={group.value}>
+            <line className="adjusted-strip-guide" x1={group.x} y1="44" x2={group.x} y2="150" />
+            {group.points.map((point) => (
+              <circle
+                className={group.value === 1 ? "adjusted-strip-point treated" : "adjusted-strip-point untreated"}
+                cx={group.x + deterministicStrataJitter(point.index, group.value, 0) * 12}
+                cy={yScale(point.y)}
+                r="2.2"
+                key={`${group.value}-${point.index}`}
+              />
+            ))}
+            {group.mean !== null && <circle className={group.value === 1 ? "adjusted-pair-mean treated" : "adjusted-pair-mean untreated"} cx={group.x} cy={yScale(group.mean)} r="5.5" />}
+            {group.mean !== null && <text className="adjusted-pair-value" x={group.x} y={yScale(group.mean) - 8}>{formatValue(group.mean)}</text>}
+            <text className="adjusted-strip-treatment-label" x={group.x} y="168">{group.label}</text>
+          </g>
+        ))}
+        {groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined && (
+          <g className={gap !== null && gap >= 0 ? "adjusted-pair-row positive" : "adjusted-pair-row negative"}>
+            <line className="adjusted-pair-line" x1={groupColumns[0]!.x} y1={yScale(groupZero.mean)} x2={groupColumns[1]!.x} y2={yScale(groupOne.mean)} />
+          </g>
+        )}
+      </svg>
+
+      <div className="scatter-stats binary-continuous-stats">
+        <span>samples {points.length}</span>
+        <span>x=1 share {groupOne ? formatPercent(groupOne.share) : "n/a"}</span>
+        <span>x=0 mean {groupZero?.mean === null || groupZero?.mean === undefined ? "n/a" : formatValue(groupZero.mean)}</span>
+        <span>x=1 mean {groupOne?.mean === null || groupOne?.mean === undefined ? "n/a" : formatValue(groupOne.mean)}</span>
+        <span>x=0 n {groupZero ? formatWeightedCount(groupZero.weight) : "0"}</span>
+        <span>x=1 n {groupOne ? formatWeightedCount(groupOne.weight) : "0"}</span>
+        <span>gap 1-0 {gap === null ? "n/a" : formatSignedValue(gap)}</span>
+      </div>
+    </div>
+  );
+}
+
+function binaryContinuousPointsForGroup(points: ScatterPoint[], groupValue: 0 | 1): ScatterPoint[] {
+  return points.filter((point) => point.weight > 0 && Number.isFinite(point.y) && coerceBinary(point.x) === groupValue);
+}
+
 function BinaryPairView(props: {
   summary?: PairDerivedSummary;
   points?: ScatterPoint[];
@@ -2025,7 +2581,6 @@ function BinaryPairView(props: {
   const points = props.summary?.points ?? props.points ?? [];
   const cells = props.summary?.binaryCells ?? props.cells ?? binaryCells(points);
   const totalWeight = cells.reduce((sum, cell) => sum + cell.weight, 0);
-  const maxColumnPercent = Math.max(...cells.map((cell) => cell.columnPercent), 1);
   const cell = (x: 0 | 1, y: 0 | 1) => cells.find((candidate) => candidate.x === x && candidate.y === y) ?? { x, y, weight: 0, count: 0, percent: 0, columnPercent: 0 };
   const yPositive = cell(1, 1).weight + cell(0, 1).weight;
   const xPositive = cell(1, 1).weight + cell(1, 0).weight;
@@ -2036,6 +2591,10 @@ function BinaryPairView(props: {
   const diffTone = metricTone(contrast.diff);
   const xZeroRate = contrast.yAtX0 === null ? "n/a" : formatPercent(contrast.yAtX0);
   const xOneRate = contrast.yAtX1 === null ? "n/a" : formatPercent(contrast.yAtX1);
+  const rateBars = [
+    binaryRateInterval(points, 0, xZeroLabel, "untreated"),
+    binaryRateInterval(points, 1, xOneLabel, "treated")
+  ];
 
   if (points.length === 0 || totalWeight <= 0) {
     return <p className="muted">No finite paired samples are available for this variable pair.</p>;
@@ -2043,56 +2602,9 @@ function BinaryPairView(props: {
 
   return (
     <div className="binary-pair-view">
-      <div className="binary-pair-headline">
-        <div className={`binary-pair-gap ${diffTone}`}>
-          <span>Observed gap</span>
-          <strong>{contrast.diff === null ? "n/a" : formatPercentagePoints(contrast.diff)}</strong>
-          <p>{yPositiveLabel} at {xOneLabel} vs {xZeroLabel}</p>
-        </div>
-        <div className="binary-pair-rate-grid" aria-label={`${props.yLabel} rates by ${props.xLabel}`}>
-          <div>
-            <span>{xZeroLabel}</span>
-            <strong>{xZeroRate}</strong>
-            <small>{yPositiveLabel}</small>
-          </div>
-          <div>
-            <span>{xOneLabel}</span>
-            <strong>{xOneRate}</strong>
-            <small>{yPositiveLabel}</small>
-          </div>
-        </div>
+      <div className="binary-rate-comparison">
+        <BinaryRateBars bars={rateBars} gap={contrast.diff} yLabel={yPositiveLabel} tone={diffTone} />
       </div>
-      <div className="confusion-matrix" role="img" aria-label={`Confusion matrix of ${props.xLabel} and ${props.yLabel}`}>
-        <div className="matrix-corner" />
-        <div className="matrix-axis-label">{binaryAxisValueLabel(props.xLabel, 0)}</div>
-        <div className="matrix-axis-label">{binaryAxisValueLabel(props.xLabel, 1)}</div>
-        {[0, 1].map((y) => (
-          <Fragment key={y}>
-            <div className="matrix-axis-label row">{binaryAxisValueLabel(props.yLabel, y as 0 | 1)}</div>
-            {[0, 1].map((x) => {
-              const current = cell(x as 0 | 1, y as 0 | 1);
-              const intensity = current.columnPercent / maxColumnPercent;
-              const positiveOutcome = y === 1;
-              return (
-                <div
-                  className={positiveOutcome ? "matrix-cell outcome-positive" : "matrix-cell outcome-negative"}
-                  key={x}
-                  title={`${props.yLabel}=${y}, ${props.xLabel}=${x}: ${formatPercent(current.columnPercent)} within ${props.xLabel}=${x}; weighted n ${formatWeightedCount(current.weight)}; joint ${formatPercent(current.percent)}`}
-                  style={{
-                    backgroundColor: positiveOutcome
-                      ? `rgba(35, 113, 111, ${0.12 + intensity * 0.68})`
-                      : `rgba(178, 69, 103, ${0.1 + intensity * 0.6})`
-                  }}
-                >
-                  <strong>{formatPercent(current.columnPercent)}</strong>
-                  <span>n {formatWeightedCount(current.weight)}</span>
-                </div>
-              );
-            })}
-          </Fragment>
-        ))}
-      </div>
-      <p className="binary-matrix-explainer">Each column is one {binaryShortLabel(props.xLabel)} group and sums to 100%. The headline compares the {yPositiveLabel} row across columns; the other row is included so the table is complete.</p>
 
       <div className="scatter-stats">
         <span>samples {points.length}</span>
@@ -2107,6 +2619,87 @@ function BinaryPairView(props: {
   );
 }
 
+type BinaryRateBar = {
+  group: 0 | 1;
+  label: string;
+  tone: "treated" | "untreated";
+  rate: number | null;
+  lower: number | null;
+  upper: number | null;
+  nEff: number | null;
+};
+
+function BinaryRateBars(props: { bars: BinaryRateBar[]; gap: number | null; yLabel: string; tone: "positive" | "negative" | "neutral" }) {
+  const width = 320;
+  const height = 124;
+  const plot = { left: 38, right: 18, top: 28, bottom: 30 };
+  const baseline = height - plot.bottom;
+  const plotHeight = baseline - plot.top;
+  const barWidth = 52;
+  const xPositions: [number, number] = [104, 218];
+  const rateToY = (rate: number) => plot.top + (1 - clamp(rate, 0, 1)) * plotHeight;
+  return (
+    <svg className="binary-rate-bars" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${props.yLabel} rates with 95% confidence intervals`}>
+      <line className="binary-rate-axis" x1={plot.left} x2={width - plot.right} y1={baseline} y2={baseline} />
+      <line className="binary-rate-axis" x1={plot.left} x2={plot.left} y1={plot.top} y2={baseline} />
+      <text className="binary-rate-axis-label" x={plot.left - 6} y={plot.top + 4}>100%</text>
+      <text className="binary-rate-axis-label" x={plot.left - 6} y={baseline + 4}>0%</text>
+      <text className={`binary-rate-gap-label ${props.tone}`} x={width / 2} y="15">Gap {props.gap === null ? "n/a" : formatPercentagePoints(props.gap)}</text>
+      <text className="binary-rate-ci-label" x={width - plot.right} y="15">95% CI</text>
+      {props.bars.map((bar, index) => {
+        const x = xPositions[index] ?? 104;
+        const y = bar.rate === null ? baseline : rateToY(bar.rate);
+        const lowerY = bar.lower === null ? null : rateToY(bar.lower);
+        const upperY = bar.upper === null ? null : rateToY(bar.upper);
+        return (
+          <g className={`binary-rate-bar-group ${bar.tone}`} key={bar.group}>
+            {lowerY !== null && upperY !== null && (
+              <g className="binary-rate-ci">
+                <line x1={x} x2={x} y1={upperY} y2={lowerY} />
+                <line x1={x - 10} x2={x + 10} y1={upperY} y2={upperY} />
+                <line x1={x - 10} x2={x + 10} y1={lowerY} y2={lowerY} />
+              </g>
+            )}
+            <rect className="binary-rate-bar" x={x - barWidth / 2} y={y} width={barWidth} height={Math.max(1, baseline - y)} rx="4" />
+            <circle className="binary-rate-point" cx={x} cy={y} r="4.5" />
+            <text className="binary-rate-value" x={x} y={Math.max(25, y - 7)}>{bar.rate === null ? "n/a" : formatPercent(bar.rate)}</text>
+            <text className="binary-rate-group-label" x={x} y={height - 8}>{bar.label}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function binaryRateInterval(points: ScatterPoint[], group: 0 | 1, label: string, tone: "treated" | "untreated"): BinaryRateBar {
+  let sumWeight = 0;
+  let sumWeightSquared = 0;
+  let successes = 0;
+  for (const point of points) {
+    if (point.weight <= 0 || !Number.isFinite(point.x) || !Number.isFinite(point.y) || coerceBinary(point.x) !== group) continue;
+    sumWeight += point.weight;
+    sumWeightSquared += point.weight * point.weight;
+    successes += coerceBinary(point.y) * point.weight;
+  }
+  if (sumWeight <= 0 || sumWeightSquared <= 0) return { group, label, tone, rate: null, lower: null, upper: null, nEff: null };
+  const rate = successes / sumWeight;
+  const nEff = sumWeight * sumWeight / sumWeightSquared;
+  if (!Number.isFinite(nEff) || nEff <= 0) return { group, label, tone, rate, lower: null, upper: null, nEff: null };
+  const z = 1.96;
+  const denominator = 1 + (z * z) / nEff;
+  const center = (rate + (z * z) / (2 * nEff)) / denominator;
+  const halfWidth = (z * Math.sqrt((rate * (1 - rate) + (z * z) / (4 * nEff)) / nEff)) / denominator;
+  return {
+    group,
+    label,
+    tone,
+    rate,
+    lower: clamp(center - halfWidth, 0, 1),
+    upper: clamp(center + halfWidth, 0, 1),
+    nEff
+  };
+}
+
 function ScenarioPanel(props: {
   document: GraphDocument;
   simulation: SimulationResult;
@@ -2114,10 +2707,6 @@ function ScenarioPanel(props: {
   onResample: () => void;
   onClearOverrides: () => void;
   onClearSelections: () => void;
-  mode: WorkbenchMode;
-  domain: ExampleDomain;
-  denouement: ExampleDenouement;
-  denouementTitle: string;
 }) {
   const blocked = simulationBlocked(props.simulation);
   const overrides = Object.keys(props.document.simulation.overrides);
@@ -2134,12 +2723,6 @@ function ScenarioPanel(props: {
         {overrides.length > 0 && <button type="button" onClick={props.onClearOverrides}>clear fixed values</button>}
         {selections.length > 0 && <button type="button" onClick={props.onClearSelections}>clear conditions</button>}
       </div>
-      <PractitionerModulesDisclosure
-        mode={props.mode}
-        domain={props.domain}
-        denouement={props.denouement}
-        denouementTitle={props.denouementTitle}
-      />
     </div>
   );
 }
@@ -2187,56 +2770,113 @@ function BasicExampleTabs(props: { activeExampleId: string | null; onSelect: (id
   );
 }
 
-function BasicRelationPanel(props: {
+function DemoResultPanel(props: {
+  graph: GraphModel;
+  simulation: SimulationResult;
+  derived: SimulationDerivedCache;
+  pair: ScatterPair;
   summary: BasicRelationSummary | null;
   context: BasicDemoContext;
-  pending: boolean;
-  onOpenResults: () => void;
+  pending?: ResultPendingState;
+  moduleId: string | null;
+  computedOutput: ComputedCompletedOutput | null;
+  binaryOutput: BinaryAdjustmentOutput | null;
+  recommendedAdjustmentId: string | null;
+  onPair: (pair: ScatterPair) => void;
+  onSelectNode: (id: string) => void;
+  onAdjustRecommended: (id: string) => void;
   onClearOverrides: () => void;
   onClearSelections: () => void;
 }) {
   const hasContext = props.context.interventions.length > 0 || props.context.selections.length > 0;
+  const recommendedNode = props.recommendedAdjustmentId ? findNode(props.graph, props.recommendedAdjustmentId) : undefined;
+  const adjustedActive = props.graph.nodes.some((node) => node.roles.adjusted);
+  const showAdjustmentReveal = adjustedActive && (
+    props.computedOutput !== null ||
+    (props.binaryOutput !== null && shouldRenderBinaryAdjustmentOutput(props.binaryOutput))
+  );
+
   if (!props.summary) {
     return (
-      <section className="basic-relation-panel empty" aria-label="Exposure outcome relation" aria-busy={props.pending}>
-        <div className="module-card-header">
-          <strong>Exposure {"->"} outcome</strong>
-          <PendingChip pending={props.pending} />
-          <span className="module-badge planned">pick roles</span>
+      <section className="demo-result-panel empty" aria-label="Demo result" aria-busy={resultPendingActive(props.pending)}>
+        <div className="demo-result-heading">
+          <div>
+            <span>Result</span>
+            <strong>Pick exposure and outcome</strong>
+          </div>
+          <PendingChip pending={resultPendingActive(props.pending)} />
         </div>
         {hasContext && <BasicDemoContextBar context={props.context} onClearOverrides={props.onClearOverrides} onClearSelections={props.onClearSelections} />}
-        <p>Mark one exposure and one outcome to put the main comparison here.</p>
+        <p className="demo-result-note">The main comparison will appear here once the graph has exposure and outcome roles.</p>
       </section>
     );
   }
+
   const summary = props.summary;
   const status = relationChangeLabel(summary.observed.numericValue, summary.comparison?.numericValue ?? null);
   const ledgerRows = summary.ledgerRows && summary.ledgerRows.length > 0 ? summary.ledgerRows : fallbackLedgerRows(summary);
+  const canRecommendAdjustment = recommendedNode !== undefined && !recommendedNode.roles.adjusted;
+  const heading = demoResultHeading(summary, adjustedActive, props.context);
+
   return (
-    <section className="basic-relation-panel" aria-label="Exposure outcome relation" aria-busy={props.pending}>
-      <div className="module-card-header">
-        <strong>{summary.relationLabel}</strong>
-        <PendingChip pending={props.pending} />
-        <span className={status === "sign flip" ? "module-badge active punchline-flip" : "module-badge active"}>{status}</span>
+    <section className="demo-result-panel" aria-label="Demo result" aria-busy={resultPendingActive(props.pending)}>
+      <div className="demo-result-heading">
+        <div>
+          <span>{summary.relationLabel}</span>
+          <strong>{heading}</strong>
+        </div>
+        <div className={status === "sign flip" ? "module-badge active punchline-flip" : "module-badge active"}>{status}</div>
       </div>
+
       {hasContext && <BasicDemoContextBar context={props.context} onClearOverrides={props.onClearOverrides} onClearSelections={props.onClearSelections} />}
-      <div className={summary.comparison ? "basic-relation-compare" : "basic-relation-compare single"}>
-        <BasicRelationMetricView metric={summary.observed} role="observed" />
-        {summary.comparison ? (
-          <>
-            <div className="basic-relation-arrow" aria-hidden="true">{"->"}</div>
-            <BasicRelationMetricView metric={summary.comparison} role="comparison" />
-          </>
-        ) : null}
-      </div>
-      {summary.comparison && (
-        <BasicComparisonLedgerPlot rows={ledgerRows} />
+
+      <ScatterplotPanel
+        graph={props.graph}
+        simulation={props.simulation}
+        derived={props.derived}
+        pair={props.pair}
+        pending={props.pending}
+        pendingLabel="Updating result"
+        variant="demo"
+        onPair={props.onPair}
+        onSelectNode={props.onSelectNode}
+      />
+
+      {canRecommendAdjustment && (
+        <button type="button" className="demo-primary-action" onClick={() => props.onAdjustRecommended(recommendedNode.id)}>
+          Adjust for {shortNodeLabel(recommendedNode)}
+        </button>
       )}
-      <BasicComparisonLedger rows={ledgerRows} />
-      <p>{summary.note}</p>
-      <button type="button" className="mini-button" onClick={props.onOpenResults}><BarChart3 size={14} /> full results</button>
+
+      {showAdjustmentReveal && (
+        <div className="demo-after-visual" aria-label="After adjustment visual">
+          <AdjustedOutputPanel
+            moduleId={props.moduleId}
+            computedOutput={props.computedOutput}
+            binaryOutput={props.binaryOutput}
+            continuousOutput={null}
+            pending={props.pending}
+            hideOracle
+          />
+        </div>
+      )}
+
+      <details className="demo-result-explanation">
+        <summary>What changed?</summary>
+        {summary.comparison && <BasicComparisonLedgerPlot rows={ledgerRows} />}
+        <BasicComparisonLedger rows={ledgerRows} />
+        <p>{summary.note}</p>
+      </details>
     </section>
   );
+}
+
+function demoResultHeading(summary: BasicRelationSummary, adjustedActive: boolean, context: BasicDemoContext): string {
+  if (context.interventions.length > 0) return "Intervention";
+  if (context.selections.length > 0) return "Selected sample";
+  if (adjustedActive) return "Adjusted comparison";
+  if (summary.comparison) return "Comparison";
+  return "Raw comparison";
 }
 
 function BasicDemoContextBar(props: {
@@ -2262,24 +2902,6 @@ function BasicDemoContextBar(props: {
       )}
     </div>
   );
-}
-
-function BasicRelationMetricView(props: { metric: BasicOutputPunchlineMetric; role: "observed" | "comparison" }) {
-  const interval = metricIntervalLabel(props.metric);
-  return (
-    <div className={`basic-relation-metric ${props.role} ${metricTone(props.metric.numericValue)}`}>
-      <span>{props.metric.label}</span>
-      <strong>{props.metric.value}</strong>
-      <small>{props.metric.detail}</small>
-      {interval && <small className="basic-relation-ci">{interval}</small>}
-    </div>
-  );
-}
-
-function metricIntervalLabel(metric: BasicOutputPunchlineMetric): string | null {
-  if (metric.lower === undefined || metric.upper === undefined) return null;
-  const formatter = metric.value.includes("pp") ? formatPercentagePoints : formatSignedValue;
-  return `95% CI ${formatter(metric.lower)} to ${formatter(metric.upper)}`;
 }
 
 function BasicComparisonLedger(props: { rows: BasicComparisonLedgerRow[] }) {
@@ -2316,11 +2938,7 @@ function BasicComparisonLedgerPlot(props: { rows: BasicComparisonLedgerRow[] }) 
   const rowGap = 24;
   const height = 42 + rows.length * rowGap;
   const plot = { left: 104, right: 24, top: 17 };
-  const values = rows.flatMap((row) => [
-    row.metric.numericValue,
-    row.metric.lower,
-    row.metric.upper
-  ]).filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value));
+  const values = rows.map((row) => row.metric.numericValue).filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value));
   const maxAbs = Math.max(0.1, ...values.map((value) => Math.abs(value)));
   const domain = maxAbs * 1.18;
   const x = (value: number) => plot.left + ((value + domain) / (2 * domain)) * (width - plot.left - plot.right);
@@ -2337,9 +2955,6 @@ function BasicComparisonLedgerPlot(props: { rows: BasicComparisonLedgerRow[] }) 
         return (
           <g key={row.id}>
             <text className="huh-shift-row-label" x="8" y={y + 4}>{row.label}</text>
-            {row.metric.lower !== undefined && row.metric.upper !== undefined && (
-              <line className="huh-shift-interval" x1={x(row.metric.lower)} y1={y} x2={x(row.metric.upper)} y2={y} />
-            )}
             <circle className={`huh-shift-dot ${row.status} ${metricTone(value)}`} cx={x(value)} cy={y} r="5" />
             <text className="huh-shift-value" x={Math.min(width - 8, x(value) + 9)} y={y + 4}>{row.metric.value}</text>
           </g>
@@ -2459,6 +3074,16 @@ function selectedAdjustmentLabel(context: OutputContext & { moduleId: string | n
 
 function nodeAdjusted(graph: GraphModel, id: string): boolean {
   return graph.nodes.find((node) => node.id === id)?.roles.adjusted ?? false;
+}
+
+function basicDemoRecommendedAdjustmentId(moduleId: string | null, graph: GraphModel): string | null {
+  const candidate = moduleId === "tutoring-scores"
+    ? "Academic_need"
+    : moduleId === "simpson-severity"
+      ? "Severity"
+      : null;
+  if (!candidate) return null;
+  return graph.nodes.some((node) => node.id === candidate) ? candidate : null;
 }
 
 function binnedOrStratifiedAdjustmentMetric(
@@ -2940,11 +3565,13 @@ function AdjustedOutputPanel(props: {
   moduleId: string | null;
   computedOutput: ComputedCompletedOutput | null;
   binaryOutput: BinaryAdjustmentOutput | null;
+  continuousOutput: BinaryContinuousAdjustmentOutput | null;
   pending?: ResultPendingState;
   hideOracle?: boolean;
 }) {
-  const adjustedNodes = props.binaryOutput?.adjustedNodes ?? [];
+  const adjustedNodes = props.binaryOutput?.adjustedNodes ?? props.continuousOutput?.adjustedNodes ?? [];
   const binaryOutput = props.binaryOutput;
+  const continuousOutput = props.continuousOutput;
   const pendingNotice = <ResultsPendingNotice pending={props.pending} label="Updating adjusted output" />;
   if (props.moduleId) {
     return (
@@ -2952,6 +3579,7 @@ function AdjustedOutputPanel(props: {
         {pendingNotice}
         <CompletedOutputPanel moduleId={props.moduleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
         {binaryOutput && shouldRenderBinaryAdjustmentOutput(binaryOutput) && <BinaryAdjustmentOutputCard output={binaryOutput} />}
+        {continuousOutput && shouldRenderBinaryContinuousAdjustmentOutput(continuousOutput) && <BinaryContinuousAdjustmentOutputCard output={continuousOutput} />}
       </div>
     );
   }
@@ -2960,6 +3588,14 @@ function AdjustedOutputPanel(props: {
       <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
         {pendingNotice}
         <BinaryAdjustmentOutputCard output={binaryOutput} />
+      </div>
+    );
+  }
+  if (continuousOutput) {
+    return (
+      <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
+        {pendingNotice}
+        <BinaryContinuousAdjustmentOutputCard output={continuousOutput} />
       </div>
     );
   }
@@ -2994,12 +3630,16 @@ function shouldRenderBinaryAdjustmentOutput(output: BinaryAdjustmentOutput): boo
   return output.stabilizedIpw !== null || output.strata.length > 0;
 }
 
-function shouldShowAdjustedOutputColumn(document: GraphDocument, simulation: SimulationResult, moduleId: string | null): boolean {
+function shouldRenderBinaryContinuousAdjustmentOutput(output: BinaryContinuousAdjustmentOutput): boolean {
+  return output.adjustedNodes.length > 0 || output.stabilizedIpw !== null || output.strata.length > 0;
+}
+
+function shouldShowAdjustedOutputColumn(document: GraphDocument, simulation: SimulationResult, moduleId: string | null, pair: ScatterPair): boolean {
   if (moduleId) return true;
-  const exposure = document.graph.nodes.find((node) => node.roles.exposure);
-  const outcome = document.graph.nodes.find((node) => node.roles.outcome);
+  const exposure = document.graph.nodes.find((node) => node.id === pair.x);
+  const outcome = document.graph.nodes.find((node) => node.id === pair.y);
   if (!exposure || !outcome) return false;
-  return isBinaryGraphNode(exposure, simulation.nodeStates[exposure.id]) && isBinaryGraphNode(outcome, simulation.nodeStates[outcome.id]);
+  return isBinaryGraphNode(exposure, simulation.nodeStates[exposure.id]);
 }
 
 function BinaryAdjustmentOutputCard({ output }: { output: BinaryAdjustmentOutput }) {
@@ -3053,7 +3693,7 @@ function BinaryAdjustmentOutputCard({ output }: { output: BinaryAdjustmentOutput
         <div className="binary-adjustment-note active">
           <strong>Continuous bins active</strong>
           <span>
-            {output.binnedAdjustedNodes.map((item) => `${nodeDisplayName(item.node)}: ${item.cutpoints.length + 1} bins`).join("; ")}.
+            {output.binnedAdjustedNodes.map((item) => `${nodeDisplayName(item.node)}: ${item.cutpoints.length + 1}${item.automatic ? " auto quantile" : ""} bins`).join("; ")}.
           </span>
         </div>
       )}
@@ -3070,6 +3710,195 @@ function BinaryAdjustmentOutputCard({ output }: { output: BinaryAdjustmentOutput
       )}
     </div>
   );
+}
+
+function BinaryContinuousAdjustmentOutputCard({ output }: { output: BinaryContinuousAdjustmentOutput }) {
+  const xLabel = nodeDisplayName(output.exposure);
+  const yLabel = nodeDisplayName(output.outcome);
+  const groupZero = output.rawGroups[0];
+  const groupOne = output.rawGroups[1];
+  const adjustedLabel = output.stabilizedIpw
+    ? "IPW mean gap"
+    : output.adjustedNodes.length > 0
+      ? "Stratified mean gap"
+      : "No adjustment";
+  return (
+    <div className="continuous-adjustment-output">
+      <div className="module-card-header">
+        <strong>Adjusted pair output</strong>
+        <span className="module-badge active">{output.adjustedNodes.length} adjusted</span>
+      </div>
+      <div className="continuous-adjustment-summary">
+        <div>
+          <span>Raw mean gap</span>
+          <strong>{output.rawGap === null ? "n/a" : formatSignedValue(output.rawGap)}</strong>
+          <small>{binaryAxisValueLabel(xLabel, 1)} vs {binaryAxisValueLabel(xLabel, 0)}</small>
+        </div>
+        <div className={output.adjustedGap !== null ? "fixed" : ""}>
+          <span>{adjustedLabel}</span>
+          <strong>{output.adjustedGap === null ? "n/a" : formatSignedValue(output.adjustedGap)}</strong>
+          <small>{output.adjustedNodes.length > 0 ? output.adjustedNodes.map((node) => shortNodeLabel(node)).join(", ") : "mark covariates adjusted"}</small>
+        </div>
+      </div>
+      <div className="continuous-adjustment-raw">
+        <span>{binaryAxisValueLabel(xLabel, 0)} mean {groupZero?.mean === null || groupZero?.mean === undefined ? "n/a" : formatValue(groupZero.mean)}</span>
+        <span>{binaryAxisValueLabel(xLabel, 1)} mean {groupOne?.mean === null || groupOne?.mean === undefined ? "n/a" : formatValue(groupOne.mean)}</span>
+      </div>
+      {output.stabilizedIpw && <ContinuousStabilizedIpwCard output={output.stabilizedIpw} outcome={output.outcome} />}
+      {output.strata.length > 0 ? (
+        <ContinuousAdjustmentStrataPlot output={output} xLabel={xLabel} yLabel={yLabel} />
+      ) : !output.stabilizedIpw && output.adjustedNodes.length > 0 ? (
+        <div className="binary-adjustment-empty">
+          <strong>No adjusted strata yet</strong>
+          <p>The selected adjusted variables do not currently create displayable strata for this binary exposure and continuous outcome.</p>
+        </div>
+      ) : !output.stabilizedIpw ? (
+        <div className="binary-adjustment-empty">
+          <strong>No adjustment yet</strong>
+          <p>Mark a pre-treatment variable as adjusted to compare the raw mean gap with an adjusted display.</p>
+        </div>
+      ) : null}
+      {output.binnedAdjustedNodes.some((item) => item.automatic) && (
+        <div className="binary-adjustment-note active">
+          <strong>Auto bins active</strong>
+          <span>
+            {output.binnedAdjustedNodes.filter((item) => item.automatic).map((item) => `${nodeDisplayName(item.node)}: ${item.cutpoints.length + 1} quantile bins`).join("; ")}. Add explicit cutpoints in the adjustment tab to take control.
+          </span>
+        </div>
+      )}
+      {output.binnedAdjustedNodes.some((item) => !item.automatic) && (
+        <div className="binary-adjustment-note active">
+          <strong>Continuous bins active</strong>
+          <span>
+            {output.binnedAdjustedNodes.filter((item) => !item.automatic).map((item) => `${nodeDisplayName(item.node)}: ${item.cutpoints.length + 1} bins`).join("; ")}.
+          </span>
+        </div>
+      )}
+      {output.unsupportedAdjustedNodes.length > 0 && (
+        <div className="binary-adjustment-note">
+          <strong>Needs a different adjustment display</strong>
+          <span>
+            {output.unsupportedAdjustedNodes.map((node) => nodeDisplayName(node)).join(", ")} {output.unsupportedAdjustedNodes.length === 1 ? "is" : "are"} adjusted but not supported by this pairwise display yet.
+          </span>
+        </div>
+      )}
+      {output.truncated && (
+        <p className="binary-output-summary">Only the first three adjusted variables are expanded to avoid an unreadable stratum grid.</p>
+      )}
+    </div>
+  );
+}
+
+function ContinuousStabilizedIpwCard({ output, outcome }: { output: StabilizedIpwOutput; outcome: GraphNode }) {
+  const yLabel = nodeDisplayName(outcome);
+  return (
+    <div className="continuous-ipw-card">
+      <div className="module-card-header">
+        <strong>Stabilized IPW</strong>
+        <span className="module-badge active">logistic propensity</span>
+      </div>
+      <div className="continuous-adjustment-raw">
+        <span>raw {yLabel}: {output.rawDiff === null ? "n/a" : formatSignedValue(output.rawDiff)}</span>
+        <span>weighted {yLabel}: {output.weightedDiff === null ? "n/a" : formatSignedValue(output.weightedDiff)}</span>
+      </div>
+      {output.balances[0] && <IpwBalanceVisual balance={output.balances[0]} />}
+      <div className="ipw-diagnostics">
+        <span>ESS {output.effectiveSampleSize === null ? "n/a" : formatValue(output.effectiveSampleSize)}</span>
+        <span>max weight {output.maxWeight === null ? "n/a" : formatValue(output.maxWeight)}</span>
+        <span>clipped {output.clippedCount}</span>
+      </div>
+    </div>
+  );
+}
+
+function ContinuousAdjustmentStrataPlot({ output, xLabel, yLabel }: { output: BinaryContinuousAdjustmentOutput; xLabel: string; yLabel: string }) {
+  const rows = output.strata.filter((stratum) => {
+    const groupZero = stratum.groups[0];
+    const groupOne = stratum.groups[1];
+    return groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined;
+  });
+  if (rows.length === 0) return <p className="muted">No adjusted stratum has both exposure groups represented.</p>;
+  const width = 420;
+  const maxLabelLines = Math.max(...rows.map((stratum) => stratum.displayLabels.length), 1);
+  const rowHeight = maxLabelLines > 1 ? 92 : 74;
+  const margin = { left: 170, right: 54, top: 26, bottom: 30 };
+  const height = margin.top + rows.length * rowHeight + margin.bottom;
+  const plotWidth = width - margin.left - margin.right;
+  const [min, max] = output.yDomain;
+  const valueToX = (value: number) => margin.left + ((value - min) / Math.max(max - min, 1e-9)) * plotWidth;
+  const maxWeight = Math.max(...rows.flatMap((stratum) => stratum.points.map((point) => point.weight)), 1);
+  return (
+    <div className="continuous-adjustment-strata">
+      <div className="module-card-header">
+        <strong>Adjusted strata</strong>
+        <span>{binaryShortLabel(yLabel)} dots + means by {binaryShortLabel(xLabel)}</span>
+      </div>
+      <svg className="continuous-adjustment-strata-plot" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Adjusted ${yLabel} gaps by stratum`}>
+        <line className="continuous-strata-axis" x1={margin.left} x2={margin.left + plotWidth} y1={height - margin.bottom + 2} y2={height - margin.bottom + 2} />
+        <text className="continuous-strata-tick" x={margin.left} y={height - 5}>{formatValue(min)}</text>
+        <text className="continuous-strata-tick end" x={margin.left + plotWidth} y={height - 5}>{formatValue(max)}</text>
+        {rows.map((stratum, index) => {
+          const y = margin.top + index * rowHeight + rowHeight / 2;
+          const groupZero = stratum.groups[0]!;
+          const groupOne = stratum.groups[1]!;
+          const x0 = valueToX(groupZero.mean ?? min);
+          const x1 = valueToX(groupOne.mean ?? min);
+          const groupZeroY = y - 12;
+          const groupOneY = y + 12;
+          const pointGroups = [
+            { value: 0 as const, centerY: groupZeroY, points: continuousStrataGroupPoints(stratum, 0) },
+            { value: 1 as const, centerY: groupOneY, points: continuousStrataGroupPoints(stratum, 1) }
+          ];
+          const labelLines = stratum.displayLabels;
+          const labelStartY = y - ((labelLines.length - 1) * 5);
+          return (
+            <g key={stratum.id} className="continuous-strata-row">
+              <title>{stratum.label}</title>
+              <text className={`continuous-strata-label${labelLines.length > 1 ? " multi" : ""}`} x={margin.left - 10} y={labelStartY + 3}>
+                {labelLines.map((label, labelIndex) => (
+                  <tspan x={margin.left - 10} dy={labelIndex === 0 ? 0 : 10} key={`${stratum.id}-${label}`}>
+                    {label}
+                  </tspan>
+                ))}
+              </text>
+              {pointGroups.map((group) => {
+                return (
+                  <Fragment key={group.value}>
+                    <line className="continuous-strata-row-guide" x1={margin.left} x2={margin.left + plotWidth} y1={group.centerY} y2={group.centerY} />
+                    {group.points.map((point) => {
+                      const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
+                      return (
+                        <circle
+                          className={`continuous-strata-point ${group.value === 1 ? "treated" : "untreated"}`}
+                          cx={valueToX(point.y)}
+                          cy={group.centerY + deterministicStrataJitter(point.index, group.value, index) * 9.5}
+                          r={2.15 + normalizedWeight * 1.4}
+                          key={`${group.value}-${point.index}`}
+                          style={{ opacity: 0.46 + normalizedWeight * 0.32 }}
+                        />
+                      );
+                    })}
+                  </Fragment>
+                );
+              })}
+              <line className="continuous-strata-gap-line" x1={x0} x2={x1} y1={groupZeroY} y2={groupOneY} />
+              <circle className="continuous-strata-mean untreated" cx={x0} cy={groupZeroY} r="5.8" />
+              <circle className="continuous-strata-mean treated" cx={x1} cy={groupOneY} r="5.8" />
+              <text className="continuous-strata-gap-text" x={width - 4} y={y + 4}>{stratum.gap === null ? "n/a" : formatSignedValue(stratum.gap)}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function continuousStrataGroupPoints(stratum: BinaryContinuousAdjustmentStratum, groupValue: 0 | 1): ScatterPoint[] {
+  return binaryContinuousPointsForGroup(stratum.points, groupValue);
+}
+
+function deterministicStrataJitter(index: number, groupValue: 0 | 1, rowIndex: number): number {
+  return deterministicJitter(index + groupValue * 1009 + rowIndex * 9173);
 }
 
 function StabilizedIpwCard({ output }: { output: StabilizedIpwOutput }) {
@@ -3187,9 +4016,9 @@ function BinaryOutputMatrixCard(props: {
   );
 }
 
-function computeBinaryAdjustmentOutput(context: OutputContext, derived: SimulationDerivedCache): BinaryAdjustmentOutput | null {
-  const exposure = context.document.graph.nodes.find((node) => node.roles.exposure);
-  const outcome = context.document.graph.nodes.find((node) => node.roles.outcome);
+function computeBinaryAdjustmentOutput(context: OutputContext, derived: SimulationDerivedCache, pair: ScatterPair): BinaryAdjustmentOutput | null {
+  const exposure = context.document.graph.nodes.find((node) => node.id === pair.x);
+  const outcome = context.document.graph.nodes.find((node) => node.id === pair.y);
   if (!exposure || !outcome) return null;
   const exposureState = context.simulation.nodeStates[exposure.id];
   const outcomeState = context.simulation.nodeStates[outcome.id];
@@ -3202,7 +4031,7 @@ function computeBinaryAdjustmentOutput(context: OutputContext, derived: Simulati
   const stabilizedIpwNodes = adjustedNodes.filter(isStabilizedIpwNode);
   const binnedAdjustedNodes = adjustedNodes
     .filter((node) => !isBinaryGraphNode(node, context.simulation.nodeStates[node.id]) && !isStabilizedIpwNode(node))
-    .map((node) => binnedAdjustmentNode(node, context.simulation.nodeStates[node.id], derived.nodes.get(node.id)))
+    .map((node) => binnedAdjustmentNode(node, context.simulation.nodeStates[node.id], derived.nodes.get(node.id), { fallbackBins: 4 }))
     .filter((item): item is BinnedAdjustmentNode => item !== null);
   const binnedIds = new Set(binnedAdjustedNodes.map((item) => item.node.id));
   const unsupportedAdjustedNodes = adjustedNodes.filter((node) => (
@@ -3228,6 +4057,54 @@ function computeBinaryAdjustmentOutput(context: OutputContext, derived: Simulati
     unsupportedAdjustedNodes,
     strata: strataResult.items,
     stabilizedIpw,
+    truncated: binaryAdjustedNodes.length + binnedAdjustedNodes.length > expanders.length || strataResult.truncated
+  };
+}
+
+function computeBinaryContinuousAdjustmentOutput(context: OutputContext, derived: SimulationDerivedCache, pair: ScatterPair): BinaryContinuousAdjustmentOutput | null {
+  const exposure = context.document.graph.nodes.find((node) => node.id === pair.x);
+  const outcome = context.document.graph.nodes.find((node) => node.id === pair.y);
+  if (!exposure || !outcome) return null;
+  const exposureState = context.simulation.nodeStates[exposure.id];
+  const outcomeState = context.simulation.nodeStates[outcome.id];
+  if (!isBinaryGraphNode(exposure, exposureState) || isBinaryGraphNode(outcome, outcomeState)) return null;
+  const rawSummary = pairDerivedSummary(derived, exposure.id, outcome.id);
+  const rawPoints = rawSummary.points;
+  if (rawPoints.length === 0) return null;
+  const rawGap = binaryContinuousGap(rawSummary.binaryContinuousGroups);
+  const adjustedNodes = context.document.graph.nodes.filter((node) => node.roles.adjusted && node.id !== exposure.id && node.id !== outcome.id);
+  const binaryAdjustedNodes = adjustedNodes.filter((node) => isBinaryGraphNode(node, context.simulation.nodeStates[node.id]));
+  const stabilizedIpwNodes = adjustedNodes.filter(isStabilizedIpwNode);
+  const binnedAdjustedNodes = adjustedNodes
+    .filter((node) => !isBinaryGraphNode(node, context.simulation.nodeStates[node.id]) && !isStabilizedIpwNode(node))
+    .map((node) => binnedAdjustmentNode(node, context.simulation.nodeStates[node.id], derived.nodes.get(node.id), { fallbackBins: 4 }))
+    .filter((item): item is BinnedAdjustmentNode => item !== null);
+  const binnedIds = new Set(binnedAdjustedNodes.map((item) => item.node.id));
+  const unsupportedAdjustedNodes = adjustedNodes.filter((node) => (
+    !isBinaryGraphNode(node, context.simulation.nodeStates[node.id]) && !binnedIds.has(node.id) && !isStabilizedIpwNode(node)
+  ));
+  const stabilizedIpw = stabilizedIpwNodes.length > 0
+    ? computeStabilizedIpw(exposure, outcome, stabilizedIpwNodes, context.simulation, derived)
+    : null;
+  const expanders = [
+    ...binaryAdjustedNodes.map((node) => binaryAdjustmentExpander(node, context.simulation.nodeStates[node.id])),
+    ...binnedAdjustedNodes.map((item) => binnedAdjustmentExpander(item))
+  ].filter((item): item is AdjustmentStratumCondition[] => item.length > 0).slice(0, 3);
+  const strataResult = binaryContinuousAdjustmentStrata(expanders, exposureState, outcomeState);
+  return {
+    exposure,
+    outcome,
+    rawPoints,
+    rawGroups: rawSummary.binaryContinuousGroups,
+    rawGap,
+    yDomain: rawSummary.ySampleDomain,
+    adjustedNodes,
+    binaryAdjustedNodes,
+    binnedAdjustedNodes,
+    unsupportedAdjustedNodes,
+    strata: strataResult.items,
+    stabilizedIpw,
+    adjustedGap: stabilizedIpw?.weightedDiff ?? standardizedBinaryContinuousGap(strataResult.items),
     truncated: binaryAdjustedNodes.length + binnedAdjustedNodes.length > expanders.length || strataResult.truncated
   };
 }
@@ -3259,26 +4136,6 @@ function SimulationDiagnosticsPanel(props: {
           : props.simulation.diagnostics.map((message) => <span className="warning" key={message}>{message}</span>)}
       </div>
     </div>
-  );
-}
-
-function PractitionerModulesDisclosure(props: {
-  mode: WorkbenchMode;
-  domain: ExampleDomain;
-  denouement: ExampleDenouement;
-  denouementTitle: string;
-}) {
-  return (
-    <details className="scenario-disclosure practitioner-modules">
-      <summary>
-        <span>Practitioner modules</span>
-        <small>claim packet, denouement, design modules</small>
-      </summary>
-      <div className="scenario-disclosure-body">
-        <DenouementPanel denouement={props.denouement} title={props.denouementTitle} />
-        <DesignModulePanel mode={props.mode} domain={props.domain} />
-      </div>
-    </details>
   );
 }
 
@@ -3601,6 +4458,7 @@ function SelectionEditor(props: {
   simulation: SimulationResult;
   derived: SimulationDerivedCache;
   document: GraphDocument;
+  outputPair: ScatterPair;
   onToggleRole: (id: string, role: keyof NodeRoleFlags) => void;
   onRename: (id: string) => void;
   onDeleteNode: (id: string) => void;
@@ -3619,6 +4477,7 @@ function SelectionEditor(props: {
     simulation={props.simulation}
     derived={props.derived}
     document={props.document}
+    outputPair={props.outputPair}
     onToggleRole={props.onToggleRole}
     onRename={props.onRename}
     onDelete={props.onDeleteNode}
@@ -3659,7 +4518,7 @@ function BasicSelectionEditor(props: Parameters<typeof SelectionEditor>[0]) {
         <div className="selection-editor-body">
           <div className="selection-editor-block basic-causal-roles">
             <strong>Use this variable</strong>
-            <p className="muted">For the first two examples, pick the common cause and turn on adjustment.</p>
+            <p className="muted">Adjusting for the common cause should change the result.</p>
             <div className="role-toggle-grid">
               <RoleToggle label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
               <RoleToggle label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
@@ -3694,6 +4553,7 @@ function BasicSelectionEditor(props: Parameters<typeof SelectionEditor>[0]) {
                 document={props.document}
                 simulation={props.simulation}
                 derived={props.derived}
+                outputPair={props.outputPair}
                 onVariableChange={props.onVariableChange}
               />
             </details>
@@ -3710,7 +4570,7 @@ function BasicCausalGuide() {
   return (
     <div className="selection-empty-state basic-causal-guide">
       <strong>Try the flip</strong>
-      <p>Click the common cause in the graph, then turn on adjust for. Watch the comparison above change.</p>
+      <p>Click the common cause in the graph, then adjust for it. Watch the result change on the right.</p>
     </div>
   );
 }
@@ -3830,6 +4690,7 @@ function VariableEditor(props: {
   simulation: SimulationResult;
   derived: SimulationDerivedCache;
   document: GraphDocument;
+  outputPair: ScatterPair;
   onToggleRole: (id: string, role: keyof NodeRoleFlags) => void;
   onRename: (id: string) => void;
   onDelete: (id: string) => void;
@@ -3952,6 +4813,7 @@ function VariableEditor(props: {
             document={props.document}
             simulation={props.simulation}
             derived={props.derived}
+            outputPair={props.outputPair}
             onVariableChange={props.onVariableChange}
           />
         </div>}
@@ -3993,12 +4855,15 @@ function AdjustmentMethodEditor(props: {
   document: GraphDocument;
   simulation: SimulationResult;
   derived: SimulationDerivedCache;
+  outputPair: ScatterPair;
   onVariableChange: (nodeId: string, variable: VariableModel) => void;
 }) {
   const variable = normalizeVariableModel(props.node.variable);
   const state = props.simulation.nodeStates[props.node.id];
-  const exposureNode = props.document.graph.nodes.find((node) => node.roles.exposure);
-  const outcomeNode = props.document.graph.nodes.find((node) => node.roles.outcome);
+  const exposureNode = props.document.graph.nodes.find((node) => node.id === props.outputPair.x)
+    ?? props.document.graph.nodes.find((node) => node.roles.exposure);
+  const outcomeNode = props.document.graph.nodes.find((node) => node.id === props.outputPair.y)
+    ?? props.document.graph.nodes.find((node) => node.roles.outcome);
   const exposureState = exposureNode ? props.simulation.nodeStates[exposureNode.id] : undefined;
   const exposureVariable = normalizeVariableModel(exposureNode?.variable);
   const continuousEnough = variable.valueType !== "binary" && variable.valueType !== "categorical" && variable.valueType !== "text";
@@ -4843,21 +5708,6 @@ function designModuleScopeLabel(mode: WorkbenchMode, domain: ExampleDomain): str
   return `Recommended for ${meta?.label ?? "the selected domain"}. Switch to Pro to see everything.`;
 }
 
-function defaultScatterPair(graph: GraphModel): ScatterPair {
-  const ids = graph.nodes.map((node) => node.id);
-  if (ids.includes("Father_height") && ids.includes("Son_height")) return { x: "Father_height", y: "Son_height" };
-  const exposure = graph.nodes.find((node) => node.roles.exposure)?.id;
-  const outcome = graph.nodes.find((node) => node.roles.outcome)?.id;
-  if (exposure && outcome) return { x: exposure, y: outcome };
-  return { x: ids[0] ?? "", y: ids[1] ?? ids[0] ?? "" };
-}
-
-function reconcileScatterPair(graph: GraphModel, pair: ScatterPair): ScatterPair {
-  const ids = new Set(graph.nodes.map((node) => node.id));
-  if (ids.has(pair.x) && ids.has(pair.y)) return pair;
-  return defaultScatterPair(graph);
-}
-
 function nodeDisplayName(node: GraphNode): string {
   return node.label && node.label !== node.id ? `${node.label} (${node.id})` : node.id;
 }
@@ -4873,6 +5723,13 @@ function binaryShortLabel(value: string): string {
 
 function binaryAxisValueLabel(label: string, value: 0 | 1): string {
   return `${binaryShortLabel(label)}=${value}`;
+}
+
+function binaryDisplayValueLabel(node: GraphNode | undefined, fallbackLabel: string, value: 0 | 1): string {
+  const unit = node ? normalizeVariableModel(node.variable).unit.trim() : "";
+  if (unit && value === 1) return abbreviateLabel(unit, 18);
+  if (unit && value === 0) return "none";
+  return binaryAxisValueLabel(fallbackLabel, value);
 }
 
 function buildSimulationDerivedCache(simulation: SimulationResult): SimulationDerivedCache {
@@ -5314,15 +6171,24 @@ function solveLinearSystem(matrix: number[][], rhs: number[]): number[] | null {
   return augmented.map((row) => row[size] ?? 0);
 }
 
-function binnedAdjustmentNode(node: GraphNode, state?: SimulatedNodeState, summary?: NodeDistributionSummary): BinnedAdjustmentNode | null {
+function binnedAdjustmentNode(
+  node: GraphNode,
+  state?: SimulatedNodeState,
+  summary?: NodeDistributionSummary,
+  options: { fallbackBins?: number } = {}
+): BinnedAdjustmentNode | null {
   if (!state) return null;
   const variable = normalizeVariableModel(node.variable);
-  if (variable.adjustment.method !== "bins" || variable.adjustment.cutpoints.length === 0) return null;
   const domain = summary?.domain ?? distributionPlotDomain(state);
   if (!domain) return null;
-  const cutpoints = sanitizeCutpoints(variable.adjustment.cutpoints, domain);
+  const explicitCutpoints = variable.adjustment.method === "bins" ? sanitizeCutpoints(variable.adjustment.cutpoints, domain) : [];
+  const fallbackBins = options.fallbackBins ?? 0;
+  const automatic = explicitCutpoints.length === 0 && fallbackBins > 1;
+  const cutpoints = automatic
+    ? sanitizeCutpoints(defaultQuantileCuts(summary?.finiteSamples ?? state.empirical.samples, domain, fallbackBins), domain)
+    : explicitCutpoints;
   if (cutpoints.length === 0) return null;
-  return { node, state, domain, cutpoints };
+  return { node, state, domain, cutpoints, automatic };
 }
 
 function binaryAdjustmentExpander(node: GraphNode, state?: SimulatedNodeState): AdjustmentStratumCondition[] {
@@ -5373,6 +6239,52 @@ function binaryAdjustmentStrata(
   }), truncated };
 }
 
+function binaryContinuousAdjustmentStrata(
+  expanders: AdjustmentStratumCondition[][],
+  xState: SimulatedNodeState | undefined,
+  yState: SimulatedNodeState | undefined
+): { items: BinaryContinuousAdjustmentStratum[]; truncated: boolean } {
+  if (expanders.length === 0) return { items: [], truncated: false };
+  let combinations: AdjustmentStratumCondition[][] = [[]];
+  for (const levels of expanders) {
+    combinations = combinations.flatMap((base) => levels.map((level) => [...base, level]));
+  }
+  const maxStrata = 16;
+  const truncated = combinations.length > maxStrata;
+  const shownCombinations = combinations.slice(0, maxStrata);
+  return { items: shownCombinations.map((conditions) => {
+    const points = filteredBinaryScatterPoints(xState, yState, conditions);
+    const groups = binaryContinuousGroups(points);
+    return {
+      id: conditions.map(stratumConditionId).join("__"),
+      label: conditions.map(stratumConditionLabel).join(", "),
+      displayLabels: conditions.map(stratumConditionDisplayLabel),
+      points,
+      groups,
+      gap: binaryContinuousGap(groups),
+      weight: points.reduce((sum, point) => sum + point.weight, 0)
+    };
+  }), truncated };
+}
+
+function binaryContinuousGap(groups: BinaryContinuousGroup[]): number | null {
+  const groupZero = groups[0];
+  const groupOne = groups[1];
+  if (groupZero?.mean === null || groupZero?.mean === undefined || groupOne?.mean === null || groupOne?.mean === undefined) return null;
+  return groupOne.mean - groupZero.mean;
+}
+
+function standardizedBinaryContinuousGap(strata: BinaryContinuousAdjustmentStratum[]): number | null {
+  let numerator = 0;
+  let denominator = 0;
+  for (const stratum of strata) {
+    if (stratum.gap === null || stratum.weight <= 0) continue;
+    numerator += stratum.gap * stratum.weight;
+    denominator += stratum.weight;
+  }
+  return denominator > 0 ? numerator / denominator : null;
+}
+
 function stratumConditionId(condition: AdjustmentStratumCondition): string {
   if (condition.kind === "binary") return `${condition.node.id}-${condition.value}`;
   return `${condition.node.id}-bin-${condition.index}`;
@@ -5381,6 +6293,12 @@ function stratumConditionId(condition: AdjustmentStratumCondition): string {
 function stratumConditionLabel(condition: AdjustmentStratumCondition): string {
   if (condition.kind === "binary") return `${condition.node.id}=${condition.value}`;
   return `${condition.node.id} bin ${condition.index + 1}: ${formatValue(condition.lower)} to ${formatValue(condition.upper)}`;
+}
+
+function stratumConditionDisplayLabel(condition: AdjustmentStratumCondition): string {
+  const label = (condition.node.label || condition.node.id).replace(/_/g, " ");
+  if (condition.kind === "binary") return `${label}=${condition.value}`;
+  return `${label} bin ${condition.index + 1}`;
 }
 
 function filteredBinaryScatterPoints(
@@ -5515,7 +6433,7 @@ function addPathEdges(graph: GraphModel, paths: string[][], out: Map<string, "ca
   }
 }
 
-function edgeGeometry(edge: GraphEdge, source: GraphNode, target: GraphNode, strokeWidth: number, edges: GraphEdge[], nodesById: Map<string, GraphNode>): { path: string; control: Point } {
+function edgeGeometry(edge: GraphEdge, source: GraphNode, target: GraphNode, strokeWidth: number, edges: GraphEdge[], nodesById: Map<string, GraphNode>): EdgeGeometry {
   const automaticControl = automaticControlPoint(edge, source, target, edges, nodesById);
   const control = edge.control ?? automaticControl.point;
   const curved = !!edge.control || automaticControl.curved;
@@ -5525,11 +6443,11 @@ function edgeGeometry(edge: GraphEdge, source: GraphNode, target: GraphNode, str
   if (!curved) {
     const start = nodeBoundaryPoint(source, target.position, startClearance, { includeDistribution: edge.kind === "bidirected" });
     const end = nodeBoundaryPoint(target, source.position, endClearance, { includeDistribution: edge.kind === "bidirected" });
-    return { path: `M ${start.x} ${start.y} L ${end.x} ${end.y}`, control };
+    return { path: `M ${start.x} ${start.y} L ${end.x} ${end.y}`, control, start, end };
   }
   const start = nodeBoundaryPoint(source, control, startClearance, { includeDistribution: edge.kind === "bidirected" });
   const end = nodeBoundaryPoint(target, control, endClearance, { includeDistribution: edge.kind === "bidirected" });
-  return { path: `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`, control };
+  return { path: `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`, control, start, end };
 }
 
 function edgeArrowClearance(strokeWidth: number): number {
@@ -5625,7 +6543,12 @@ function nodeBoundaryDistance(node: GraphNode, unit: Point, clearance: number, o
   const adjustedBoundary = node.roles.adjusted ? rayCenteredRectDistance(unit, 28 + clearance, 28 + clearance) : 0;
   const selectedBoundary = node.roles.selected ? rayRectExitDistance(unit, { left: -23 - clearance, right: 23 + clearance, top: 22 - clearance, bottom: 36 + clearance }) : 0;
   const distributionBoundary = options.includeDistribution
-    ? rayRectExitDistance(unit, { left: NODE_DISTRIBUTION_PLOT_X - clearance, right: 48 + clearance, top: NODE_DISTRIBUTION_PLOT_Y - clearance, bottom: -18 + clearance })
+    ? rayRectExitDistance(unit, {
+        left: NODE_DISTRIBUTION_BOUNDS.left - clearance,
+        right: NODE_DISTRIBUTION_BOUNDS.right + clearance,
+        top: NODE_DISTRIBUTION_BOUNDS.top - clearance,
+        bottom: NODE_DISTRIBUTION_BOUNDS.bottom + clearance
+      })
     : 0;
   return Math.max(circleBoundary, adjustedBoundary, selectedBoundary, distributionBoundary);
 }
@@ -6057,29 +6980,6 @@ function parsePoints(value: string): EdgeMechanism["points"] {
 
 function trimNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-}
-
-function loadInitialDocument(): GraphDocument {
-  const hash = window.location.hash.startsWith("#model=") ? window.location.hash.slice("#model=".length) : "";
-  if (hash) {
-    try {
-      const decoded = JSON.parse(decodeURIComponent(atob(hash))) as GraphDocument;
-      if (decoded.schemaVersion === 1) return { ...decoded, simulation: reconcileSimulationSpec(decoded.graph, decoded.simulation) };
-    } catch {
-      // Ignore malformed links and fall back to local state.
-    }
-  }
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored) as GraphDocument;
-      if (parsed.schemaVersion === 1) return { ...parsed, simulation: reconcileSimulationSpec(parsed.graph, parsed.simulation) };
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
-  }
-  for (const key of LEGACY_STORAGE_KEYS) window.localStorage.removeItem(key);
-  return initialDocument();
 }
 
 function copyShareUrl(document: GraphDocument) {

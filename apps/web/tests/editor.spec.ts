@@ -6,6 +6,10 @@ async function loadExample(page: Page, title: string) {
   await page.getByRole("menuitem").filter({ hasText: title }).click();
 }
 
+async function flowViewportTransform(page: Page) {
+  return await page.locator(".react-flow__viewport").getAttribute("style") ?? "";
+}
+
 test("loads the desktop guided basic shell", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Nudagitty")).toBeVisible();
@@ -32,13 +36,14 @@ test("loads the desktop guided basic shell", async ({ page }) => {
   await expect(page.locator(".graph-legend")).toHaveCount(0);
   await expect(page.locator(".canvas-zoom-controls")).toHaveCount(0);
   await expect(page.locator(".edge-function-glyph").first()).toBeHidden();
-  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Tutoring -> test score");
-  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Observed mean gap");
-  await expect(page.getByLabel("Exposure outcome relation")).toContainText("95% CI");
-  await expect(page.getByLabel("Exposure outcome relation")).not.toContainText("Fixed: stabilized IPW");
+  await expect(page.getByLabel("Demo result")).toContainText("Tutoring -> test score");
+  await expect(page.locator(".demo-result-callout")).toHaveCount(0);
+  await expect(page.getByLabel("Demo result")).not.toContainText("95% CI");
+  await expect(page.getByLabel("Demo result")).not.toContainText("Fixed: stabilized IPW");
   await expect(page.locator(".editor-column")).toContainText("Try the flip");
   await expect(page.locator(".basic-results-column")).toBeVisible();
-  await expect(page.locator(".basic-results-column")).toContainText("Pairwise Output");
+  await expect(page.locator(".basic-results-column")).toContainText("Raw comparison");
+  await expect(page.locator(".binary-continuous-vertical-svg")).toBeVisible();
   await expect(page.getByRole("button", { name: "Close results" })).toBeVisible();
   await expect(page.locator("body")).not.toContainText("Live Node Values");
 });
@@ -50,7 +55,7 @@ test("ignores legacy saved documents when opening the demo", async ({ page }) =>
   await page.goto("/");
 
   await expect(page.getByRole("button", { name: "1 Tutoring" })).toBeVisible();
-  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Tutoring -> test score");
+  await expect(page.getByLabel("Demo result")).toContainText("Tutoring -> test score");
   await expect(page.locator("body")).not.toContainText("Legacy saved DAG");
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("nudagitty.document.v1"))).toBeNull();
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("nudagitty.document.v2"))).not.toBeNull();
@@ -73,6 +78,33 @@ test("demo layout keeps guidance left and expanded results right", async ({ page
   expect(closedEditorBox.x + closedEditorBox.width).toBeLessThanOrEqual(closedCanvasBox.x + 1);
 });
 
+test("pro layout keeps editors left and outputs right", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Pro" }).click();
+  const editorBox = await page.locator(".editor-column").boundingBox();
+  const canvasBox = await page.locator(".canvas-shell").boundingBox();
+  const scenarioBox = await page.locator(".scenario-column").boundingBox();
+  const pairwiseBox = await page.locator(".pairwise-column").boundingBox();
+  const adjustedBox = await page.locator(".adjusted-output-column").boundingBox();
+  if (!editorBox || !canvasBox || !scenarioBox || !pairwiseBox || !adjustedBox) throw new Error("missing pro layout bounds");
+  expect(editorBox.x + editorBox.width).toBeLessThanOrEqual(canvasBox.x + 1);
+  expect(canvasBox.x + canvasBox.width).toBeLessThanOrEqual(scenarioBox.x + 1);
+  expect(canvasBox.x + canvasBox.width).toBeLessThanOrEqual(pairwiseBox.x + 1);
+  expect(canvasBox.x + canvasBox.width).toBeLessThanOrEqual(adjustedBox.x + 1);
+});
+
+test("pro practitioner modules live in a bottom drawer", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Pro" }).click();
+  const drawer = page.locator(".practitioner-modules-drawer");
+
+  await expect(drawer.locator("> details > summary")).toContainText("Practitioner modules");
+  await expect(page.locator(".scenario-column")).not.toContainText("Practitioner modules");
+  await drawer.locator("> details > summary").click();
+  await expect(drawer).toContainText("Design modules");
+  await expect(drawer).toContainText("Claim packet");
+});
+
 test("basic examples surface the observed versus causal punchline", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Examples").click();
@@ -81,30 +113,31 @@ test("basic examples surface the observed versus causal punchline", async ({ pag
   await expect(basicItems.nth(1)).toContainText("Simpson's paradox");
   await page.getByRole("menuitem").filter({ hasText: "Birthweight paradox" }).click();
 
-  const relation = page.getByLabel("Exposure outcome relation");
+  const relation = page.getByLabel("Demo result");
   await expect(relation).toContainText("Smoking -> infant mortality");
   await expect(relation).toContainText(/sign flip/i);
   await expect(relation).toContainText(/selected sample/i);
   await expect(relation).toContainText(/Full sample/i);
   await expect(relation).toContainText(/Birthweight <= 2500/i);
+  await relation.locator("summary").filter({ hasText: "What changed?" }).click();
   await expect(relation.locator(".huh-shift-plot")).toBeVisible();
-  await relation.getByRole("button", { name: "full results" }).click();
   await expect(page.locator(".basic-results-column")).toBeVisible();
   await page.getByRole("button", { name: "Close results" }).click();
   await expect(page.locator(".basic-results-column")).toHaveCount(0);
 
   await page.getByLabel("Examples").click();
   await page.getByRole("menuitem").filter({ hasText: "Simpson's paradox" }).click();
-  await expect(relation).toContainText("Observed risk diff");
+  await page.getByRole("button", { name: "Show result" }).click();
+  await expect(page.locator(".basic-results-column")).toBeVisible();
+  await expect(relation).toContainText("risk diff");
   await expect(relation).not.toContainText("Fixed: stabilized IPW");
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
   await page.locator(".editor-column").getByLabel("adjust for").click();
   await expect(relation).toContainText(/fixed: .*IPW/i);
   await expect(relation).not.toContainText("DGP do contrast");
+  await relation.locator("summary").filter({ hasText: "What changed?" }).click();
   await expect(relation.locator(".huh-shift-plot")).toBeVisible();
-  await relation.getByRole("button", { name: "full results" }).click();
   const results = page.locator(".basic-results-column");
-  await expect(results).toContainText("Pairwise Output");
   await expect(results).toContainText("Weighted pairwise output");
   await expect(results).toContainText("Stabilized IPW");
   await expect(results).not.toContainText("do contrast");
@@ -114,11 +147,11 @@ test("basic examples surface the observed versus causal punchline", async ({ pag
 test("demo comparison states track adjustment and selection choices", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "1 Tutoring" }).click();
-  const relation = page.getByLabel("Exposure outcome relation");
+  const relation = page.getByLabel("Demo result");
 
-  await expect(relation).toContainText("Comparison states");
-  await expect(relation).toContainText("Academic_need unadjusted");
-  await expect(relation).toContainText("Observed mean gap");
+  await expect(relation).toContainText("Raw comparison");
+  await expect(relation.locator(".demo-result-callout")).toHaveCount(0);
+  await expect(relation).toContainText("Adjust for academic need");
 
   await page.locator("text.node-label").filter({ hasText: "academic need" }).click({ force: true });
   const editor = page.locator(".editor-column");
@@ -142,11 +175,10 @@ test("results panes mark output as updating while analysis recomputes", async ({
     await route.continue();
   });
   await page.goto("/");
-  await page.getByLabel("Exposure outcome relation").getByRole("button", { name: "full results" }).click();
   await page.locator("text.node-label").filter({ hasText: "academic need" }).click({ force: true });
   await page.locator(".editor-column").getByLabel("adjust for").click();
 
-  await expect(page.getByLabel("Exposure outcome relation").locator(".pending-chip")).toContainText("updating");
+  await expect(page.locator(".basic-results-column")).toContainText("Updating result");
   await expect(page.locator(".basic-results-column")).toContainText("Updating adjusted output");
   await expect(page.locator(".canvas-computation-status")).toContainText("updating paths");
 });
@@ -228,7 +260,7 @@ test("manual chess sign-flip example surfaces elite selection as analysis sample
   await expect(banner).toContainText("method rejection sampling");
   await expect(banner).toContainText(/samples \d+ \/ \d+/);
   await expect(page.getByLabel("Active demo state")).toContainText("selected sample");
-  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Selected sample");
+  await expect(page.getByLabel("Demo result")).toContainText("Selected sample");
   await expect(page.locator(".adjusted-output-column")).toHaveCount(0);
 
   await page.locator("text.node-label").filter({ hasText: "rated / elite sample" }).click({ force: true });
@@ -284,8 +316,8 @@ test("hard do controls share one override state", async ({ page }) => {
   await expect(hardDo).toContainText("active");
   await expect(hardDo.getByLabel("hard do value")).toHaveValue("2");
   await expect(page.getByLabel("Active demo state")).toContainText("intervention");
-  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Intervention result");
-  await expect(page.getByLabel("Exposure outcome relation")).toContainText("Change from baseline");
+  await expect(page.getByLabel("Demo result")).toContainText("Intervention");
+  await expect(page.getByLabel("Demo result")).toContainText("difference from no intervention");
   await hardDo.getByRole("button", { name: "release hard do" }).click();
   await expect(hardDo).toContainText("available");
   await expect(page.getByLabel("Active demo state")).toHaveCount(0);
@@ -374,10 +406,58 @@ test("Simpson example reports a completed crude versus do contrast", async ({ pa
   await expect(page.locator(".edge-value").first()).toContainText("linear coef");
 });
 
+test("pro adjusted output follows the selected binary continuous pair", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Pro" }).click();
+  await loadExample(page, "M-bias: adjustment can create bias");
+  const adjustedOutput = page.locator(".adjusted-output-column");
+  await expect(adjustedOutput).toContainText("Adjusted pair output");
+  await expect(adjustedOutput).toContainText("Raw mean gap");
+  await expect(adjustedOutput).toContainText("Stratified mean gap");
+  await expect(adjustedOutput).toContainText("Auto bins active");
+
+  await page.locator("text.node-label").filter({ hasText: "collider score" }).click({ force: true });
+  await page.locator(".editor-column").getByLabel("adjusted").click();
+  await expect(adjustedOutput).not.toContainText("Adjusted pair output");
+  await expect(adjustedOutput).not.toContainText("Auto bins active");
+});
+
+test("three-variable adjusted strata labels stay readable", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Pro" }).click();
+  await page.getByLabel("Examples").click();
+  await page.getByText("Econometrics / public policy").hover();
+  await page.getByRole("menuitem").filter({ hasText: "Policy evaluation: DiD and synthetic control" }).click();
+  const labels = page.locator(".adjusted-output-column .continuous-strata-label");
+
+  await expect(labels.first()).toContainText("region baseline bin 1");
+  await expect(labels.first()).toContainText("pre-trend bin 1");
+  await expect(labels.first()).toContainText("donor pool quality bin 1");
+  await expect(labels.first()).not.toContainText("RB");
+  await expect(labels.first()).not.toContainText("...");
+  await expect(page.locator(".pairwise-column .continuous-strata-ci-bar")).toHaveCount(0);
+  await expect(page.locator(".adjusted-output-column .continuous-strata-point").first()).toBeVisible();
+  await expect(page.locator(".adjusted-output-column .continuous-strata-ci-bar")).toHaveCount(0);
+  await expect(page.locator(".adjusted-output-column .continuous-strata-violin")).toHaveCount(0);
+  const metrics = await page.locator(".continuous-adjustment-strata-plot").evaluate((svg) => {
+    const svgRect = svg.getBoundingClientRect();
+    const labelRects = Array.from(svg.querySelectorAll(".continuous-strata-label")).map((label) => label.getBoundingClientRect());
+    const yDeltas = labelRects.slice(1).map((rect, index) => {
+      const previous = labelRects[index];
+      return previous ? rect.top - previous.top : Infinity;
+    });
+    return {
+      minLeft: Math.min(...labelRects.map((rect) => rect.left - svgRect.left)),
+      minDeltaY: Math.min(...yDeltas)
+    };
+  });
+  expect(metrics.minLeft).toBeGreaterThanOrEqual(-1);
+  expect(metrics.minDeltaY).toBeGreaterThan(18);
+});
+
 test("adjusted continuous variables expose draggable bin methodology and positivity warnings", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "2 Simpson" }).click();
-  await page.getByLabel("Exposure outcome relation").getByRole("button", { name: "full results" }).click();
   await page.locator("text.node-label").filter({ hasText: "Severity" }).click({ force: true });
   const editor = page.locator(".editor-column");
   await editor.getByLabel("adjust for").click();
@@ -518,22 +598,22 @@ test.skip("denouement panel switches by example and expands checklists", async (
   await expect(denouement).toContainText("No anticipation");
 });
 
-test("binary variable pairs render a colored confusion matrix", async ({ page }) => {
+test("binary variable pairs render rate bars with confidence intervals", async ({ page }) => {
   await page.goto("/");
   await loadExample(page, "Simpson's paradox: treatment by severity");
-  await page.getByLabel("Exposure outcome relation").getByRole("button", { name: "full results" }).click();
+  await page.getByRole("button", { name: "Pro" }).click();
 
-  const panel = page.locator(".scatterplot-panel");
+  const panel = page.locator(".pairwise-column .scatterplot-panel");
   await expect(panel.getByLabel("x variable")).toHaveValue("Treatment");
   await expect(panel.getByLabel("y variable")).toHaveValue("Recovery");
-  await expect(panel).toContainText("Observed gap");
+  await expect(panel).toContainText("Gap");
   await expect(panel).toContainText("-47.2 pp");
-  await expect(panel).toContainText("Each column is one Treatment group and sums to 100%");
-  await expect(panel.locator(".confusion-matrix")).toBeVisible();
-  await expect(panel.locator(".matrix-cell.outcome-positive").first()).toBeVisible();
+  await expect(panel.locator(".binary-rate-comparison")).toBeVisible();
+  await expect(panel.locator(".binary-rate-ci")).toHaveCount(2);
+  await expect(panel.locator(".binary-rate-ci-label")).toContainText("95% CI");
+  await expect(panel.locator(".confusion-matrix")).toHaveCount(0);
   await expect(panel).toContainText("Treatment=1");
   await expect(panel).toContainText("Recovery=1");
-  await expect(panel.locator(".matrix-cell").first()).toHaveAttribute("title", /Recovery=0, Treatment=0/);
   await expect(panel.locator(".scatter-point")).toHaveCount(0);
 });
 
@@ -614,7 +694,7 @@ test("canvas background drag pans the desktop viewport", async ({ page }) => {
   await page.goto("/");
 
   const canvas = page.locator(".graph-canvas");
-  const before = await canvas.getAttribute("viewBox");
+  const before = await flowViewportTransform(page);
   const nodeCount = await page.locator(".node").count();
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
@@ -625,42 +705,32 @@ test("canvas background drag pans the desktop viewport", async ({ page }) => {
   await page.mouse.move(box.x + box.width - 152, box.y + box.height - 122, { steps: 6 });
   await page.mouse.up();
 
-  await expect(canvas).not.toHaveAttribute("viewBox", before ?? "");
+  await expect.poll(() => flowViewportTransform(page)).not.toBe(before);
   await expect(page.locator(".node")).toHaveCount(nodeCount);
 });
 
-test("mobile pinch zoom changes the canvas viewport", async ({ page }) => {
+test("mobile touch drag over the canvas scrolls the page", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
   const canvas = page.locator(".graph-canvas");
-  const before = await canvas.getAttribute("viewBox");
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
   if (!box) return;
 
-  await page.locator(".canvas-grid").evaluate((element, box) => {
-    const dispatch = (type: string, pointerId: number, clientX: number, clientY: number) => {
-      element.dispatchEvent(new PointerEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        pointerId,
-        pointerType: "touch",
-        clientX,
-        clientY
-      }));
-    };
-    const cx = box.x + box.width / 2;
-    const cy = box.y + box.height / 2;
-    dispatch("pointerdown", 21, cx - 36, cy);
-    dispatch("pointerdown", 22, cx + 36, cy);
-    dispatch("pointermove", 21, cx - 78, cy - 10);
-    dispatch("pointermove", 22, cx + 78, cy + 10);
-    dispatch("pointerup", 21, cx - 78, cy - 10);
-    dispatch("pointerup", 22, cx + 78, cy + 10);
-  }, box);
+  const client = await page.context().newCDPSession(page);
+  const startX = Math.round(box.x + box.width / 2);
+  const startY = Math.round(Math.min(box.y + box.height - 60, 764));
+  const endY = Math.max(80, startY - 320);
 
-  await expect(canvas).not.toHaveAttribute("viewBox", before ?? "");
+  await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: startX, y: startY }] });
+  for (let step = 1; step <= 8; step += 1) {
+    const y = Math.round(startY + (endY - startY) * (step / 8));
+    await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: startX, y }] });
+  }
+  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(100);
 });
 
 test("mobile layout avoids horizontal overflow", async ({ page }) => {
@@ -687,4 +757,23 @@ test("mobile layout avoids horizontal overflow", async ({ page }) => {
   await expect(page.locator(".basic-results-column")).toBeVisible();
   await expect(page.locator(".scenario-column")).toHaveCount(0);
   await expect(page.locator(".advanced-drawer")).toHaveCount(0);
+});
+
+test("mobile examples menu opens as a selectable sheet", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  await page.getByLabel("Examples").click();
+  const menu = page.locator(".example-menu-popover");
+  await expect(menu).toBeVisible();
+  const bounds = await menu.boundingBox();
+  if (!bounds) throw new Error("missing mobile examples menu bounds");
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(391);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(845);
+
+  await page.getByRole("menuitem").filter({ hasText: "Birthweight paradox" }).click();
+  await expect(page.getByLabel("Examples")).toContainText("Birthweight paradox");
+  await expect(page.getByLabel("Demo result")).toContainText("Smoking -> infant mortality");
 });

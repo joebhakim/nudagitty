@@ -1,5 +1,6 @@
 import { EXAMPLES, EXAMPLE_DOMAINS } from "@nudagitty/core";
 import type { ExampleDomain } from "@nudagitty/core";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Fragment, useEffect, useState } from "react";
 import type { WorkbenchMode } from "../shared/workbench";
 
@@ -31,24 +32,30 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
     ? BASIC_EXAMPLE_IDS.map((id) => EXAMPLES.find((example) => example.id === id)).filter((example): example is typeof EXAMPLES[number] => example !== undefined)
     : EXAMPLES.filter((example) => example.domain === highlighted?.id);
   return (
-    <div className="example-menu">
-      <button
-        type="button"
-        aria-label="Examples"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="example-menu-trigger"
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span className="example-menu-trigger-text">
-          <span className="example-menu-label">{props.compact ? "More examples" : "Examples"}</span>
-          {!props.compact && <span className="example-menu-title">{activeExample?.title ?? "Choose one"}</span>}
-        </span>
-      </button>
-      {open && (
-        <>
-          <button type="button" className="example-menu-backdrop" aria-label="Close menu" onClick={() => setOpen(false)} />
-          <div className={basicMode ? "example-menu-popover basic" : "example-menu-popover"} role="menu">
+    <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+      <div className="example-menu">
+        <DropdownMenu.Trigger asChild>
+          <button
+            type="button"
+            aria-label="Examples"
+            className="example-menu-trigger"
+          >
+            <span className="example-menu-trigger-text">
+              <span className="example-menu-label">{props.compact ? "More examples" : "Examples"}</span>
+              {!props.compact && <span className="example-menu-title">{activeExample?.title ?? "Choose one"}</span>}
+            </span>
+          </button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Content
+          className={basicMode ? "example-menu-popover basic" : "example-menu-popover"}
+          aria-label="Example choices"
+          aria-labelledby="example-menu-content-label"
+          align="start"
+          side="bottom"
+          sideOffset={-1}
+          collisionPadding={8}
+        >
+            <span id="example-menu-content-label" className="screen-reader-only">Example choices</span>
             <div className="example-sheet-head">
               <div>
                 <strong>Examples</strong>
@@ -63,6 +70,10 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
                   className={domain.id === highlightedDomain ? "active" : ""}
                   onMouseEnter={() => setHighlightedDomain(domain.id)}
                   onFocus={() => setHighlightedDomain(domain.id)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setHighlightedDomain(domain.id);
+                  }}
                   key={domain.id}
                 >
                   <span>{domain.label}</span>
@@ -77,29 +88,25 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
               {examples.map((example, index) => (
                 <Fragment key={example.id}>
                   {basicMode && index === 2 && <div className="example-more-divider">More examples</div>}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={[
-                      example.id === props.activeExampleId ? "active" : "",
-                      basicMode && index < 2 ? "frontline" : "",
-                      basicMode && index >= 2 ? "secondary" : ""
-                    ].filter(Boolean).join(" ")}
-                    onClick={() => {
-                      props.onSelect(example.id);
-                      setOpen(false);
-                    }}
-                  >
-                    <strong>{example.title}</strong>
-                    <span>{example.summary}</span>
-                  </button>
+                  <DropdownMenu.Item asChild onSelect={() => props.onSelect(example.id)}>
+                    <button
+                      type="button"
+                      className={[
+                        example.id === props.activeExampleId ? "active" : "",
+                        basicMode && index < 2 ? "frontline" : "",
+                        basicMode && index >= 2 ? "secondary" : ""
+                      ].filter(Boolean).join(" ")}
+                    >
+                      <strong>{example.title}</strong>
+                      <span>{example.summary}</span>
+                    </button>
+                  </DropdownMenu.Item>
                 </Fragment>
               ))}
             </div>
-          </div>
-        </>
-      )}
-    </div>
+        </DropdownMenu.Content>
+      </div>
+    </DropdownMenu.Root>
   );
 }
 
