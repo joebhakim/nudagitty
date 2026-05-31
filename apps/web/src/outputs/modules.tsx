@@ -279,7 +279,7 @@ export function basicOutputPunchlineFromResult(moduleId: string | null, result: 
         numericValue: output.crudeDiff
       },
       comparison: {
-        label: "Causal do contrast",
+        label: "DGP do difference",
         value: formatPercentagePoints(output.causalDiff),
         detail: `do(1) ${formatPercent(output.causalTreatedRecovery)} vs do(0) ${formatPercent(output.causalUntreatedRecovery)}`,
         numericValue: output.causalDiff
@@ -299,7 +299,7 @@ export function basicOutputPunchlineFromResult(moduleId: string | null, result: 
         numericValue: output.crudeDiff
       },
       comparison: {
-        label: "Causal do contrast",
+        label: "DGP do difference",
         value: formatPercentagePoints(output.causalDiff),
         detail: `do(ICU) ${formatPercent(output.causalIcuMortality)} vs do(no ICU) ${formatPercent(output.causalWardMortality)}`,
         numericValue: output.causalDiff
@@ -319,7 +319,7 @@ export function basicOutputPunchlineFromResult(moduleId: string | null, result: 
         numericValue: output.crudePremium
       },
       comparison: {
-        label: "Causal do contrast",
+        label: "DGP do difference",
         value: formatSignedValue(output.causalPremium),
         detail: `do(college) ${formatValue(output.causalCollegeEarnings)} vs do(no college) ${formatValue(output.causalNoCollegeEarnings)}`,
         numericValue: output.causalPremium
@@ -333,13 +333,13 @@ export function basicOutputPunchlineFromResult(moduleId: string | null, result: 
       badge: output.academicNeedAdjusted ? "adjusted" : "needs adjustment",
       title: "Huh moment",
       observed: {
-        label: "Observed score gap",
+        label: "Observed score difference",
         value: formatSignedValue(output.crudeGap),
         detail: `tutored ${formatValue(output.crudeTutoredScore)} vs untutored ${formatValue(output.crudeUntutoredScore)}`,
         numericValue: output.crudeGap
       },
       comparison: {
-        label: "Causal do contrast",
+        label: "DGP do difference",
         value: formatSignedValue(output.causalGap),
         detail: `do(tutoring) ${formatValue(output.causalTutoredScore)} vs do(no tutoring) ${formatValue(output.causalUntutoredScore)}`,
         numericValue: output.causalGap
@@ -379,22 +379,22 @@ function renderSimpsonOutput(output: SimpsonCompletedOutput, options?: Completed
   return (
     <CompletedOutputShell badge={output.severityAdjusted ? "Simpson ready" : "fix target"} conclusion={hideOracle ? demoConclusion : output.conclusion}>
       <div className="completed-fix-prompt">
-        <strong>{output.severityAdjusted ? "Fix detected" : "Fix target"}</strong>
-        <span>{output.severityAdjusted ? "Severity is adjusted. The stabilized-IPW comparison and diagnostics can now appear below." : "Mark Severity as adjust for, then compare the raw graph against the fixed association reveal."}</span>
+        <strong>{output.severityAdjusted ? "Adjustment active" : "Adjustment target"}</strong>
+        <span>{output.severityAdjusted ? "Severity is adjusted. The stabilized-IPW estimate and diagnostics can now appear below." : "Mark Severity as adjust for, then compare the raw relation against the adjusted estimate."}</span>
       </div>
       <div className="completed-metric-grid">
         <div>
-          <span>crude association</span>
+          <span>Raw recovery difference</span>
           <strong>{formatPercentagePoints(output.crudeDiff)}</strong>
           <small>treated {formatPercent(output.crudeTreatedRecovery)} vs untreated {formatPercent(output.crudeUntreatedRecovery)}</small>
         </div>
         {!hideOracle && <div>
-          <span>do contrast</span>
+          <span>DGP do difference</span>
           <strong>{formatPercentagePoints(output.causalDiff)}</strong>
           <small>do(1) {formatPercent(output.causalTreatedRecovery)} vs do(0) {formatPercent(output.causalUntreatedRecovery)}</small>
         </div>}
         <div>
-          <span>severity separation</span>
+          <span>Severity imbalance</span>
           <strong>{formatSignedValue(output.severityDiff)}</strong>
           <small>treated mean {formatValue(output.treatedSeverity)} vs untreated {formatValue(output.untreatedSeverity)}</small>
         </div>
@@ -414,22 +414,22 @@ function renderIcuOutput(output: IcuCompletedOutput) {
     <CompletedOutputShell badge="ICU ready" conclusion={output.conclusion}>
       <div className="completed-metric-grid">
         <div>
-          <span>crude mortality</span>
+          <span>Raw mortality difference</span>
           <strong>{formatPercentagePoints(output.crudeDiff)}</strong>
           <small>ICU {formatPercent(output.crudeIcuMortality)} vs no ICU {formatPercent(output.crudeWardMortality)}</small>
         </div>
         <div>
-          <span>do mortality</span>
+          <span>DGP do difference</span>
           <strong>{formatPercentagePoints(output.causalDiff)}</strong>
           <small>do(ICU) {formatPercent(output.causalIcuMortality)} vs do(no ICU) {formatPercent(output.causalWardMortality)}</small>
         </div>
         <div>
-          <span>severity separation</span>
+          <span>Severity imbalance</span>
           <strong>{formatSignedValue(output.severityDiff)}</strong>
           <small>ICU mean {formatValue(output.icuSeverity)} vs no ICU {formatValue(output.wardSeverity)}</small>
         </div>
         <div>
-          <span>triage collider</span>
+          <span>Triage imbalance</span>
           <strong>{formatSignedValue(output.triageDiff)}</strong>
           <small>ICU mean {formatValue(output.icuTriage)} vs no ICU {formatValue(output.wardTriage)}</small>
         </div>
@@ -451,17 +451,17 @@ function renderCollegeOutput(output: CollegeCompletedOutput) {
       <CompletedOutputShell badge="college ready" conclusion={output.conclusion}>
         <div className="completed-metric-grid">
           <div>
-            <span>raw premium</span>
+            <span>Raw earnings difference</span>
             <strong>{formatSignedValue(output.crudePremium)}</strong>
             <small>college {formatValue(output.crudeCollegeEarnings)} vs no college {formatValue(output.crudeNoCollegeEarnings)}</small>
           </div>
           <div>
-            <span>do premium</span>
+            <span>DGP do difference</span>
             <strong>{formatSignedValue(output.causalPremium)}</strong>
             <small>do(college) {formatValue(output.causalCollegeEarnings)} vs do(no college) {formatValue(output.causalNoCollegeEarnings)}</small>
           </div>
           <div>
-            <span>income gap</span>
+            <span>Income imbalance</span>
             <strong>{formatSignedValue(output.incomeDiff)}</strong>
             <small>college {formatValue(output.collegeFamilyIncome)} vs no college {formatValue(output.noCollegeFamilyIncome)}</small>
           </div>
@@ -555,29 +555,29 @@ function renderTutoringOutput(output: TutoringCompletedOutput, options?: Complet
     <>
       <CompletedOutputShell badge={output.academicNeedAdjusted ? "adjusted" : "fix available"} conclusion={hideOracle ? demoConclusion : output.conclusion}>
         <div className="completed-fix-prompt">
-          <strong>{output.academicNeedAdjusted ? "Fix detected" : "Fix target"}</strong>
-          <span>{output.academicNeedAdjusted ? "Academic_need is adjusted. The within-need pair graph is now visible below." : "Mark Academic_need as adjusted, then compare the raw graph against the adjusted pair graph reveal."}</span>
+          <strong>{output.academicNeedAdjusted ? "Adjustment active" : "Adjustment target"}</strong>
+          <span>{output.academicNeedAdjusted ? "Academic_need is adjusted. The within-need pair graph is now visible below." : "Mark Academic_need as adjusted, then compare the raw relation against the adjusted estimate."}</span>
         </div>
         <div className="completed-metric-grid">
           <div>
-            <span>raw score gap</span>
+            <span>Raw score difference</span>
             <strong>{formatSignedValue(output.crudeGap)}</strong>
             <small>tutored {formatValue(output.crudeTutoredScore)} vs not tutored {formatValue(output.crudeUntutoredScore)}</small>
           </div>
           {!hideOracle && <div>
-            <span>do score gain</span>
+            <span>DGP do difference</span>
             <strong>{formatSignedValue(output.causalGap)}</strong>
             <small>do(tutoring) {formatValue(output.causalTutoredScore)} vs do(no tutoring) {formatValue(output.causalUntutoredScore)}</small>
           </div>}
           <div>
-            <span>need gap</span>
+            <span>Need imbalance</span>
             <strong>{formatPercentagePoints(output.needDiff)}</strong>
             <small>tutored {formatPercent(output.tutoredNeed)} vs not tutored {formatPercent(output.untutoredNeed)}</small>
           </div>
         </div>
         <ul className="completed-output-list">
           <li><strong>Fast visual read:</strong> {output.visualRead}</li>
-          <li><strong>Backdoor:</strong> Tutoring &lt;- Academic_need -&gt; Test_score makes the raw score gap point the wrong way.</li>
+          <li><strong>Backdoor:</strong> Tutoring &lt;- Academic_need -&gt; Test_score changes the raw score difference.</li>
           <li><strong>Adjustment set:</strong> {output.adjustmentSet}</li>
           {!hideOracle && <li><strong>Verdict:</strong> {output.verdict}</li>}
           <li><strong>Adjusted reveal plan:</strong> when Academic_need is selected as adjusted, show a second graph with two within-need treatment pairs.</li>
@@ -599,9 +599,9 @@ function TutoringAdjustedPairsGraph({ output }: { output: TutoringCompletedOutpu
     ];
   });
   return (
-    <div className="adjusted-pair-graph-card" aria-label="Adjusted pair graph">
+    <div className="adjusted-pair-graph-card" aria-label="Stratified adjustment graph">
       <div className="module-card-header">
-        <strong>Adjusted pair graph</strong>
+        <strong>Stratified adjustment</strong>
         <span className="module-badge active">Academic_need adjusted</span>
       </div>
       <svg className="adjusted-pair-graph" viewBox="0 0 340 184" role="img" aria-label="Within academic need vertical score scatterplots">
@@ -645,7 +645,7 @@ function TutoringAdjustedPairsGraph({ output }: { output: TutoringCompletedOutpu
         </g>
       </svg>
       <div className="adjusted-pair-summary">
-        <strong>weighted adjusted gap {output.adjustedPairGap === null ? "unavailable" : formatSignedValue(output.adjustedPairGap)}</strong>
+        <strong>weighted adjusted difference {output.adjustedPairGap === null ? "unavailable" : formatSignedValue(output.adjustedPairGap)}</strong>
         <span>Two exact pairs are possible here because Academic_need is binary. Continuous confounders need bins, local matching neighborhoods, or model-based standardization instead of a literal two-row graph.</span>
       </div>
     </div>
@@ -750,9 +750,9 @@ function deterministicBinnedJitter(index: number, binIndex: number, arm: 0 | 1):
 
 function CompletedOutputShell(props: { badge: string; conclusion: string; children: React.ReactNode }) {
   return (
-    <details className="completed-output-card">
+    <details className="completed-output-card" open>
       <summary className="module-card-header completed-output-summary">
-        <strong>What this shows</strong>
+        <strong>Interpretation</strong>
         <span className="module-badge active">{props.badge}</span>
       </summary>
       <div className="completed-output-body">
@@ -767,7 +767,7 @@ function fallbackOutput(badge: string, message: string) {
   return (
     <details className="completed-output-card">
       <summary className="module-card-header completed-output-summary">
-        <strong>What this shows</strong>
+        <strong>Interpretation</strong>
         <span className="module-badge planned">{badge}</span>
       </summary>
       <div className="completed-output-body">
@@ -931,13 +931,13 @@ function computeCollegeCompletedOutput(context: OutputContext): CollegeCompleted
   const adjustmentSet = formatAdjustmentSet(analysis.totalEffect.minimalSets[0] ?? ["Family_log_income"]);
   const rawDirection = crudePremium >= 0 ? "higher" : "lower";
   const causalDirection = causalPremium >= 0 ? "raises" : "lowers";
-  const visualRead = `College attendees average ${formatValue(Math.abs(incomeDiff))} family-log-income units ${incomeDiff >= 0 ? "higher" : "lower"} than non-attendees. That baseline separation means the raw earnings gap is not automatically a college effect.`;
+  const visualRead = `College attendees average ${formatValue(Math.abs(incomeDiff))} family-log-income units ${incomeDiff >= 0 ? "higher" : "lower"} than non-attendees. That baseline separation means the raw earnings difference is not automatically a college effect.`;
   const overstatement = Math.abs(crudePremium) - Math.abs(causalPremium);
   const verdict = crudePremium !== 0 && causalPremium !== 0 && Math.sign(crudePremium) !== Math.sign(causalPremium)
-    ? `Sign reversal: raw premium ${formatSignedValue(crudePremium)} versus causal premium ${formatSignedValue(causalPremium)}.`
+    ? `Sign reversal: raw earnings difference ${formatSignedValue(crudePremium)} versus DGP do difference ${formatSignedValue(causalPremium)}.`
     : overstatement > 0
-      ? `Raw premium overstates the do-premium by ${formatValue(overstatement)} earnings units under this DAG.`
-      : `Raw premium and do-premium point the same way; Family_log_income still makes the raw comparison non-causal.`;
+      ? `Raw earnings difference exceeds the DGP do difference by ${formatValue(overstatement)} earnings units under this DAG.`
+      : `Raw earnings difference and DGP do difference point the same way; Family_log_income still makes the raw comparison non-causal.`;
   const conclusion = `College graduates earn ${formatValue(Math.abs(crudePremium))} earnings units ${rawDirection} than non-graduates in the raw comparison. Because Family_log_income affects both college attendance and earnings, the reportable causal contrast is do(College=1) versus do(College=0): under this DAG, college ${causalDirection} earnings by ${formatValue(Math.abs(causalPremium))} units.`;
   const incomeNode = document.graph.nodes.find((node) => node.id === "Family_log_income");
   const incomeVariable = normalizeVariableModel(incomeNode?.variable);
@@ -1093,10 +1093,10 @@ function computeTutoringCompletedOutput(context: OutputContext): TutoringComplet
   const adjustmentSet = formatAdjustmentSet(analysis.totalEffect.minimalSets[0] ?? ["Academic_need"]);
   const rawDirection = crudeGap >= 0 ? "higher" : "lower";
   const causalDirection = causalGap >= 0 ? "raises" : "lowers";
-  const visualRead = `Tutored students are ${formatPercentagePointMagnitude(needDiff)} more likely to be high-need students. That imbalance is enough to make the raw score gap point the wrong way.`;
+  const visualRead = `Tutored students are ${formatPercentagePointMagnitude(needDiff)} more likely to be high-need students. That imbalance changes the raw score difference.`;
   const signsReverse = crudeGap !== 0 && causalGap !== 0 && Math.sign(crudeGap) !== Math.sign(causalGap);
   const verdict = signsReverse
-    ? `Sign reversal: raw gap ${formatSignedValue(crudeGap)} score points versus causal gain ${formatSignedValue(causalGap)} points.`
+    ? `Sign reversal: raw score difference ${formatSignedValue(crudeGap)} points versus DGP do difference ${formatSignedValue(causalGap)} points.`
     : `No sign reversal with the current parameters, but Academic_need still confounds the raw tutoring comparison.`;
   const conclusion = `Tutored students score ${formatValue(Math.abs(crudeGap))} points ${rawDirection} than non-tutored students in the raw comparison. Because Academic_need drives both tutoring and lower scores, the reportable causal contrast is do(Tutoring=1) versus do(Tutoring=0): under this DAG, tutoring ${causalDirection} scores by ${formatValue(Math.abs(causalGap))} points.`;
   const academicNeedAdjusted = document.graph.nodes.find((node) => node.id === "Academic_need")?.roles.adjusted ?? false;
@@ -1208,17 +1208,17 @@ function computeFrontDoorSmokingOutput(context: OutputContext): HuhCompletedOutp
   const riskGap = smokerRisk - nonSmokerRisk;
   return {
     badge: "front door",
-    conclusion: `The raw smoking-cancer gap is ${formatPercentagePoints(rawDiff)}, but smokers also differ on latent Genetic_risk by ${formatSignedValue(riskGap)}. The useful causal read is the mediated do contrast: do(Smoking=1) changes Tar by ${formatSignedValue(tarShift)} and raises Cancer by ${formatPercentagePointMagnitude(doDiff)} under this DGP.`,
+    conclusion: `The raw smoking-cancer difference is ${formatPercentagePoints(rawDiff)}, but smokers also differ on latent Genetic_risk by ${formatSignedValue(riskGap)}. The useful causal read is the mediated DGP do difference: do(Smoking=1) changes Tar by ${formatSignedValue(tarShift)} and changes Cancer by ${formatPercentagePoints(doDiff)} under this DGP.`,
     metrics: [
-      { label: "naive cancer gap", value: formatPercentagePoints(rawDiff), detail: `smokers ${formatPercent(rawSmokerCancer)} vs non-smokers ${formatPercent(rawNonSmokerCancer)}`, numericValue: rawDiff },
-      { label: "do cancer gap", value: formatPercentagePoints(doDiff), detail: `do(smoke) ${formatPercent(doSmokeCancer)} vs do(no smoke) ${formatPercent(doNoSmokeCancer)}`, numericValue: doDiff },
-      { label: "mediator shift", value: formatSignedValue(tarShift), detail: `Tar moves from ${formatValue(doNoSmokeTar)} to ${formatValue(doSmokeTar)}`, numericValue: tarShift },
-      { label: "latent imbalance", value: formatSignedValue(riskGap), detail: `smokers have higher Genetic_risk in the observed data`, numericValue: riskGap }
+      { label: "Raw cancer difference", value: formatPercentagePoints(rawDiff), detail: `smokers ${formatPercent(rawSmokerCancer)} vs non-smokers ${formatPercent(rawNonSmokerCancer)}`, numericValue: rawDiff },
+      { label: "DGP do difference", value: formatPercentagePoints(doDiff), detail: `do(smoke) ${formatPercent(doSmokeCancer)} vs do(no smoke) ${formatPercent(doNoSmokeCancer)}`, numericValue: doDiff },
+      { label: "Mediator shift", value: formatSignedValue(tarShift), detail: `Tar moves from ${formatValue(doNoSmokeTar)} to ${formatValue(doSmokeTar)}`, numericValue: tarShift },
+      { label: "Genetic-risk imbalance", value: formatSignedValue(riskGap), detail: `smokers have higher Genetic_risk in the observed data`, numericValue: riskGap }
     ],
     bullets: [
       { label: "Huh", text: "Hidden confounding blocks ordinary backdoor adjustment, but the observed mediator still carries a front-door style causal story." },
       { label: "Mechanism", text: "Smoking -> Tar -> Cancer is the directed path; Genetic_risk confounds Smoking and Cancer." },
-      { label: "Caveat", text: "This card shows the DGP do contrast, not a full nonparametric front-door estimator from data." }
+      { label: "Caveat", text: "This card shows the DGP do difference, not a full nonparametric front-door estimator from data." }
     ]
   };
 }
@@ -1244,11 +1244,11 @@ function computeBirthweightParadoxOutput(context: OutputContext): HuhCompletedOu
   const frailtyGap = selectedSmokerFrailty - selectedNonSmokerFrailty;
   return {
     badge: "birthweight paradox",
-    conclusion: `Inside the low-birthweight sample, smoking appears ${selectedDiff < 0 ? "protective" : "harmful"} by ${formatPercentagePointMagnitude(selectedDiff)}. In the full DGP, do(Smoking=1) ${doDiff >= 0 ? "raises" : "lowers"} infant mortality by ${formatPercentagePointMagnitude(doDiff)}. The difference is the selected low-birthweight world: non-smoking low-birthweight babies are much frailer on average.`,
+    conclusion: `Inside the low-birthweight sample, smoking is associated with a ${formatPercentagePoints(selectedDiff)} mortality difference. In the full DGP, do(Smoking=1) changes infant mortality by ${formatPercentagePoints(doDiff)}. The difference is the selected low-birthweight world: non-smoking low-birthweight babies are much frailer on average.`,
     metrics: [
-      { label: "low-birthweight read", value: formatPercentagePoints(selectedDiff), detail: `smoking ${formatPercent(selectedSmokerMortality)} vs no smoking ${formatPercent(selectedNonSmokerMortality)}`, numericValue: selectedDiff },
-      { label: "population do effect", value: formatPercentagePoints(doDiff), detail: `do(smoke) ${formatPercent(doSmokeMortality)} vs do(no smoke) ${formatPercent(doNoSmokeMortality)}`, numericValue: doDiff },
-      { label: "frailty gap in sample", value: formatSignedValue(frailtyGap), detail: `smokers ${formatValue(selectedSmokerFrailty)} vs non-smokers ${formatValue(selectedNonSmokerFrailty)}`, numericValue: frailtyGap }
+      { label: "Selected-sample difference", value: formatPercentagePoints(selectedDiff), detail: `smoking ${formatPercent(selectedSmokerMortality)} vs no smoking ${formatPercent(selectedNonSmokerMortality)}`, numericValue: selectedDiff },
+      { label: "DGP do difference", value: formatPercentagePoints(doDiff), detail: `do(smoke) ${formatPercent(doSmokeMortality)} vs do(no smoke) ${formatPercent(doNoSmokeMortality)}`, numericValue: doDiff },
+      { label: "Frailty imbalance", value: formatSignedValue(frailtyGap), detail: `smokers ${formatValue(selectedSmokerFrailty)} vs non-smokers ${formatValue(selectedNonSmokerFrailty)}`, numericValue: frailtyGap }
     ],
     bullets: [
       { label: "Huh", text: "Conditioning on low birthweight compares smoking-caused small babies to babies made small by severe latent frailty." },
@@ -1279,11 +1279,11 @@ function computeObesityParadoxOutput(context: OutputContext): HuhCompletedOutput
   const frailtyGap = selectedObeseFrailty - selectedNonObeseFrailty;
   return {
     badge: "obesity paradox",
-    conclusion: `Among people selected for chronic disease, obesity appears ${selectedDiff < 0 ? "protective" : "harmful"} by ${formatPercentagePointMagnitude(selectedDiff)}. In the population DGP, do(Obesity=1) ${doDiff >= 0 ? "raises" : "lowers"} mortality by ${formatPercentagePointMagnitude(doDiff)}. The selected cohort makes obesity and latent frailty substitute routes into disease.`,
+    conclusion: `Among people selected for chronic disease, obesity is associated with a ${formatPercentagePoints(selectedDiff)} mortality difference. In the population DGP, do(Obesity=1) changes mortality by ${formatPercentagePoints(doDiff)}. The selected cohort makes obesity and latent frailty substitute routes into disease.`,
     metrics: [
-      { label: "disease-sample read", value: formatPercentagePoints(selectedDiff), detail: `obese ${formatPercent(selectedObeseMortality)} vs non-obese ${formatPercent(selectedNonObeseMortality)}`, numericValue: selectedDiff },
-      { label: "population do effect", value: formatPercentagePoints(doDiff), detail: `do(obese) ${formatPercent(doObeseMortality)} vs do(non-obese) ${formatPercent(doNonObeseMortality)}`, numericValue: doDiff },
-      { label: "frailty gap in sample", value: formatSignedValue(frailtyGap), detail: `obese ${formatValue(selectedObeseFrailty)} vs non-obese ${formatValue(selectedNonObeseFrailty)}`, numericValue: frailtyGap }
+      { label: "Selected-sample difference", value: formatPercentagePoints(selectedDiff), detail: `obese ${formatPercent(selectedObeseMortality)} vs non-obese ${formatPercent(selectedNonObeseMortality)}`, numericValue: selectedDiff },
+      { label: "DGP do difference", value: formatPercentagePoints(doDiff), detail: `do(obese) ${formatPercent(doObeseMortality)} vs do(non-obese) ${formatPercent(doNonObeseMortality)}`, numericValue: doDiff },
+      { label: "Frailty imbalance", value: formatSignedValue(frailtyGap), detail: `obese ${formatValue(selectedObeseFrailty)} vs non-obese ${formatValue(selectedNonObeseFrailty)}`, numericValue: frailtyGap }
     ],
     bullets: [
       { label: "Huh", text: "Inside the diseased sample, obese patients can be less frail because obesity itself was one route into the sample." },
@@ -1355,9 +1355,9 @@ function computeMBiasOutput(context: OutputContext): HuhCompletedOutput | null {
     badge: "bad control",
     conclusion: `Before adjustment, Exposure and Outcome differ by ${formatSignedValue(rawGap)} (${rawUncertainty}), which is compatible with the null in this finite sample. After conditioning on high Collider_score, the apparent gap becomes ${formatSignedValue(colliderGap)} (${conditionedUncertainty}) even though the DAG has no Exposure -> Outcome path.`,
     metrics: [
-      { label: "raw outcome gap", value: formatSignedValue(rawGap), detail: `${rawUncertainty}; exposed ${formatValue(rawExposed)} vs unexposed ${formatValue(rawUnexposed)}`, numericValue: rawGap, lower: rawInterval?.lower, upper: rawInterval?.upper },
-      { label: "conditioned gap", value: formatSignedValue(colliderGap), detail: `${conditionedUncertainty}; within Collider_score >= ${formatValue(cutoff)}`, numericValue: colliderGap, lower: conditionedInterval?.lower, upper: conditionedInterval?.upper },
-      { label: "true do effect", value: formatSignedValue(0), detail: "no directed path from Exposure to Outcome", numericValue: 0 }
+      { label: "Raw outcome difference", value: formatSignedValue(rawGap), detail: `${rawUncertainty}; exposed ${formatValue(rawExposed)} vs unexposed ${formatValue(rawUnexposed)}`, numericValue: rawGap, lower: rawInterval?.lower, upper: rawInterval?.upper },
+      { label: "Conditioned difference", value: formatSignedValue(colliderGap), detail: `${conditionedUncertainty}; within Collider_score >= ${formatValue(cutoff)}`, numericValue: colliderGap, lower: conditionedInterval?.lower, upper: conditionedInterval?.upper },
+      { label: "DGP do difference", value: formatSignedValue(0), detail: "no directed path from Exposure to Outcome", numericValue: 0 }
     ],
     bullets: [
       { label: "Huh", text: "A pre-treatment variable can still be a collider; adjusting for it opens a path that was closed." },
@@ -1388,11 +1388,11 @@ function computeLordsParadoxOutput(context: OutputContext): HuhCompletedOutput |
   const baselineGap = baselineProgram - baselineControl;
   return {
     badge: "estimand split",
-    conclusion: `The change-score comparison says Program changes weight by ${formatSignedValue(changeGap)} kg, while the baseline-standardized do contrast on final weight is ${formatSignedValue(doGap)} kg. The groups start ${formatSignedValue(baselineGap)} kg apart, so the two analyses are not answering the same question.`,
+    conclusion: `The change-score comparison says Program changes weight by ${formatSignedValue(changeGap)} kg, while the baseline-standardized DGP do difference on final weight is ${formatSignedValue(doGap)} kg. The groups start ${formatSignedValue(baselineGap)} kg apart, so the two analyses are not answering the same question.`,
     metrics: [
-      { label: "change-score read", value: formatSignedValue(changeGap), detail: `program ${formatValue(changeProgram)} kg vs control ${formatValue(changeControl)} kg`, numericValue: changeGap },
-      { label: "final do contrast", value: formatSignedValue(doGap), detail: `do(program) ${formatValue(doProgramFinal)} kg vs do(control) ${formatValue(doControlFinal)}`, numericValue: doGap },
-      { label: "baseline imbalance", value: formatSignedValue(baselineGap), detail: `program ${formatValue(baselineProgram)} kg vs control ${formatValue(baselineControl)} kg`, numericValue: baselineGap }
+      { label: "Change-score difference", value: formatSignedValue(changeGap), detail: `program ${formatValue(changeProgram)} kg vs control ${formatValue(changeControl)} kg`, numericValue: changeGap },
+      { label: "DGP do difference", value: formatSignedValue(doGap), detail: `do(program) ${formatValue(doProgramFinal)} kg vs do(control) ${formatValue(doControlFinal)}`, numericValue: doGap },
+      { label: "Baseline imbalance", value: formatSignedValue(baselineGap), detail: `program ${formatValue(baselineProgram)} kg vs control ${formatValue(baselineControl)} kg`, numericValue: baselineGap }
     ],
     bullets: [
       { label: "Huh", text: "Change scores and baseline-adjusted final outcomes can disagree because they encode different estimands." },

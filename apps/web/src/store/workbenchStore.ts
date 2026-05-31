@@ -12,7 +12,7 @@ import type {
   ViewMode
 } from "@nudagitty/core";
 import type { WorkbenchMode } from "../shared/workbench";
-import { loadInitialDocument } from "../shared/appState";
+import { loadInitialWorkbenchState } from "../shared/appState";
 import type { BibliographyTopic, Selection, ToolMode } from "../shared/appState";
 import { defaultScatterPair, reconcileScatterPair } from "../shared/pairs";
 import type { ScatterPair } from "../shared/pairs";
@@ -70,7 +70,8 @@ function commitState(state: WorkbenchStore, next: GraphDocument): Partial<Workbe
   };
 }
 
-const initialDocument = loadInitialDocument();
+const initialState = loadInitialWorkbenchState();
+const initialDocument = initialState.document;
 
 export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
   document: initialDocument,
@@ -87,7 +88,7 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
   showAncestors: true,
   workbenchMode: "basic",
   basicResultsOpen: true,
-  activeExampleId: EXAMPLES[0]?.id ?? null,
+  activeExampleId: initialState.activeExampleId,
   modelText: serializeModel(initialDocument),
   modelDirty: false,
   scatterPair: defaultScatterPair(initialDocument.graph),

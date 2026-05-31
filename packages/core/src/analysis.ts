@@ -258,7 +258,7 @@ function adjustmentReport(graph: GraphModel, kind: "total" | "direct"): Adjustme
   const sourceIds = exposures(graph);
   const targetIds = outcomes(graph);
   if (sourceIds.length === 0 || targetIds.length === 0) return { valid: false, message: "Exposure and outcome must be defined.", minimalSets: [] };
-  if (kind === "direct" && selected(graph).length > 0) return { valid: false, message: "Direct-effect adjustment is disabled with selection nodes.", minimalSets: [] };
+  if (kind === "direct" && selected(graph).length > 0) return { valid: false, message: "Direct-effect adjustment is disabled with sample-selection nodes.", minimalSets: [] };
   const conditioned = adjusted(graph).concat(selected(graph));
   const valid = kind === "direct" ? directEffectClosed(graph, conditioned) : dSeparated(backDoorGraph(graph), sourceIds, targetIds, conditioned);
   const minimalSets = listMinimalAdjustmentSets(graph, kind);
@@ -274,7 +274,7 @@ function causalOddsReport(graph: GraphModel): AdjustmentReport {
   const targetIds = outcomes(graph);
   const selectedIds = selected(graph);
   if (sourceIds.length !== 1 || targetIds.length !== 1) return { valid: false, message: "Causal odds ratio requires one exposure and one outcome.", minimalSets: [] };
-  if (selectedIds.length !== 1) return { valid: false, message: "Causal odds ratio requires exactly one selection node.", minimalSets: [] };
+  if (selectedIds.length !== 1) return { valid: false, message: "Causal odds ratio requires exactly one sample-selection node.", minimalSets: [] };
   const valid = dSeparated(graph, sourceIds, selectedIds, targetIds.concat(adjusted(graph))) && adjustmentReport(graph, "total").valid;
   return { valid, message: valid ? "Causal odds ratio adjustment conditions hold." : "Causal odds ratio adjustment conditions fail.", minimalSets: [] };
 }

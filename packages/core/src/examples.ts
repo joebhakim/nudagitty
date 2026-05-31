@@ -56,9 +56,9 @@ export const EXAMPLES: ExampleModel[] = [
     summary: "Three-node sign-flip example to fix: struggling students get tutoring, score lower in raw data, and the user should adjust for academic need.",
     outputModule: "tutoring-scores",
     code: `dag {
-  Academic_need [label="academic need",pos="-2,0.9"]
-  Tutoring [exposure,pos="-0.25,0"]
-  Test_score [outcome,label="test score",pos="2,0"]
+  Academic_need [label="academic need",pos="-1.15,0.9"]
+  Tutoring [exposure,pos="-0.15,0"]
+  Test_score [outcome,label="test score",pos="1.15,0"]
   Academic_need -> Tutoring
   Academic_need -> Test_score
   Tutoring -> Test_score
@@ -71,9 +71,9 @@ export const EXAMPLES: ExampleModel[] = [
     summary: "Fast explanation of confounding and why unadjusted group comparisons can reverse.",
     outputModule: "simpson-severity",
     code: `dag {
-  Severity [pos="-2,1.1"]
-  Treatment [exposure,pos="-0.3,0"]
-  Recovery [outcome,pos="2,0"]
+  Severity [pos="-1.15,1.1"]
+  Treatment [exposure,pos="-0.15,0"]
+  Recovery [outcome,pos="1.15,0"]
   Severity -> Treatment
   Severity -> Recovery
   Treatment -> Recovery
@@ -300,13 +300,13 @@ export const EXAMPLES: ExampleModel[] = [
     domain: "epidemiology",
     summary: "Eligibility, time zero, treatment strategy, censoring, measurement, selection, and a negative-control outcome.",
     code: `dag {
-  Eligibility [selected,label="eligible cohort",pos="-2.8,1.45"]
-  Baseline_severity [adjusted,label="baseline severity",pos="-2.45,-0.35"]
-  Treatment_start [exposure,label="treatment start",pos="-0.55,0"]
-  Adherence [label="adherence",pos="1.05,1.4"]
-  Censoring [selected,label="loss to follow-up",pos="1.05,-1.45"]
-  Outcome_90d [outcome,label="90-day outcome",pos="2.85,-0.35"]
-  Negative_control [label="negative control outcome",pos="2.85,1.45"]
+  Eligibility [selected,label="eligible cohort",pos="-2.527,3.058"]
+  Baseline_severity [adjusted,label="baseline severity",pos="-1.167,2.569"]
+  Treatment_start [exposure,label="treatment start",pos="-2.139,1.1"]
+  Adherence [label="adherence",pos="-1.136,-0.507"]
+  Censoring [selected,label="loss to follow-up",pos="0.931,1.624"]
+  Outcome_90d [outcome,label="90-day outcome",pos="-0.103,0.425"]
+  Negative_control [label="negative control outcome",pos="0.728,3.131"]
   Eligibility -> Treatment_start
   Baseline_severity -> Treatment_start
   Baseline_severity -> Censoring
@@ -396,6 +396,99 @@ export const EXAMPLES: ExampleModel[] = [
   Treatment -> Outcome
   Treatment -> Model_score
   Effect_modifier -> Model_score
+}`
+  },
+  {
+    id: "ota-gene-program-traits",
+    title: "Gene programs to traits (Ota et al. reconstruction)",
+    domain: "ml",
+    summary: "Paper-derived reconstruction of Ota et al.'s gene -> program -> blood-trait model: Perturb-seq regulators, cNMF programs, LoF/GWAS evidence, and explicit separation between mechanism and association.",
+    code: `dag {
+  K562_context [label="K562 context",pos="-3.4,0"]
+  CRISPRi_knockdown [exposure,label="CRISPRi knockdown",pos="-1.7,0"]
+  Natural_LoF [label="natural LoF",pos="0,0"]
+  GWAS_variants [label="GWAS variants",pos="1.7,0"]
+  Gene_constraint_Shet [adjusted,label="S_het constraint",pos="3.4,0"]
+  Regulator_activity [label="regulator activity",pos="-1.7,1"]
+  Autophagy_program [label="autophagy program",pos="-3.2,2"]
+  Heme_synthesis_program [label="heme synthesis",pos="-1.6,2"]
+  G2M_cell_cycle_program [label="G2/M program",pos="0,2"]
+  Other_cell_cycle_programs [label="cell-cycle programs",pos="1.6,2"]
+  Mitochondrial_program [label="mitochondrial program",pos="3.2,2"]
+  Erythroid_cell_state [label="erythroid cell state",pos="0,3"]
+  MCH_trait [outcome,label="MCH trait effect",pos="-1.8,4"]
+  RDW_trait [outcome,label="RDW trait effect",pos="0,4"]
+  IRF_trait [outcome,label="IRF trait effect",pos="1.8,4"]
+  Perturb_seq_beta [label="Perturb-seq beta",pos="-3.1,5"]
+  Program_gene_content [label="top program genes",pos="-1.2,5"]
+  LoF_burden_gamma [label="LoF gamma",pos="1.2,5"]
+  GWAS_trait_signal [label="GWAS trait signal",pos="3.1,5"]
+  Program_burden_effect [label="program burden",pos="-2.3,6"]
+  Regulator_burden_correlation [label="regulator-burden corr",pos="0,6"]
+  Trans_eQTL_validation [label="trans-eQTL check",pos="2.3,6"]
+  Stepwise_program_model [label="stepwise program model",pos="-0.7,7"]
+  Permutation_CV_fit [label="CV / permutation fit",pos="1.5,7"]
+  Concordant_gene_map [label="concordant gene map",pos="0,8"]
+  K562_context -> Regulator_activity
+  K562_context -> Autophagy_program
+  K562_context -> Heme_synthesis_program
+  K562_context -> G2M_cell_cycle_program
+  K562_context -> Other_cell_cycle_programs
+  K562_context -> Mitochondrial_program
+  CRISPRi_knockdown -> Regulator_activity
+  Natural_LoF -> Regulator_activity
+  Regulator_activity -> Autophagy_program
+  Regulator_activity -> Heme_synthesis_program
+  Regulator_activity -> G2M_cell_cycle_program
+  Regulator_activity -> Other_cell_cycle_programs
+  Regulator_activity -> Mitochondrial_program
+  Heme_synthesis_program -> Mitochondrial_program
+  Autophagy_program -> Erythroid_cell_state
+  Heme_synthesis_program -> Erythroid_cell_state
+  G2M_cell_cycle_program -> Erythroid_cell_state
+  Other_cell_cycle_programs -> Erythroid_cell_state
+  Mitochondrial_program -> Erythroid_cell_state
+  Erythroid_cell_state -> MCH_trait
+  Erythroid_cell_state -> RDW_trait
+  Erythroid_cell_state -> IRF_trait
+  Heme_synthesis_program -> MCH_trait
+  Mitochondrial_program -> RDW_trait
+  G2M_cell_cycle_program -> IRF_trait
+  Regulator_activity -> Perturb_seq_beta
+  Autophagy_program -> Perturb_seq_beta
+  Heme_synthesis_program -> Perturb_seq_beta
+  G2M_cell_cycle_program -> Perturb_seq_beta
+  Other_cell_cycle_programs -> Perturb_seq_beta
+  Mitochondrial_program -> Perturb_seq_beta
+  Autophagy_program -> Program_gene_content
+  Heme_synthesis_program -> Program_gene_content
+  G2M_cell_cycle_program -> Program_gene_content
+  Other_cell_cycle_programs -> Program_gene_content
+  Mitochondrial_program -> Program_gene_content
+  Natural_LoF -> LoF_burden_gamma
+  MCH_trait -> LoF_burden_gamma
+  RDW_trait -> LoF_burden_gamma
+  IRF_trait -> LoF_burden_gamma
+  Gene_constraint_Shet -> LoF_burden_gamma
+  GWAS_variants -> GWAS_trait_signal
+  MCH_trait -> GWAS_trait_signal
+  RDW_trait -> GWAS_trait_signal
+  IRF_trait -> GWAS_trait_signal
+  Program_gene_content -> Program_burden_effect
+  LoF_burden_gamma -> Program_burden_effect
+  Gene_constraint_Shet -> Program_burden_effect
+  Perturb_seq_beta -> Regulator_burden_correlation
+  LoF_burden_gamma -> Regulator_burden_correlation
+  Gene_constraint_Shet -> Regulator_burden_correlation
+  GWAS_trait_signal -> Trans_eQTL_validation
+  Program_gene_content -> Trans_eQTL_validation
+  Program_burden_effect -> Stepwise_program_model
+  Regulator_burden_correlation -> Stepwise_program_model
+  Gene_constraint_Shet -> Stepwise_program_model
+  Stepwise_program_model -> Permutation_CV_fit
+  LoF_burden_gamma -> Permutation_CV_fit
+  Stepwise_program_model -> Concordant_gene_map
+  LoF_burden_gamma -> Concordant_gene_map
 }`
   },
   {
@@ -1476,6 +1569,62 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
       }
     ]
   },
+  "ota-gene-program-traits": {
+    module: "Paper-derived reconstruction / gene-program mediation",
+    punchline: "The useful claim is not that a gene-trait association is a direct mechanism. Ota et al. combine Perturb-seq regulator effects, cNMF programs, LoF burden effects, and validation checks to explain how gene effects can flow through programs into blood traits.",
+    estimand: "Mechanistic gene-to-trait interpretation for K562-relevant erythroid traits: how a regulator perturbation changes program activity and how those programs explain MCH, RDW, and IRF genetic effects.",
+    primaryOutput: "Layered graph: intervention biology above, evidence/model-selection layer below, with S_het shown as an analysis covariate rather than a biological mediator.",
+    validity: "This is a Nudagitty reconstruction of the paper's implicit causal model, not a literal DAG supplied by the authors. It is credible only as a workbench map if K562 is a relevant cell model and if program selection, LoF estimates, and validation checks are kept distinct from biological arrows.",
+    nextAction: "Use this example to ask which part of a gene association is direct, program-mediated, measurement-derived, or only model evidence; avoid treating GWAS or LoF significance as a direct gene -> trait edge.",
+    sections: [
+      {
+        title: "Paper anchors",
+        defaultOpen: true,
+        items: [
+          "Citation: Ota et al., Nature 650, 399-408, published 10 December 2025.",
+          "The paper uses K562 Perturb-seq, cNMF expression programs, UK Biobank LoF burden effects, GWAS signals, and trans-eQTL validation.",
+          "The model traits are erythroid blood traits: MCH, RDW, and IRF.",
+          "The MCH model selected regulator-linked autophagy, hemoglobin synthesis, and G2/M programs, plus content-enriched hemoglobin and cell-cycle programs."
+        ]
+      },
+      {
+        title: "What the graph clarifies",
+        defaultOpen: true,
+        items: [
+          "CRISPRi perturbation identifies regulator -> program effects, not a direct trait experiment.",
+          "LoF gamma and GWAS signals are evidence nodes produced by human genetic data, not the same thing as cellular mechanism.",
+          "Program burden and regulator-burden correlation are separate evidence routes that can agree, diverge, or point to different mechanisms.",
+          "A program can mediate a gene-trait association even when the gene itself is not a core trait effector."
+        ]
+      },
+      {
+        title: "Nudagitty stress points",
+        items: [
+          "Multiple outcomes should be selectable: MCH, RDW, and IRF are different trait endpoints under the same program layer.",
+          "Mediation and direct-effect views should distinguish total regulator effects from program-controlled questions.",
+          "The evidence layer is not standard adjustment: conditioning on model outputs would answer a different question.",
+          "This example pushes the app toward assumption ledgers and paper-provenance labels for each edge."
+        ]
+      },
+      {
+        title: "Threats and failure modes",
+        items: [
+          "K562 is a leukemia-derived erythroid-like cell line, so external trait relevance depends on cell-type matching.",
+          "cNMF programs are learned summaries; changing program resolution can change which pathways appear.",
+          "LoF effects are noisy for rare variants and are improved by GeneBayes-style shrinkage, not made assumption-free.",
+          "A reconstructed DAG can overstate certainty if evidence edges are drawn as biological mechanisms."
+        ]
+      },
+      {
+        title: "Report language",
+        items: [
+          "Say: the paper links genetic effects to blood traits through perturbation-informed regulatory programs.",
+          "Say: this graph separates biological pathways from statistical evidence used to choose and validate them.",
+          "Do not say: every significant gene association is a direct causal gene-to-trait edge."
+        ]
+      }
+    ]
+  },
   "ops-root-cause": {
     module: "Root cause / mechanism shift",
     punchline: "The output should identify which upstream mechanism shift best explains the downstream latency incident, while separating causal mechanisms from alert selection.",
@@ -1752,7 +1901,12 @@ export function exampleDocument(id: string): GraphDocument | null {
     : example.domain !== "classic"
       ? configurePractitionerExample(document, id)
       : configureClassicExample(document, id);
+  if (usesManualExampleLayout(id)) return configured;
   return layoutExampleDocument(configured);
+}
+
+function usesManualExampleLayout(id: string): boolean {
+  return id === "target-trial-followup";
 }
 
 export function initialDocument(): GraphDocument {
@@ -1785,6 +1939,7 @@ function configurePractitionerExample(document: GraphDocument, id: string): Grap
   if (id === "policy-event-study") return configurePolicyEventStudy(next);
   if (id === "incrementality-uplift") return configureIncrementalityUplift(next);
   if (id === "causal-ml-refutation") return configureCausalMlRefutation(next);
+  if (id === "ota-gene-program-traits") return configureOtaGeneProgramTraits(next);
   if (id === "ops-root-cause") return configureOpsRootCause(next);
   if (id === "education-mediation") return configureEducationMediation(next);
   if (id === "chess-intelligence-practice") return configureChessIntelligencePractice(next);
@@ -2164,6 +2319,123 @@ function configureCausalMlRefutation(document: GraphDocument): GraphDocument {
   return document;
 }
 
+function configureOtaGeneProgramTraits(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 3000);
+  setContinuousVariable(document, "K562_context", "Cell-state and cell-type context that makes K562 a plausible erythroid model while also limiting external generalization.", "context z");
+  setBinaryVariable(document, "CRISPRi_knockdown", "Experimental Perturb-seq knockdown used to perturb one regulator gene at a time.", "knockdown");
+  setBinaryVariable(document, "Natural_LoF", "Naturally occurring loss-of-function dosage used in UK Biobank burden tests.", "LoF carrier");
+  setContinuousVariable(document, "GWAS_variants", "Polygenic common-variant signal for the blood traits.", "variant score");
+  setContinuousVariable(document, "Gene_constraint_Shet", "Gene constraint score S_het. The paper accounts for this when comparing program genes and burden effects.", "S_het");
+  setContinuousVariable(document, "Regulator_activity", "Activity or expression of the perturbed regulator gene after CRISPRi or natural loss of function.", "activity");
+  setContinuousVariable(document, "Autophagy_program", "cNMF-like autophagy transcriptional program selected through regulator-burden evidence for MCH.", "program score");
+  setContinuousVariable(document, "Heme_synthesis_program", "Hemoglobin synthesis program, a core erythroid pathway for MCH and the RDW mitochondrial-program relation.", "program score");
+  setContinuousVariable(document, "G2M_cell_cycle_program", "G2/M phase cell-cycle program selected in the MCH regulator model.", "program score");
+  setContinuousVariable(document, "Other_cell_cycle_programs", "Additional cell-cycle programs selected through program-gene burden effects.", "program score");
+  setContinuousVariable(document, "Mitochondrial_program", "Mitochondrial program; the paper reports a directional hemoglobin-synthesis-to-mitochondrial program relation for RDW.", "program score");
+  setContinuousVariable(document, "Erythroid_cell_state", "Downstream erythroid cellular state summarizing the program layer before trait interpretation.", "state");
+  setContinuousVariable(document, "MCH_trait", "Mean corpuscular hemoglobin trait effect in the paper's erythroid model.", "trait z");
+  setContinuousVariable(document, "RDW_trait", "Red cell distribution width trait effect in the paper's erythroid model.", "trait z");
+  setContinuousVariable(document, "IRF_trait", "Immature reticulocyte fraction trait effect in the paper's erythroid model.", "trait z");
+  setContinuousVariable(document, "Perturb_seq_beta", "Estimated Perturb-seq regulatory effect beta_x->P from regulator knockdown to program activity.", "effect estimate");
+  setContinuousVariable(document, "Program_gene_content", "Top-loading cNMF program genes used for program burden tests.", "gene-set score");
+  setContinuousVariable(document, "LoF_burden_gamma", "Gene-level LoF burden effect gamma, estimated from UK Biobank and improved with GeneBayes shrinkage.", "gamma");
+  setContinuousVariable(document, "GWAS_trait_signal", "Common-variant GWAS association evidence for the same blood traits.", "association");
+  setContinuousVariable(document, "Program_burden_effect", "Average burden effect among top-loading program genes after accounting for gene constraint.", "effect");
+  setContinuousVariable(document, "Regulator_burden_correlation", "Correlation between regulator effects on programs and gene-level LoF trait effects.", "correlation");
+  setContinuousVariable(document, "Trans_eQTL_validation", "External validation using trans-eQTL effects on program genes among trait-associated variants.", "validation score");
+  setContinuousVariable(document, "Stepwise_program_model", "Selected multi-program regression model linking regulators and program content to trait effects.", "model score");
+  setContinuousVariable(document, "Permutation_CV_fit", "Permutation and leave-one-out cross-validation evidence for directional concordance.", "fit score");
+  setContinuousVariable(document, "Concordant_gene_map", "Final gene-to-program-to-trait map containing concordant high-effect genes and paths.", "map score");
+
+  setNode(document, "K562_context", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "CRISPRi_knockdown", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Natural_LoF", { distribution: { kind: "bernoulli", p: 0.08 }, noise: ZERO_NOISE });
+  setNode(document, "GWAS_variants", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Gene_constraint_Shet", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Regulator_activity", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.55 } });
+  setNode(document, "Autophagy_program", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.55 } });
+  setNode(document, "Heme_synthesis_program", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.5 } });
+  setNode(document, "G2M_cell_cycle_program", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.55 } });
+  setNode(document, "Other_cell_cycle_programs", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.6 } });
+  setNode(document, "Mitochondrial_program", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.55 } });
+  setNode(document, "Erythroid_cell_state", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.55 } });
+  setNode(document, "MCH_trait", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.7 } });
+  setNode(document, "RDW_trait", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.7 } });
+  setNode(document, "IRF_trait", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.75 } });
+  setNode(document, "Perturb_seq_beta", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.45 } });
+  setNode(document, "Program_gene_content", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.45 } });
+  setNode(document, "LoF_burden_gamma", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.55 } });
+  setNode(document, "GWAS_trait_signal", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.55 } });
+  setNode(document, "Program_burden_effect", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.45 } });
+  setNode(document, "Regulator_burden_correlation", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.45 } });
+  setNode(document, "Trans_eQTL_validation", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.5 } });
+  setNode(document, "Stepwise_program_model", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.4 } });
+  setNode(document, "Permutation_CV_fit", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.45 } });
+  setNode(document, "Concordant_gene_map", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.45 } });
+
+  setLinearCoefficient(document, "K562_context", "Regulator_activity", 0.4);
+  setLinearCoefficient(document, "K562_context", "Autophagy_program", 0.35);
+  setLinearCoefficient(document, "K562_context", "Heme_synthesis_program", 0.55);
+  setLinearCoefficient(document, "K562_context", "G2M_cell_cycle_program", 0.35);
+  setLinearCoefficient(document, "K562_context", "Other_cell_cycle_programs", 0.3);
+  setLinearCoefficient(document, "K562_context", "Mitochondrial_program", 0.35);
+  setLinearCoefficient(document, "CRISPRi_knockdown", "Regulator_activity", -1.2);
+  setLinearCoefficient(document, "Natural_LoF", "Regulator_activity", -0.75);
+  setLinearCoefficient(document, "Regulator_activity", "Autophagy_program", -0.45);
+  setLinearCoefficient(document, "Regulator_activity", "Heme_synthesis_program", 0.85);
+  setLinearCoefficient(document, "Regulator_activity", "G2M_cell_cycle_program", 0.65);
+  setLinearCoefficient(document, "Regulator_activity", "Other_cell_cycle_programs", 0.5);
+  setLinearCoefficient(document, "Regulator_activity", "Mitochondrial_program", 0.25);
+  setLinearCoefficient(document, "Heme_synthesis_program", "Mitochondrial_program", 0.55);
+  setLinearCoefficient(document, "Autophagy_program", "Erythroid_cell_state", 0.25);
+  setLinearCoefficient(document, "Heme_synthesis_program", "Erythroid_cell_state", 0.85);
+  setLinearCoefficient(document, "G2M_cell_cycle_program", "Erythroid_cell_state", -0.25);
+  setLinearCoefficient(document, "Other_cell_cycle_programs", "Erythroid_cell_state", -0.2);
+  setLinearCoefficient(document, "Mitochondrial_program", "Erythroid_cell_state", 0.35);
+  setLinearCoefficient(document, "Erythroid_cell_state", "MCH_trait", 0.65);
+  setLinearCoefficient(document, "Erythroid_cell_state", "RDW_trait", -0.3);
+  setLinearCoefficient(document, "Erythroid_cell_state", "IRF_trait", 0.4);
+  setLinearCoefficient(document, "Heme_synthesis_program", "MCH_trait", 0.85);
+  setLinearCoefficient(document, "Mitochondrial_program", "RDW_trait", 0.75);
+  setLinearCoefficient(document, "G2M_cell_cycle_program", "IRF_trait", 0.55);
+  setLinearCoefficient(document, "Regulator_activity", "Perturb_seq_beta", 0.45);
+  setLinearCoefficient(document, "Autophagy_program", "Perturb_seq_beta", -0.25);
+  setLinearCoefficient(document, "Heme_synthesis_program", "Perturb_seq_beta", 0.5);
+  setLinearCoefficient(document, "G2M_cell_cycle_program", "Perturb_seq_beta", 0.35);
+  setLinearCoefficient(document, "Other_cell_cycle_programs", "Perturb_seq_beta", 0.25);
+  setLinearCoefficient(document, "Mitochondrial_program", "Perturb_seq_beta", 0.25);
+  setLinearCoefficient(document, "Autophagy_program", "Program_gene_content", 0.3);
+  setLinearCoefficient(document, "Heme_synthesis_program", "Program_gene_content", 0.65);
+  setLinearCoefficient(document, "G2M_cell_cycle_program", "Program_gene_content", 0.45);
+  setLinearCoefficient(document, "Other_cell_cycle_programs", "Program_gene_content", 0.5);
+  setLinearCoefficient(document, "Mitochondrial_program", "Program_gene_content", 0.35);
+  setLinearCoefficient(document, "Natural_LoF", "LoF_burden_gamma", 0.35);
+  setLinearCoefficient(document, "MCH_trait", "LoF_burden_gamma", 0.45);
+  setLinearCoefficient(document, "RDW_trait", "LoF_burden_gamma", 0.4);
+  setLinearCoefficient(document, "IRF_trait", "LoF_burden_gamma", 0.25);
+  setLinearCoefficient(document, "Gene_constraint_Shet", "LoF_burden_gamma", 0.25);
+  setLinearCoefficient(document, "GWAS_variants", "GWAS_trait_signal", 0.75);
+  setLinearCoefficient(document, "MCH_trait", "GWAS_trait_signal", 0.35);
+  setLinearCoefficient(document, "RDW_trait", "GWAS_trait_signal", 0.3);
+  setLinearCoefficient(document, "IRF_trait", "GWAS_trait_signal", 0.25);
+  setLinearCoefficient(document, "Program_gene_content", "Program_burden_effect", 0.65);
+  setLinearCoefficient(document, "LoF_burden_gamma", "Program_burden_effect", 0.75);
+  setLinearCoefficient(document, "Gene_constraint_Shet", "Program_burden_effect", 0.2);
+  setLinearCoefficient(document, "Perturb_seq_beta", "Regulator_burden_correlation", 0.8);
+  setLinearCoefficient(document, "LoF_burden_gamma", "Regulator_burden_correlation", 0.55);
+  setLinearCoefficient(document, "Gene_constraint_Shet", "Regulator_burden_correlation", 0.2);
+  setLinearCoefficient(document, "GWAS_trait_signal", "Trans_eQTL_validation", 0.55);
+  setLinearCoefficient(document, "Program_gene_content", "Trans_eQTL_validation", 0.45);
+  setLinearCoefficient(document, "Program_burden_effect", "Stepwise_program_model", 0.75);
+  setLinearCoefficient(document, "Regulator_burden_correlation", "Stepwise_program_model", 0.8);
+  setLinearCoefficient(document, "Gene_constraint_Shet", "Stepwise_program_model", 0.15);
+  setLinearCoefficient(document, "Stepwise_program_model", "Permutation_CV_fit", 0.75);
+  setLinearCoefficient(document, "LoF_burden_gamma", "Permutation_CV_fit", 0.25);
+  setLinearCoefficient(document, "Stepwise_program_model", "Concordant_gene_map", 0.85);
+  setLinearCoefficient(document, "LoF_burden_gamma", "Concordant_gene_map", 0.3);
+  return document;
+}
+
 function configureOpsRootCause(document: GraphDocument): GraphDocument {
   setBinaryVariable(document, "Deployment", "Release or configuration change suspected of shifting a mechanism.", "deployed");
   setContinuousVariable(document, "Traffic_mix", "Incoming workload mix that affects queues and latency.", "traffic index");
@@ -2422,15 +2694,15 @@ function prepareDocument(document: GraphDocument, seed: number): GraphDocument {
   };
 }
 
-const EXAMPLE_LAYER_GAP = 156;
-const EXAMPLE_DEEP_LAYER_GAP = 118;
-const EXAMPLE_NODE_GAP = 84;
-const EXAMPLE_NODE_MIN_WIDTH = 132;
-const EXAMPLE_NODE_MAX_WIDTH = 210;
+const EXAMPLE_LAYER_GAP = 132;
+const EXAMPLE_DEEP_LAYER_GAP = 104;
+const EXAMPLE_NODE_GAP = 48;
+const EXAMPLE_NODE_MIN_WIDTH = 124;
+const EXAMPLE_NODE_MAX_WIDTH = 196;
 const EXAMPLE_LABEL_CHAR_WIDTH = 7.4;
 const EXAMPLE_FIGURELET_WIDTH = 116;
-const EXAMPLE_COLLINEAR_THRESHOLD = 72;
-const EXAMPLE_SINGLETON_NUDGE = 132;
+const EXAMPLE_COLLINEAR_THRESHOLD = 58;
+const EXAMPLE_SINGLETON_NUDGE = 116;
 const EXAMPLE_ROLE_ORDER: Record<keyof GraphNode["roles"], number> = {
   latent: 0,
   adjusted: 1,

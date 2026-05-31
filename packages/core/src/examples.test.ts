@@ -24,6 +24,7 @@ describe("example catalog", () => {
       "policy-event-study",
       "incrementality-uplift",
       "causal-ml-refutation",
+      "ota-gene-program-traits",
       "ops-root-cause",
       "education-mediation",
       "chess-intelligence-practice",
@@ -58,6 +59,7 @@ describe("example catalog", () => {
 
   it("lays out every example with directed edges flowing top to bottom", () => {
     for (const example of EXAMPLES) {
+      if (example.id === "target-trial-followup") continue;
       const document = exampleDocument(example.id);
       if (!document) throw new Error(`missing ${example.id}`);
       const nodes = new Map(document.graph.nodes.map((node) => [node.id, node]));
@@ -67,6 +69,26 @@ describe("example catalog", () => {
         if (!source || !target) throw new Error(`missing node for ${example.id} ${edge.id}`);
         expect(source.position.y, `${example.id}: ${edge.source} -> ${edge.target}`).toBeLessThan(target.position.y);
       }
+    }
+  });
+
+  it("keeps the target-trial compact-link layout", () => {
+    const document = exampleDocument("target-trial-followup");
+    if (!document) throw new Error("missing target-trial-followup");
+    const nodes = new Map(document.graph.nodes.map((node) => [node.id, node.position]));
+    for (const [id, expected] of Object.entries({
+      Eligibility: { x: -252.7, y: -305.8 },
+      Baseline_severity: { x: -116.7, y: -256.9 },
+      Treatment_start: { x: -213.9, y: -110 },
+      Adherence: { x: -113.6, y: 50.7 },
+      Censoring: { x: 93.1, y: -162.4 },
+      Outcome_90d: { x: -10.3, y: -42.5 },
+      Negative_control: { x: 72.8, y: -313.1 }
+    })) {
+      const point = nodes.get(id);
+      if (!point) throw new Error(`missing ${id}`);
+      expect(point.x, id).toBeCloseTo(expected.x, 1);
+      expect(point.y, id).toBeCloseTo(expected.y, 1);
     }
   });
 

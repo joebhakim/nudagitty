@@ -9,7 +9,8 @@ import {
   Handle,
   Position,
   useReactFlow,
-  useStore
+  useStore,
+  ViewportPortal
 } from "@xyflow/react";
 import type { Edge as FlowEdge, EdgeProps as FlowEdgeProps, Node as FlowNode, NodeChange, NodeProps as FlowNodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -22,19 +23,20 @@ import {
   Download,
   FilePlus2,
   MousePointer2,
+  Network,
+  Presentation,
   Redo2,
   RefreshCw,
-  Save,
   Share2,
   Sigma,
   Trash2,
   Undo2,
+  Upload,
   X
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EXAMPLES,
-  EXAMPLE_DOMAINS,
   addEdge,
   addNode,
   adjusted,
@@ -78,7 +80,6 @@ import type {
   EdgeMechanismKind,
   EdgeKind,
   ExampleDenouement,
-  ExampleDomain,
   EffectKind,
   GraphDocument,
   GraphEdge,
@@ -115,11 +116,23 @@ import type { OutputContext } from "./outputs/types";
 import { DenouementPanel } from "./outputs/DenouementPanel";
 import { ExampleMenu } from "./examples/ExampleMenu";
 import { ModeToggle } from "./examples/ModeToggle";
+import { PaperNetworkView } from "./papers/PaperNetworkView";
+import { K562_NETWORK_STUDY } from "./papers/k562Study";
 import { MODE_LABELS } from "./shared/workbench";
 import type { WorkbenchMode } from "./shared/workbench";
-import { STORAGE_KEY } from "./shared/appState";
+import {
+  SHARE_COMPACT_HASH_KEY,
+  SHARE_DOCUMENT_HASH_KEY,
+  SHARE_EXAMPLE_HASH_KEY,
+  STORAGE_KEY,
+  createWorkbenchSnapshot,
+  encodeCompactShareDocument,
+  encodeWorkbenchSnapshot,
+  parseWorkbenchSnapshotText,
+  snapshotFilename
+} from "./shared/appState";
 import type { BibliographyTopic, Selection, ToolMode } from "./shared/appState";
-import { defaultScatterPair, reconcileScatterPair } from "./shared/pairs";
+import { defaultScatterPair, reconcileScatterPair, scatterPairOptions } from "./shared/pairs";
 import type { ScatterPair } from "./shared/pairs";
 import { useWorkbenchStore } from "./store/workbenchStore";
 
@@ -283,7 +296,8 @@ type DragState =
   | { kind: "pan"; pointerId: number; lastPoint: Point; moved: boolean }
   | null;
 type PointerScreenPoint = { clientX: number; clientY: number };
-type EdgeGeometry = { path: string; control: Point; start: Point; end: Point };
+type EdgeGeometry = { path: string; control: Point; label: Point; start: Point; end: Point; curved: boolean };
+type ShareStatus = "idle" | "copied" | "too-large" | "failed";
 type FlowGraphNodeData = Record<string, unknown> & {
   node: GraphNode;
   selected: boolean;
@@ -316,15 +330,21 @@ const EMPIRICAL_DRAW_MIN = 80;
 const EMPIRICAL_DRAW_DEFAULT = 320;
 const EMPIRICAL_DRAW_MAX = 5000;
 const EMPIRICAL_DRAW_STEP = 80;
+const WORKER_FALLBACK_MS = 2500;
+const MAX_SHARE_URL_LENGTH = 16000;
+const PAPER_NETWORK_HASH = "paper=k562";
 const EDGE_SOURCE_CLEARANCE = 1.5;
 const EDGE_ARROW_TIP_EXTENSION_FACTOR = 1.88;
 const EDGE_ARROW_NODE_OVERLAP = 1.2;
 const EDGE_CROWDED_FAN_THRESHOLD = 2;
-const EDGE_CROWDED_FAN_SPACING = 34;
-const EDGE_CROWDED_FAN_MAX_OFFSET = 52;
+const EDGE_CROWDED_FAN_SPACING = 44;
+const EDGE_CROWDED_FAN_MAX_OFFSET = 68;
 const EDGE_OUTGOING_FAN_THRESHOLD = 2;
 const EDGE_OUTGOING_FAN_SPACING = 24;
 const EDGE_OUTGOING_FAN_MAX_OFFSET = 36;
+const EDGE_ENDPOINT_PORT_SPACING = 18;
+const EDGE_ENDPOINT_PORT_MAX_OFFSET = 26;
+const EDGE_ENDPOINT_PORT_DISTANCE = 64;
 
 function graphViewportSignature(graph: GraphModel): string {
   const nodes = graph.nodes.map((node) => `${node.id}:${node.label}`).join("|");
@@ -356,7 +376,7 @@ function graphOutputSignature(graph: GraphModel): string {
   return `${graph.kind}::${nodes}::${edges}`;
 }
 
-function fitViewportToGraph(graph: GraphModel, mode: WorkbenchMode = "domain"): CanvasViewport {
+function fitViewportToGraph(graph: GraphModel, mode: WorkbenchMode = "pro"): CanvasViewport {
   if (graph.nodes.length === 0) return DEFAULT_VIEWPORT;
   const demoMode = mode === "basic";
   const margin = demoMode ? BASIC_NODE_VIEW_MARGIN : NODE_VIEW_MARGIN;
@@ -426,7 +446,6 @@ const DESIGN_MODULES: Array<{
   id: string;
   label: string;
   status: DesignModuleStatus;
-  domains: ExampleDomain[];
   basic?: boolean;
   description: string;
 }> = [
@@ -435,56 +454,48 @@ const DESIGN_MODULES: Array<{
     label: "Adjustment / backdoor",
     status: "usable",
     basic: true,
-    domains: ["classic", "epidemiology", "social", "ml"],
     description: "Use roles, biasing paths, and minimal adjustment sets to decide what belongs in the estimating equation."
   },
   {
     id: "target-trial",
     label: "Target trial",
     status: "todo",
-    domains: ["epidemiology"],
     description: "TODO: specify eligibility, time zero, treatment strategies, follow-up, censoring, estimand, and analysis plan."
   },
   {
     id: "negative-controls",
     label: "Negative controls",
     status: "todo",
-    domains: ["epidemiology", "ml"],
     description: "TODO: mark exposure/outcome controls that should have no effect and use violations as residual-bias warnings."
   },
   {
     id: "iv",
     label: "Instrumental variables",
     status: "usable",
-    domains: ["classic", "econometrics"],
     description: "Check relevance paths, exclusion restrictions, and unblocked backdoors from candidate instruments to outcomes."
   },
   {
     id: "did",
     label: "DiD / event study",
     status: "todo",
-    domains: ["econometrics"],
     description: "TODO: track policy timing, panel unit/time structure, pre-trends, staggered adoption, and placebo endpoints."
   },
   {
     id: "rd",
     label: "Regression discontinuity",
     status: "todo",
-    domains: ["econometrics"],
     description: "TODO: mark running variable, cutoff, manipulation risks, bandwidth choices, and continuity assumptions."
   },
   {
     id: "synthetic-control",
     label: "Synthetic control / CausalImpact",
     status: "todo",
-    domains: ["econometrics", "product"],
     description: "TODO: define treated unit, donor pool, pre-period fit, unaffected control series, and placebo permutations."
   },
   {
     id: "experiment-uplift",
     label: "Experiment / uplift",
     status: "todo",
-    domains: ["product"],
     description: "TODO: represent randomization, holdouts, geolift, guardrails, spillovers, and heterogeneous treatment effects."
   },
   {
@@ -492,42 +503,36 @@ const DESIGN_MODULES: Array<{
     label: "Mediation",
     status: "usable",
     basic: true,
-    domains: ["classic", "epidemiology", "social"],
     description: "Separate direct and indirect paths, then make post-treatment adjustment risks visible."
   },
   {
     id: "graph-refutation",
     label: "Graph refutation",
     status: "todo",
-    domains: ["ml"],
     description: "TODO: run conditional-independence checks implied by the graph and flag assumptions contradicted by data."
   },
   {
     id: "causal-discovery",
     label: "Discovery hypotheses",
     status: "todo",
-    domains: ["ml"],
     description: "TODO: import candidate structures from discovery tools as hypotheses, not automatic truth."
   },
   {
     id: "root-cause",
     label: "Root cause",
     status: "todo",
-    domains: ["operations"],
     description: "TODO: compare old/new mechanism behavior and attribute observed changes to upstream nodes."
   },
   {
     id: "distribution-change",
     label: "Distribution change",
     status: "todo",
-    domains: ["operations", "ml"],
     description: "TODO: attribute target distribution shifts to changed causal mechanisms, not only changed marginal correlations."
   },
   {
     id: "latent-measurement",
     label: "Latent measurement",
     status: "todo",
-    domains: ["social", "epidemiology"],
     description: "TODO: connect latent constructs, proxies, survey error, rounding, missingness, and attrition mechanisms."
   }
 ];
@@ -552,8 +557,8 @@ const CUSTOM_DENOUEMENT: ExampleDenouement = {
   punchline: "Turn the graph into a claim packet: what can be said causally, what design supports it, and what assumptions could embarrass the claim.",
   estimand: "Set an exposure and outcome, then choose whether the target is a total effect, direct effect, IV estimand, mediation contrast, policy effect, or descriptive mechanism claim.",
   primaryOutput: "A concise conclusion backed by an adjustment or design verdict, visible causal and biasing paths, diagnostics, and unresolved threats.",
-  validity: "Credible only after the graph declares time order, treatment/exposure status, outcome, adjustment choices, selection nodes, latent nodes, and post-treatment variables.",
-  nextAction: "Pick a domain example closest to the current problem or mark exposure/outcome roles and use the identification panel to start the packet.",
+  validity: "Credible only after the graph declares time order, treatment/exposure status, outcome, adjustment choices, sample-selection nodes, latent nodes, and post-treatment variables.",
+  nextAction: "Pick a catalog example closest to the current problem or mark exposure/outcome roles and use the identification panel to start the packet.",
   sections: [
     {
       title: "Claim packet",
@@ -570,7 +575,7 @@ const CUSTOM_DENOUEMENT: ExampleDenouement = {
       defaultOpen: true,
       items: [
         "Mark exposure and outcome roles.",
-        "Mark adjusted, selected, and unobserved nodes.",
+        "Mark adjusted, sample-selection, and unobserved nodes.",
         "Inspect causal and biasing paths.",
         "Choose the identification mode in Advanced diagnostics.",
         "Document any TODO design module that is relevant but not implemented yet."
@@ -580,9 +585,9 @@ const CUSTOM_DENOUEMENT: ExampleDenouement = {
       title: "Threats",
       items: [
         "Post-treatment adjustment can change the estimand or introduce bias.",
-        "Selection nodes can make the analysis population differ from the target population.",
+        "Sample-selection nodes can make the analysis population differ from the target population.",
         "Latent variables mean the DAG is an assumption statement, not a complete control strategy.",
-        "Poor overlap, interference, and measurement error usually require domain-specific modules."
+        "Poor overlap, interference, and measurement error usually require specialized modules."
       ]
     }
   ]
@@ -698,6 +703,11 @@ export function App() {
   const [simulation, setSimulation] = useState<SimulationResult>(() => runSimulation(document.graph, document.simulation));
 
   const [analysis, setAnalysis] = useState<AnalysisReport>(() => analyzeGraph(document.graph));
+  const snapshotInputRef = useRef<HTMLInputElement | null>(null);
+  const [compactShareStatus, setCompactShareStatus] = useState<ShareStatus>("idle");
+  const [fullShareStatus, setFullShareStatus] = useState<ShareStatus>("idle");
+  const [paperNetworkOpen, setPaperNetworkOpen] = useState(() => hashMatchesPaperNetwork(window.location.hash));
+  const [presentationMode, setPresentationMode] = useState(false);
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
   const analysisSignature = graphAnalysisSignature(document.graph);
   const analysisGraph = useMemo(() => document.graph, [analysisSignature]);
@@ -725,9 +735,9 @@ export function App() {
   const selectedNode = selection?.kind === "node" ? findNode(document.graph, selection.id) : undefined;
   const selectedEdge = selection?.kind === "edge" ? findEdge(document.graph, selection.id) : undefined;
   const activeExample = EXAMPLES.find((example) => example.id === activeExampleId) ?? null;
-  const activeDomain = activeExample?.domain ?? "classic";
   const activeDenouement = activeExample ? exampleDenouement(activeExample.id) : null;
   const isBasicMode = workbenchMode === "basic";
+  const presentationActive = presentationMode && !paperNetworkOpen && !isBasicMode;
   const compactWorkspace = useMediaQuery("(max-width: 1120px)");
   const empiricalDraws = graphEmpiricalDraws(document.graph);
   const highlightedEdges = useMemo(() => computeHighlightedEdges(document.graph, analysis, showCausal, showBiasing), [analysis, document.graph, showBiasing, showCausal]);
@@ -737,6 +747,7 @@ export function App() {
   const defaultOutputPair = useMemo(() => defaultScatterPair(computationDocument.graph), [computationDocument.graph]);
   const binaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived, activeOutputPair), [activeOutputPair, outputContext, simulationDerived]);
   const binaryContinuousAdjustmentOutput = useMemo(() => computeBinaryContinuousAdjustmentOutput(outputContext, simulationDerived, activeOutputPair), [activeOutputPair, outputContext, simulationDerived]);
+  const adjustedOutputActive = ((binaryAdjustmentOutput?.adjustedNodes.length ?? 0) + (binaryContinuousAdjustmentOutput?.adjustedNodes.length ?? 0)) > 0;
   const demoBinaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived, defaultOutputPair), [defaultOutputPair, outputContext, simulationDerived]);
   const basicRelationSummary = useMemo(
     () => computeBasicRelationSummary({ ...outputContext, moduleId: activeExample?.outputModule ?? null }, completedOutput, simulationDerived, demoBinaryAdjustmentOutput, { hideOracle: isBasicMode }),
@@ -750,33 +761,99 @@ export function App() {
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
   useEffect(() => {
-    const worker = new Worker(new URL("./analysis.worker.ts", import.meta.url), { type: "module" });
+    let cancelled = false;
+    let settled = false;
+    let worker: Worker | null = null;
     const requestSignature = analysisSignature;
-    worker.onmessage = (event: MessageEvent<AnalysisReport>) => {
-      setAnalysis(event.data);
+    const complete = (nextAnalysis: AnalysisReport) => {
+      if (cancelled || settled) return;
+      settled = true;
+      window.clearTimeout(fallbackTimer);
+      worker?.terminate();
+      setAnalysis(nextAnalysis);
       setAnalysisResultSignature(requestSignature);
     };
-    worker.onerror = () => {
-      setAnalysis(analyzeGraph(analysisGraph));
-      setAnalysisResultSignature(requestSignature);
+    const completeFallback = () => {
+      if (cancelled || settled) return;
+      try {
+        complete(analyzeGraph(analysisGraph));
+      } catch (error) {
+        console.error("analysis worker fallback failed", error);
+        if (!cancelled && !settled) {
+          settled = true;
+          window.clearTimeout(fallbackTimer);
+          worker?.terminate();
+          setAnalysisResultSignature(requestSignature);
+        }
+      }
     };
-    worker.postMessage(analysisGraph);
-    return () => worker.terminate();
+    const fallbackTimer = window.setTimeout(completeFallback, WORKER_FALLBACK_MS);
+    try {
+      worker = new Worker(new URL("./analysis.worker.ts", import.meta.url), { type: "module" });
+      worker.onmessage = (event: MessageEvent<AnalysisReport>) => complete(event.data);
+      worker.onerror = (event) => {
+        event.preventDefault();
+        completeFallback();
+      };
+      worker.onmessageerror = completeFallback;
+      worker.postMessage(analysisGraph);
+    } catch (error) {
+      console.error("analysis worker start failed", error);
+      completeFallback();
+    }
+    return () => {
+      cancelled = true;
+      window.clearTimeout(fallbackTimer);
+      worker?.terminate();
+    };
   }, [analysisGraph, analysisSignature]);
 
   useEffect(() => {
-    const worker = new Worker(new URL("./sim.worker.ts", import.meta.url), { type: "module" });
+    let cancelled = false;
+    let settled = false;
+    let worker: Worker | null = null;
     const requestSignature = simulationSignature;
-    worker.onmessage = (event: MessageEvent<SimulationResult>) => {
-      setSimulation(event.data);
+    const complete = (nextSimulation: SimulationResult) => {
+      if (cancelled || settled) return;
+      settled = true;
+      window.clearTimeout(fallbackTimer);
+      worker?.terminate();
+      setSimulation(nextSimulation);
       setSimulationResultSignature(requestSignature);
     };
-    worker.onerror = () => {
-      setSimulation(runSimulation(simulationGraph, document.simulation));
-      setSimulationResultSignature(requestSignature);
+    const completeFallback = () => {
+      if (cancelled || settled) return;
+      try {
+        complete(runSimulation(simulationGraph, document.simulation));
+      } catch (error) {
+        console.error("simulation worker fallback failed", error);
+        if (!cancelled && !settled) {
+          settled = true;
+          window.clearTimeout(fallbackTimer);
+          worker?.terminate();
+          setSimulationResultSignature(requestSignature);
+        }
+      }
     };
-    worker.postMessage({ graph: simulationGraph, spec: document.simulation });
-    return () => worker.terminate();
+    const fallbackTimer = window.setTimeout(completeFallback, WORKER_FALLBACK_MS);
+    try {
+      worker = new Worker(new URL("./sim.worker.ts", import.meta.url), { type: "module" });
+      worker.onmessage = (event: MessageEvent<SimulationResult>) => complete(event.data);
+      worker.onerror = (event) => {
+        event.preventDefault();
+        completeFallback();
+      };
+      worker.onmessageerror = completeFallback;
+      worker.postMessage({ graph: simulationGraph, spec: document.simulation });
+    } catch (error) {
+      console.error("simulation worker start failed", error);
+      completeFallback();
+    }
+    return () => {
+      cancelled = true;
+      window.clearTimeout(fallbackTimer);
+      worker?.terminate();
+    };
   }, [document.simulation, simulationGraph, simulationSignature]);
 
   useEffect(() => {
@@ -789,6 +866,7 @@ export function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (paperNetworkOpen) return;
       const target = event.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA"].includes(target.tagName)) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
@@ -903,10 +981,97 @@ export function App() {
   const loadExample = useCallback((id: string) => {
     const document = exampleDocument(id);
     if (!document) return;
+    setPaperNetworkOpen(false);
     commit(document);
     setActiveExampleId(id);
     setSelection(null);
   }, [commit]);
+
+  const loadSnapshotState = useCallback((nextDocument: GraphDocument, nextExampleId: string | null) => {
+    commit({
+      ...nextDocument,
+      simulation: reconcileSimulationSpec(nextDocument.graph, nextDocument.simulation)
+    });
+    setActiveExampleId(nextExampleId);
+    setSelection(null);
+    setTool("select");
+    setEdgeSource(null);
+    setCompactShareStatus("idle");
+    setFullShareStatus("idle");
+    setPaperNetworkOpen(false);
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  }, [commit, setActiveExampleId, setEdgeSource, setSelection, setTool]);
+
+  const openSnapshotFile = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    const loaded = parseWorkbenchSnapshotText(await file.text());
+    if (!loaded) {
+      window.alert("This is not a valid Nudagitty snapshot.");
+      return;
+    }
+    loadSnapshotState(loaded.document, loaded.activeExampleId);
+  }, [loadSnapshotState]);
+
+  const downloadSnapshot = useCallback(() => {
+    const snapshot = createWorkbenchSnapshot(document, activeExampleId);
+    downloadText(snapshotFilename(document), JSON.stringify(snapshot, null, 2), "application/json");
+  }, [activeExampleId, document]);
+
+  const copyCompactShareLink = useCallback(async () => {
+    const url = compactShareUrlForDocument(document, activeExampleId);
+    if (url.length > MAX_SHARE_URL_LENGTH) {
+      setCompactShareStatus("too-large");
+      return;
+    }
+    try {
+      await copyTextToClipboard(url);
+      window.history.replaceState(null, "", new URL(url).hash);
+      setCompactShareStatus("copied");
+    } catch {
+      setCompactShareStatus("failed");
+    }
+  }, [activeExampleId, document]);
+
+  const copyFullShareLink = useCallback(async () => {
+    const url = fullShareUrlForDocument(document, activeExampleId);
+    if (url.length > MAX_SHARE_URL_LENGTH) {
+      setFullShareStatus("too-large");
+      return;
+    }
+    try {
+      await copyTextToClipboard(url);
+      window.history.replaceState(null, "", new URL(url).hash);
+      setFullShareStatus("copied");
+    } catch {
+      setFullShareStatus("failed");
+    }
+  }, [activeExampleId, document]);
+
+  const openPaperNetwork = useCallback(() => {
+    setPaperNetworkOpen(true);
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${PAPER_NETWORK_HASH}`);
+  }, []);
+
+  const closePaperNetwork = useCallback(() => {
+    setPaperNetworkOpen(false);
+    if (hashMatchesPaperNetwork(window.location.hash)) {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (compactShareStatus === "idle") return undefined;
+    const timer = window.setTimeout(() => setCompactShareStatus("idle"), 2200);
+    return () => window.clearTimeout(timer);
+  }, [compactShareStatus]);
+
+  useEffect(() => {
+    if (fullShareStatus === "idle") return undefined;
+    const timer = window.setTimeout(() => setFullShareStatus("idle"), 2200);
+    return () => window.clearTimeout(timer);
+  }, [fullShareStatus]);
 
   const updateNodeMechanism = useCallback((nodeId: string, patch: Partial<NodeMechanism>) => {
     const current = normalizeNodeMechanism(document.simulation.nodes[nodeId]);
@@ -1053,38 +1218,45 @@ export function App() {
 
   const renderEditorPane = (order: number) => (
     <Panel id="editor" defaultSize={compactWorkspace ? 30 : isBasicMode ? 22 : 28} minSize={compactWorkspace ? 22 : 18} className="workspace-panel editor-pane" key="editor">
-      <aside className="side-panel editor-column" aria-label="Selection editor">
-        {isBasicMode && !basicResultsOpen && (
-          <button type="button" className="demo-show-result-button" onClick={() => setBasicResultsOpen(true)}>
-            Show result
-          </button>
-        )}
-        <SelectionEditor
-          mode={workbenchMode}
-          node={selectedNode}
-          edge={selectedEdge}
-          simulation={simulation}
-          derived={simulationDerived}
-          document={document}
-          outputPair={isBasicMode ? defaultOutputPair : activeOutputPair}
-          onToggleRole={toggleRole}
-          onRename={renameNodeById}
-          onDeleteNode={deleteNodeById}
-          onNodeMechanism={updateNodeMechanism}
-          onVariableChange={updateVariableModel}
-          onOverride={setOverride}
-          onSelectionCondition={setSelectionCondition}
-          onCoefficient={updateEdgeCoefficient}
-          onEdgeEnabled={updateEdgeEnabled}
-          onEdgeMechanism={updateEdgeMechanism}
-          onDeleteEdge={deleteEdgeById}
-        />
+      <aside className="side-panel module-pane editor-column" aria-label="Editor">
+        <ModuleFrame
+          tone="edit"
+          label="Edit"
+          title={selectedNode ? "Node editor" : selectedEdge ? "Connection editor" : "DAG editor"}
+          detail={selectedNode ? nodeDisplayName(selectedNode) : selectedEdge ? `${selectedEdge.source} to ${selectedEdge.target}` : "Select a node or arrow"}
+        >
+          {isBasicMode && !basicResultsOpen && (
+            <button type="button" className="demo-show-result-button" onClick={() => setBasicResultsOpen(true)}>
+              Show result
+            </button>
+          )}
+          <SelectionEditor
+            mode={workbenchMode}
+            node={selectedNode}
+            edge={selectedEdge}
+            simulation={simulation}
+            derived={simulationDerived}
+            document={document}
+            outputPair={isBasicMode ? defaultOutputPair : activeOutputPair}
+            onToggleRole={toggleRole}
+            onRename={renameNodeById}
+            onDeleteNode={deleteNodeById}
+            onNodeMechanism={updateNodeMechanism}
+            onVariableChange={updateVariableModel}
+            onOverride={setOverride}
+            onSelectionCondition={setSelectionCondition}
+            onCoefficient={updateEdgeCoefficient}
+            onEdgeEnabled={updateEdgeEnabled}
+            onEdgeMechanism={updateEdgeMechanism}
+            onDeleteEdge={deleteEdgeById}
+          />
+        </ModuleFrame>
       </aside>
     </Panel>
   );
 
   const renderCanvasPane = (order: number) => (
-    <Panel id="canvas" defaultSize={compactWorkspace ? 42 : isBasicMode ? (basicResultsOpen ? 48 : 78) : 44} minSize={compactWorkspace ? 32 : 32} className="workspace-panel canvas-panel" key="canvas">
+    <Panel id="canvas" defaultSize={compactWorkspace ? 42 : isBasicMode ? (basicResultsOpen ? 48 : 78) : presentationActive ? 58 : 44} minSize={compactWorkspace ? 32 : 32} className="workspace-panel canvas-panel" key="canvas">
       <FlowGraphCanvas
         mode={workbenchMode}
         graph={visibleGraph}
@@ -1113,62 +1285,54 @@ export function App() {
 
   const renderDemoResultsPane = (order: number) => (
     <Panel id="demo-results" defaultSize={compactWorkspace ? 28 : 30} minSize={compactWorkspace ? 24 : 22} className="workspace-panel results-pane" key="demo-results">
-      <aside className="side-panel basic-results-column" aria-label="Results">
-        <div className="basic-results-header">
-          <div className="basic-results-title">
-            <strong>Result</strong>
-            <PendingChip pending={resultPendingActive(resultsPending)} />
-          </div>
-          <button type="button" aria-label="Close results" onClick={() => setBasicResultsOpen(false)}>
-            <X size={16} />
-          </button>
-        </div>
-        <DemoResultPanel
-          graph={document.graph}
-          simulation={simulation}
-          derived={simulationDerived}
-          pair={defaultOutputPair}
-          summary={basicRelationSummary}
-          context={basicDemoContext}
-          pending={resultsPending}
-          moduleId={activeExample?.outputModule ?? null}
-          computedOutput={completedOutput}
-          binaryOutput={demoBinaryAdjustmentOutput}
-          recommendedAdjustmentId={basicRecommendedAdjustmentId}
-          onPair={setScatterPair}
-          onSelectNode={selectNode}
-          onAdjustRecommended={(id) => {
-            if (!nodeAdjusted(document.graph, id)) toggleRole(id, "adjusted");
-            selectNode(id);
-          }}
-          onClearOverrides={clearOverrides}
-          onClearSelections={clearSelections}
-        />
+      <aside className="side-panel module-pane basic-results-column" aria-label="Results">
+        <ModuleFrame
+          tone="output"
+          label="Output"
+          title="Result"
+          detail="Observed relation and causal comparison"
+          pending={resultPendingActive(resultsPending)}
+          action={<button type="button" aria-label="Close results" onClick={() => setBasicResultsOpen(false)}><X size={16} /></button>}
+        >
+          <DemoResultPanel
+            graph={document.graph}
+            simulation={simulation}
+            derived={simulationDerived}
+            pair={defaultOutputPair}
+            summary={basicRelationSummary}
+            context={basicDemoContext}
+            pending={resultsPending}
+            moduleId={activeExample?.outputModule ?? null}
+            computedOutput={completedOutput}
+            binaryOutput={demoBinaryAdjustmentOutput}
+            recommendedAdjustmentId={basicRecommendedAdjustmentId}
+            onPair={setScatterPair}
+            onSelectNode={selectNode}
+            onAdjustRecommended={(id) => {
+              if (!nodeAdjusted(document.graph, id)) toggleRole(id, "adjusted");
+              selectNode(id);
+            }}
+            onClearOverrides={clearOverrides}
+            onClearSelections={clearSelections}
+          />
+        </ModuleFrame>
       </aside>
     </Panel>
   );
 
   const renderProOutputsPane = (order: number) => (
-    <Panel id="outputs" defaultSize={compactWorkspace ? 28 : 28} minSize={compactWorkspace ? 24 : 22} className="workspace-panel outputs-panel" key="outputs">
+    <Panel id="outputs" defaultSize={compactWorkspace ? 28 : presentationActive ? 42 : 28} minSize={compactWorkspace ? 24 : 22} className="workspace-panel outputs-panel" key="outputs">
       <PanelGroup orientation="vertical" className="workspace-output-panel-group">
-        <Panel id="scenario" defaultSize={22} minSize={14} className="workspace-panel">
-          <aside className="side-panel scenario-column">
-            <Section title="Scenario Builder">
-              <ScenarioPanel
-                document={document}
-                simulation={simulation}
-                pending={simulationPending}
-                onResample={resample}
-                onClearOverrides={clearOverrides}
-                onClearSelections={clearSelections}
-              />
-            </Section>
-          </aside>
-        </Panel>
-        {renderWorkspaceHandle("scenario-pairwise", true)}
-        <Panel id="pairwise" defaultSize={showAdjustedOutputColumn ? 38 : 78} minSize={24} className="workspace-panel">
-          <aside className="side-panel pairwise-column">
-            <Section title="Pairwise Output" pending={simulationPending}>
+        <Panel id="pairwise" defaultSize={showAdjustedOutputColumn ? 39 : 76} minSize={30} className="workspace-panel">
+          <aside className="side-panel module-pane pairwise-column">
+            <ModuleFrame
+              tone="output"
+              label="Output"
+              title="Observed relation"
+              detail="Click the exposure/outcome labels to change the pair"
+              pending={resultPendingActive(pairwisePending)}
+              className="compact-pairwise-frame"
+            >
               <ScatterplotPanel
                 graph={document.graph}
                 simulation={simulation}
@@ -1178,15 +1342,21 @@ export function App() {
                 onPair={setScatterPair}
                 onSelectNode={selectNode}
               />
-            </Section>
+            </ModuleFrame>
           </aside>
         </Panel>
         {showAdjustedOutputColumn && (
           <>
             {renderWorkspaceHandle("pairwise-adjusted", true)}
-            <Panel id="adjusted" defaultSize={40} minSize={24} className="workspace-panel">
-              <aside className="side-panel adjusted-output-column">
-                <Section title="Adjusted Output" pending={resultPendingActive(resultsPending)}>
+            <Panel id="adjusted" defaultSize={37} minSize={28} className="workspace-panel">
+              <aside className="side-panel module-pane adjusted-output-column">
+                <ModuleFrame
+                  tone="output"
+                  label="Adjusted output"
+                  title={adjustedOutputActive ? "After adjustment" : "Adjustment target"}
+                  detail={adjustedOutputActive ? "Same pair, using selected adjustment variables" : "Mark covariates to compare against the raw relation"}
+                  pending={resultPendingActive(resultsPending)}
+                >
                   <AdjustedOutputPanel
                     moduleId={activeExample?.outputModule ?? null}
                     computedOutput={completedOutput}
@@ -1195,11 +1365,32 @@ export function App() {
                     pending={resultsPending}
                     hideOracle={false}
                   />
-                </Section>
+                </ModuleFrame>
               </aside>
             </Panel>
           </>
         )}
+        {renderWorkspaceHandle(showAdjustedOutputColumn ? "adjusted-scenario" : "pairwise-scenario", true)}
+        <Panel id="scenario" defaultSize={showAdjustedOutputColumn ? 26 : 24} minSize={18} className="workspace-panel">
+          <aside className="side-panel module-pane scenario-column">
+            <ModuleFrame
+              tone="scenario"
+              label="Scenario"
+              title="Interventions + sample filters"
+              detail="Change the analysis sample or set node values"
+              pending={simulationPending}
+            >
+              <ScenarioPanel
+                document={document}
+                simulation={simulation}
+                pending={simulationPending}
+                onResample={resample}
+                onClearOverrides={clearOverrides}
+                onClearSelections={clearSelections}
+              />
+            </ModuleFrame>
+          </aside>
+        </Panel>
       </PanelGroup>
     </Panel>
   );
@@ -1210,20 +1401,21 @@ export function App() {
         <summary>Practitioner modules</summary>
         <div className="practitioner-modules-grid">
           <DenouementPanel denouement={activeDenouement ?? CUSTOM_DENOUEMENT} title={activeExample?.title ?? document.title} />
-          <DesignModulePanel mode={workbenchMode} domain={activeDomain} />
+          <DesignModulePanel mode={workbenchMode} />
         </div>
       </details>
     </section>
   );
 
   return (
-    <div className={`app-shell mode-${workbenchMode} ${basicResultsOpen ? "results-open" : ""}`}>
+    <div className={`app-shell mode-${workbenchMode} ${basicResultsOpen ? "results-open" : ""}${presentationActive ? " presentation-mode" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <Sigma size={20} />
           <span>Nudagitty</span>
         </div>
-        {!isBasicMode && <div className="toolbar" aria-label="Main tools">
+        {!presentationActive && <IconButton label="K562 paper network" active={paperNetworkOpen} onClick={openPaperNetwork}><Network size={18} /></IconButton>}
+        {!paperNetworkOpen && !isBasicMode && !presentationActive && <div className="toolbar" aria-label="Main tools">
           <IconButton label="Select" active={tool === "select"} onClick={() => setTool("select")}><MousePointer2 size={18} /></IconButton>
           <IconButton label="Variable" active={tool === "node"} onClick={() => setTool("node")}><CirclePlus size={18} /></IconButton>
           <IconButton label="Connect" active={tool === "edge"} onClick={() => setTool("edge")}><ArrowRight size={18} /></IconButton>
@@ -1231,25 +1423,44 @@ export function App() {
           <IconButton label="Undo" onClick={undo} disabled={history.length === 0}><Undo2 size={18} /></IconButton>
           <IconButton label="Redo" onClick={redo} disabled={future.length === 0}><Redo2 size={18} /></IconButton>
         </div>}
-        <div className="toolbar" aria-label="Model actions">
+        {!paperNetworkOpen && <div className="toolbar" aria-label="Model actions">
           {isBasicMode ? <>
             <BasicExampleTabs activeExampleId={activeExampleId} onSelect={loadExample} />
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
           </> : <>
-            <IconButton label="New" onClick={() => {
+            {!presentationActive && <IconButton label="New" onClick={() => {
+              closePaperNetwork();
               commit(emptyDocument());
               setActiveExampleId(null);
               setSelection(null);
-            }}><FilePlus2 size={18} /></IconButton>
+            }}><FilePlus2 size={18} /></IconButton>}
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
-            <IconButton label="Save" onClick={() => window.localStorage.setItem(STORAGE_KEY, JSON.stringify(document))}><Save size={18} /></IconButton>
-            <IconButton label="Share" onClick={() => copyShareUrl(document)}><Share2 size={18} /></IconButton>
-            <IconButton label="SVG" onClick={() => exportSvg()}><Download size={18} /></IconButton>
-            <IconButton label="PNG" onClick={() => exportBitmap("png")}><Camera size={18} /></IconButton>
+            <input
+              ref={snapshotInputRef}
+              type="file"
+              accept=".nudagitty.json,application/json"
+              aria-label="Open Nudagitty snapshot"
+              className="screen-reader-only"
+              onChange={openSnapshotFile}
+            />
+            {!presentationActive && <>
+              <IconButton label="Open" onClick={() => snapshotInputRef.current?.click()}><Upload size={18} /></IconButton>
+              <IconButton label="Download" onClick={downloadSnapshot}><Download size={18} /></IconButton>
+              <IconButton label={shareStatusLabel(compactShareStatus, "Compact link")} onClick={copyCompactShareLink}><Share2 size={18} /></IconButton>
+              <IconButton label={shareStatusLabel(fullShareStatus, "Full link")} onClick={copyFullShareLink}><Share2 size={18} /></IconButton>
+              <IconButton label="SVG" onClick={() => exportSvg()}><Download size={18} /></IconButton>
+              <IconButton label="PNG" onClick={() => exportBitmap("png")}><Camera size={18} /></IconButton>
+            </>}
+            <IconButton label="Presentation" active={presentationActive} pressed={presentationActive} onClick={() => setPresentationMode((active) => !active)}><Presentation size={18} /></IconButton>
           </>}
-        </div>
-        <ModeToggle value={workbenchMode} onChange={setWorkbenchMode} />
+        </div>}
+        {!paperNetworkOpen && <ModeToggle value={workbenchMode} onChange={setWorkbenchMode} />}
       </header>
+      {paperNetworkOpen ? (
+        <main className="paper-network-app-main">
+          <PaperNetworkView study={K562_NETWORK_STUDY} onClose={closePaperNetwork} />
+        </main>
+      ) : <>
       <AnalysisSampleBanner simulation={simulation} pending={simulationPending} onClearSelections={clearSelections} />
 
       <main className="workspace">
@@ -1269,13 +1480,21 @@ export function App() {
                   {renderProOutputsPane(2)}
                 </>
               )}
-              {renderWorkspaceHandle("before-editor")}
-              {renderEditorPane(3)}
+              {!presentationActive && (
+                <>
+                  {renderWorkspaceHandle("before-editor")}
+                  {renderEditorPane(3)}
+                </>
+              )}
             </>
           ) : (
             <>
-              {renderEditorPane(1)}
-              {renderWorkspaceHandle("editor-canvas")}
+              {!presentationActive && (
+                <>
+                  {renderEditorPane(1)}
+                  {renderWorkspaceHandle("editor-canvas")}
+                </>
+              )}
               {renderCanvasPane(2)}
               {isBasicMode && basicResultsOpen && (
                 <>
@@ -1293,9 +1512,9 @@ export function App() {
           )}
         </PanelGroup>
 
-        {!isBasicMode && renderPractitionerModulesDrawer()}
+        {!isBasicMode && !presentationActive && renderPractitionerModulesDrawer()}
 
-        {!isBasicMode && <section className="advanced-drawer">
+        {!isBasicMode && !presentationActive && <section className="advanced-drawer">
           <details>
             <summary>Advanced diagnostics and artifacts</summary>
             <div className="advanced-grid">
@@ -1362,6 +1581,7 @@ export function App() {
           </details>
         </section>}
       </main>
+      </>}
     </div>
   );
 }
@@ -1434,9 +1654,27 @@ function FlowGraphCanvasInner(props: React.ComponentProps<typeof GraphCanvas>) {
       focusable: true
     };
   }), [props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.onNodeClick, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values]);
+  const [nodes, setNodes] = useState<FlowGraphNode[]>(computedNodes);
+  const [legendOpen, setLegendOpen] = useState(false);
+
+  const liveNodesById = useMemo(() => {
+    const live = new Map<string, GraphNode>();
+    for (const flowNode of nodes) {
+      const graphNode = nodesById.get(flowNode.id) ?? flowNode.data.node;
+      live.set(flowNode.id, {
+        ...graphNode,
+        position: flowNodePositionToGraphPoint(flowNode.position)
+      });
+    }
+    for (const graphNode of props.graph.nodes) {
+      if (!live.has(graphNode.id)) live.set(graphNode.id, graphNode);
+    }
+    return live;
+  }, [nodes, nodesById, props.graph.nodes]);
+
   const computedEdges = useMemo<FlowGraphEdge[]>(() => props.graph.edges.map((edge) => {
-    const source = nodesById.get(edge.source);
-    const target = nodesById.get(edge.target);
+    const source = liveNodesById.get(edge.source);
+    const target = liveNodesById.get(edge.target);
     const mechanism = normalizeEdgeMechanism(props.edgeMechanisms[edge.id]);
     const enabled = !props.disabledEdgeIds.has(edge.id);
     const edgeStrength = edgeMechanismDisplayStrength(mechanism);
@@ -1452,11 +1690,13 @@ function FlowGraphCanvasInner(props: React.ComponentProps<typeof GraphCanvas>) {
         source: source ?? createNode(edge.source, { x: 0, y: 0 }),
         target: target ?? createNode(edge.target, { x: 0, y: 0 }),
         mechanism,
-        geometry: source && target ? edgeGeometry(edge, source, target, width, props.graph.edges, nodesById) : {
+        geometry: source && target ? edgeGeometry(edge, source, target, width, props.graph.edges, liveNodesById) : {
           path: `M 0 0 L 0 0`,
           control: { x: 0, y: 0 },
+          label: { x: 0, y: 0 },
           start: { x: 0, y: 0 },
-          end: { x: 0, y: 0 }
+          end: { x: 0, y: 0 },
+          curved: false
         },
         semantic: props.highlightedEdges.get(edge.id),
         enabled,
@@ -1464,9 +1704,7 @@ function FlowGraphCanvasInner(props: React.ComponentProps<typeof GraphCanvas>) {
         onSelect: props.onEdgeClick
       }
     };
-  }), [denseEdges, nodesById, props.disabledEdgeIds, props.edgeMechanisms, props.graph.edges, props.highlightedEdges, props.onEdgeClick, props.selection]);
-  const [nodes, setNodes] = useState<FlowGraphNode[]>(computedNodes);
-  const [legendOpen, setLegendOpen] = useState(false);
+  }), [denseEdges, liveNodesById, props.disabledEdgeIds, props.edgeMechanisms, props.graph.edges, props.highlightedEdges, props.onEdgeClick, props.selection]);
 
   useEffect(() => {
     setNodes(computedNodes);
@@ -1533,6 +1771,7 @@ function FlowGraphCanvasInner(props: React.ComponentProps<typeof GraphCanvas>) {
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} />
           {props.mode !== "basic" && <Controls className="canvas-zoom-controls react-flow-controls" showInteractive={false} />}
+          <FlowGraphArrowLayer edges={computedEdges} />
         </ReactFlow>
       </div>
       <button
@@ -1574,7 +1813,7 @@ function FlowGraphLegend() {
       </div>
       <div className="flow-graph-legend-row">
         <span className="flow-graph-legend-node selected" />
-        <span>selected</span>
+        <span>sample marker</span>
       </div>
     </div>
   );
@@ -1633,15 +1872,15 @@ function FlowGraphEdge(props: FlowEdgeProps<FlowGraphEdge>) {
   const { path, control, start, end } = data.geometry;
   const edgeStrength = edgeMechanismDisplayStrength(data.mechanism);
   const width = edgeStrokeWidth(edgeStrength, data.denseEdges);
-  const edgeLabel = edgeMechanismCanvasLabel(data.mechanism);
-  const showEdgeLabel = data.enabled && (data.mechanism.kind !== "linear" || Math.abs(edgeStrength) > 0.001);
-  const coefficientClass = edgeStrength > 0 ? "coefficient-positive" : edgeStrength < 0 ? "coefficient-negative" : "coefficient-zero";
   const showEndArrow = data.edge.kind === "directed" || data.edge.kind === "bidirected";
   const showStartArrow = data.edge.kind === "bidirected";
   const startReference = control;
   const endReference = control;
+  const startArrow = showStartArrow ? arrowHeadGeometry(start, startReference, width) : null;
+  const endArrow = showEndArrow ? arrowHeadGeometry(end, endReference, width) : null;
+  const visiblePath = edgeVisibleStrokePath(data.geometry, startArrow, endArrow);
   return (
-    <g className={`edge ${coefficientClass} ${props.selected ? "selected" : ""} ${data.semantic ?? ""} ${data.enabled ? "" : "disabled"}`}>
+    <g className={flowEdgeClassName(data, props.selected)}>
       <title>{edgeMechanismTitle(data.edge, data.source, data.target, data.mechanism)}</title>
       <path
         d={path}
@@ -1652,21 +1891,54 @@ function FlowGraphEdge(props: FlowEdgeProps<FlowGraphEdge>) {
         }}
       />
       <path
-        d={path}
+        d={visiblePath}
         className={`edge-line ${data.edge.kind === "directed" || data.edge.kind === "bidirected" ? "with-arrow" : ""}`}
         style={{ strokeWidth: width }}
       />
-      {showStartArrow && <path className="edge-arrow-head" d={arrowHeadPath(start, startReference, width)} />}
-      {showEndArrow && <path className="edge-arrow-head" d={arrowHeadPath(end, endReference, width)} />}
-      {showEdgeLabel && (
-        <text className="edge-value" x={control.x} y={control.y - 15}>
-          <tspan className="edge-value-context" x={control.x}>{edgeLabel.context}</tspan>
-          <tspan className="edge-value-number" x={control.x} dy="13">{edgeLabel.value}</tspan>
-        </text>
-      )}
-      <EdgeFunctionGlyph kind={data.mechanism.kind} x={control.x} y={control.y} />
     </g>
   );
+}
+
+function FlowGraphArrowLayer({ edges }: { edges: FlowGraphEdge[] }) {
+  return (
+    <ViewportPortal>
+      <svg className="edge-arrow-layer" aria-hidden="true">
+        {edges.map((edge) => {
+          const data = edge.data;
+          if (!data) return null;
+          const edgeStrength = edgeMechanismDisplayStrength(data.mechanism);
+          const width = edgeStrokeWidth(edgeStrength, data.denseEdges);
+          const showEndArrow = data.edge.kind === "directed" || data.edge.kind === "bidirected";
+          const showStartArrow = data.edge.kind === "bidirected";
+          const startArrow = showStartArrow ? arrowHeadGeometry(data.geometry.start, data.geometry.control, width) : null;
+          const endArrow = showEndArrow ? arrowHeadGeometry(data.geometry.end, data.geometry.control, width) : null;
+          const label = data.geometry.label;
+          const edgeLabel = edgeMechanismCanvasLabel(data.mechanism);
+          const showEdgeLabel = data.enabled && (data.mechanism.kind !== "linear" || Math.abs(edgeStrength) > 0.001);
+          if (!startArrow && !endArrow && !showEdgeLabel) return null;
+          return (
+            <g key={edge.id} className={flowEdgeClassName(data, edge.selected)}>
+              {startArrow && <path className="edge-arrow-head" d={startArrow.path} />}
+              {endArrow && <path className="edge-arrow-head" d={endArrow.path} />}
+              {showEdgeLabel && (
+                <text className="edge-value" x={label.x} y={label.y - 12}>
+                  <tspan className="edge-value-context" x={label.x}>{edgeLabel.context}</tspan>
+                  <tspan className="edge-value-number" x={label.x} dy="10">{edgeLabel.value}</tspan>
+                </text>
+              )}
+              {showEdgeLabel && <EdgeFunctionGlyph kind={data.mechanism.kind} x={label.x} y={label.y} />}
+            </g>
+          );
+        })}
+      </svg>
+    </ViewportPortal>
+  );
+}
+
+function flowEdgeClassName(data: FlowGraphEdgeData, selected?: boolean): string {
+  const edgeStrength = edgeMechanismDisplayStrength(data.mechanism);
+  const coefficientClass = edgeStrength > 0 ? "coefficient-positive" : edgeStrength < 0 ? "coefficient-negative" : "coefficient-zero";
+  return `edge ${coefficientClass} ${selected ? "selected" : ""} ${data.semantic ?? ""} ${data.enabled ? "" : "disabled"}`;
 }
 
 function graphPointToFlowPoint(point: Point): Point {
@@ -1683,7 +1955,16 @@ function flowNodePositionToGraphPoint(point: Point): Point {
   };
 }
 
-function arrowHeadPath(tip: Point, from: Point, strokeWidth: number): string {
+type ArrowHeadGeometry = { path: string; base: Point };
+
+function edgeVisibleStrokePath(geometry: EdgeGeometry, startArrow: ArrowHeadGeometry | null, endArrow: ArrowHeadGeometry | null): string {
+  const start = startArrow?.base ?? geometry.start;
+  const end = endArrow?.base ?? geometry.end;
+  if (geometry.curved) return `M ${start.x} ${start.y} Q ${geometry.control.x} ${geometry.control.y} ${end.x} ${end.y}`;
+  return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+}
+
+function arrowHeadGeometry(tip: Point, from: Point, strokeWidth: number): ArrowHeadGeometry {
   const direction = unitVector(from, tip);
   const length = clamp(strokeWidth * 3.1, 7.5, 11);
   const halfWidth = clamp(strokeWidth * 1.55, 3.8, 5.8);
@@ -1700,7 +1981,10 @@ function arrowHeadPath(tip: Point, from: Point, strokeWidth: number): string {
     x: base.x - normal.x * halfWidth,
     y: base.y - normal.y * halfWidth
   };
-  return `M ${tip.x} ${tip.y} L ${left.x} ${left.y} L ${right.x} ${right.y} Z`;
+  return {
+    base,
+    path: `M ${tip.x} ${tip.y} L ${left.x} ${left.y} L ${right.x} ${right.y} Z`
+  };
 }
 
 function GraphCanvas(props: {
@@ -1951,12 +2235,12 @@ function GraphCanvas(props: {
                   }}
                 />}
                 {showEdgeLabel && (
-                  <text className="edge-value" x={geometry.control.x} y={geometry.control.y - 15}>
-                    <tspan className="edge-value-context" x={geometry.control.x}>{edgeLabel.context}</tspan>
-                    <tspan className="edge-value-number" x={geometry.control.x} dy="13">{edgeLabel.value}</tspan>
+                  <text className="edge-value" x={geometry.label.x} y={geometry.label.y - 15}>
+                    <tspan className="edge-value-context" x={geometry.label.x}>{edgeLabel.context}</tspan>
+                    <tspan className="edge-value-number" x={geometry.label.x} dy="13">{edgeLabel.value}</tspan>
                   </text>
                 )}
-                <EdgeFunctionGlyph kind={mechanism.kind} x={geometry.control.x} y={geometry.control.y} />
+                {showEdgeLabel && <EdgeFunctionGlyph kind={mechanism.kind} x={geometry.label.x} y={geometry.label.y} />}
               </g>
             );
           })}
@@ -2027,7 +2311,7 @@ function GraphCanvas(props: {
 
 function CanvasCoachmark(props: { tool: ToolMode; edgeSource: string | null; selection: Selection; nodeCount: number }) {
   let title = "Choose a variable";
-  let body = "Click a variable to set exposure, outcome, adjustment, selection, or intervention.";
+  let body = "Click a variable to set exposure, outcome, adjustment, sample filters, or intervention.";
   if (props.nodeCount === 0) {
     title = "Start with a variable";
     body = "Choose Variable, then click an open spot on the graph.";
@@ -2042,7 +2326,7 @@ function CanvasCoachmark(props: { tool: ToolMode; edgeSource: string | null; sel
     body = `Now choose what ${props.edgeSource} points to.`;
   } else if (props.selection?.kind === "node") {
     title = "Edit the causal role";
-    body = "Use the panel on the right for roles, selection, interventions, and adjustment.";
+    body = "Use the panel on the right for roles, sample filters, interventions, and adjustment.";
   } else if (props.selection?.kind === "edge") {
     title = "Edit the arrow";
     body = "Use the panel on the right to include the link or change its strength.";
@@ -2057,9 +2341,9 @@ function CanvasCoachmark(props: { tool: ToolMode; edgeSource: string | null; sel
 
 function EdgeFunctionGlyph({ kind, x, y }: { kind: EdgeMechanismKind; x: number; y: number }) {
   return (
-    <g className="edge-function-glyph" transform={`translate(${x - 14}, ${y + 5})`} aria-hidden="true">
-      <rect className="edge-function-glyph-card" x="0" y="0" width="28" height="18" rx="4" />
-      <g transform="translate(0 -1) scale(0.875 0.9)">
+    <g className="edge-function-glyph" transform={`translate(${x - 11}, ${y + 4})`} aria-hidden="true">
+      <rect className="edge-function-glyph-card" x="0" y="0" width="22" height="14" rx="3" />
+      <g transform="translate(1 0) scale(0.65 0.68)">
         <path className="edge-function-glyph-axis" d="M 3 17 H 29 M 4 18 V 3" />
         <path className="edge-function-glyph-curve" d={functionGlyphPath(kind)} />
       </g>
@@ -2082,7 +2366,7 @@ function GraphLegend({ x, y, width, height }: { x: number; y: number; width: num
       <text className="graph-legend-text" x="42" y="84">adjusted</text>
       <circle className="graph-legend-node" cx="124" cy="80" r="8" />
       <path className="graph-legend-selected-mark" d="M 112 88 L 124 94 L 136 88" />
-      <text className="graph-legend-text" x="142" y="84">selected</text>
+      <text className="graph-legend-text" x="142" y="84">sample</text>
     </g>
   );
 }
@@ -2269,6 +2553,12 @@ function ScatterplotPanel(props: {
 }) {
   const nodes = [...props.graph.nodes].sort((a, b) => a.id.localeCompare(b.id));
   const pair = reconcileScatterPair(props.graph, props.pair);
+  const roleOptions = scatterPairOptions(props.graph);
+  const exposureOptionIds = new Set(roleOptions.exposures);
+  const outcomeOptionIds = new Set(roleOptions.outcomes);
+  const exposureOptions = nodes.filter((node) => exposureOptionIds.has(node.id));
+  const outcomeOptions = nodes.filter((node) => outcomeOptionIds.has(node.id));
+  const hasRolePairOptions = exposureOptions.length > 0 && outcomeOptions.length > 0;
   const xState = props.simulation.nodeStates[pair.x];
   const yState = props.simulation.nodeStates[pair.y];
   const pairSummary = pairDerivedSummary(props.derived, pair.x, pair.y);
@@ -2284,12 +2574,21 @@ function ScatterplotPanel(props: {
   const maxWeight = Math.max(...points.map((point) => point.weight), 1);
   const xNode = props.graph.nodes.find((node) => node.id === pair.x);
   const yNode = props.graph.nodes.find((node) => node.id === pair.y);
-  const xLabel = xNode ? nodeDisplayName(xNode) : pair.x;
-  const yLabel = yNode ? nodeDisplayName(yNode) : pair.y;
+  const xLabel = xNode ? nodeOutputLabel(xNode) : pair.x;
+  const yLabel = yNode ? nodeOutputLabel(yNode) : pair.y;
   const xIsBinary = xNode !== undefined && normalizeVariableModel(xNode.variable).valueType === "binary";
   const yIsBinary = yNode !== undefined && normalizeVariableModel(yNode.variable).valueType === "binary";
   const binaryPair = xIsBinary && yIsBinary;
   const binaryContinuousPair = xIsBinary && !yIsBinary;
+  const relationPreposition = "by";
+  const detailRows = pairwiseDetailRows({
+    summary: pairSummary,
+    xLabel,
+    yLabel,
+    binaryPair,
+    binaryContinuousPair,
+    effectiveSampleSize: props.simulation.conditioning.effectiveSampleSize
+  });
   const toX = (value: number) => margin.left + ((value - xDomain[0]) / (xDomain[1] - xDomain[0] || 1)) * plotWidth;
   const toY = (value: number) => margin.top + plotHeight - ((value - yDomain[0]) / (yDomain[1] - yDomain[0] || 1)) * plotHeight;
   const regression = stats && Number.isFinite(stats.slope) && Number.isFinite(stats.intercept)
@@ -2306,27 +2605,32 @@ function ScatterplotPanel(props: {
 
   return (
     <div className={demoVariant ? "scatterplot-panel demo-scatterplot" : "scatterplot-panel"} aria-busy={resultPendingActive(props.pending)}>
-      {!demoVariant && <div className="scatter-controls">
-        <label className="field">
-          <span>x variable</span>
-          <select
-            aria-label="x variable"
-            value={pair.x}
-            onChange={(event) => props.onPair({ ...pair, x: event.target.value })}
-          >
-            {nodes.map((node) => <option value={node.id} key={node.id}>{nodeDisplayName(node)}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <span>y variable</span>
-          <select
-            aria-label="y variable"
-            value={pair.y}
-            onChange={(event) => props.onPair({ ...pair, y: event.target.value })}
-          >
-            {nodes.map((node) => <option value={node.id} key={node.id}>{nodeDisplayName(node)}</option>)}
-          </select>
-        </label>
+      {!demoVariant && <div className="pairwise-relation-header">
+        {hasRolePairOptions ? (
+          <div className="pairwise-relation-title" aria-label={`${yLabel} ${relationPreposition} ${xLabel}`}>
+            <PairVariableSelect
+              axis="y"
+              nodes={outcomeOptions}
+              value={pair.y}
+              onChange={(y) => props.onPair({ ...pair, y })}
+            />
+            <span>{relationPreposition}</span>
+            <PairVariableSelect
+              axis="x"
+              nodes={exposureOptions}
+              value={pair.x}
+              onChange={(x) => props.onPair({ ...pair, x })}
+            />
+          </div>
+        ) : (
+          <p className="pairwise-role-warning muted">Mark at least one exposure and one outcome to choose this output.</p>
+        )}
+        <details className="pairwise-info">
+          <summary aria-label="Pairwise details" title="Pairwise details">i</summary>
+          <div className="pairwise-info-card">
+            {detailRows.map((row) => <span key={row}>{row}</span>)}
+          </div>
+        </details>
       </div>}
       <ResultsPendingNotice pending={props.pending} label={props.pendingLabel ?? "Updating pairwise output"} />
 
@@ -2336,9 +2640,10 @@ function ScatterplotPanel(props: {
           xLabel={xLabel}
           yLabel={yLabel}
           effectiveSampleSize={props.simulation.conditioning.effectiveSampleSize}
+          showStats={demoVariant}
         />
       ) : binaryContinuousPair ? (
-        <BinaryContinuousPairView summary={pairSummary} xNode={xNode} xLabel={xLabel} yLabel={yLabel} orientation={demoVariant ? "vertical" : "horizontal"} />
+        <BinaryContinuousPairView summary={pairSummary} xLabel={xLabel} yLabel={yLabel} showStats={demoVariant} />
       ) : (
         <>
           <svg
@@ -2382,7 +2687,7 @@ function ScatterplotPanel(props: {
 
           {points.length === 0 ? (
             <p className="muted">No finite paired samples are available for this variable pair.</p>
-          ) : (
+          ) : demoVariant ? (
             <div className="scatter-stats">
               <span>samples {points.length}</span>
               <span>corr {stats?.correlation === null || stats?.correlation === undefined ? "n/a" : formatValue(stats.correlation)}</span>
@@ -2390,28 +2695,85 @@ function ScatterplotPanel(props: {
               <span>y mean {stats ? formatValue(stats.meanY) : "n/a"}</span>
               {props.simulation.conditioning.effectiveSampleSize !== null && <span>ESS {formatValue(props.simulation.conditioning.effectiveSampleSize)}</span>}
             </div>
-          )}
+          ) : null}
         </>
       )}
-
-      {!demoVariant && <div className="button-row">
-        <button type="button" className="mini-button" onClick={() => props.onSelectNode(pair.x)}>edit x</button>
-        <button type="button" className="mini-button" onClick={() => props.onSelectNode(pair.y)}>edit y</button>
-      </div>}
     </div>
   );
 }
 
-function BinaryContinuousPairView(props: {
+function PairVariableSelect(props: {
+  axis: "x" | "y";
+  nodes: GraphNode[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <label className="pair-variable-select">
+      <span className="screen-reader-only">{props.axis} variable</span>
+      <select
+        aria-label={`${props.axis} variable`}
+        value={props.value}
+        onChange={(event) => props.onChange(event.target.value)}
+      >
+        {props.nodes.map((node) => <option value={node.id} key={node.id}>{nodeOutputLabel(node)}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function pairwiseDetailRows(props: {
   summary: PairDerivedSummary;
-  xNode?: GraphNode;
   xLabel: string;
   yLabel: string;
-  orientation?: "horizontal" | "vertical";
-}) {
-  if (props.orientation === "vertical") {
-    return <BinaryContinuousVerticalPairView summary={props.summary} xNode={props.xNode} xLabel={props.xLabel} yLabel={props.yLabel} />;
+  binaryPair: boolean;
+  binaryContinuousPair: boolean;
+  effectiveSampleSize: number | null;
+}): string[] {
+  const rows: string[] = [`samples ${props.summary.points.length}`];
+  if (props.binaryPair) {
+    const cells = props.summary.binaryCells;
+    const totalWeight = cells.reduce((sum, cell) => sum + cell.weight, 0);
+    const cell = (x: 0 | 1, y: 0 | 1) => cells.find((candidate) => candidate.x === x && candidate.y === y) ?? { x, y, weight: 0, count: 0, percent: 0, columnPercent: 0 };
+    const yPositive = cell(1, 1).weight + cell(0, 1).weight;
+    const xPositive = cell(1, 1).weight + cell(1, 0).weight;
+    const contrast = props.summary.binaryContrast;
+    rows.push(`${binaryShortLabel(props.yLabel)} at ${binaryAxisValueLabel(props.xLabel, 0)} ${contrast.yAtX0 === null ? "n/a" : formatPercent(contrast.yAtX0)}`);
+    rows.push(`${binaryShortLabel(props.yLabel)} at ${binaryAxisValueLabel(props.xLabel, 1)} ${contrast.yAtX1 === null ? "n/a" : formatPercent(contrast.yAtX1)}`);
+    rows.push(`risk diff ${contrast.diff === null ? "n/a" : formatPercentagePoints(contrast.diff)}`);
+    if (totalWeight > 0) {
+      rows.push(`${binaryAxisValueLabel(props.xLabel, 1)} share ${formatPercent(xPositive / totalWeight)}`);
+      rows.push(`${binaryAxisValueLabel(props.yLabel, 1)} share ${formatPercent(yPositive / totalWeight)}`);
+    }
+  } else if (props.binaryContinuousPair) {
+    const groups = props.summary.binaryContinuousGroups;
+    const groupZero = groups[0];
+    const groupOne = groups[1];
+    const gap = groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined
+      ? groupOne.mean - groupZero.mean
+      : null;
+    rows.push(`${binaryAxisValueLabel(props.xLabel, 1)} share ${groupOne ? formatPercent(groupOne.share) : "n/a"}`);
+    rows.push(`${binaryAxisValueLabel(props.xLabel, 0)} mean ${groupZero?.mean === null || groupZero?.mean === undefined ? "n/a" : formatValue(groupZero.mean)}`);
+    rows.push(`${binaryAxisValueLabel(props.xLabel, 1)} mean ${groupOne?.mean === null || groupOne?.mean === undefined ? "n/a" : formatValue(groupOne.mean)}`);
+    rows.push(`${binaryAxisValueLabel(props.xLabel, 0)} n ${groupZero ? formatWeightedCount(groupZero.weight) : "0"}`);
+    rows.push(`${binaryAxisValueLabel(props.xLabel, 1)} n ${groupOne ? formatWeightedCount(groupOne.weight) : "0"}`);
+    rows.push(`difference 1-0 ${gap === null ? "n/a" : formatSignedValue(gap)}`);
+  } else {
+    const stats = props.summary.stats;
+    rows.push(`corr ${stats?.correlation === null || stats?.correlation === undefined ? "n/a" : formatValue(stats.correlation)}`);
+    rows.push(`${props.xLabel} mean ${stats ? formatValue(stats.meanX) : "n/a"}`);
+    rows.push(`${props.yLabel} mean ${stats ? formatValue(stats.meanY) : "n/a"}`);
   }
+  if (props.effectiveSampleSize !== null) rows.push(`ESS ${formatValue(props.effectiveSampleSize)}`);
+  return rows;
+}
+
+function BinaryContinuousPairView(props: {
+  summary: PairDerivedSummary;
+  xLabel: string;
+  yLabel: string;
+  showStats?: boolean;
+}) {
   const points = props.summary.points;
   const groups = props.summary.binaryContinuousGroups;
   const groupZero = groups[0];
@@ -2475,92 +2837,17 @@ function BinaryContinuousPairView(props: {
         {groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined && (
           <line className="continuous-strata-gap-line" x1={valueToX(groupZero.mean)} x2={valueToX(groupOne.mean)} y1={groupZeroY} y2={groupOneY} />
         )}
-        <text className="continuous-strata-gap-text" x={width - 4} y={y + 4}>{gap === null ? "n/a" : formatSignedValue(gap)}</text>
       </svg>
 
-      <div className="scatter-stats binary-continuous-stats">
+      {props.showStats !== false && <div className="scatter-stats binary-continuous-stats">
         <span>samples {points.length}</span>
         <span>x=1 share {groupOne ? formatPercent(groupOne.share) : "n/a"}</span>
         <span>x=0 mean {groupZero?.mean === null || groupZero?.mean === undefined ? "n/a" : formatValue(groupZero.mean)}</span>
         <span>x=1 mean {groupOne?.mean === null || groupOne?.mean === undefined ? "n/a" : formatValue(groupOne.mean)}</span>
         <span>x=0 n {groupZero ? formatWeightedCount(groupZero.weight) : "0"}</span>
         <span>x=1 n {groupOne ? formatWeightedCount(groupOne.weight) : "0"}</span>
-        <span>gap 1-0 {gap === null ? "n/a" : formatSignedValue(gap)}</span>
-      </div>
-    </div>
-  );
-}
-
-function BinaryContinuousVerticalPairView(props: { summary: PairDerivedSummary; xNode?: GraphNode; xLabel: string; yLabel: string }) {
-  const points = props.summary.points;
-  const groups = props.summary.binaryContinuousGroups;
-  const groupZero = groups[0];
-  const groupOne = groups[1];
-  const totalWeight = groups.reduce((sum, group) => sum + group.weight, 0);
-  const gap = groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined
-    ? groupOne.mean - groupZero.mean
-    : null;
-  const [minScore, maxScore] = props.summary.ySampleDomain;
-  const yScale = (score: number) => 150 - ((score - minScore) / Math.max(maxScore - minScore, 1e-9)) * 106;
-  const groupColumns = [
-    { value: 0 as const, x: 122, label: binaryDisplayValueLabel(props.xNode, props.xLabel, 0), points: binaryContinuousPointsForGroup(points, 0), mean: groupZero?.mean ?? null },
-    { value: 1 as const, x: 218, label: binaryDisplayValueLabel(props.xNode, props.xLabel, 1), points: binaryContinuousPointsForGroup(points, 1), mean: groupOne?.mean ?? null }
-  ];
-
-  if (points.length === 0 || totalWeight <= 0) {
-    return <p className="muted">No finite paired samples are available for this variable pair.</p>;
-  }
-
-  return (
-    <div className="binary-continuous-pair-view">
-      <svg
-        className="adjusted-pair-graph binary-continuous-vertical-svg"
-        viewBox="0 0 340 184"
-        role="img"
-        aria-label={`Vertical comparison plot of ${props.yLabel} by ${props.xLabel}`}
-      >
-        <line className="adjusted-pair-axis" x1="36" y1="44" x2="36" y2="150" />
-        <text className="adjusted-pair-axis-label" x="32" y="48">{formatValue(maxScore)}</text>
-        <text className="adjusted-pair-axis-label" x="32" y="154">{formatValue(minScore)}</text>
-        {gap !== null && (
-          <g className={gap >= 0 ? "adjusted-pair-row positive" : "adjusted-pair-row negative"}>
-            <text className="adjusted-pair-label" x="170" y="22">raw gap</text>
-            <text className="adjusted-pair-gap" x="170" y="36">{formatSignedValue(gap)}</text>
-          </g>
-        )}
-        {groupColumns.map((group) => (
-          <g className="adjusted-strip-column" key={group.value}>
-            <line className="adjusted-strip-guide" x1={group.x} y1="44" x2={group.x} y2="150" />
-            {group.points.map((point) => (
-              <circle
-                className={group.value === 1 ? "adjusted-strip-point treated" : "adjusted-strip-point untreated"}
-                cx={group.x + deterministicStrataJitter(point.index, group.value, 0) * 12}
-                cy={yScale(point.y)}
-                r="2.2"
-                key={`${group.value}-${point.index}`}
-              />
-            ))}
-            {group.mean !== null && <circle className={group.value === 1 ? "adjusted-pair-mean treated" : "adjusted-pair-mean untreated"} cx={group.x} cy={yScale(group.mean)} r="5.5" />}
-            {group.mean !== null && <text className="adjusted-pair-value" x={group.x} y={yScale(group.mean) - 8}>{formatValue(group.mean)}</text>}
-            <text className="adjusted-strip-treatment-label" x={group.x} y="168">{group.label}</text>
-          </g>
-        ))}
-        {groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined && (
-          <g className={gap !== null && gap >= 0 ? "adjusted-pair-row positive" : "adjusted-pair-row negative"}>
-            <line className="adjusted-pair-line" x1={groupColumns[0]!.x} y1={yScale(groupZero.mean)} x2={groupColumns[1]!.x} y2={yScale(groupOne.mean)} />
-          </g>
-        )}
-      </svg>
-
-      <div className="scatter-stats binary-continuous-stats">
-        <span>samples {points.length}</span>
-        <span>x=1 share {groupOne ? formatPercent(groupOne.share) : "n/a"}</span>
-        <span>x=0 mean {groupZero?.mean === null || groupZero?.mean === undefined ? "n/a" : formatValue(groupZero.mean)}</span>
-        <span>x=1 mean {groupOne?.mean === null || groupOne?.mean === undefined ? "n/a" : formatValue(groupOne.mean)}</span>
-        <span>x=0 n {groupZero ? formatWeightedCount(groupZero.weight) : "0"}</span>
-        <span>x=1 n {groupOne ? formatWeightedCount(groupOne.weight) : "0"}</span>
-        <span>gap 1-0 {gap === null ? "n/a" : formatSignedValue(gap)}</span>
-      </div>
+        <span>difference 1-0 {gap === null ? "n/a" : formatSignedValue(gap)}</span>
+      </div>}
     </div>
   );
 }
@@ -2577,6 +2864,7 @@ function BinaryPairView(props: {
   xLabel: string;
   yLabel: string;
   effectiveSampleSize: number | null;
+  showStats?: boolean;
 }) {
   const points = props.summary?.points ?? props.points ?? [];
   const cells = props.summary?.binaryCells ?? props.cells ?? binaryCells(points);
@@ -2588,7 +2876,6 @@ function BinaryPairView(props: {
   const yPositiveLabel = binaryAxisValueLabel(props.yLabel, 1);
   const xZeroLabel = binaryAxisValueLabel(props.xLabel, 0);
   const xOneLabel = binaryAxisValueLabel(props.xLabel, 1);
-  const diffTone = metricTone(contrast.diff);
   const xZeroRate = contrast.yAtX0 === null ? "n/a" : formatPercent(contrast.yAtX0);
   const xOneRate = contrast.yAtX1 === null ? "n/a" : formatPercent(contrast.yAtX1);
   const rateBars = [
@@ -2603,10 +2890,10 @@ function BinaryPairView(props: {
   return (
     <div className="binary-pair-view">
       <div className="binary-rate-comparison">
-        <BinaryRateBars bars={rateBars} gap={contrast.diff} yLabel={yPositiveLabel} tone={diffTone} />
+        <BinaryRateBars bars={rateBars} yLabel={yPositiveLabel} />
       </div>
 
-      <div className="scatter-stats">
+      {props.showStats !== false && <div className="scatter-stats">
         <span>samples {points.length}</span>
         <span>{binaryShortLabel(props.yLabel)} at {xZeroLabel} {xZeroRate}</span>
         <span>{binaryShortLabel(props.yLabel)} at {xOneLabel} {xOneRate}</span>
@@ -2614,7 +2901,7 @@ function BinaryPairView(props: {
         <span>{xOneLabel} share {formatPercent(xPositive / totalWeight)}</span>
         <span>{yPositiveLabel} share {formatPercent(yPositive / totalWeight)}</span>
         {props.effectiveSampleSize !== null && <span>ESS {formatValue(props.effectiveSampleSize)}</span>}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -2629,7 +2916,7 @@ type BinaryRateBar = {
   nEff: number | null;
 };
 
-function BinaryRateBars(props: { bars: BinaryRateBar[]; gap: number | null; yLabel: string; tone: "positive" | "negative" | "neutral" }) {
+function BinaryRateBars(props: { bars: BinaryRateBar[]; yLabel: string }) {
   const width = 320;
   const height = 124;
   const plot = { left: 38, right: 18, top: 28, bottom: 30 };
@@ -2644,7 +2931,6 @@ function BinaryRateBars(props: { bars: BinaryRateBar[]; gap: number | null; yLab
       <line className="binary-rate-axis" x1={plot.left} x2={plot.left} y1={plot.top} y2={baseline} />
       <text className="binary-rate-axis-label" x={plot.left - 6} y={plot.top + 4}>100%</text>
       <text className="binary-rate-axis-label" x={plot.left - 6} y={baseline + 4}>0%</text>
-      <text className={`binary-rate-gap-label ${props.tone}`} x={width / 2} y="15">Gap {props.gap === null ? "n/a" : formatPercentagePoints(props.gap)}</text>
       <text className="binary-rate-ci-label" x={width - plot.right} y="15">95% CI</text>
       {props.bars.map((bar, index) => {
         const x = xPositions[index] ?? 104;
@@ -2709,17 +2995,49 @@ function ScenarioPanel(props: {
   onClearSelections: () => void;
 }) {
   const blocked = simulationBlocked(props.simulation);
-  const overrides = Object.keys(props.document.simulation.overrides);
+  const overrides = Object.entries(props.document.simulation.overrides);
   const selections = Object.keys(props.document.simulation.selections ?? {});
+  const activeSampleConditions = props.simulation.conditioning.activeConditions;
+  const hasActiveScenario = overrides.length > 0 || activeSampleConditions.length > 0;
   return (
     <div className="simulation-panel">
-      <div className="simulation-status" aria-busy={props.pending}>
-        <span className={blocked ? "status-dot blocked" : "status-dot active"} />
-        <span>{blocked ? "blocked" : "live propagation"}</span>
-        <PendingChip pending={props.pending} />
+      <div className="scenario-current-state" aria-label="Current analysis scenario">
+        {hasActiveScenario ? (
+          <>
+            {overrides.length > 0 && (
+              <div className="scenario-state-card">
+                <strong>Fixed values</strong>
+                <div className="scenario-state-list">
+                  {overrides.map(([id, value]) => {
+                    const node = findNode(props.document.graph, id);
+                    return <span className="scenario-pill" key={id}>do({node ? shortNodeLabel(node) : id}={formatValue(value)})</span>;
+                  })}
+                </div>
+              </div>
+            )}
+            {activeSampleConditions.length > 0 && (
+              <div className="scenario-state-card">
+                <strong>Analysis sample</strong>
+                <div className="scenario-state-list">
+                  {activeSampleConditions.map((condition) => <span className="scenario-pill" key={condition}>{condition}</span>)}
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="scenario-empty-state">
+            <strong>Baseline analysis</strong>
+            <span>No fixed values or sample filters are active.</span>
+          </div>
+        )}
       </div>
-      <div className="button-row">
-        <button type="button" onClick={props.onResample}><RefreshCw size={15} /> resample</button>
+      <div className="scenario-utility-row">
+        <div className="simulation-status" aria-busy={props.pending}>
+          <span className={blocked ? "status-dot blocked" : "status-dot active"} />
+          <span>{blocked ? "simulation blocked" : "live propagation"}</span>
+          <PendingChip pending={props.pending} />
+        </div>
+        <button type="button" onClick={props.onResample}><RefreshCw size={15} /> resample draws</button>
         {overrides.length > 0 && <button type="button" onClick={props.onClearOverrides}>clear fixed values</button>}
         {selections.length > 0 && <button type="button" onClick={props.onClearSelections}>clear conditions</button>}
       </div>
@@ -2995,7 +3313,7 @@ function ledgerRowsFromPunchline(
     rawLedgerRow(context, punchline.observed, "Observed sample"),
     {
       id: "module-comparison",
-      label: punchline.comparison.label.toLowerCase().includes("do") ? "DGP do contrast" : "Comparison",
+      label: punchline.comparison.label.toLowerCase().includes("do") ? "DGP do difference" : "Comparison",
       sample: punchline.comparison.label.toLowerCase().includes("do") ? "intervention world" : "reference state",
       adjustment: punchline.comparison.label.toLowerCase().includes("do") ? "DGP intervention" : "module comparison",
       method: punchline.comparison.label.toLowerCase().includes("do") ? "do simulation" : "example-specific estimator",
@@ -3045,7 +3363,7 @@ function dgpLedgerRowFromCompletedOutput(
   if (!punchline) return null;
   return {
     id: "dgp-do",
-    label: "DGP do contrast",
+    label: "DGP do difference",
     sample: "intervention world",
     adjustment: "DGP intervention",
     method: "do simulation",
@@ -3055,21 +3373,21 @@ function dgpLedgerRowFromCompletedOutput(
 }
 
 function rawAdjustmentLabel(context: OutputContext & { moduleId: string | null }): string {
-  if (context.moduleId === "simpson-severity") return nodeAdjusted(context.document.graph, "Severity") ? "Severity adjusted" : "Severity unadjusted";
-  if (context.moduleId === "tutoring-scores") return nodeAdjusted(context.document.graph, "Academic_need") ? "Academic_need adjusted" : "Academic_need unadjusted";
+  if (context.moduleId === "simpson-severity") return nodeAdjusted(context.document.graph, "Severity") ? "Adjusted for Severity" : "Raw relation";
+  if (context.moduleId === "tutoring-scores") return nodeAdjusted(context.document.graph, "Academic_need") ? "Adjusted for Academic_need" : "Raw relation";
   const adjustedNames = context.document.graph.nodes.filter((node) => node.roles.adjusted).map(shortNodeLabel);
-  return adjustedNames.length > 0 ? `Adjusted for ${adjustedNames.join(", ")}` : "Unadjusted";
+  return adjustedNames.length > 0 ? `Adjusted for ${adjustedNames.join(", ")}` : "Raw relation";
 }
 
 function selectedAdjustmentLabel(context: OutputContext & { moduleId: string | null }): string {
   const selectedIds = Object.keys(context.document.simulation.selections ?? {});
-  if (context.moduleId === "tutoring-scores" && selectedIds.includes("Academic_need")) return "Academic_need fixed by selection";
-  if (context.moduleId === "simpson-severity" && selectedIds.includes("Severity")) return "Severity fixed by selection";
+  if (context.moduleId === "tutoring-scores" && selectedIds.includes("Academic_need")) return "Academic_need fixed by sample filter";
+  if (context.moduleId === "simpson-severity" && selectedIds.includes("Severity")) return "Severity fixed by sample filter";
   const selectedNames = selectedIds.map((id) => {
     const node = findNode(context.document.graph, id);
     return node ? shortNodeLabel(node) : id;
   });
-  return selectedNames.length > 0 ? `Conditioned on ${selectedNames.join(", ")}` : "Selection filter";
+  return selectedNames.length > 0 ? `Conditioned on ${selectedNames.join(", ")}` : "Sample filter";
 }
 
 function nodeAdjusted(graph: GraphModel, id: string): boolean {
@@ -3100,7 +3418,7 @@ function binnedOrStratifiedAdjustmentMetric(
     : output.binaryAdjustedNodes.map(shortNodeLabel).join(", ");
   return {
     metric: {
-      label: binned ? "Fixed: binned adjustment" : "Fixed: stratified adjustment",
+      label: binned ? "Binned adjusted difference" : "Stratified adjusted difference",
       value: formatPercentagePoints(diff),
       detail: `${yLabel} contrast averaged across ${adjustmentDetail}`,
       numericValue: diff
@@ -3165,7 +3483,7 @@ function computeAdjustmentRelationSummary(
     const adjusted = ipw && ipw.weightedDiff !== null
       ? {
           metric: {
-            label: ipw.clippedCount > 0 ? "Partly fixed: clipped IPW" : "Fixed: stabilized IPW",
+            label: ipw.clippedCount > 0 ? "Clipped IPW difference" : "Stabilized IPW difference",
             value: formatPercentagePoints(ipw.weightedDiff),
             detail: `weighted ${yLabel} ${ipw.weightedTreated === null ? "n/a" : formatPercent(ipw.weightedTreated)} vs ${ipw.weightedUntreated === null ? "n/a" : formatPercent(ipw.weightedUntreated)}`,
             numericValue: ipw.weightedDiff,
@@ -3206,7 +3524,7 @@ function computeAdjustmentRelationSummary(
       ],
       note: options.hideOracle
         ? "Severity is now marked adjust for. The displayed association changes from the raw treatment comparison to the stabilized-IPW adjusted comparison."
-        : "Severity is now marked adjust for. The displayed association changes from the raw treatment comparison to a model-based adjusted comparison; open Results for the DGP do contrast and diagnostics."
+        : "Severity is now marked adjust for. The displayed association changes from the raw treatment comparison to a model-based adjusted comparison; open Results for the DGP do difference and diagnostics."
     };
   }
 
@@ -3216,7 +3534,7 @@ function computeAdjustmentRelationSummary(
     const pair = defaultScatterPair(context.document.graph);
     const rawInterval = weightedMeanDifferenceInterval(pairDerivedSummary(derived, pair.x, pair.y).points);
     const rawMetric: BasicOutputPunchlineMetric = {
-      label: "Observed score gap",
+      label: "Observed score difference",
       value: formatSignedValue(output.crudeGap),
       detail: `tutored ${formatValue(output.crudeTutoredScore)} vs untutored ${formatValue(output.crudeUntutoredScore)}`,
       numericValue: output.crudeGap,
@@ -3224,7 +3542,7 @@ function computeAdjustmentRelationSummary(
       upper: rawInterval?.upper
     };
     const adjustedMetric: BasicOutputPunchlineMetric = {
-      label: "Fixed: adjusted gap",
+      label: "Stratified adjusted difference",
       value: formatSignedValue(output.adjustedPairGap),
       detail: "weighted within Academic_need strata",
       numericValue: output.adjustedPairGap
@@ -3247,7 +3565,7 @@ function computeAdjustmentRelationSummary(
         },
         ...(dgpRow ? [dgpRow] : [])
       ],
-      note: "Academic_need is now marked adjust for. The fixed association compares tutored and untutored students within comparable need groups instead of mixing the groups together."
+      note: "Academic_need is now marked adjust for. The adjusted estimate compares tutored and untutored students within comparable need groups instead of mixing the groups together."
     };
   }
 
@@ -3341,7 +3659,7 @@ function computeSelectionRelationSummary(
       selectedLedgerRow(context, selectedMetric),
       ...(dgpRow ? [dgpRow] : [])
     ],
-    note: `Selection changed the rows in the analysis sample: ${context.simulation.conditioning.activeConditions.join(", ")}. The DAG is unchanged; the displayed association is now conditional on that filter.`
+    note: `The sample filter changed the rows in the analysis sample: ${context.simulation.conditioning.activeConditions.join(", ")}. The DAG is unchanged; the displayed association is now conditional on that filter.`
   };
 }
 
@@ -3401,7 +3719,7 @@ function computeObservedRelationSummary(graph: GraphModel, simulation: Simulatio
         upper: interval?.upper
       },
       comparison: null,
-      note: `This is the raw exposure/outcome relation in the ${sampleLabel}. Add adjustment, selection, or an intervention to see whether the causal read changes.`
+      note: `This is the raw exposure/outcome relation in the ${sampleLabel}. Add adjustment, a sample filter, or an intervention to see whether the causal read changes.`
     };
   }
   if (xIsBinary && !yIsBinary) {
@@ -3416,7 +3734,7 @@ function computeObservedRelationSummary(graph: GraphModel, simulation: Simulatio
     return {
       relationLabel: `${xLabel} -> ${yLabel}`,
       observed: {
-        label: "Observed mean gap",
+        label: "Observed mean difference",
         value: formatSignedValue(gap),
         detail: `${xLabel}=1 mean ${formatValue(groupOneMean)} vs ${xLabel}=0 mean ${formatValue(groupZeroMean)}`,
         numericValue: gap,
@@ -3438,7 +3756,7 @@ function computeObservedRelationSummary(graph: GraphModel, simulation: Simulatio
       numericValue: stats.correlation
     },
     comparison: null,
-    note: `This is the raw relation in the ${sampleLabel}. It is a descriptive correlation until the graph says what adjustment, selection, or intervention means.`
+    note: `This is the raw relation in the ${sampleLabel}. It is a descriptive correlation until the graph says what adjustment, sample filtering, or intervention means.`
   };
 }
 
@@ -3577,9 +3895,9 @@ function AdjustedOutputPanel(props: {
     return (
       <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
         {pendingNotice}
-        <CompletedOutputPanel moduleId={props.moduleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
         {binaryOutput && shouldRenderBinaryAdjustmentOutput(binaryOutput) && <BinaryAdjustmentOutputCard output={binaryOutput} />}
         {continuousOutput && shouldRenderBinaryContinuousAdjustmentOutput(continuousOutput) && <BinaryContinuousAdjustmentOutputCard output={continuousOutput} />}
+        <CompletedOutputPanel moduleId={props.moduleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
       </div>
     );
   }
@@ -3643,27 +3961,25 @@ function shouldShowAdjustedOutputColumn(document: GraphDocument, simulation: Sim
 }
 
 function BinaryAdjustmentOutputCard({ output }: { output: BinaryAdjustmentOutput }) {
-  const xLabel = nodeDisplayName(output.exposure);
-  const yLabel = nodeDisplayName(output.outcome);
+  const xLabel = nodeOutputLabel(output.exposure);
+  const yLabel = nodeOutputLabel(output.outcome);
   const rawContrast = output.rawContrast;
-  const rawDirection = rawContrast.diff === null
-    ? null
-    : rawContrast.diff < 0
-      ? "harm"
-      : rawContrast.diff > 0
-        ? "benefit"
-        : "flat";
+  const methodBadge = output.stabilizedIpw
+    ? "Stabilized IPW"
+    : output.strata.length > 0
+      ? `${output.strata.length} strata`
+      : "Raw comparison";
   return (
     <div className="binary-adjustment-output">
       <div className="module-card-header">
-        <strong>Binary adjusted output</strong>
-        <span className="module-badge active">{output.strata.length > 0 ? `${output.strata.length} strata` : "summary"}</span>
+        <strong>Adjusted estimate</strong>
+        <span className="module-badge active">{methodBadge}</span>
       </div>
       {rawContrast.diff !== null && !output.stabilizedIpw && (
-        <div className={`raw-effect-callout ${rawDirection}`}>
-          <strong>{rawDirection === "harm" ? "Unadjusted harms" : rawDirection === "benefit" ? "Unadjusted helps" : "Unadjusted is flat"}</strong>
+        <div className="raw-effect-callout">
+          <strong>Raw comparison</strong>
           <span>
-            {binaryShortLabel(yLabel)} at {binaryAxisValueLabel(xLabel, 1)} is {rawContrast.yAtX1 === null ? "n/a" : formatPercent(rawContrast.yAtX1)} versus {rawContrast.yAtX0 === null ? "n/a" : formatPercent(rawContrast.yAtX0)} at {binaryAxisValueLabel(xLabel, 0)} ({formatPercentagePoints(rawContrast.diff)}).
+            {binaryShortLabel(yLabel)} difference by {binaryShortLabel(xLabel)} is {formatPercentagePoints(rawContrast.diff)}; {binaryAxisValueLabel(xLabel, 1)} is {rawContrast.yAtX1 === null ? "n/a" : formatPercent(rawContrast.yAtX1)} versus {rawContrast.yAtX0 === null ? "n/a" : formatPercent(rawContrast.yAtX0)} at {binaryAxisValueLabel(xLabel, 0)}.
           </span>
         </div>
       )}
@@ -3685,7 +4001,7 @@ function BinaryAdjustmentOutputCard({ output }: { output: BinaryAdjustmentOutput
         </div>
       ) : !output.stabilizedIpw ? (
         <div className="binary-adjustment-empty">
-          <strong>No binary adjusted strata yet</strong>
+          <strong>No adjusted strata yet</strong>
           <p>Mark a binary pre-treatment variable as adjusted, or add bins to a continuous adjusted variable, to reveal one matrix per stratum.</p>
         </div>
       ) : null}
@@ -3713,24 +4029,24 @@ function BinaryAdjustmentOutputCard({ output }: { output: BinaryAdjustmentOutput
 }
 
 function BinaryContinuousAdjustmentOutputCard({ output }: { output: BinaryContinuousAdjustmentOutput }) {
-  const xLabel = nodeDisplayName(output.exposure);
-  const yLabel = nodeDisplayName(output.outcome);
+  const xLabel = nodeOutputLabel(output.exposure);
+  const yLabel = nodeOutputLabel(output.outcome);
   const groupZero = output.rawGroups[0];
   const groupOne = output.rawGroups[1];
   const adjustedLabel = output.stabilizedIpw
-    ? "IPW mean gap"
+    ? "Stabilized IPW mean difference"
     : output.adjustedNodes.length > 0
-      ? "Stratified mean gap"
-      : "No adjustment";
+      ? "Stratified mean difference"
+      : "No adjusted estimate";
   return (
     <div className="continuous-adjustment-output">
       <div className="module-card-header">
-        <strong>Adjusted pair output</strong>
+        <strong>Adjusted estimate</strong>
         <span className="module-badge active">{output.adjustedNodes.length} adjusted</span>
       </div>
       <div className="continuous-adjustment-summary">
         <div>
-          <span>Raw mean gap</span>
+          <span>Raw mean difference</span>
           <strong>{output.rawGap === null ? "n/a" : formatSignedValue(output.rawGap)}</strong>
           <small>{binaryAxisValueLabel(xLabel, 1)} vs {binaryAxisValueLabel(xLabel, 0)}</small>
         </div>
@@ -3755,7 +4071,7 @@ function BinaryContinuousAdjustmentOutputCard({ output }: { output: BinaryContin
       ) : !output.stabilizedIpw ? (
         <div className="binary-adjustment-empty">
           <strong>No adjustment yet</strong>
-          <p>Mark a pre-treatment variable as adjusted to compare the raw mean gap with an adjusted display.</p>
+          <p>Mark a pre-treatment variable as adjusted to compare the raw mean difference with an adjusted estimate.</p>
         </div>
       ) : null}
       {output.binnedAdjustedNodes.some((item) => item.automatic) && (
@@ -3789,8 +4105,7 @@ function BinaryContinuousAdjustmentOutputCard({ output }: { output: BinaryContin
   );
 }
 
-function ContinuousStabilizedIpwCard({ output, outcome }: { output: StabilizedIpwOutput; outcome: GraphNode }) {
-  const yLabel = nodeDisplayName(outcome);
+function ContinuousStabilizedIpwCard({ output }: { output: StabilizedIpwOutput; outcome: GraphNode }) {
   return (
     <div className="continuous-ipw-card">
       <div className="module-card-header">
@@ -3798,8 +4113,8 @@ function ContinuousStabilizedIpwCard({ output, outcome }: { output: StabilizedIp
         <span className="module-badge active">logistic propensity</span>
       </div>
       <div className="continuous-adjustment-raw">
-        <span>raw {yLabel}: {output.rawDiff === null ? "n/a" : formatSignedValue(output.rawDiff)}</span>
-        <span>weighted {yLabel}: {output.weightedDiff === null ? "n/a" : formatSignedValue(output.weightedDiff)}</span>
+        <span>raw mean difference: {output.rawDiff === null ? "n/a" : formatSignedValue(output.rawDiff)}</span>
+        <span>weighted mean difference: {output.weightedDiff === null ? "n/a" : formatSignedValue(output.weightedDiff)}</span>
       </div>
       {output.balances[0] && <IpwBalanceVisual balance={output.balances[0]} />}
       <div className="ipw-diagnostics">
@@ -3902,11 +4217,9 @@ function deterministicStrataJitter(index: number, groupValue: 0 | 1, rowIndex: n
 }
 
 function StabilizedIpwCard({ output }: { output: StabilizedIpwOutput }) {
-  const xLabel = nodeDisplayName(output.exposure);
-  const yLabel = output.outcome ? nodeDisplayName(output.outcome) : "outcome";
+  const xLabel = nodeOutputLabel(output.exposure);
+  const yLabel = output.outcome ? nodeOutputLabel(output.outcome) : "outcome";
   const adjusted = output.adjustedNodes.map((node) => nodeDisplayName(node)).join(", ");
-  const rawHarm = output.rawDiff !== null && output.rawDiff < 0;
-  const weightedHarm = output.weightedDiff !== null && output.weightedDiff < 0;
   // TODO(simpson-ipw-math): In the calibrated Simpson DGP the true marginal do
   // contrast is about +7.3 pp. With the current 0.03..0.97 clipping, stabilized
   // IPW intentionally reports a clipped/overlap-weighted diagnostic estimate, so
@@ -3918,27 +4231,27 @@ function StabilizedIpwCard({ output }: { output: StabilizedIpwOutput }) {
         <span className="module-badge active">{output.adjustedNodes.length} covariate{output.adjustedNodes.length === 1 ? "" : "s"}</span>
       </div>
       <div className="ipw-before-fixed">
-        <div className={rawHarm ? "ipw-contrast-row harm" : "ipw-contrast-row"}>
-          <span>Before: unadjusted</span>
+        <div className="ipw-contrast-row">
+          <span>Raw comparison</span>
           <strong>{output.rawDiff === null ? "n/a" : formatPercentagePoints(output.rawDiff)}</strong>
           <small>
             {binaryShortLabel(yLabel)} at {binaryAxisValueLabel(xLabel, 1)} {output.rawTreated === null ? "n/a" : formatPercent(output.rawTreated)} vs {output.rawUntreated === null ? "n/a" : formatPercent(output.rawUntreated)}
           </small>
-          <em>{rawHarm ? "looks harmful" : "raw association"}</em>
+          <em>Observed rates</em>
         </div>
-        <div className={weightedHarm ? "ipw-contrast-row harm" : "ipw-contrast-row fixed"}>
-          <span>{output.clippedCount > 0 ? "Partly fixed: clipped IPW" : "Fixed: stabilized IPW"}</span>
+        <div className="ipw-contrast-row fixed">
+          <span>{output.clippedCount > 0 ? "Adjusted comparison: clipped IPW" : "Adjusted comparison: stabilized IPW"}</span>
           <strong>{output.weightedDiff === null ? "n/a" : formatPercentagePoints(output.weightedDiff)}</strong>
           <small>
             {binaryShortLabel(yLabel)} at {binaryAxisValueLabel(xLabel, 1)} {output.weightedTreated === null ? "n/a" : formatPercent(output.weightedTreated)} vs {output.weightedUntreated === null ? "n/a" : formatPercent(output.weightedUntreated)}
           </small>
-          <em>{weightedHarm ? "still harmful after weighting" : output.clippedCount > 0 ? "clipped overlap estimate" : "no longer raw harm"}</em>
+          <em>{output.clippedCount > 0 ? "Clipped overlap estimate" : "Stabilized IPW estimate"}</em>
         </div>
       </div>
       {output.balances[0] && <IpwBalanceVisual balance={output.balances[0]} />}
       {output.weightedPoints.length > 0 && (
         <BinaryOutputMatrixCard
-          title="Weighted pairwise output"
+          title="Weighted relation"
           subtitle={`stabilized IPW; ESS ${output.effectiveSampleSize === null ? "n/a" : formatValue(output.effectiveSampleSize)}`}
           points={output.weightedPoints}
           cells={output.weightedCells}
@@ -3947,14 +4260,17 @@ function StabilizedIpwCard({ output }: { output: StabilizedIpwOutput }) {
           yLabel={yLabel}
         />
       )}
-      <p className="binary-output-summary">
-        Logistic propensity for {nodeDisplayName(output.exposure)} from {adjusted}. Weights are stabilized by the marginal treatment rate ({formatPercent(output.treatedShare)}) and propensities clipped to 0.03-0.97.
-      </p>
-      <div className="ipw-diagnostics">
-        <span>ESS {output.effectiveSampleSize === null ? "n/a" : formatValue(output.effectiveSampleSize)}</span>
-        <span>max weight {output.maxWeight === null ? "n/a" : formatValue(output.maxWeight)}</span>
-        <span>clipped {output.clippedCount}</span>
-      </div>
+      <details className="output-details">
+        <summary>Diagnostics</summary>
+        <p className="binary-output-summary">
+          Logistic propensity for {nodeDisplayName(output.exposure)} from {adjusted}. Weights are stabilized by the marginal treatment rate ({formatPercent(output.treatedShare)}) and propensities clipped to 0.03-0.97.
+        </p>
+        <div className="ipw-diagnostics">
+          <span>ESS {output.effectiveSampleSize === null ? "n/a" : formatValue(output.effectiveSampleSize)}</span>
+          <span>max weight {output.maxWeight === null ? "n/a" : formatValue(output.maxWeight)}</span>
+          <span>clipped {output.clippedCount}</span>
+        </div>
+      </details>
     </div>
   );
 }
@@ -3977,8 +4293,8 @@ function IpwBalanceVisual({ balance }: { balance: StabilizedIpwBalance }) {
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${nodeDisplayName(balance.node)} balance before and after weighting`}>
         <line className="ipw-balance-axis" x1={plot.x} x2={plot.x + plot.width} y1="22" y2="22" />
         <line className="ipw-balance-axis" x1={plot.x} x2={plot.x + plot.width} y1="50" y2="50" />
-        <text className="ipw-balance-row-label" x="8" y="26">before</text>
-        <text className="ipw-balance-row-label" x="8" y="54">fixed</text>
+        <text className="ipw-balance-row-label" x="8" y="26">raw</text>
+        <text className="ipw-balance-row-label" x="8" y="54">weighted</text>
         <line className="ipw-balance-gap raw" x1={scale(balance.rawUntreatedMean)} x2={scale(balance.rawTreatedMean)} y1="22" y2="22" />
         <circle className="ipw-balance-dot untreated" cx={scale(balance.rawUntreatedMean)} cy="22" r="5" />
         <circle className="ipw-balance-dot treated" cx={scale(balance.rawTreatedMean)} cy="22" r="5" />
@@ -4253,7 +4569,7 @@ function ConditioningEditor(props: {
   return (
     <div className={`module-card conditioning-editor ${condition ? "active" : ""}`}>
       <div className="module-card-header">
-        <strong>Selection / conditioning filter</strong>
+        <strong>Analysis sample filter</strong>
         <span className={condition ? "module-badge active" : "module-badge"}>{condition ? "active" : "available"}</span>
       </div>
       <p className="muted">Filters observed simulated draws; this is not do({props.node.id}).</p>
@@ -4345,7 +4661,7 @@ function ConditioningEditor(props: {
         </>
       )}
       <div className="button-row">
-        {selectedBinaryNode && !condition && <button type="button" onClick={() => props.onSelectionCondition(props.node.id, { operator: "one_of", value: 1, upper: null, valueRef: null, upperRef: null, values: [1], sampling: "rejection" })}>condition on selected = 1</button>}
+        {selectedBinaryNode && !condition && <button type="button" onClick={() => props.onSelectionCondition(props.node.id, { operator: "one_of", value: 1, upper: null, valueRef: null, upperRef: null, values: [1], sampling: "rejection" })}>filter to value 1</button>}
         {!condition && !discreteMode && <button type="button" onClick={() => props.onSelectionCondition(props.node.id, { operator: "at_least", value, upper: null, valueRef: null, upperRef: null, sampling: "auto" })}>condition on current</button>}
         {condition && <button type="button" onClick={() => props.onSelectionCondition(props.node.id, null)}>clear condition</button>}
       </div>
@@ -4394,7 +4710,7 @@ function ConditioningMethodPanel({ simulation }: { simulation: SimulationResult 
       {active ? (
         <>
           {conditioning.activeConditions.map((condition) => <span key={condition}>condition {condition}</span>)}
-          <span>selected {inferenceModeLabel(conditioning.requestedInference)}</span>
+          <span>requested {inferenceModeLabel(conditioning.requestedInference)}</span>
           <span>active {inferenceModeLabel(conditioning.primaryMethod)}</span>
           {conditioning.analytic
             ? <span>{analyticActive ? "analytic active" : "analytic available"} {analyticSummaryLabel(conditioning.analytic)}</span>
@@ -4405,7 +4721,7 @@ function ConditioningMethodPanel({ simulation }: { simulation: SimulationResult 
         </>
       ) : (
         <>
-          <span>selected auto</span>
+          <span>requested auto</span>
           <span>active forward</span>
           <span>analytic inactive</span>
         </>
@@ -4414,15 +4730,15 @@ function ConditioningMethodPanel({ simulation }: { simulation: SimulationResult 
   );
 }
 
-function DesignModulePanel({ mode, domain }: { mode: WorkbenchMode; domain: ExampleDomain }) {
-  const modules = designModulesForMode(mode, domain);
+function DesignModulePanel({ mode }: { mode: WorkbenchMode }) {
+  const modules = designModulesForMode(mode);
   return (
     <div className="design-module-panel">
       <div className="module-card-header">
         <strong>Design modules</strong>
         <span className="module-badge">{MODE_LABELS[mode]}</span>
       </div>
-      <p className="muted">{designModuleScopeLabel(mode, domain)}</p>
+      <p className="muted">{designModuleScopeLabel(mode)}</p>
       <div className="design-module-list">
         {modules.map((module) => (
           <div className={`design-module-card ${module.status}`} key={module.id}>
@@ -4523,7 +4839,6 @@ function BasicSelectionEditor(props: Parameters<typeof SelectionEditor>[0]) {
               <RoleToggle label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
               <RoleToggle label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
               <RoleToggle label="adjust for" checked={node.roles.adjusted} onChange={() => props.onToggleRole(node.id, "adjusted")} />
-              <RoleToggle label="selection" checked={node.roles.selected} onChange={() => props.onToggleRole(node.id, "selected")} />
               <RoleToggle label="unobserved" checked={node.roles.latent} onChange={() => props.onToggleRole(node.id, "latent")} />
             </div>
           </div>
@@ -4538,7 +4853,7 @@ function BasicSelectionEditor(props: Parameters<typeof SelectionEditor>[0]) {
             </details>
             <details className="basic-causal-module" open={activeSelection || node.roles.selected}>
               <summary>
-                <span>Selection filter</span>
+                <span>Analysis sample filter</span>
                 {activeSelection && <strong>active</strong>}
               </summary>
               <ConditioningEditor node={node} document={props.document} simulation={props.simulation} onSelectionCondition={props.onSelectionCondition} />
@@ -4732,7 +5047,7 @@ function VariableEditor(props: {
         <div className="variable-tabs" role="tablist" aria-label="Variable sections">
           <button type="button" role="tab" aria-selected={tab === "model"} className={tab === "model" ? "active" : ""} onClick={() => setTab("model")}>model</button>
           <button type="button" role="tab" aria-selected={tab === "interventions"} className={tab === "interventions" ? "active" : ""} onClick={() => setTab("interventions")}>interventions</button>
-          <button type="button" role="tab" aria-selected={tab === "selection"} className={tab === "selection" ? "active" : ""} onClick={() => setTab("selection")}>selection</button>
+          <button type="button" role="tab" aria-selected={tab === "selection"} className={tab === "selection" ? "active" : ""} onClick={() => setTab("selection")}>sample</button>
           <button type="button" role="tab" aria-selected={tab === "adjustment"} className={tab === "adjustment" ? "active" : ""} onClick={() => setTab("adjustment")}>adjustment</button>
         </div>
 
@@ -4744,7 +5059,7 @@ function VariableEditor(props: {
                 <RoleToggle label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
                 <RoleToggle label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
                 <RoleToggle label="adjusted" checked={node.roles.adjusted} onChange={() => props.onToggleRole(node.id, "adjusted")} />
-                <RoleToggle label="selected" checked={node.roles.selected} onChange={() => props.onToggleRole(node.id, "selected")} />
+                <RoleToggle label="sample marker" checked={node.roles.selected} onChange={() => props.onToggleRole(node.id, "selected")} />
                 <RoleToggle label="unobserved" checked={node.roles.latent} onChange={() => props.onToggleRole(node.id, "latent")} />
               </div>
             </div>
@@ -5523,7 +5838,7 @@ function SummaryPanel({ analysis }: { analysis: AnalysisReport }) {
         <tr><td>exposure(s)</td><td>{analysis.exposures.join(", ") || "not set"}</td></tr>
         <tr><td>outcome(s)</td><td>{analysis.outcomes.join(", ") || "not set"}</td></tr>
         <tr><td>adjusted</td><td>{analysis.adjusted.join(", ") || "none"}</td></tr>
-        <tr><td>selected</td><td>{analysis.selected.join(", ") || "none"}</td></tr>
+        <tr><td>sample markers</td><td>{analysis.selected.join(", ") || "none"}</td></tr>
         <tr><td>covariates</td><td>{analysis.covariateCount}</td></tr>
         <tr><td>causal paths</td><td>{analysis.causalPathCount}</td></tr>
         <tr><td>open biasing paths</td><td>{analysis.openBiasingPathCount}</td></tr>
@@ -5563,8 +5878,62 @@ function Section({ title, pending, children }: { title: string; pending?: boolea
   );
 }
 
-function IconButton({ label, active, disabled, onClick, children }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" className={active ? "icon-button active" : "icon-button"} title={label} aria-label={label} disabled={disabled} onClick={onClick}>{children}<span className="icon-button-label">{label}</span></button>;
+type ModuleTone = "edit" | "output" | "scenario";
+
+function ModuleFrame({
+  children,
+  className,
+  ...headerProps
+}: {
+  tone: ModuleTone;
+  label: string;
+  title: string;
+  detail: string;
+  pending?: boolean;
+  action?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`module-frame ${headerProps.tone}${className ? ` ${className}` : ""}`}>
+      <PaneHeader {...headerProps} />
+      <div className="module-pane-body">{children}</div>
+    </div>
+  );
+}
+
+function PaneHeader({
+  tone,
+  label,
+  title,
+  detail,
+  pending,
+  action
+}: {
+  tone: ModuleTone;
+  label: string;
+  title: string;
+  detail: string;
+  pending?: boolean;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className={`module-pane-header ${tone}`}>
+      <div className="module-pane-heading">
+        <span>{label}</span>
+        <strong>{title}</strong>
+        <small>{detail}</small>
+      </div>
+      <div className="module-pane-header-actions">
+        <PendingChip pending={Boolean(pending)} />
+        {action}
+      </div>
+    </div>
+  );
+}
+
+function IconButton({ label, active, pressed, disabled, onClick, children }: { label: string; active?: boolean; pressed?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" className={active ? "icon-button active" : "icon-button"} title={label} aria-label={label} aria-pressed={pressed} disabled={disabled} onClick={onClick}>{children}<span className="icon-button-label">{label}</span></button>;
 }
 
 function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
@@ -5695,21 +6064,22 @@ function List({ values, empty }: { values: string[]; empty: string }) {
   return <ul className="plain-list">{values.map((value) => <li key={value}>{value}</li>)}</ul>;
 }
 
-function designModulesForMode(mode: WorkbenchMode, domain: ExampleDomain) {
+function designModulesForMode(mode: WorkbenchMode) {
   if (mode === "pro") return DESIGN_MODULES;
-  if (mode === "basic") return DESIGN_MODULES.filter((module) => module.basic);
-  return DESIGN_MODULES.filter((module) => module.basic || module.domains.includes(domain));
+  return DESIGN_MODULES.filter((module) => module.basic);
 }
 
-function designModuleScopeLabel(mode: WorkbenchMode, domain: ExampleDomain): string {
+function designModuleScopeLabel(mode: WorkbenchMode): string {
   if (mode === "basic") return "Small set for quick DAG explanations and common internet-argument traps.";
-  if (mode === "pro") return "All tools are visible, including TODO modules that still need data and code plumbing.";
-  const meta = EXAMPLE_DOMAINS.find((item) => item.id === domain);
-  return `Recommended for ${meta?.label ?? "the selected domain"}. Switch to Pro to see everything.`;
+  return "All tools are visible, including TODO modules that still need data and code plumbing.";
 }
 
 function nodeDisplayName(node: GraphNode): string {
   return node.label && node.label !== node.id ? `${node.label} (${node.id})` : node.id;
+}
+
+function nodeOutputLabel(node: GraphNode): string {
+  return node.label || node.id;
 }
 
 function abbreviateLabel(value: string, limit: number): string {
@@ -5718,7 +6088,7 @@ function abbreviateLabel(value: string, limit: number): string {
 }
 
 function binaryShortLabel(value: string): string {
-  return abbreviateLabel(value.replace(/\s+\([^)]*\)$/u, ""), 14);
+  return abbreviateLabel(value.replace(/\s+\([^)]*\)$/u, ""), 18);
 }
 
 function binaryAxisValueLabel(label: string, value: 0 | 1): string {
@@ -6440,14 +6810,16 @@ function edgeGeometry(edge: GraphEdge, source: GraphNode, target: GraphNode, str
   const arrowClearance = edgeArrowClearance(strokeWidth);
   const startClearance = edge.kind === "bidirected" ? arrowClearance : EDGE_SOURCE_CLEARANCE;
   const endClearance = edge.kind === "directed" || edge.kind === "bidirected" ? arrowClearance : EDGE_SOURCE_CLEARANCE;
+  const sourcePortOffset = crowdedSourcePortOffset(edge, edges, nodesById);
+  const targetPortOffset = crowdedTargetPortOffset(edge, edges, nodesById);
   if (!curved) {
-    const start = nodeBoundaryPoint(source, target.position, startClearance, { includeDistribution: edge.kind === "bidirected" });
-    const end = nodeBoundaryPoint(target, source.position, endClearance, { includeDistribution: edge.kind === "bidirected" });
-    return { path: `M ${start.x} ${start.y} L ${end.x} ${end.y}`, control, start, end };
+    const start = nodeBoundaryPoint(source, endpointPortToward(source.position, target.position, sourcePortOffset), startClearance, { includeDistribution: edge.kind === "bidirected" });
+    const end = nodeBoundaryPoint(target, endpointPortToward(target.position, source.position, targetPortOffset), endClearance, { includeDistribution: edge.kind === "bidirected" });
+    return { path: `M ${start.x} ${start.y} L ${end.x} ${end.y}`, control, label: control, start, end, curved: false };
   }
-  const start = nodeBoundaryPoint(source, control, startClearance, { includeDistribution: edge.kind === "bidirected" });
-  const end = nodeBoundaryPoint(target, control, endClearance, { includeDistribution: edge.kind === "bidirected" });
-  return { path: `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`, control, start, end };
+  const start = nodeBoundaryPoint(source, endpointPortToward(source.position, control, sourcePortOffset), startClearance, { includeDistribution: edge.kind === "bidirected" });
+  const end = nodeBoundaryPoint(target, endpointPortToward(target.position, control, targetPortOffset), endClearance, { includeDistribution: edge.kind === "bidirected" });
+  return { path: `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`, control, label: control, start, end, curved: true };
 }
 
 function edgeArrowClearance(strokeWidth: number): number {
@@ -6460,20 +6832,16 @@ function midpoint(a: Point, b: Point): Point {
 
 function automaticControlPoint(edge: GraphEdge, source: GraphNode, target: GraphNode, edges: GraphEdge[], nodesById: Map<string, GraphNode>): { point: Point; curved: boolean } {
   const mid = midpoint(source.position, target.position);
+  const dx = target.position.x - source.position.x;
+  const dy = target.position.y - source.position.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const normal = { x: -dy / length, y: dx / length };
   if (hasReciprocalDirectedEdge(edge, edges)) {
-    const dx = target.position.x - source.position.x;
-    const dy = target.position.y - source.position.y;
-    const length = Math.hypot(dx, dy) || 1;
-    const normal = { x: -dy / length, y: dx / length };
     const sign = edge.source < edge.target ? 1 : -1;
     return { point: { x: mid.x + normal.x * 44 * sign, y: mid.y + normal.y * 44 * sign }, curved: true };
   }
   const fanOffset = crowdedEdgeFanOffset(edge, edges, nodesById);
   if (Math.abs(fanOffset) <= 1e-6) return { point: mid, curved: false };
-  const dx = target.position.x - source.position.x;
-  const dy = target.position.y - source.position.y;
-  const length = Math.hypot(dx, dy) || 1;
-  const normal = { x: -dy / length, y: dx / length };
   return { point: { x: mid.x + normal.x * fanOffset, y: mid.y + normal.y * fanOffset }, curved: true };
 }
 
@@ -6518,11 +6886,61 @@ function crowdedEdgeFanOffset(edge: GraphEdge, edges: GraphEdge[], nodesById: Ma
   return targetOffset + sourceOffset;
 }
 
+function crowdedTargetPortOffset(edge: GraphEdge, edges: GraphEdge[], nodesById: Map<string, GraphNode>): number {
+  if (edge.kind !== "directed" && edge.kind !== "bidirected") return 0;
+  const target = nodesById.get(edge.target);
+  if (!target) return 0;
+  const incoming = edges
+    .filter((candidate) => (candidate.kind === "directed" || candidate.kind === "bidirected") && candidate.target === edge.target)
+    .map((candidate) => {
+      const source = nodesById.get(candidate.source);
+      if (!source) return null;
+      return {
+        key: candidate.id,
+        angle: positiveAngle(Math.atan2(source.position.y - target.position.y, source.position.x - target.position.x))
+      };
+    })
+    .filter((candidate): candidate is { key: string; angle: number } => candidate !== null);
+  return incoming.length >= EDGE_CROWDED_FAN_THRESHOLD
+    ? edgeFanOffset(edge.id, incoming, EDGE_ENDPOINT_PORT_SPACING, EDGE_ENDPOINT_PORT_MAX_OFFSET)
+    : 0;
+}
+
+function crowdedSourcePortOffset(edge: GraphEdge, edges: GraphEdge[], nodesById: Map<string, GraphNode>): number {
+  if (edge.kind !== "directed" && edge.kind !== "bidirected") return 0;
+  const source = nodesById.get(edge.source);
+  if (!source) return 0;
+  const outgoing = edges
+    .filter((candidate) => (candidate.kind === "directed" || candidate.kind === "bidirected") && candidate.source === edge.source)
+    .map((candidate) => {
+      const target = nodesById.get(candidate.target);
+      if (!target) return null;
+      return {
+        key: candidate.id,
+        angle: positiveAngle(Math.atan2(target.position.y - source.position.y, target.position.x - source.position.x))
+      };
+    })
+    .filter((candidate): candidate is { key: string; angle: number } => candidate !== null);
+  return outgoing.length >= EDGE_OUTGOING_FAN_THRESHOLD
+    ? edgeFanOffset(edge.id, outgoing, EDGE_ENDPOINT_PORT_SPACING, EDGE_ENDPOINT_PORT_MAX_OFFSET)
+    : 0;
+}
+
 function edgeFanOffset(edgeId: string, ports: Array<{ key: string; angle: number }>, spacing: number, maxOffset: number): number {
   const ordered = orderCircularArrowPorts(ports);
   const index = ordered.findIndex((candidate) => candidate.key === edgeId);
   if (index < 0) return 0;
   return clamp((index - (ordered.length - 1) / 2) * spacing, -maxOffset, maxOffset);
+}
+
+function endpointPortToward(origin: Point, toward: Point, portOffset: number): Point {
+  if (Math.abs(portOffset) <= 1e-6) return toward;
+  const direction = unitVector(origin, toward);
+  const normal = { x: -direction.y, y: direction.x };
+  return {
+    x: origin.x + direction.x * EDGE_ENDPOINT_PORT_DISTANCE + normal.x * portOffset,
+    y: origin.y + direction.y * EDGE_ENDPOINT_PORT_DISTANCE + normal.y * portOffset
+  };
 }
 
 function nodeRadius(node: GraphNode): number {
@@ -6982,11 +7400,61 @@ function trimNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-function copyShareUrl(document: GraphDocument) {
-  const encoded = btoa(encodeURIComponent(JSON.stringify(document)));
-  const url = `${window.location.origin}${window.location.pathname}#model=${encoded}`;
-  void navigator.clipboard?.writeText(url);
-  window.history.replaceState(null, "", `#model=${encoded}`);
+function compactShareUrlForDocument(document: GraphDocument, activeExampleId: string | null): string {
+  const url = new URL(window.location.href);
+  const exampleId = canonicalShareExampleId(document, activeExampleId);
+  if (exampleId) {
+    url.hash = `${SHARE_EXAMPLE_HASH_KEY}=${encodeURIComponent(exampleId)}`;
+    return url.toString();
+  }
+  const encoded = encodeCompactShareDocument(document, activeExampleId);
+  url.hash = `${SHARE_COMPACT_HASH_KEY}=${encoded}`;
+  return url.toString();
+}
+
+function fullShareUrlForDocument(document: GraphDocument, activeExampleId: string | null): string {
+  const url = new URL(window.location.href);
+  const encoded = encodeWorkbenchSnapshot(createWorkbenchSnapshot(document, activeExampleId));
+  url.hash = `${SHARE_DOCUMENT_HASH_KEY}=${encoded}`;
+  return url.toString();
+}
+
+function hashMatchesPaperNetwork(hash: string): boolean {
+  const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
+  return params.get("paper") === "k562";
+}
+
+function canonicalShareExampleId(document: GraphDocument, activeExampleId: string | null): string | null {
+  if (!activeExampleId) return null;
+  const example = exampleDocument(activeExampleId);
+  if (!example) return null;
+  const current = JSON.stringify({ graph: document.graph, simulation: document.simulation });
+  const canonical = JSON.stringify({ graph: example.graph, simulation: example.simulation });
+  return current === canonical ? activeExampleId : null;
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("copy failed");
+}
+
+function shareStatusLabel(status: ShareStatus, idleLabel: string) {
+  if (status === "copied") return "Copied";
+  if (status === "too-large") return "Link too big";
+  if (status === "failed") return "Copy failed";
+  return idleLabel;
 }
 
 function exportSvg() {
