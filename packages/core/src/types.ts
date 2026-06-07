@@ -106,6 +106,118 @@ export interface VariableModel {
   tags: string[];
 }
 
+export type LongitudinalVariableRole =
+  | "baseline"
+  | "treatment"
+  | "time_varying_confounder"
+  | "outcome"
+  | "censoring"
+  | "selection"
+  | "competing_event"
+  | "latent"
+  | "other";
+
+export interface LongitudinalTimePoint {
+  id: string;
+  label: string;
+  order: number;
+}
+
+export interface LongitudinalVariableMetadata {
+  series: string;
+  time: string | null;
+  role: LongitudinalVariableRole;
+}
+
+export type TreatmentStrategyKind = "static" | "dynamic" | "stochastic";
+
+export type TreatmentStrategyRuleOperator = "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
+
+export interface TreatmentStrategyAssignment {
+  variable: string;
+  value: number;
+}
+
+export interface TreatmentStrategyRule {
+  variable: string;
+  value: number;
+  conditionVariable: string;
+  operator: TreatmentStrategyRuleOperator;
+  conditionValue: number;
+  otherwise: number;
+}
+
+export interface TreatmentStrategy {
+  id: string;
+  label: string;
+  description: string;
+  kind: TreatmentStrategyKind;
+  assignments: TreatmentStrategyAssignment[];
+  rules: TreatmentStrategyRule[];
+}
+
+export type LongitudinalEstimandType =
+  | "risk_difference"
+  | "mean_difference"
+  | "risk_ratio"
+  | "hazard_ratio"
+  | "survival_difference";
+
+export interface LongitudinalEstimand {
+  id: string;
+  label: string;
+  type: LongitudinalEstimandType;
+  outcome: string;
+  strategies: string[];
+  population: string;
+  horizon: string;
+}
+
+export interface CensoringSpec {
+  id: string;
+  variable: string;
+  time: string | null;
+  description: string;
+}
+
+export interface SurvivalOutputSpec {
+  id: string;
+  label: string;
+  timeVariable: string | null;
+  eventVariable: string;
+  eventVariables: string[];
+  censoringVariable: string | null;
+  censoringVariables: string[];
+  timeScale: string;
+}
+
+export interface SourceCitation {
+  id: string;
+  label: string;
+  authors: string;
+  title: string;
+  year: string;
+  url: string;
+  chapter: string;
+  section: string;
+  reference: string;
+  note: string;
+}
+
+export interface LongitudinalMetadata {
+  timePoints: LongitudinalTimePoint[];
+  variables: Record<string, LongitudinalVariableMetadata>;
+  treatmentStrategies: TreatmentStrategy[];
+  estimands: LongitudinalEstimand[];
+  censoring: CensoringSpec[];
+  survivalOutputs: SurvivalOutputSpec[];
+}
+
+export interface GraphDocumentMetadata {
+  longitudinal: LongitudinalMetadata;
+  sources: SourceCitation[];
+}
+
 export interface GraphNode {
   id: string;
   label: string;
@@ -164,6 +276,7 @@ export interface NodeMechanism {
 
 export type EdgeMechanismKind =
   | "linear"
+  | "absorbing"
   | "threshold"
   | "smooth_threshold"
   | "saturating"
@@ -266,11 +379,12 @@ export interface SimulationConditioningSummary {
 }
 
 export interface GraphDocument {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   title: string;
   graph: GraphModel;
   simulation: SimulationSpec;
+  metadata: GraphDocumentMetadata;
   updatedAt: string;
 }
 

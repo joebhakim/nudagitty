@@ -1,6 +1,6 @@
 import { parseModel } from "./parser";
-import { defaultEdgeMechanism, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "./graph";
-import type { EdgeMechanismKind, GraphDocument, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "./types";
+import { defaultEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "./graph";
+import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "./types";
 
 export const EXAMPLE_DOMAINS = [
   { id: "classic", label: "Classic DAG patterns", description: "Compact examples for teaching and fast bias checks." },
@@ -47,6 +47,134 @@ type VariablePatch = Partial<Omit<VariableModel, "measurement" | "simulation" | 
 
 const ZERO_NOISE: NodeDistribution = { kind: "constant", value: 0 };
 const UNIT_NORMAL: NodeDistribution = { kind: "normal", mean: 0, sd: 1 };
+
+const WHAT_IF_SHOWCASE_DYNAMIC_RULES_CODE = `dag {
+  Risk_0 [adjusted,label="risk L0",pos="-1.2,3.8"]
+  A0 [exposure,label="action A0",pos="0.65,2.7"]
+  Risk_1 [adjusted,label="risk L1",pos="-0.8,1.6"]
+  A1 [label="action A1",pos="0.9,0.45"]
+  Risk_2 [adjusted,label="risk L2",pos="-0.5,-0.7"]
+  A2 [label="action A2",pos="0.9,-1.75"]
+  Y [outcome,label="outcome Y",pos="0,-3"]
+  Risk_0 -> A0
+  Risk_0 -> Risk_1
+  Risk_0 -> Y
+  A0 -> Risk_1
+  A0 -> A1
+  A0 -> Y
+  Risk_1 -> A1
+  Risk_1 -> Risk_2
+  Risk_1 -> Y
+  A1 -> Risk_2
+  A1 -> A2
+  A1 -> Y
+  Risk_2 -> A2
+  Risk_2 -> Y
+  A2 -> Y
+}`;
+
+const WHAT_IF_SHOWCASE_SURVIVAL_CURVES_CODE = `dag {
+  Age [adjusted,pos="-2.55,3.5"]
+  Baseline_health [adjusted,label="baseline health",pos="-0.8,3.5"]
+  Quit_smoking [exposure,label="quit smoking",pos="-1.55,2.05"]
+  Weight_gain_2y [label="2-year weight gain",pos="-0.3,0.65"]
+  Censoring_5y [selected,label="censoring by 5y",pos="1.25,-0.4"]
+  Death_5y [label="death by 5y",pos="-0.45,-0.95"]
+  Death_10y [outcome,label="death by 10y",pos="0.35,-2.35"]
+  Age -> Quit_smoking
+  Age -> Censoring_5y
+  Age -> Death_5y
+  Age -> Death_10y
+  Baseline_health -> Quit_smoking
+  Baseline_health -> Weight_gain_2y
+  Baseline_health -> Censoring_5y
+  Baseline_health -> Death_5y
+  Baseline_health -> Death_10y
+  Quit_smoking -> Weight_gain_2y
+  Quit_smoking -> Death_5y
+  Quit_smoking -> Death_10y
+  Weight_gain_2y -> Death_10y
+  Censoring_5y -> Death_10y
+  Death_5y -> Death_10y
+}`;
+
+const WHAT_IF_SHOWCASE_HAZARD_DENOMINATOR_CODE = `dag {
+  Frailty [adjusted,label="baseline frailty",pos="-1.8,2.6"]
+  Treatment_A [exposure,label="treatment A",pos="0.1,1.3"]
+  Death_1 [label="early death",pos="-0.65,0.05"]
+  Alive_1 [selected,label="alive at t1",pos="0.55,-1.15"]
+  Death_2 [outcome,label="later death",pos="1.55,-2.45"]
+  Frailty -> Treatment_A
+  Frailty -> Death_1
+  Frailty -> Death_2
+  Treatment_A -> Death_1
+  Treatment_A -> Death_2
+  Death_1 -> Alive_1
+  Alive_1 -> Death_2
+}`;
+
+const WHAT_IF_SHOWCASE_G_ESTIMATION_CODE = `dag {
+  Smoking_intensity [adjusted,label="baseline cigarettes/day",pos="-2.3,2.6"]
+  Socioeconomic [adjusted,label="socioeconomic baseline",pos="-0.4,2.6"]
+  Quit_smoking [exposure,label="quit smoking",pos="-1.3,1.05"]
+  Diet_change [label="post-quit diet change",pos="0.3,-0.35"]
+  Weight_gain_8y [outcome,label="8-year weight gain",pos="-0.35,-1.9"]
+  Smoking_intensity -> Quit_smoking
+  Smoking_intensity -> Weight_gain_8y
+  Socioeconomic -> Quit_smoking
+  Socioeconomic -> Diet_change
+  Socioeconomic -> Weight_gain_8y
+  Quit_smoking -> Diet_change
+  Quit_smoking -> Weight_gain_8y
+  Diet_change -> Weight_gain_8y
+}`;
+
+const WHAT_IF_SHOWCASE_IPCW_CODE = `dag {
+  Baseline_risk [adjusted,label="baseline risk",pos="-1.8,3.6"]
+  A0 [exposure,label="treatment A0",pos="0,2.5"]
+  L1 [adjusted,label="risk L1",pos="-0.85,1.35"]
+  C1 [selected,label="censored C1",pos="1.1,0.35"]
+  A1 [label="treatment A1",pos="-0.35,-0.65"]
+  C2 [selected,label="censored C2",pos="1.25,-1.5"]
+  Y [outcome,label="outcome Y",pos="-0.15,-2.65"]
+  Baseline_risk -> A0
+  Baseline_risk -> L1
+  Baseline_risk -> C1
+  Baseline_risk -> C2
+  Baseline_risk -> Y
+  A0 -> L1
+  A0 -> C1
+  A0 -> A1
+  A0 -> Y
+  L1 -> C1
+  L1 -> A1
+  L1 -> C2
+  L1 -> Y
+  C1 -> A1
+  C1 -> Y
+  A1 -> C2
+  A1 -> Y
+  C2 -> Y
+}`;
+
+const WHAT_IF_SHOWCASE_SNAFT_CODE = `dag {
+  Baseline_risk [adjusted,label="baseline risk",pos="-1.7,2.9"]
+  Treatment_start [exposure,label="treatment start",pos="-0.2,1.55"]
+  Failure_time [outcome,label="counterfactual failure time",pos="-0.8,0.1"]
+  Visit_schedule [label="visit schedule",pos="1.15,-0.25"]
+  Censoring [selected,pos="0.95,-1.5"]
+  Observed_death [outcome,label="observed death",pos="-0.1,-2.7"]
+  Baseline_risk -> Treatment_start
+  Baseline_risk -> Failure_time
+  Baseline_risk -> Visit_schedule
+  Baseline_risk -> Censoring
+  Baseline_risk -> Observed_death
+  Treatment_start -> Failure_time
+  Treatment_start -> Censoring
+  Failure_time -> Observed_death
+  Visit_schedule -> Censoring
+  Censoring -> Observed_death
+}`;
 
 export const EXAMPLES: ExampleModel[] = [
   {
@@ -316,6 +444,286 @@ export const EXAMPLES: ExampleModel[] = [
   Treatment_start -> Outcome_90d
   Adherence -> Outcome_90d
   Censoring -> Outcome_90d
+}`
+  },
+  {
+    id: "what-if-showcase-dynamic-rules",
+    title: "Showcase: sequential dynamic g-formula",
+    domain: "epidemiology",
+    summary: "A compact rule-based treatment strategy example: each action is assigned from the current risk history before downstream variables are generated.",
+    outputModule: "what-if-dynamic-g-formula",
+    code: WHAT_IF_SHOWCASE_DYNAMIC_RULES_CODE
+  },
+  {
+    id: "what-if-showcase-survival-curves",
+    title: "Showcase: strategy-specific survival curves",
+    domain: "epidemiology",
+    summary: "Smoking-cessation survival readout where quit and continue strategies get their own survival curves, final risk difference, and absorbing death edge.",
+    outputModule: "what-if-nhefs-mortality-survival",
+    code: WHAT_IF_SHOWCASE_SURVIVAL_CURVES_CODE
+  },
+  {
+    id: "what-if-showcase-hazard-denominator",
+    title: "Showcase: survivor denominators",
+    domain: "epidemiology",
+    summary: "Two-interval hazard example that keeps early deaths and later survivor conditioning visible instead of collapsing everything into one endpoint.",
+    outputModule: "what-if-hazard-selection",
+    code: WHAT_IF_SHOWCASE_HAZARD_DENOMINATOR_CODE
+  },
+  {
+    id: "what-if-showcase-g-estimation",
+    title: "Showcase: g-estimation blip coefficients",
+    domain: "epidemiology",
+    summary: "Smoking-cessation weight-gain example focused on the structural-nested mean-model row and its additive g-estimation diagnostics.",
+    outputModule: "what-if-weight-gain-g-estimation",
+    code: WHAT_IF_SHOWCASE_G_ESTIMATION_CODE
+  },
+  {
+    id: "what-if-showcase-ipcw",
+    title: "Showcase: censoring weights (IPCW)",
+    domain: "epidemiology",
+    summary: "Longitudinal treatment example where censoring is explicit and the output foregrounds IPW/IPCW support rather than a naive complete-case read.",
+    outputModule: "what-if-censoring-ipcw",
+    code: WHAT_IF_SHOWCASE_IPCW_CODE
+  },
+  {
+    id: "what-if-showcase-snaft",
+    title: "Showcase: structural nested survival time",
+    domain: "epidemiology",
+    summary: "Failure-time example that separates a mean survival-time contrast from observed-death and censoring diagnostics.",
+    outputModule: "what-if-snaft-survival",
+    code: WHAT_IF_SHOWCASE_SNAFT_CODE
+  },
+  {
+    id: "what-if-treatment-feedback",
+    title: "What If: treatment-confounder feedback",
+    domain: "epidemiology",
+    summary: "A time-varying covariate is affected by earlier treatment and also helps determine later treatment and outcome; g-methods target strategy contrasts.",
+    outputModule: "what-if-treatment-feedback",
+    code: `dag {
+  Baseline_risk [adjusted,label="baseline risk",pos="-1.8,2.1"]
+  A0 [exposure,label="treatment A0",pos="-2.25,0.95"]
+  L1 [adjusted,label="risk L1",pos="-0.35,0.1"]
+  A1 [exposure,label="treatment A1",pos="1.25,-0.75"]
+  Y [outcome,label="event Y",pos="2.2,-1.75"]
+  Baseline_risk -> L1
+  Baseline_risk -> Y
+  A0 -> L1
+  A0 -> A1
+  A0 -> Y
+  L1 -> A1
+  L1 -> Y
+  A1 -> Y
+}`
+  },
+  {
+    id: "what-if-ipw-pseudopopulation",
+    title: "What If: pseudo-population weighting",
+    domain: "epidemiology",
+    summary: "Single-time treatment example for standardization and inverse-probability weighting as two views of the same target contrast.",
+    outputModule: "what-if-ipw-pseudopopulation",
+    code: `dag {
+  Baseline_C [adjusted,label="baseline C",pos="-1.5,2.5"]
+  Treatment_A [exposure,label="treatment A",pos="-0.4,0.9"]
+  Outcome_Y [outcome,label="outcome Y",pos="1.1,-0.9"]
+  Baseline_C -> Treatment_A
+  Baseline_C -> Outcome_Y
+  Treatment_A -> Outcome_Y
+}`
+  },
+  {
+    id: "what-if-hazard-selection",
+    title: "What If: hazard ratios and survivor selection",
+    domain: "epidemiology",
+    summary: "Survival example where conditioning on remaining alive can make interval-specific hazards diverge from cumulative risk.",
+    outputModule: "what-if-hazard-selection",
+    code: `dag {
+  Frailty [adjusted,label="baseline frailty",pos="-1.8,2.6"]
+  Treatment_A [exposure,label="treatment A",pos="0.1,1.3"]
+  Death_1 [label="early death",pos="-0.65,0.05"]
+  Alive_1 [selected,label="alive at t1",pos="0.55,-1.15"]
+  Death_2 [outcome,label="later death",pos="1.55,-2.45"]
+  Frailty -> Treatment_A
+  Frailty -> Death_1
+  Frailty -> Death_2
+  Treatment_A -> Death_1
+  Treatment_A -> Death_2
+  Death_1 -> Alive_1
+  Alive_1 -> Death_2
+}`
+  },
+  {
+    id: "what-if-nhefs-mortality-survival",
+    title: "What If: NHEFS smoking cessation and mortality",
+    domain: "epidemiology",
+    summary: "Target-trial survival sketch for smoking cessation, follow-up death indicators, weight change, and censoring.",
+    outputModule: "what-if-nhefs-mortality-survival",
+    code: `dag {
+  Age [adjusted,pos="-2.55,3.5"]
+  Baseline_health [adjusted,label="baseline health",pos="-0.8,3.5"]
+  Quit_smoking [exposure,label="quit smoking",pos="-1.55,2.05"]
+  Weight_gain_2y [label="2-year weight gain",pos="-0.3,0.65"]
+  Censoring_5y [selected,label="censoring by 5y",pos="1.25,-0.4"]
+  Death_5y [label="death by 5y",pos="-0.45,-0.95"]
+  Death_10y [outcome,label="death by 10y",pos="0.35,-2.35"]
+  Age -> Quit_smoking
+  Age -> Censoring_5y
+  Age -> Death_5y
+  Age -> Death_10y
+  Baseline_health -> Quit_smoking
+  Baseline_health -> Weight_gain_2y
+  Baseline_health -> Censoring_5y
+  Baseline_health -> Death_5y
+  Baseline_health -> Death_10y
+  Quit_smoking -> Weight_gain_2y
+  Quit_smoking -> Death_5y
+  Quit_smoking -> Death_10y
+  Weight_gain_2y -> Death_10y
+  Censoring_5y -> Death_10y
+  Death_5y -> Death_10y
+}`
+  },
+  {
+    id: "what-if-weight-gain-g-estimation",
+    title: "What If: smoking cessation and weight-gain g-estimation",
+    domain: "epidemiology",
+    summary: "Time-fixed structural nested mean model sketch for quitting smoking and eight-year weight gain.",
+    outputModule: "what-if-weight-gain-g-estimation",
+    code: `dag {
+  Smoking_intensity [adjusted,label="baseline cigarettes/day",pos="-2.3,2.6"]
+  Socioeconomic [adjusted,label="socioeconomic baseline",pos="-0.4,2.6"]
+  Quit_smoking [exposure,label="quit smoking",pos="-1.3,1.05"]
+  Diet_change [label="post-quit diet change",pos="0.3,-0.35"]
+  Weight_gain_8y [outcome,label="8-year weight gain",pos="-0.35,-1.9"]
+  Smoking_intensity -> Quit_smoking
+  Smoking_intensity -> Weight_gain_8y
+  Socioeconomic -> Quit_smoking
+  Socioeconomic -> Diet_change
+  Socioeconomic -> Weight_gain_8y
+  Quit_smoking -> Diet_change
+  Quit_smoking -> Weight_gain_8y
+  Diet_change -> Weight_gain_8y
+}`
+  },
+  {
+    id: "what-if-hiv-cd4-variants",
+    title: "What If: HIV treatment variants over CD4 history",
+    domain: "epidemiology",
+    summary: "Three-visit HIV treatment example with CD4 feedback and dynamic treatment variants.",
+    outputModule: "what-if-hiv-cd4-variants",
+    code: `dag {
+  CD4_0 [adjusted,label="CD4 at baseline",pos="-1.2,3.8"]
+  A0 [exposure,label="ART A0",pos="0.55,2.7"]
+  CD4_1 [adjusted,label="CD4 at t1",pos="-0.75,1.6"]
+  A1 [label="ART A1",pos="0.8,0.45"]
+  CD4_2 [adjusted,label="CD4 at t2",pos="-0.45,-0.7"]
+  A2 [label="ART A2",pos="0.9,-1.75"]
+  AIDS_death [outcome,label="AIDS/death",pos="0,-3"]
+  CD4_0 -> A0
+  CD4_0 -> CD4_1
+  CD4_0 -> AIDS_death
+  A0 -> CD4_1
+  A0 -> A1
+  A0 -> AIDS_death
+  CD4_1 -> A1
+  CD4_1 -> CD4_2
+  CD4_1 -> AIDS_death
+  A1 -> CD4_2
+  A1 -> A2
+  A1 -> AIDS_death
+  CD4_2 -> A2
+  CD4_2 -> AIDS_death
+  A2 -> AIDS_death
+}`
+  },
+  {
+    id: "what-if-censoring-ipcw",
+    title: "What If: censoring as a time-varying treatment",
+    domain: "epidemiology",
+    summary: "Longitudinal treatment example that makes censoring explicit and estimates a strategy contrast with IPCW.",
+    outputModule: "what-if-censoring-ipcw",
+    code: `dag {
+  Baseline_risk [adjusted,label="baseline risk",pos="-1.8,3.6"]
+  A0 [exposure,label="treatment A0",pos="0,2.5"]
+  L1 [adjusted,label="risk L1",pos="-0.85,1.35"]
+  C1 [selected,label="censored C1",pos="1.1,0.35"]
+  A1 [label="treatment A1",pos="-0.35,-0.65"]
+  C2 [selected,label="censored C2",pos="1.25,-1.5"]
+  Y [outcome,label="outcome Y",pos="-0.15,-2.65"]
+  Baseline_risk -> A0
+  Baseline_risk -> L1
+  Baseline_risk -> C1
+  Baseline_risk -> C2
+  Baseline_risk -> Y
+  A0 -> L1
+  A0 -> C1
+  A0 -> A1
+  A0 -> Y
+  L1 -> C1
+  L1 -> A1
+  L1 -> C2
+  L1 -> Y
+  C1 -> A1
+  C1 -> Y
+  A1 -> C2
+  A1 -> Y
+  C2 -> Y
+}`
+  },
+  {
+    id: "what-if-dynamic-g-formula",
+    title: "What If: dynamic strategies and the g-formula",
+    domain: "epidemiology",
+    summary: "Three-time risk-history example for comparing threshold-based dynamic treatment strategies.",
+    outputModule: "what-if-dynamic-g-formula",
+    code: `dag {
+  Risk_0 [adjusted,label="risk L0",pos="-1.2,3.8"]
+  A0 [exposure,label="action A0",pos="0.65,2.7"]
+  Risk_1 [adjusted,label="risk L1",pos="-0.8,1.6"]
+  A1 [label="action A1",pos="0.9,0.45"]
+  Risk_2 [adjusted,label="risk L2",pos="-0.5,-0.7"]
+  A2 [label="action A2",pos="0.9,-1.75"]
+  Y [outcome,label="outcome Y",pos="0,-3"]
+  Risk_0 -> A0
+  Risk_0 -> Risk_1
+  Risk_0 -> Y
+  A0 -> Risk_1
+  A0 -> A1
+  A0 -> Y
+  Risk_1 -> A1
+  Risk_1 -> Risk_2
+  Risk_1 -> Y
+  A1 -> Risk_2
+  A1 -> A2
+  A1 -> Y
+  Risk_2 -> A2
+  Risk_2 -> Y
+  A2 -> Y
+}`
+  },
+  {
+    id: "what-if-snaft-survival",
+    title: "What If: structural nested survival time",
+    domain: "epidemiology",
+    summary: "Survival-time sketch for a structural nested accelerated failure time contrast under treatment and censoring.",
+    outputModule: "what-if-snaft-survival",
+    code: `dag {
+  Baseline_risk [adjusted,label="baseline risk",pos="-1.7,2.9"]
+  Treatment_start [exposure,label="treatment start",pos="-0.2,1.55"]
+  Failure_time [outcome,label="counterfactual failure time",pos="-0.8,0.1"]
+  Visit_schedule [label="visit schedule",pos="1.15,-0.25"]
+  Censoring [selected,pos="0.95,-1.5"]
+  Observed_death [outcome,label="observed death",pos="-0.1,-2.7"]
+  Baseline_risk -> Treatment_start
+  Baseline_risk -> Failure_time
+  Baseline_risk -> Visit_schedule
+  Baseline_risk -> Censoring
+  Baseline_risk -> Observed_death
+  Treatment_start -> Failure_time
+  Treatment_start -> Censoring
+  Failure_time -> Observed_death
+  Visit_schedule -> Censoring
+  Censoring -> Observed_death
 }`
   },
   {
@@ -1392,6 +1800,54 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
       }
     ]
   },
+  "what-if-treatment-feedback": {
+    module: "Longitudinal g-methods",
+    punchline: "The estimand is a contrast between complete treatment strategies, not a single adjusted regression coefficient after conditioning on the time-varying covariate.",
+    estimand: "Risk difference for always treat versus never treat across A0 and A1, using Y as the end-of-follow-up event.",
+    primaryOutput: "Estimator comparison across observed regimen contrast, L1-standardized contrast, parametric g-formula, IPW, and additive g-estimation.",
+    validity: "Credible if the time order is right, treatment and covariate histories are measured before later decisions, positivity is adequate, and censoring is handled separately when present.",
+    nextAction: "Use the g-method comparison as the reportable strategy contrast and treat conventional adjustment as a diagnostic, not the final estimand.",
+    sections: [
+      {
+        title: "Claim packet",
+        defaultOpen: true,
+        items: [
+          "Name the treatment strategies before looking at outcomes.",
+          "Keep A0, L1, A1, and Y in time order.",
+          "State that L1 is both affected by A0 and predictive of A1 and Y.",
+          "Report the strategy contrast, not only the A1 coefficient from a regression adjusted for L1."
+        ]
+      },
+      {
+        title: "Diagnostics to show",
+        defaultOpen: true,
+        items: [
+          "Support for both strategies within L1 histories.",
+          "IPW effective sample size and positivity warnings.",
+          "Difference between the observed regimen contrast and g-method estimates.",
+          "Whether standardizing on L1 changes the target by conditioning on a post-A0 variable."
+        ]
+      },
+      {
+        title: "Threats and failure modes",
+        items: [
+          "Poor support for always-treat or never-treat histories.",
+          "Misspecified treatment models for IPW.",
+          "Misspecified outcome model for the parametric g-formula.",
+          "Censoring that depends on treatment/covariate history and is ignored.",
+          "Unmeasured history variables that affect treatment and outcome."
+        ]
+      },
+      {
+        title: "Source lineage",
+        items: [
+          "Inspired by the longitudinal g-method chapters in Hernan and Robins, Causal Inference: What If.",
+          "Explanations and DGP parameters here are rewritten for Nudagitty and are not copied from the book tables.",
+          "The example is meant to teach treatment-confounder feedback before adding fuller survival/person-time examples."
+        ]
+      }
+    ]
+  },
   "policy-event-study": {
     module: "DiD / event study / synthetic control",
     punchline: "The denouement is the treated units' post-policy change relative to a credible counterfactual trend from untreated, not-yet-treated, or synthetic-control units.",
@@ -1889,7 +2345,47 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
 };
 
 export function exampleDenouement(id: string): ExampleDenouement | null {
-  return EXAMPLE_DENOUEMENTS[id] ?? null;
+  return EXAMPLE_DENOUEMENTS[id] ?? whatIfDenouement(id) ?? null;
+}
+
+function whatIfDenouement(id: string): ExampleDenouement | null {
+  const example = EXAMPLES.find((candidate) => candidate.id === id);
+  if (!example || !id.startsWith("what-if-")) return null;
+  return {
+    module: "What If advanced example",
+    punchline: `${example.title} is a book-inspired advanced causal example for separating the target strategy contrast from the easier but misleading observed-data comparison.`,
+    estimand: "Define the treatment strategy, time horizon, outcome, and baseline population before reading the graph as an adjustment recipe.",
+    primaryOutput: "The pro output computes the available g-method, survival, or censoring-aware contrast from the configured simulated data.",
+    validity: "The graph is a teaching DGP, not a reproduction of the book tables; source metadata points to the relevant chapter while app copy is rewritten.",
+    nextAction: "Use the graph to decide which histories, censoring variables, and outcome scale must be represented before trusting a contrast.",
+    sections: [
+      {
+        title: "Why this example matters",
+        defaultOpen: true,
+        items: [
+          "It exercises the advanced longitudinal metadata rather than only a static exposure/outcome pair.",
+          "It makes time order, strategy assignment, and the outcome horizon visible in the graph.",
+          "It gives the UI a concrete stress test for g-methods, survival, and censoring outputs."
+        ]
+      },
+      {
+        title: "Threats and failure modes",
+        items: [
+          "Naive conditioning can target an observed-history comparison rather than a strategy contrast.",
+          "Dynamic strategies require rules that can be evaluated from prior history, not labels alone.",
+          "Censoring and survivor selection change the denominator unless they are represented explicitly."
+        ]
+      },
+      {
+        title: "Report language",
+        items: [
+          "Say: this simulated graph illustrates the identifying structure of the chapter example.",
+          "Do not say: these are the published numerical estimates from the book.",
+          "Report the strategy, horizon, outcome scale, and censoring treatment together."
+        ]
+      }
+    ]
+  };
 }
 
 export function exampleDocument(id: string): GraphDocument | null {
@@ -1906,7 +2402,7 @@ export function exampleDocument(id: string): GraphDocument | null {
 }
 
 function usesManualExampleLayout(id: string): boolean {
-  return id === "target-trial-followup";
+  return id === "target-trial-followup" || id.startsWith("what-if-");
 }
 
 export function initialDocument(): GraphDocument {
@@ -1936,6 +2432,21 @@ function configureClassicExample(document: GraphDocument, id: string): GraphDocu
 function configurePractitionerExample(document: GraphDocument, id: string): GraphDocument {
   const next = prepareDocument(document, exampleSeed(id));
   if (id === "target-trial-followup") return configureTargetTrialFollowup(next);
+  if (id === "what-if-showcase-dynamic-rules") return configureWhatIfDynamicGFormula(next);
+  if (id === "what-if-showcase-survival-curves") return configureWhatIfNhefsMortalitySurvival(next);
+  if (id === "what-if-showcase-hazard-denominator") return configureWhatIfHazardSelection(next);
+  if (id === "what-if-showcase-g-estimation") return configureWhatIfWeightGainGEstimation(next);
+  if (id === "what-if-showcase-ipcw") return configureWhatIfCensoringIpcw(next);
+  if (id === "what-if-showcase-snaft") return configureWhatIfSnaftSurvival(next);
+  if (id === "what-if-treatment-feedback") return configureWhatIfTreatmentFeedback(next);
+  if (id === "what-if-ipw-pseudopopulation") return configureWhatIfIpwPseudopopulation(next);
+  if (id === "what-if-hazard-selection") return configureWhatIfHazardSelection(next);
+  if (id === "what-if-nhefs-mortality-survival") return configureWhatIfNhefsMortalitySurvival(next);
+  if (id === "what-if-weight-gain-g-estimation") return configureWhatIfWeightGainGEstimation(next);
+  if (id === "what-if-hiv-cd4-variants") return configureWhatIfHivCd4Variants(next);
+  if (id === "what-if-censoring-ipcw") return configureWhatIfCensoringIpcw(next);
+  if (id === "what-if-dynamic-g-formula") return configureWhatIfDynamicGFormula(next);
+  if (id === "what-if-snaft-survival") return configureWhatIfSnaftSurvival(next);
   if (id === "policy-event-study") return configurePolicyEventStudy(next);
   if (id === "incrementality-uplift") return configureIncrementalityUplift(next);
   if (id === "causal-ml-refutation") return configureCausalMlRefutation(next);
@@ -2225,6 +2736,557 @@ function configureTargetTrialFollowup(document: GraphDocument): GraphDocument {
   setLinearCoefficient(document, "Treatment_start", "Outcome_90d", -0.55);
   setLinearCoefficient(document, "Adherence", "Outcome_90d", -0.35);
   setLinearCoefficient(document, "Censoring", "Outcome_90d", 0.9);
+  return document;
+}
+
+function configureWhatIfTreatmentFeedback(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 5000);
+  setContinuousVariable(document, "Baseline_risk", "Pre-baseline prognosis measured before treatment starts.", "risk z-score");
+  setBinaryVariable(document, "A0", "Treatment decision at baseline.", "treated");
+  setBinaryVariable(document, "L1", "Time-varying risk measured after A0 and before A1. It is affected by earlier treatment and predicts later treatment and outcome.", "high risk");
+  setBinaryVariable(document, "A1", "Treatment decision at the next follow-up time.", "treated");
+  setBinaryVariable(document, "Y", "End-of-follow-up event.", "event");
+  setNode(document, "Baseline_risk", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "A0", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setLogitNode(document, "L1", -0.15);
+  setLogitNode(document, "A1", -0.35);
+  setLogitNode(document, "Y", -2.05);
+  setLinearCoefficient(document, "Baseline_risk", "L1", 1.05);
+  setLinearCoefficient(document, "Baseline_risk", "Y", 0.65);
+  setLinearCoefficient(document, "A0", "L1", 0.9);
+  setLinearCoefficient(document, "A0", "A1", 1.25);
+  setLinearCoefficient(document, "A0", "Y", -0.42);
+  setLinearCoefficient(document, "L1", "A1", 1.35);
+  setLinearCoefficient(document, "L1", "Y", 1.05);
+  setLinearCoefficient(document, "A1", "Y", -0.58);
+  document.metadata = normalizeGraphDocumentMetadata({
+    ...document.metadata,
+    longitudinal: {
+      timePoints: [
+        { id: "t0", label: "baseline", order: 0 },
+        { id: "t1", label: "follow-up 1", order: 1 },
+        { id: "t2", label: "end of follow-up", order: 2 }
+      ],
+      variables: {
+        Baseline_risk: { series: "risk", time: "t0", role: "baseline" },
+        A0: { series: "treatment", time: "t0", role: "treatment" },
+        L1: { series: "risk", time: "t1", role: "time_varying_confounder" },
+        A1: { series: "treatment", time: "t1", role: "treatment" },
+        Y: { series: "event", time: "t2", role: "outcome" }
+      },
+      treatmentStrategies: [
+        {
+          id: "always-treat",
+          label: "always treat",
+          description: "Set A0=1 and A1=1.",
+          kind: "static",
+          assignments: [
+            { variable: "A0", value: 1 },
+            { variable: "A1", value: 1 }
+          ],
+          rules: []
+        },
+        {
+          id: "never-treat",
+          label: "never treat",
+          description: "Set A0=0 and A1=0.",
+          kind: "static",
+          assignments: [
+            { variable: "A0", value: 0 },
+            { variable: "A1", value: 0 }
+          ],
+          rules: []
+        }
+      ],
+      estimands: [
+        {
+          id: "always-vs-never-risk-difference",
+          label: "always treat vs never treat",
+          type: "risk_difference",
+          outcome: "Y",
+          strategies: ["always-treat", "never-treat"],
+          population: "baseline-eligible simulated cohort",
+          horizon: "end of follow-up"
+        }
+      ],
+      censoring: [],
+      survivalOutputs: [
+        {
+          id: "event-person-time",
+          label: "person-time event table",
+          timeVariable: null,
+          eventVariable: "Y",
+          eventVariables: ["Y"],
+          censoringVariable: null,
+          censoringVariables: [],
+          timeScale: "follow-up interval"
+        }
+      ]
+    },
+    sources: [
+      {
+        id: "hernan-robins-what-if",
+        label: "What If",
+        authors: "Miguel A. Hernan and James M. Robins",
+        title: "Causal Inference: What If",
+        year: "2025",
+        url: "https://www.hsph.harvard.edu/miguel-hernan/causal-inference-book/",
+        chapter: "Chapters 20-21",
+        section: "Longitudinal g-methods",
+        reference: "Treatment-confounder feedback teaching structure",
+        note: "Inspired by the longitudinal g-method chapters; graph text and DGP are rewritten for this app."
+      }
+    ]
+  });
+  return document;
+}
+
+function configureWhatIfIpwPseudopopulation(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 5000);
+  setContinuousVariable(document, "Baseline_C", "Baseline covariate that affects both treatment and the outcome.", "covariate z-score");
+  setBinaryVariable(document, "Treatment_A", "Treatment assigned with probability depending on the baseline covariate.", "treated");
+  setBinaryVariable(document, "Outcome_Y", "End-of-follow-up binary outcome.", "event");
+  setNode(document, "Baseline_C", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "Treatment_A", -0.1);
+  setLogitNode(document, "Outcome_Y", -1.8);
+  setLinearCoefficient(document, "Baseline_C", "Treatment_A", 1.35);
+  setLinearCoefficient(document, "Baseline_C", "Outcome_Y", 1.0);
+  setLinearCoefficient(document, "Treatment_A", "Outcome_Y", -0.65);
+  applyWhatIfMetadata(document, {
+    chapter: "Chapter 2",
+    section: "Standardization and inverse probability weighting",
+    reference: "Pseudo-population teaching example",
+    longitudinal: {
+      timePoints: [
+        { id: "t0", label: "baseline", order: 0 },
+        { id: "t1", label: "follow-up", order: 1 }
+      ],
+      variables: {
+        Baseline_C: { series: "covariate", time: "t0", role: "baseline" },
+        Treatment_A: { series: "treatment", time: "t0", role: "treatment" },
+        Outcome_Y: { series: "event", time: "t1", role: "outcome" }
+      },
+      treatmentStrategies: binaryStrategies("treat", "Treat", "Treatment_A", "Do A=1.", "untreat", "No treatment", "Treatment_A", "Do A=0."),
+      estimands: [riskEstimand("treat-vs-untreat-risk-difference", "treat vs no treatment", "Outcome_Y", ["treat", "untreat"], "end of follow-up")],
+      censoring: [],
+      survivalOutputs: []
+    }
+  });
+  return document;
+}
+
+function configureWhatIfHazardSelection(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 6000);
+  setContinuousVariable(document, "Frailty", "Baseline frailty that affects treatment and each interval's mortality risk.", "frailty z-score");
+  setBinaryVariable(document, "Treatment_A", "Treatment at baseline.", "treated");
+  setBinaryVariable(document, "Death_1", "Death during the first interval.", "death");
+  setBinaryVariable(document, "Alive_1", "Indicator for surviving into the second interval.", "alive");
+  setBinaryVariable(document, "Death_2", "Death during the second interval, observed among those still at risk.", "death");
+  setNode(document, "Frailty", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "Treatment_A", -0.25);
+  setLogitNode(document, "Death_1", -2.4);
+  setLogitNode(document, "Alive_1", 3.0);
+  setLogitNode(document, "Death_2", -4.0);
+  setLinearCoefficient(document, "Frailty", "Treatment_A", 1.05);
+  setLinearCoefficient(document, "Frailty", "Death_1", 1.35);
+  setLinearCoefficient(document, "Frailty", "Death_2", 1.15);
+  setLinearCoefficient(document, "Treatment_A", "Death_1", -0.75);
+  setLinearCoefficient(document, "Treatment_A", "Death_2", -0.3);
+  setLinearCoefficient(document, "Death_1", "Alive_1", -6.0);
+  setLinearCoefficient(document, "Alive_1", "Death_2", 3.1);
+  applyWhatIfMetadata(document, {
+    chapter: "Chapters 8 and 17",
+    section: "Hazards, survival, and selection among survivors",
+    reference: "Hazard-ratio selection warning",
+    longitudinal: {
+      timePoints: [
+        { id: "t0", label: "baseline", order: 0 },
+        { id: "t1", label: "interval 1", order: 1 },
+        { id: "t2", label: "interval 2", order: 2 }
+      ],
+      variables: {
+        Frailty: { series: "frailty", time: "t0", role: "baseline" },
+        Treatment_A: { series: "treatment", time: "t0", role: "treatment" },
+        Death_1: { series: "death", time: "t1", role: "outcome" },
+        Alive_1: { series: "survival", time: "t1", role: "selection" },
+        Death_2: { series: "death", time: "t2", role: "outcome" }
+      },
+      treatmentStrategies: binaryStrategies("treat", "Treat", "Treatment_A", "Set A=1 at baseline.", "untreat", "No treatment", "Treatment_A", "Set A=0 at baseline."),
+      estimands: [riskEstimand("cumulative-risk-difference", "cumulative risk difference", "Death_2", ["treat", "untreat"], "two intervals")],
+      censoring: [],
+      survivalOutputs: [survivalSpec("two-interval-survival", "two-interval survival", ["Death_1", "Death_2"], [])]
+    }
+  });
+  return document;
+}
+
+function configureWhatIfNhefsMortalitySurvival(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 7000);
+  setContinuousVariable(document, "Age", "Baseline age at the start of follow-up.", "years");
+  setContinuousVariable(document, "Baseline_health", "Baseline prognosis and smoking history summary.", "health z-score");
+  setBinaryVariable(document, "Quit_smoking", "Smoking cessation at baseline.", "quit");
+  setContinuousVariable(document, "Weight_gain_2y", "Weight change after quitting, measured before later mortality.", "kg");
+  setBinaryVariable(document, "Censoring_5y", "Loss to follow-up by the intermediate visit.", "censored");
+  setBinaryVariable(document, "Death_5y", "Cumulative death by the intermediate follow-up.", "death");
+  setBinaryVariable(document, "Death_10y", "Cumulative death by the later follow-up. Anyone dead by 5 years is necessarily dead by 10 years.", "death");
+  setNode(document, "Age", { distribution: { kind: "normal", mean: 50, sd: 10 }, noise: ZERO_NOISE });
+  setNode(document, "Baseline_health", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "Quit_smoking", 0.0);
+  setNode(document, "Weight_gain_2y", { intercept: 2.2, noise: { kind: "normal", mean: 0, sd: 2.4 } });
+  setLogitNode(document, "Censoring_5y", -2.4);
+  setLogitNode(document, "Death_5y", -3.3);
+  setLogitNode(document, "Death_10y", -2.7);
+  setLinearCoefficient(document, "Age", "Quit_smoking", -0.012);
+  setLinearCoefficient(document, "Age", "Censoring_5y", 0.025);
+  setLinearCoefficient(document, "Age", "Death_5y", 0.035);
+  setLinearCoefficient(document, "Age", "Death_10y", 0.032);
+  setLinearCoefficient(document, "Baseline_health", "Quit_smoking", -0.55);
+  setLinearCoefficient(document, "Baseline_health", "Weight_gain_2y", -0.7);
+  setLinearCoefficient(document, "Baseline_health", "Censoring_5y", 0.6);
+  setLinearCoefficient(document, "Baseline_health", "Death_5y", 1.1);
+  setLinearCoefficient(document, "Baseline_health", "Death_10y", 1.0);
+  setLinearCoefficient(document, "Quit_smoking", "Weight_gain_2y", 4.1);
+  setLinearCoefficient(document, "Quit_smoking", "Death_5y", -0.35);
+  setLinearCoefficient(document, "Quit_smoking", "Death_10y", -0.45);
+  setLinearCoefficient(document, "Weight_gain_2y", "Death_10y", 0.045);
+  setLinearCoefficient(document, "Censoring_5y", "Death_10y", 0.7);
+  setEdgeMechanism(document, "Death_5y", "Death_10y", "absorbing", {});
+  applyWhatIfMetadata(document, {
+    chapter: "Chapter 17",
+    section: "Survival analysis and target-trial follow-up",
+    reference: "NHEFS smoking cessation mortality structure",
+    longitudinal: {
+      timePoints: [
+        { id: "t0", label: "baseline", order: 0 },
+        { id: "t1", label: "5 years", order: 1 },
+        { id: "t2", label: "10 years", order: 2 }
+      ],
+      variables: {
+        Age: { series: "age", time: "t0", role: "baseline" },
+        Baseline_health: { series: "health", time: "t0", role: "baseline" },
+        Quit_smoking: { series: "treatment", time: "t0", role: "treatment" },
+        Weight_gain_2y: { series: "weight", time: "t1", role: "time_varying_confounder" },
+        Censoring_5y: { series: "censoring", time: "t1", role: "censoring" },
+        Death_5y: { series: "death", time: "t1", role: "outcome" },
+        Death_10y: { series: "death", time: "t2", role: "outcome" }
+      },
+      treatmentStrategies: binaryStrategies("quit", "Quit smoking", "Quit_smoking", "Set smoking cessation to 1 at baseline.", "continue", "Continue smoking", "Quit_smoking", "Set smoking cessation to 0 at baseline."),
+      estimands: [riskEstimand("quit-vs-continue-mortality-risk", "quit vs continue mortality risk", "Death_10y", ["quit", "continue"], "10 years")],
+      censoring: [{ id: "censoring-5y", variable: "Censoring_5y", time: "t1", description: "Loss to follow-up before the later death indicator." }],
+      survivalOutputs: [survivalSpec("mortality-survival", "mortality survival", ["Death_5y", "Death_10y"], ["Censoring_5y"])]
+    }
+  });
+  return document;
+}
+
+function configureWhatIfWeightGainGEstimation(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 6000);
+  setContinuousVariable(document, "Smoking_intensity", "Baseline cigarettes per day, centered and scaled.", "z-score");
+  setContinuousVariable(document, "Socioeconomic", "Baseline social and behavioral context.", "z-score");
+  setBinaryVariable(document, "Quit_smoking", "Smoking cessation by the start of follow-up.", "quit");
+  setContinuousVariable(document, "Diet_change", "Post-quit behavior that can mediate part of the weight change.", "z-score");
+  setContinuousVariable(document, "Weight_gain_8y", "Eight-year weight gain.", "kg");
+  setNode(document, "Smoking_intensity", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Socioeconomic", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "Quit_smoking", -0.1);
+  setNode(document, "Diet_change", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.6 } });
+  setNode(document, "Weight_gain_8y", { intercept: 1.4, noise: { kind: "normal", mean: 0, sd: 2.1 } });
+  setLinearCoefficient(document, "Smoking_intensity", "Quit_smoking", -0.8);
+  setLinearCoefficient(document, "Smoking_intensity", "Weight_gain_8y", -0.4);
+  setLinearCoefficient(document, "Socioeconomic", "Quit_smoking", 0.5);
+  setLinearCoefficient(document, "Socioeconomic", "Diet_change", 0.55);
+  setLinearCoefficient(document, "Socioeconomic", "Weight_gain_8y", -0.55);
+  setLinearCoefficient(document, "Quit_smoking", "Diet_change", 0.65);
+  setLinearCoefficient(document, "Quit_smoking", "Weight_gain_8y", 4.4);
+  setLinearCoefficient(document, "Diet_change", "Weight_gain_8y", 0.85);
+  applyWhatIfMetadata(document, {
+    chapter: "Chapter 14",
+    section: "Structural nested mean models and g-estimation",
+    reference: "NHEFS smoking cessation weight-gain structure",
+    longitudinal: {
+      timePoints: [
+        { id: "t0", label: "baseline", order: 0 },
+        { id: "t1", label: "follow-up", order: 1 }
+      ],
+      variables: {
+        Smoking_intensity: { series: "smoking", time: "t0", role: "baseline" },
+        Socioeconomic: { series: "context", time: "t0", role: "baseline" },
+        Quit_smoking: { series: "treatment", time: "t0", role: "treatment" },
+        Diet_change: { series: "behavior", time: "t1", role: "time_varying_confounder" },
+        Weight_gain_8y: { series: "weight", time: "t1", role: "outcome" }
+      },
+      treatmentStrategies: binaryStrategies("quit", "Quit smoking", "Quit_smoking", "Set Quit_smoking=1.", "continue", "Continue smoking", "Quit_smoking", "Set Quit_smoking=0."),
+      estimands: [{
+        id: "quit-vs-continue-weight-gain",
+        label: "quit vs continue smoking",
+        type: "mean_difference",
+        outcome: "Weight_gain_8y",
+        strategies: ["quit", "continue"],
+        population: "baseline NHEFS-like simulated cohort",
+        horizon: "8 years"
+      }],
+      censoring: [],
+      survivalOutputs: []
+    }
+  });
+  return document;
+}
+
+function configureWhatIfHivCd4Variants(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 7000);
+  markExposures(document, ["A0", "A1", "A2"]);
+  setBinaryVariable(document, "CD4_0", "Baseline low-CD4 indicator.", "low CD4");
+  setBinaryVariable(document, "A0", "Antiretroviral treatment at baseline.", "treated");
+  setBinaryVariable(document, "CD4_1", "Low-CD4 indicator at the first follow-up.", "low CD4");
+  setBinaryVariable(document, "A1", "Antiretroviral treatment at the first follow-up.", "treated");
+  setBinaryVariable(document, "CD4_2", "Low-CD4 indicator at the second follow-up.", "low CD4");
+  setBinaryVariable(document, "A2", "Antiretroviral treatment at the second follow-up.", "treated");
+  setBinaryVariable(document, "AIDS_death", "AIDS or death endpoint.", "event");
+  setNode(document, "CD4_0", { distribution: { kind: "bernoulli", p: 0.38 }, noise: ZERO_NOISE });
+  setLogitNode(document, "A0", -0.45);
+  setLogitNode(document, "CD4_1", -0.35);
+  setLogitNode(document, "A1", -0.55);
+  setLogitNode(document, "CD4_2", -0.45);
+  setLogitNode(document, "A2", -0.65);
+  setLogitNode(document, "AIDS_death", -2.5);
+  setLinearCoefficient(document, "CD4_0", "A0", 1.3);
+  setLinearCoefficient(document, "CD4_0", "CD4_1", 1.6);
+  setLinearCoefficient(document, "CD4_0", "AIDS_death", 0.8);
+  setLinearCoefficient(document, "A0", "CD4_1", -0.7);
+  setLinearCoefficient(document, "A0", "A1", 1.1);
+  setLinearCoefficient(document, "A0", "AIDS_death", -0.35);
+  setLinearCoefficient(document, "CD4_1", "A1", 1.35);
+  setLinearCoefficient(document, "CD4_1", "CD4_2", 1.5);
+  setLinearCoefficient(document, "CD4_1", "AIDS_death", 0.95);
+  setLinearCoefficient(document, "A1", "CD4_2", -0.75);
+  setLinearCoefficient(document, "A1", "A2", 1.0);
+  setLinearCoefficient(document, "A1", "AIDS_death", -0.4);
+  setLinearCoefficient(document, "CD4_2", "A2", 1.45);
+  setLinearCoefficient(document, "CD4_2", "AIDS_death", 1.05);
+  setLinearCoefficient(document, "A2", "AIDS_death", -0.5);
+  applyWhatIfMetadata(document, {
+    chapter: "Chapter 19",
+    section: "Treatment strategies and treatment variants",
+    reference: "HIV/CD4 time-varying treatment structure",
+    longitudinal: {
+      timePoints: [
+        { id: "t0", label: "baseline", order: 0 },
+        { id: "t1", label: "visit 1", order: 1 },
+        { id: "t2", label: "visit 2", order: 2 },
+        { id: "t3", label: "endpoint", order: 3 }
+      ],
+      variables: {
+        CD4_0: { series: "cd4", time: "t0", role: "baseline" },
+        A0: { series: "art", time: "t0", role: "treatment" },
+        CD4_1: { series: "cd4", time: "t1", role: "time_varying_confounder" },
+        A1: { series: "art", time: "t1", role: "treatment" },
+        CD4_2: { series: "cd4", time: "t2", role: "time_varying_confounder" },
+        A2: { series: "art", time: "t2", role: "treatment" },
+        AIDS_death: { series: "event", time: "t3", role: "outcome" }
+      },
+      treatmentStrategies: [
+        dynamicLowRiskStrategy("treat-low-cd4", "treat when CD4 is low", ["A0", "A1", "A2"], ["CD4_0", "CD4_1", "CD4_2"], "Start or continue treatment when the current CD4 risk indicator is high."),
+        staticStrategy("never-art", "never ART", "Keep A0=A1=A2=0.", [["A0", 0], ["A1", 0], ["A2", 0]]),
+        staticStrategy("always-art", "always ART", "Keep A0=A1=A2=1.", [["A0", 1], ["A1", 1], ["A2", 1]])
+      ],
+      estimands: [riskEstimand("dynamic-vs-never-aids-death", "dynamic CD4 rule vs never ART", "AIDS_death", ["treat-low-cd4", "never-art"], "endpoint")],
+      censoring: [],
+      survivalOutputs: []
+    }
+  });
+  return document;
+}
+
+function configureWhatIfCensoringIpcw(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 7000);
+  markExposures(document, ["A0", "A1"]);
+  setContinuousVariable(document, "Baseline_risk", "Baseline prognosis before treatment and follow-up.", "risk z-score");
+  setBinaryVariable(document, "A0", "Treatment decision at baseline.", "treated");
+  setBinaryVariable(document, "L1", "Post-baseline risk affected by A0 and used for later decisions.", "high risk");
+  setBinaryVariable(document, "C1", "Censoring after the first risk update.", "censored");
+  setBinaryVariable(document, "A1", "Treatment decision at the second decision time.", "treated");
+  setBinaryVariable(document, "C2", "Later censoring before outcome ascertainment.", "censored");
+  setBinaryVariable(document, "Y", "End-of-follow-up endpoint.", "event");
+  setNode(document, "Baseline_risk", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "A0", -0.2);
+  setLogitNode(document, "L1", -0.1);
+  setLogitNode(document, "C1", -2.3);
+  setLogitNode(document, "A1", -0.35);
+  setLogitNode(document, "C2", -2.2);
+  setLogitNode(document, "Y", -2.0);
+  setLinearCoefficient(document, "Baseline_risk", "A0", 0.85);
+  setLinearCoefficient(document, "Baseline_risk", "L1", 1.0);
+  setLinearCoefficient(document, "Baseline_risk", "C1", 0.55);
+  setLinearCoefficient(document, "Baseline_risk", "C2", 0.5);
+  setLinearCoefficient(document, "Baseline_risk", "Y", 0.7);
+  setLinearCoefficient(document, "A0", "L1", 0.75);
+  setLinearCoefficient(document, "A0", "C1", -0.2);
+  setLinearCoefficient(document, "A0", "A1", 1.1);
+  setLinearCoefficient(document, "A0", "Y", -0.35);
+  setLinearCoefficient(document, "L1", "C1", 0.8);
+  setLinearCoefficient(document, "L1", "A1", 1.25);
+  setLinearCoefficient(document, "L1", "C2", 0.9);
+  setLinearCoefficient(document, "L1", "Y", 1.0);
+  setLinearCoefficient(document, "C1", "A1", -1.1);
+  setLinearCoefficient(document, "C1", "Y", 0.7);
+  setLinearCoefficient(document, "A1", "C2", -0.25);
+  setLinearCoefficient(document, "A1", "Y", -0.45);
+  setLinearCoefficient(document, "C2", "Y", 0.8);
+  applyWhatIfMetadata(document, {
+    chapter: "Chapter 21.5",
+    section: "Censoring as a time-varying treatment",
+    reference: "IPCW teaching structure",
+    longitudinal: {
+      timePoints: [
+        { id: "t0", label: "baseline", order: 0 },
+        { id: "t1", label: "visit 1", order: 1 },
+        { id: "t2", label: "visit 2", order: 2 },
+        { id: "t3", label: "endpoint", order: 3 }
+      ],
+      variables: {
+        Baseline_risk: { series: "risk", time: "t0", role: "baseline" },
+        A0: { series: "treatment", time: "t0", role: "treatment" },
+        L1: { series: "risk", time: "t1", role: "time_varying_confounder" },
+        C1: { series: "censoring", time: "t1", role: "censoring" },
+        A1: { series: "treatment", time: "t2", role: "treatment" },
+        C2: { series: "censoring", time: "t2", role: "censoring" },
+        Y: { series: "event", time: "t3", role: "outcome" }
+      },
+      treatmentStrategies: [
+        staticStrategy("always-treat", "always treat", "Set A0=A1=1.", [["A0", 1], ["A1", 1]]),
+        staticStrategy("never-treat", "never treat", "Set A0=A1=0.", [["A0", 0], ["A1", 0]])
+      ],
+      estimands: [riskEstimand("always-vs-never-with-ipcw", "always treat vs never treat", "Y", ["always-treat", "never-treat"], "endpoint")],
+      censoring: [
+        { id: "censoring-c1", variable: "C1", time: "t1", description: "Censoring after first follow-up." },
+        { id: "censoring-c2", variable: "C2", time: "t2", description: "Censoring before outcome." }
+      ],
+      survivalOutputs: []
+    }
+  });
+  return document;
+}
+
+function configureWhatIfDynamicGFormula(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 7000);
+  markExposures(document, ["A0", "A1", "A2"]);
+  setBinaryVariable(document, "Risk_0", "Baseline high-risk indicator.", "high risk");
+  setBinaryVariable(document, "A0", "Action at baseline.", "treated");
+  setBinaryVariable(document, "Risk_1", "Updated high-risk indicator after A0.", "high risk");
+  setBinaryVariable(document, "A1", "Action at the first follow-up.", "treated");
+  setBinaryVariable(document, "Risk_2", "Updated high-risk indicator after A1.", "high risk");
+  setBinaryVariable(document, "A2", "Action at the second follow-up.", "treated");
+  setBinaryVariable(document, "Y", "End-of-follow-up event.", "event");
+  setNode(document, "Risk_0", { distribution: { kind: "bernoulli", p: 0.42 }, noise: ZERO_NOISE });
+  setLogitNode(document, "A0", -0.35);
+  setLogitNode(document, "Risk_1", -0.2);
+  setLogitNode(document, "A1", -0.4);
+  setLogitNode(document, "Risk_2", -0.25);
+  setLogitNode(document, "A2", -0.45);
+  setLogitNode(document, "Y", -2.15);
+  setLinearCoefficient(document, "Risk_0", "A0", 1.1);
+  setLinearCoefficient(document, "Risk_0", "Risk_1", 1.2);
+  setLinearCoefficient(document, "Risk_0", "Y", 0.55);
+  setLinearCoefficient(document, "A0", "Risk_1", 0.55);
+  setLinearCoefficient(document, "A0", "A1", 0.9);
+  setLinearCoefficient(document, "A0", "Y", -0.25);
+  setLinearCoefficient(document, "Risk_1", "A1", 1.2);
+  setLinearCoefficient(document, "Risk_1", "Risk_2", 1.2);
+  setLinearCoefficient(document, "Risk_1", "Y", 0.75);
+  setLinearCoefficient(document, "A1", "Risk_2", 0.45);
+  setLinearCoefficient(document, "A1", "A2", 0.9);
+  setLinearCoefficient(document, "A1", "Y", -0.35);
+  setLinearCoefficient(document, "Risk_2", "A2", 1.3);
+  setLinearCoefficient(document, "Risk_2", "Y", 0.9);
+  setLinearCoefficient(document, "A2", "Y", -0.45);
+  applyWhatIfMetadata(document, {
+    chapter: "Chapter 21",
+    section: "The parametric g-formula for dynamic strategies",
+    reference: "Dynamic threshold strategy teaching structure",
+    longitudinal: {
+      timePoints: [
+        { id: "t0", label: "baseline", order: 0 },
+        { id: "t1", label: "visit 1", order: 1 },
+        { id: "t2", label: "visit 2", order: 2 },
+        { id: "t3", label: "endpoint", order: 3 }
+      ],
+      variables: {
+        Risk_0: { series: "risk", time: "t0", role: "baseline" },
+        A0: { series: "action", time: "t0", role: "treatment" },
+        Risk_1: { series: "risk", time: "t1", role: "time_varying_confounder" },
+        A1: { series: "action", time: "t1", role: "treatment" },
+        Risk_2: { series: "risk", time: "t2", role: "time_varying_confounder" },
+        A2: { series: "action", time: "t2", role: "treatment" },
+        Y: { series: "event", time: "t3", role: "outcome" }
+      },
+      treatmentStrategies: [
+        dynamicLowRiskStrategy("treat-when-high-risk", "treat when risk is high", ["A0", "A1", "A2"], ["Risk_0", "Risk_1", "Risk_2"], "Set treatment to 1 whenever the current risk indicator is high."),
+        staticStrategy("never-treat", "never treat", "Set all actions to 0.", [["A0", 0], ["A1", 0], ["A2", 0]]),
+        staticStrategy("always-treat", "always treat", "Set all actions to 1.", [["A0", 1], ["A1", 1], ["A2", 1]])
+      ],
+      estimands: [riskEstimand("dynamic-vs-never-risk", "dynamic strategy vs never treat", "Y", ["treat-when-high-risk", "never-treat"], "endpoint")],
+      censoring: [],
+      survivalOutputs: []
+    }
+  });
+  return document;
+}
+
+function configureWhatIfSnaftSurvival(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 6000);
+  setContinuousVariable(document, "Baseline_risk", "Baseline prognosis before treatment and visit scheduling.", "risk z-score");
+  setBinaryVariable(document, "Treatment_start", "Treatment initiation at baseline.", "treated");
+  setContinuousVariable(document, "Failure_time", "Latent failure time under the observed treatment regime.", "months");
+  setContinuousVariable(document, "Visit_schedule", "Follow-up intensity and administrative visit timing.", "visit index");
+  setBinaryVariable(document, "Censoring", "Censoring before complete failure-time observation.", "censored");
+  setBinaryVariable(document, "Observed_death", "Observed death indicator by the study horizon.", "death");
+  setNode(document, "Baseline_risk", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "Treatment_start", -0.15);
+  setNode(document, "Failure_time", { intercept: 24, noise: { kind: "normal", mean: 0, sd: 3.5 } });
+  setNode(document, "Visit_schedule", { intercept: 3, noise: { kind: "normal", mean: 0, sd: 0.8 } });
+  setLogitNode(document, "Censoring", -2.15);
+  setLogitNode(document, "Observed_death", -4.6);
+  setLinearCoefficient(document, "Baseline_risk", "Treatment_start", 0.85);
+  setLinearCoefficient(document, "Baseline_risk", "Failure_time", -4.5);
+  setLinearCoefficient(document, "Baseline_risk", "Visit_schedule", 0.45);
+  setLinearCoefficient(document, "Baseline_risk", "Censoring", 0.6);
+  setLinearCoefficient(document, "Baseline_risk", "Observed_death", 1.1);
+  setLinearCoefficient(document, "Treatment_start", "Failure_time", 3.8);
+  setLinearCoefficient(document, "Treatment_start", "Censoring", -0.25);
+  setLinearCoefficient(document, "Failure_time", "Observed_death", -0.16);
+  setLinearCoefficient(document, "Visit_schedule", "Censoring", -0.55);
+  setLinearCoefficient(document, "Censoring", "Observed_death", 0.75);
+  applyWhatIfMetadata(document, {
+    chapter: "Chapter 17.6",
+    section: "Structural nested accelerated failure time models",
+    reference: "Survival-time g-estimation teaching structure",
+    longitudinal: {
+      timePoints: [
+        { id: "t0", label: "baseline", order: 0 },
+        { id: "t1", label: "follow-up", order: 1 }
+      ],
+      variables: {
+        Baseline_risk: { series: "risk", time: "t0", role: "baseline" },
+        Treatment_start: { series: "treatment", time: "t0", role: "treatment" },
+        Failure_time: { series: "survival_time", time: "t1", role: "outcome" },
+        Visit_schedule: { series: "visit", time: "t1", role: "other" },
+        Censoring: { series: "censoring", time: "t1", role: "censoring" },
+        Observed_death: { series: "death", time: "t1", role: "outcome" }
+      },
+      treatmentStrategies: binaryStrategies("treat", "start treatment", "Treatment_start", "Set Treatment_start=1.", "untreat", "no treatment start", "Treatment_start", "Set Treatment_start=0."),
+      estimands: [{
+        id: "survival-time-contrast",
+        label: "treated vs untreated failure time",
+        type: "mean_difference",
+        outcome: "Failure_time",
+        strategies: ["treat", "untreat"],
+        population: "baseline simulated cohort",
+        horizon: "study follow-up"
+      }],
+      censoring: [{ id: "censoring", variable: "Censoring", time: "t1", description: "Administrative or informative censoring before full failure-time observation." }],
+      survivalOutputs: [survivalSpec("observed-death-survival", "observed death survival", ["Observed_death"], ["Censoring"])]
+    }
+  });
   return document;
 }
 
@@ -2953,6 +4015,110 @@ function exampleNodeLabelLines(label: string): string[] {
   if (current) lines.push(current);
   if (lines.length <= 3) return lines;
   return [lines[0]!, lines[1]!, lines.slice(2).join(" ")];
+}
+
+type WhatIfMetadataConfig = {
+  chapter: string;
+  section: string;
+  reference: string;
+  longitudinal: GraphDocumentMetadata["longitudinal"];
+};
+
+function applyWhatIfMetadata(document: GraphDocument, config: WhatIfMetadataConfig) {
+  document.metadata = normalizeGraphDocumentMetadata({
+    ...document.metadata,
+    longitudinal: config.longitudinal,
+    sources: [
+      ...document.metadata.sources.filter((source) => source.id !== "hernan-robins-what-if"),
+      {
+        id: "hernan-robins-what-if",
+        label: "What If",
+        authors: "Miguel A. Hernan and James M. Robins",
+        title: "Causal Inference: What If",
+        year: "2025",
+        url: "https://www.hsph.harvard.edu/miguel-hernan/causal-inference-book/",
+        chapter: config.chapter,
+        section: config.section,
+        reference: config.reference,
+        note: "Book-inspired structure; all app explanations and simulation settings are rewritten for Nudagitty."
+      }
+    ]
+  });
+}
+
+function staticStrategy(id: string, label: string, description: string, assignments: Array<[string, number]>): GraphDocumentMetadata["longitudinal"]["treatmentStrategies"][number] {
+  return {
+    id,
+    label,
+    description,
+    kind: "static",
+    assignments: assignments.map(([variable, value]) => ({ variable, value })),
+    rules: []
+  };
+}
+
+function binaryStrategies(
+  leftId: string,
+  leftLabel: string,
+  leftVariable: string,
+  leftDescription: string,
+  rightId: string,
+  rightLabel: string,
+  rightVariable: string,
+  rightDescription: string
+): GraphDocumentMetadata["longitudinal"]["treatmentStrategies"] {
+  return [
+    staticStrategy(leftId, leftLabel, leftDescription, [[leftVariable, 1]]),
+    staticStrategy(rightId, rightLabel, rightDescription, [[rightVariable, 0]])
+  ];
+}
+
+function dynamicLowRiskStrategy(id: string, label: string, treatments: string[], riskVariables: string[], description: string): GraphDocumentMetadata["longitudinal"]["treatmentStrategies"][number] {
+  return {
+    id,
+    label,
+    description,
+    kind: "dynamic",
+    assignments: [],
+    rules: treatments.map((variable, index) => ({
+      variable,
+      value: 1,
+      conditionVariable: riskVariables[index] ?? riskVariables[riskVariables.length - 1] ?? variable,
+      operator: "eq",
+      conditionValue: 1,
+      otherwise: 0
+    }))
+  };
+}
+
+function riskEstimand(id: string, label: string, outcome: string, strategies: string[], horizon: string): GraphDocumentMetadata["longitudinal"]["estimands"][number] {
+  return {
+    id,
+    label,
+    type: "risk_difference",
+    outcome,
+    strategies,
+    population: "baseline simulated cohort",
+    horizon
+  };
+}
+
+function survivalSpec(id: string, label: string, eventVariables: string[], censoringVariables: string[]): GraphDocumentMetadata["longitudinal"]["survivalOutputs"][number] {
+  return {
+    id,
+    label,
+    timeVariable: null,
+    eventVariable: eventVariables[0] ?? "",
+    eventVariables,
+    censoringVariable: censoringVariables[0] ?? null,
+    censoringVariables,
+    timeScale: "interval"
+  };
+}
+
+function markExposures(document: GraphDocument, ids: string[]) {
+  const exposureIds = new Set(ids);
+  document.graph.nodes = document.graph.nodes.map((node) => exposureIds.has(node.id) ? { ...node, roles: { ...node.roles, exposure: true } } : node);
 }
 
 function setContinuousVariable(document: GraphDocument, id: string, description: string, unit: string, tags: string[] = [], measurement?: Partial<VariableModel["measurement"]>) {

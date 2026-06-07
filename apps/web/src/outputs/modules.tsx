@@ -1,5 +1,5 @@
-import { normalizeVariableModel, runSimulation } from "@nudagitty/core";
-import type { SimulatedNodeState } from "@nudagitty/core";
+import { cohortFromSimulationResult, compareLongitudinalGMethods, estimateSurvivalCurve, normalizeVariableModel, runSimulation } from "@nudagitty/core";
+import type { GMethodEstimate, GMethodsComparison, SimulatedNodeState, SurvivalCurvePoint } from "@nudagitty/core";
 import type React from "react";
 import {
   formatPercent,
@@ -131,6 +131,44 @@ type HuhCompletedOutput = {
   bullets: Array<{ label: string; text: string }>;
 };
 
+type WhatIfOutputScale = "risk" | "mean";
+type WhatIfOutputView = "generic" | "survival" | "dynamic" | "g_estimation" | "ipcw" | "survival_time";
+
+type WhatIfStrategySurvivalSummary = {
+  strategyId: string;
+  label: string;
+  points: SurvivalCurvePoint[];
+  finalRisk: number | null;
+  finalSurvival: number | null;
+  totalEvents: number;
+  totalCensored: number;
+  sampleSize: number;
+  effectiveSampleSize: number | null;
+};
+
+type WhatIfSurvivalSummary = {
+  label: string;
+  strategies: WhatIfStrategySurvivalSummary[];
+  natural: WhatIfStrategySurvivalSummary | null;
+  riskDifference: number | null;
+  survivalDifference: number | null;
+};
+
+type WhatIfAdvancedOutput = {
+  badge: string;
+  title: string;
+  view: WhatIfOutputView;
+  denominatorsOpen: boolean;
+  comparison: GMethodsComparison | null;
+  survival: WhatIfSurvivalSummary | null;
+  conclusion: string;
+  outcomeScale: WhatIfOutputScale;
+  outcomeUnit: string;
+  source: string;
+  sourceUrl: string;
+  sourceDetail: string;
+};
+
 export type BasicOutputPunchlineMetric = {
   label: string;
   value: string;
@@ -231,6 +269,69 @@ export const completedOutputModules: CompletedOutputModule<unknown>[] = [
     compute: computeChessSimpleFlipOutput,
     render: (result) => renderHuhOutput(result as HuhCompletedOutput),
     fallback: fallbackOutput("needs roles", "This chess output needs Intelligence, Practice_hours, Chess_Elo, and Elite_sample in the graph.")
+  },
+  {
+    id: "what-if-treatment-feedback",
+    label: "g-methods",
+    compute: (context) => computeWhatIfAdvancedOutput(context, "what-if-treatment-feedback"),
+    render: (result) => renderWhatIfAdvancedOutput(result as WhatIfAdvancedOutput),
+    fallback: fallbackOutput("needs metadata", "This longitudinal output needs A0, L1, A1, Y, and treatment-strategy metadata.")
+  },
+  {
+    id: "what-if-ipw-pseudopopulation",
+    label: "IP weighting",
+    compute: (context) => computeWhatIfAdvancedOutput(context, "what-if-ipw-pseudopopulation"),
+    render: (result) => renderWhatIfAdvancedOutput(result as WhatIfAdvancedOutput),
+    fallback: fallbackOutput("needs metadata", "This output needs treatment, outcome, and strategy metadata.")
+  },
+  {
+    id: "what-if-hazard-selection",
+    label: "survival",
+    compute: (context) => computeWhatIfAdvancedOutput(context, "what-if-hazard-selection"),
+    render: (result) => renderWhatIfAdvancedOutput(result as WhatIfAdvancedOutput),
+    fallback: fallbackOutput("needs metadata", "This output needs interval death and survival metadata.")
+  },
+  {
+    id: "what-if-nhefs-mortality-survival",
+    label: "survival",
+    compute: (context) => computeWhatIfAdvancedOutput(context, "what-if-nhefs-mortality-survival"),
+    render: (result) => renderWhatIfAdvancedOutput(result as WhatIfAdvancedOutput),
+    fallback: fallbackOutput("needs metadata", "This output needs mortality, censoring, and strategy metadata.")
+  },
+  {
+    id: "what-if-weight-gain-g-estimation",
+    label: "g-estimation",
+    compute: (context) => computeWhatIfAdvancedOutput(context, "what-if-weight-gain-g-estimation"),
+    render: (result) => renderWhatIfAdvancedOutput(result as WhatIfAdvancedOutput),
+    fallback: fallbackOutput("needs metadata", "This output needs quitting, weight gain, and strategy metadata.")
+  },
+  {
+    id: "what-if-hiv-cd4-variants",
+    label: "variants",
+    compute: (context) => computeWhatIfAdvancedOutput(context, "what-if-hiv-cd4-variants"),
+    render: (result) => renderWhatIfAdvancedOutput(result as WhatIfAdvancedOutput),
+    fallback: fallbackOutput("needs metadata", "This output needs CD4, ART, and dynamic strategy metadata.")
+  },
+  {
+    id: "what-if-censoring-ipcw",
+    label: "IPCW",
+    compute: (context) => computeWhatIfAdvancedOutput(context, "what-if-censoring-ipcw"),
+    render: (result) => renderWhatIfAdvancedOutput(result as WhatIfAdvancedOutput),
+    fallback: fallbackOutput("needs metadata", "This output needs censoring and strategy metadata.")
+  },
+  {
+    id: "what-if-dynamic-g-formula",
+    label: "g-formula",
+    compute: (context) => computeWhatIfAdvancedOutput(context, "what-if-dynamic-g-formula"),
+    render: (result) => renderWhatIfAdvancedOutput(result as WhatIfAdvancedOutput),
+    fallback: fallbackOutput("needs metadata", "This output needs dynamic strategy metadata.")
+  },
+  {
+    id: "what-if-snaft-survival",
+    label: "SNAFT",
+    compute: (context) => computeWhatIfAdvancedOutput(context, "what-if-snaft-survival"),
+    render: (result) => renderWhatIfAdvancedOutput(result as WhatIfAdvancedOutput),
+    fallback: fallbackOutput("needs metadata", "This output needs survival-time and censoring metadata.")
   }
 ];
 
@@ -678,6 +779,340 @@ function renderHuhOutput(output: HuhCompletedOutput) {
   );
 }
 
+function renderWhatIfAdvancedOutput(output: WhatIfAdvancedOutput) {
+  const comparison = output.comparison;
+  const methodsOpen = output.view === "g_estimation" || output.view === "ipcw";
+  return (
+    <CompletedOutputShell badge={output.badge} title={output.title} conclusion={output.conclusion}>
+      <WhatIfMetricGrid output={output} />
+      {output.survival && (output.view === "survival" || output.view === "survival_time") && (
+        <WhatIfStrategySurvivalCurve summary={output.survival} survivalTime={output.view === "survival_time"} denominatorsOpen={output.denominatorsOpen} />
+      )}
+      {comparison && output.view === "dynamic" && <WhatIfDynamicSupport comparison={comparison} />}
+      {comparison && (
+        <details className="what-if-method-table-card" open={methodsOpen}>
+          <summary className="module-card-header">
+            <strong>Methods</strong>
+            <span>{formatWeightedCount(comparison.cohort.sampleSize)} simulated rows</span>
+          </summary>
+          <table className="what-if-method-table">
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>{comparison.strategies[0].label}</th>
+                <th>{comparison.strategies[1].label}</th>
+                <th>Difference</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comparison.estimates.map((estimate) => (
+                <tr key={estimate.id}>
+                  <td>
+                    <strong>{estimate.label}</strong>
+                    <small>{estimate.diagnostics[0] ?? ""}</small>
+                  </td>
+                  <td>{formatOutcomeValue(estimate.arms[0].mean, output.outcomeScale, output.outcomeUnit)}</td>
+                  <td>{formatOutcomeValue(estimate.arms[1].mean, output.outcomeScale, output.outcomeUnit)}</td>
+                  <td className={estimateToneClass(estimate.estimate)}>{formatOutcomeDifference(estimate.estimate, output.outcomeScale, output.outcomeUnit)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
+      {comparison && (
+        <div className="what-if-strategy-grid">
+          {comparison.strategies.map((strategy) => (
+            <div key={strategy.id}>
+              <strong>{strategy.label}</strong>
+              <span>{strategy.description}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <details className="what-if-info">
+        <summary>Source and diagnostics</summary>
+        <div>
+          <p>{output.source} {output.sourceDetail} This app uses rewritten explanations and a simulated DGP, not the book tables.</p>
+          {output.sourceUrl && <a href={output.sourceUrl} target="_blank" rel="noreferrer">Open source page</a>}
+          <ul>
+            {comparison && <li>Time order: {[...comparison.treatmentVariables, ...comparison.timeVaryingCovariates, comparison.outcome].filter(Boolean).join(" -> ")}.</li>}
+            <li>Strategy-standardized estimates are displayed as the primary read; observed-history rows are diagnostics.</li>
+            <li>{comparison && comparison.diagnostics.length > 0 ? comparison.diagnostics.join(" ") : "Longitudinal metadata validates cleanly."}</li>
+          </ul>
+        </div>
+      </details>
+    </CompletedOutputShell>
+  );
+}
+
+function WhatIfMetricGrid(props: { output: WhatIfAdvancedOutput }) {
+  const comparison = props.output.comparison;
+  const gFormula = comparison?.estimates.find((estimate) => estimate.id === "g_formula");
+  const ipw = comparison?.estimates.find((estimate) => estimate.id === "ipw");
+  const naive = comparison?.estimates.find((estimate) => estimate.id === "naive");
+  const gEstimation = comparison?.estimates.find((estimate) => estimate.id === "g_estimation");
+  const survival = props.output.survival;
+  const support = comparison ? minimumObservedSupport(comparison) : null;
+  if (!comparison && !survival) return null;
+  if (props.output.view === "survival" && survival) {
+    return (
+      <div className="completed-metric-grid what-if-metrics">
+        <div>
+          <span>Final risk difference</span>
+          <strong>{formatOutcomeDifference(survival.riskDifference, "risk", "")}</strong>
+          <small>{comparison ? `${comparison.strategies[0].label} vs ${comparison.strategies[1].label}` : survival.label}</small>
+        </div>
+        <div>
+          <span>Final survival difference</span>
+          <strong>{formatOutcomeDifference(survival.survivalDifference, "risk", "")}</strong>
+          <small>Kaplan-Meier style product over intervals</small>
+        </div>
+        <div>
+          <span>Events / censored</span>
+          <strong>{formatSurvivalEvents(survival)}</strong>
+          <small>by strategy, at plotted follow-up</small>
+        </div>
+      </div>
+    );
+  }
+  if (props.output.view === "survival_time") {
+    return (
+      <div className="completed-metric-grid what-if-metrics">
+        <div>
+          <span>Failure-time contrast</span>
+          <strong>{formatOutcomeDifference(gFormula?.estimate ?? null, props.output.outcomeScale, props.output.outcomeUnit)}</strong>
+          <small>{comparison ? `${comparison.strategies[0].label} vs ${comparison.strategies[1].label}` : "strategy contrast"}</small>
+        </div>
+        <div>
+          <span>Observed death risk diff</span>
+          <strong>{formatOutcomeDifference(survival?.riskDifference ?? null, "risk", "")}</strong>
+          <small>secondary survival diagnostic</small>
+        </div>
+        <div>
+          <span>IPW support</span>
+          <strong>{formatEss(ipw)}</strong>
+          <small>minimum arm effective sample size</small>
+        </div>
+      </div>
+    );
+  }
+  if (props.output.view === "dynamic") {
+    return (
+      <div className="completed-metric-grid what-if-metrics">
+        <div>
+          <span>Sequential g-formula</span>
+          <strong>{formatOutcomeDifference(gFormula?.estimate ?? null, props.output.outcomeScale, props.output.outcomeUnit)}</strong>
+          <small>{comparison ? `${comparison.strategies[0].label} vs ${comparison.strategies[1].label}` : "strategy contrast"}</small>
+        </div>
+        <div>
+          <span>Observed rule support</span>
+          <strong>{support === null ? "NA" : formatPercent(support)}</strong>
+          <small>lowest observed match share across visits</small>
+        </div>
+        <div>
+          <span>IPW support</span>
+          <strong>{formatEss(ipw)}</strong>
+          <small>minimum arm effective sample size</small>
+        </div>
+      </div>
+    );
+  }
+  if (props.output.view === "g_estimation") {
+    return (
+      <div className="completed-metric-grid what-if-metrics">
+        <div>
+          <span>Additive g-estimation</span>
+          <strong>{formatOutcomeDifference(gEstimation?.estimate ?? null, props.output.outcomeScale, props.output.outcomeUnit)}</strong>
+          <small>{gEstimation?.diagnostics[0] ?? "structural nested blip read"}</small>
+        </div>
+        <div>
+          <span>Parametric g-formula</span>
+          <strong>{formatOutcomeDifference(gFormula?.estimate ?? null, props.output.outcomeScale, props.output.outcomeUnit)}</strong>
+          <small>strategy simulation comparison</small>
+        </div>
+        <div>
+          <span>Observed regimen read</span>
+          <strong>{formatOutcomeDifference(naive?.estimate ?? null, props.output.outcomeScale, props.output.outcomeUnit)}</strong>
+          <small>diagnostic, not the target estimand</small>
+        </div>
+      </div>
+    );
+  }
+  if (props.output.view === "ipcw") {
+    return (
+      <div className="completed-metric-grid what-if-metrics">
+        <div>
+          <span>Stabilized IPW/IPCW</span>
+          <strong>{formatOutcomeDifference(ipw?.estimate ?? null, props.output.outcomeScale, props.output.outcomeUnit)}</strong>
+          <small>weights treatment and remaining uncensored</small>
+        </div>
+        <div>
+          <span>Sequential g-formula</span>
+          <strong>{formatOutcomeDifference(gFormula?.estimate ?? null, props.output.outcomeScale, props.output.outcomeUnit)}</strong>
+          <small>strategy simulation comparison</small>
+        </div>
+        <div>
+          <span>Support ESS</span>
+          <strong>{formatEss(ipw)}</strong>
+          <small>minimum weighted arm size</small>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="completed-metric-grid what-if-metrics">
+      {comparison && (
+        <>
+          <div>
+            <span>Strategy contrast</span>
+            <strong>{formatOutcomeDifference(gFormula?.estimate ?? null, props.output.outcomeScale, props.output.outcomeUnit)}</strong>
+            <small>{comparison.strategies[0].label} vs {comparison.strategies[1].label}</small>
+          </div>
+          <div>
+            <span>Observed regimen read</span>
+            <strong>{formatOutcomeDifference(naive?.estimate ?? null, props.output.outcomeScale, props.output.outcomeUnit)}</strong>
+            <small>conditions on matching observed histories</small>
+          </div>
+          <div>
+            <span>IPW support</span>
+            <strong>{formatEss(ipw)}</strong>
+            <small>minimum arm effective sample size</small>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; survivalTime: boolean; denominatorsOpen: boolean }) {
+  const width = 340;
+  const height = 142;
+  const plot = { left: 38, right: 18, top: 16, bottom: 26 };
+  const series = props.summary.strategies.length > 0 ? props.summary.strategies : props.summary.natural ? [props.summary.natural] : [];
+  if (series.length === 0) return null;
+  const pointCount = Math.max(...series.map((entry) => entry.points.length));
+  const x = (index: number) => plot.left + (pointCount <= 1 ? 0 : (index / (pointCount - 1)) * (width - plot.left - plot.right));
+  const y = (survival: number) => plot.top + (1 - survival) * (height - plot.top - plot.bottom);
+  const path = (entry: WhatIfStrategySurvivalSummary) => entry.points.map((point, index) => `${index === 0 ? "M" : "L"} ${x(index)} ${y(point.survival)}`).join(" ");
+  return (
+    <div className="what-if-survival-card">
+      <div className="module-card-header">
+        <strong>{props.survivalTime ? "Observed-death survival by strategy" : "Survival curves by strategy"}</strong>
+        <span>{props.summary.label}</span>
+      </div>
+      <svg className="what-if-survival-plot" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${props.summary.label} survival curves by strategy`}>
+        <line className="huh-shift-axis" x1={plot.left} y1={height - plot.bottom} x2={width - plot.right} y2={height - plot.bottom} />
+        <line className="huh-shift-axis" x1={plot.left} y1={plot.top} x2={plot.left} y2={height - plot.bottom} />
+        <text className="huh-shift-axis-label" x="2" y={y(1) + 4}>100%</text>
+        <text className="huh-shift-axis-label" x="8" y={y(0) - 2}>0%</text>
+        {series.map((entry, seriesIndex) => (
+          <g key={entry.strategyId}>
+            <path className={`what-if-survival-line series-${seriesIndex}`} d={path(entry)} />
+            {entry.points.map((point, index) => (
+              <circle key={point.interval} className={`what-if-survival-dot series-${seriesIndex}`} cx={x(index)} cy={y(point.survival)} r="3.5" />
+            ))}
+          </g>
+        ))}
+        {series[0]?.points.map((point, index) => (
+          <text key={point.interval} className="what-if-survival-label" x={x(index)} y={height - 5}>{index + 1}</text>
+        ))}
+      </svg>
+      <div className="what-if-survival-legend">
+        {series.map((entry, index) => (
+          <div key={entry.strategyId}>
+            <span className={`what-if-survival-swatch series-${index}`} />
+            <strong>{entry.label}</strong>
+            <small>risk {formatNullablePercent(entry.finalRisk)} / survival {formatNullablePercent(entry.finalSurvival)}</small>
+          </div>
+        ))}
+      </div>
+      {props.summary.natural && (
+        <details className="what-if-natural-survival">
+          <summary>Natural-course survival</summary>
+          <span>risk {formatNullablePercent(props.summary.natural.finalRisk)}, survival {formatNullablePercent(props.summary.natural.finalSurvival)}</span>
+        </details>
+      )}
+      <WhatIfSurvivalDenominators series={series} open={props.denominatorsOpen} />
+    </div>
+  );
+}
+
+function WhatIfSurvivalDenominators(props: { series: WhatIfStrategySurvivalSummary[]; open: boolean }) {
+  const rows = props.series.flatMap((entry) => entry.points.map((point) => ({ entry, point })));
+  if (rows.length === 0) return null;
+  return (
+    <details className="what-if-survival-denominators" open={props.open}>
+      <summary>Interval denominators</summary>
+      <table>
+        <thead>
+          <tr>
+            <th>Strategy</th>
+            <th>Interval</th>
+            <th>At risk</th>
+            <th>Events</th>
+            <th>Censored</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ entry, point }) => (
+            <tr key={`${entry.strategyId}:${point.interval}`}>
+              <td>{entry.label}</td>
+              <td>{point.interval + 1}</td>
+              <td>{formatWeightedCount(point.atRisk)}</td>
+              <td>{formatWeightedCount(point.events)}</td>
+              <td>{formatWeightedCount(point.censored)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
+  );
+}
+
+function WhatIfDynamicSupport(props: { comparison: GMethodsComparison }) {
+  return (
+    <div className="what-if-support-card">
+      <div className="module-card-header">
+        <strong>Rule support by visit</strong>
+        <span>{props.comparison.treatmentVariables.join(", ")}</span>
+      </div>
+      <div className="what-if-rule-grid">
+        {props.comparison.strategies.map((strategy) => (
+          <div key={strategy.id}>
+            <strong>{strategy.label}</strong>
+            {formatStrategyRules(strategy).map((rule) => <span key={rule}>{rule}</span>)}
+          </div>
+        ))}
+      </div>
+      <table className="what-if-method-table what-if-support-table">
+        <thead>
+          <tr>
+            <th>Strategy</th>
+            <th>Visit</th>
+            <th>Rule trigger</th>
+            <th>Assigned</th>
+            <th>Observed match</th>
+            <th>Uncensored</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.comparison.support.map((row) => (
+            <tr key={`${row.strategyId}:${row.treatment}`}>
+              <td>{row.label}</td>
+              <td>{row.treatment}</td>
+              <td>{row.ruleConditionShare === null ? "fixed" : formatPercent(row.ruleConditionShare)}</td>
+              <td>{formatPercent(row.assignedShare)}</td>
+              <td>{formatPercent(row.observedMatchShare)}</td>
+              <td>{formatPercent(row.uncensoredShare)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function HuhShiftPlot(props: { before: HuhMetric; after: HuhMetric }) {
   const width = 320;
   const height = 104;
@@ -729,6 +1164,61 @@ function metricToneClass(value: number | null): "negative" | "neutral" | "positi
   return value < 0 ? "negative" : "positive";
 }
 
+function minimumObservedSupport(comparison: GMethodsComparison): number | null {
+  const values = comparison.support
+    .map((row) => row.observedMatchShare)
+    .filter((value) => Number.isFinite(value));
+  return values.length > 0 ? Math.min(...values) : null;
+}
+
+function formatSurvivalEvents(summary: WhatIfSurvivalSummary): string {
+  const strategyEvents = summary.strategies.map((strategy) => `${formatWeightedCount(strategy.totalEvents)}/${formatWeightedCount(strategy.totalCensored)}`);
+  if (strategyEvents.length > 0) return strategyEvents.join(" | ");
+  return summary.natural ? `${formatWeightedCount(summary.natural.totalEvents)}/${formatWeightedCount(summary.natural.totalCensored)}` : "NA";
+}
+
+function formatStrategyRules(strategy: GMethodsComparison["strategies"][number]): string[] {
+  if (strategy.rules.length > 0) {
+    return strategy.rules.map((rule) => `${rule.variable}=${rule.value} if ${rule.conditionVariable} ${operatorLabel(rule.operator)} ${rule.conditionValue}; else ${rule.otherwise}`);
+  }
+  if (strategy.assignments.length > 0) return strategy.assignments.map((assignment) => `${assignment.variable}=${assignment.value}`);
+  return ["natural observed treatment"];
+}
+
+function operatorLabel(operator: GMethodsComparison["strategies"][number]["rules"][number]["operator"]): string {
+  if (operator === "neq") return "!=";
+  if (operator === "lte") return "<=";
+  if (operator === "gte") return ">=";
+  return operator === "eq" ? "=" : operator;
+}
+
+function estimateToneClass(value: number | null): string {
+  if (value === null || Math.abs(value) < 0.005) return "neutral";
+  return value < 0 ? "negative" : "positive";
+}
+
+function formatOutcomeValue(value: number | null, scale: WhatIfOutputScale, unit: string): string {
+  if (value === null) return "NA";
+  if (scale === "risk") return formatPercent(value);
+  return `${formatValue(value)}${unit ? ` ${unit}` : ""}`;
+}
+
+function formatOutcomeDifference(value: number | null, scale: WhatIfOutputScale, unit: string): string {
+  if (value === null) return "NA";
+  if (scale === "risk") return formatPercentagePoints(value);
+  return `${formatSignedValue(value)}${unit ? ` ${unit}` : ""}`;
+}
+
+function formatNullablePercent(value: number | null): string {
+  return value === null ? "NA" : formatPercent(value);
+}
+
+function formatEss(estimate: GMethodEstimate | undefined): string {
+  if (!estimate) return "NA";
+  const values = estimate.arms.map((arm) => arm.effectiveSampleSize).filter((value): value is number => value !== null && Number.isFinite(value));
+  return values.length === 0 ? "NA" : formatWeightedCount(Math.min(...values));
+}
+
 function sampleScoresForPlot(samples: number[]): number[] {
   const maxPoints = 52;
   if (samples.length <= maxPoints) return samples;
@@ -748,11 +1238,11 @@ function deterministicBinnedJitter(index: number, binIndex: number, arm: 0 | 1):
   return (normalized - 0.5) * 13;
 }
 
-function CompletedOutputShell(props: { badge: string; conclusion: string; children: React.ReactNode }) {
+function CompletedOutputShell(props: { badge: string; conclusion: string; title?: string; children: React.ReactNode }) {
   return (
     <details className="completed-output-card" open>
       <summary className="module-card-header completed-output-summary">
-        <strong>Interpretation</strong>
+        <strong>{props.title ?? "Interpretation"}</strong>
         <span className="module-badge active">{props.badge}</span>
       </summary>
       <div className="completed-output-body">
@@ -775,6 +1265,199 @@ function fallbackOutput(badge: string, message: string) {
       </div>
     </details>
   );
+}
+
+type WhatIfOutputConfig = {
+  badge: string;
+  title: string;
+  view?: WhatIfOutputView;
+  denominatorsOpen?: boolean;
+  treatmentVariables: string[];
+  timeVaryingCovariates: string[];
+  outcome: string;
+  strategyIds: [string, string];
+  outcomeScale?: WhatIfOutputScale;
+  censoringVariables?: string[];
+  survivalSpecId?: string;
+  conclusion: (comparison: GMethodsComparison | null, scale: WhatIfOutputScale, unit: string) => string;
+};
+
+const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
+  "what-if-treatment-feedback": {
+    badge: "What If",
+    title: "G-method comparison",
+    treatmentVariables: ["A0", "A1"],
+    timeVaryingCovariates: ["L1"],
+    outcome: "Y",
+    strategyIds: ["always-treat", "never-treat"],
+    conclusion: (comparison, scale, unit) => {
+      const naive = comparison?.estimates.find((estimate) => estimate.id === "naive");
+      const stratified = comparison?.estimates.find((estimate) => estimate.id === "stratified");
+      return `Estimate complete strategies here. L1 is post-A0 and pre-A1, so observed (${formatOutcomeDifference(naive?.estimate ?? null, scale, unit)}) and L1-standardized (${formatOutcomeDifference(stratified?.estimate ?? null, scale, unit)}) contrasts are diagnostics.`;
+    }
+  },
+  "what-if-ipw-pseudopopulation": {
+    badge: "What If",
+    title: "Standardization and IP weighting",
+    treatmentVariables: ["Treatment_A"],
+    timeVaryingCovariates: ["Baseline_C"],
+    outcome: "Outcome_Y",
+    strategyIds: ["treat", "untreat"],
+    conclusion: (comparison, scale, unit) => `The weighted pseudo-population targets the same baseline strategy contrast as standardization; the crude observed read (${formatOutcomeDifference(comparison?.estimates.find((estimate) => estimate.id === "naive")?.estimate ?? null, scale, unit)}) is kept as a diagnostic.`,
+  },
+  "what-if-hazard-selection": {
+    badge: "What If",
+    title: "Survival and survivor selection",
+    view: "survival",
+    denominatorsOpen: true,
+    treatmentVariables: ["Treatment_A"],
+    timeVaryingCovariates: ["Frailty", "Alive_1"],
+    outcome: "Death_2",
+    strategyIds: ["treat", "untreat"],
+    survivalSpecId: "two-interval-survival",
+    conclusion: () => "Interval hazards are conditioned on who remains alive. The survival curve keeps the cumulative risk denominator visible so a late hazard read is not mistaken for the target risk contrast.",
+  },
+  "what-if-nhefs-mortality-survival": {
+    badge: "What If",
+    title: "Mortality survival contrast",
+    view: "survival",
+    treatmentVariables: ["Quit_smoking"],
+    timeVaryingCovariates: ["Age", "Baseline_health"],
+    outcome: "Death_10y",
+    strategyIds: ["quit", "continue"],
+    censoringVariables: ["Censoring_5y"],
+    survivalSpecId: "mortality-survival",
+    conclusion: () => "The graph separates baseline cessation, later weight change, death over follow-up, and censoring. Censoring-aware weights are reported with the strategy contrast.",
+  },
+  "what-if-weight-gain-g-estimation": {
+    badge: "What If",
+    title: "Weight-gain g-estimation",
+    view: "g_estimation",
+    treatmentVariables: ["Quit_smoking"],
+    timeVaryingCovariates: ["Smoking_intensity", "Socioeconomic"],
+    outcome: "Weight_gain_8y",
+    strategyIds: ["quit", "continue"],
+    outcomeScale: "mean",
+    conclusion: (comparison, scale, unit) => `The additive g-estimation row is the structural-nested teaching read; naive quitting differences (${formatOutcomeDifference(comparison?.estimates.find((estimate) => estimate.id === "naive")?.estimate ?? null, scale, unit)}) remain an observed-data comparison, and exchangeability is an assumption rather than a test result.`,
+  },
+  "what-if-hiv-cd4-variants": {
+    badge: "What If",
+    title: "Dynamic ART variants",
+    view: "dynamic",
+    treatmentVariables: ["A0", "A1", "A2"],
+    timeVaryingCovariates: ["CD4_0", "CD4_1", "CD4_2"],
+    outcome: "AIDS_death",
+    strategyIds: ["treat-low-cd4", "never-art"],
+    conclusion: () => "Treatment variants are rules over CD4 history, not just an ever-treated label. The g-formula row materializes the dynamic rule before standardizing over histories.",
+  },
+  "what-if-censoring-ipcw": {
+    badge: "What If",
+    title: "Treatment and censoring weights",
+    view: "ipcw",
+    treatmentVariables: ["A0", "A1"],
+    timeVaryingCovariates: ["Baseline_risk", "L1"],
+    outcome: "Y",
+    strategyIds: ["always-treat", "never-treat"],
+    censoringVariables: ["C1", "C2"],
+    conclusion: () => "Censoring is explicit, so the IPW row includes treatment and censoring probabilities. Rows after censoring are not silently treated as ordinary follow-up.",
+  },
+  "what-if-dynamic-g-formula": {
+    badge: "What If",
+    title: "Dynamic g-formula",
+    view: "dynamic",
+    treatmentVariables: ["A0", "A1", "A2"],
+    timeVaryingCovariates: ["Risk_0", "Risk_1", "Risk_2"],
+    outcome: "Y",
+    strategyIds: ["treat-when-high-risk", "never-treat"],
+    conclusion: () => "The dynamic strategy is evaluated as a rule over prior risk history. That makes the plotted contrast a strategy contrast rather than an exposure-category comparison.",
+  },
+  "what-if-snaft-survival": {
+    badge: "What If",
+    title: "Structural nested survival time",
+    view: "survival_time",
+    treatmentVariables: ["Treatment_start"],
+    timeVaryingCovariates: ["Baseline_risk"],
+    outcome: "Failure_time",
+    strategyIds: ["treat", "untreat"],
+    outcomeScale: "mean",
+    censoringVariables: ["Censoring"],
+    survivalSpecId: "observed-death-survival",
+    conclusion: () => "The main contrast is on failure time, with observed death and censoring shown as follow-up diagnostics. This keeps the survival-time estimand separate from a simple risk read; rank preservation and exchangeability remain modeling assumptions.",
+  }
+};
+
+function computeWhatIfAdvancedOutput(context: OutputContext, moduleId: string): WhatIfAdvancedOutput | null {
+  const config = WHAT_IF_OUTPUT_CONFIGS[moduleId];
+  if (!config) return null;
+  const outcomeScale = config.outcomeScale ?? "risk";
+  const outcomeNode = context.document.graph.nodes.find((node) => node.id === config.outcome);
+  const outcomeUnit = outcomeNode?.variable.unit ?? "";
+  const comparison = compareLongitudinalGMethods(context.document, {
+    treatmentVariables: config.treatmentVariables,
+    timeVaryingCovariates: config.timeVaryingCovariates,
+    outcome: config.outcome,
+    strategyIds: config.strategyIds,
+    censoringVariables: config.censoringVariables,
+    outcomeScale
+  });
+  const source = context.document.metadata.sources.find((candidate) => candidate.id === "hernan-robins-what-if");
+  const survivalSpec = config.survivalSpecId
+    ? context.document.metadata.longitudinal.survivalOutputs.find((spec) => spec.id === config.survivalSpecId)
+    : null;
+  const survival = survivalSpec ? summarizeSurvival(context, survivalSpec.id, comparison) : null;
+  return {
+    badge: config.badge,
+    title: config.title,
+    view: config.view ?? "generic",
+    denominatorsOpen: config.denominatorsOpen ?? false,
+    comparison,
+    survival,
+    outcomeScale,
+    outcomeUnit,
+    conclusion: config.conclusion(comparison, outcomeScale, outcomeUnit),
+    source: source ? `${source.authors}, ${source.title} (${source.year}).` : "Inspired by Hernan and Robins, Causal Inference: What If.",
+    sourceUrl: source?.url ?? "",
+    sourceDetail: source ? `${source.chapter}${source.section ? `, ${source.section}` : ""}${source.reference ? ` (${source.reference})` : ""}.` : ""
+  };
+}
+
+function summarizeSurvival(context: OutputContext, specId: string, comparison: GMethodsComparison | null): WhatIfSurvivalSummary | null {
+  const spec = context.document.metadata.longitudinal.survivalOutputs.find((candidate) => candidate.id === specId);
+  if (!spec) return null;
+  const natural = survivalSummaryFromResult("natural-course", "natural course", context.simulation, spec);
+  const strategies = comparison
+    ? comparison.strategyEvaluations
+      .map((evaluation) => survivalSummaryFromResult(evaluation.strategy.id, evaluation.strategy.label, evaluation.result, spec))
+      .filter((summary): summary is WhatIfStrategySurvivalSummary => summary !== null)
+    : [];
+  if (!natural && strategies.length === 0) return null;
+  const left = strategies[0] ?? null;
+  const right = strategies[1] ?? null;
+  return {
+    label: spec.label,
+    strategies,
+    natural,
+    riskDifference: left && right && left.finalRisk !== null && right.finalRisk !== null ? left.finalRisk - right.finalRisk : null,
+    survivalDifference: left && right && left.finalSurvival !== null && right.finalSurvival !== null ? left.finalSurvival - right.finalSurvival : null
+  };
+}
+
+function survivalSummaryFromResult(strategyId: string, label: string, result: OutputContext["simulation"], spec: NonNullable<OutputContext["document"]["metadata"]["longitudinal"]["survivalOutputs"][number]>): WhatIfStrategySurvivalSummary | null {
+  const cohort = cohortFromSimulationResult(result);
+  const points = estimateSurvivalCurve(cohort, spec);
+  if (points.length === 0) return null;
+  const last = points[points.length - 1]!;
+  return {
+    strategyId,
+    label,
+    points,
+    finalRisk: last.risk,
+    finalSurvival: last.survival,
+    totalEvents: points.reduce((sum, point) => sum + point.events, 0),
+    totalCensored: points.reduce((sum, point) => sum + point.censored, 0),
+    sampleSize: cohort.sampleSize,
+    effectiveSampleSize: result.conditioning.effectiveSampleSize
+  };
 }
 
 function computeSimpsonCompletedOutput(context: OutputContext): SimpsonCompletedOutput | null {

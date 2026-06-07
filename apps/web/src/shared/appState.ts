@@ -1,13 +1,16 @@
 import {
   EXAMPLES,
   defaultEdgeMechanism,
+  defaultGraphDocumentMetadata,
   defaultNodeMechanism,
   defaultSimulationSpec,
   defaultVariableModel,
   edgeId,
   exampleDocument,
+  GRAPH_DOCUMENT_SCHEMA_VERSION,
   initialDocument,
   normalizeEdgeMechanism,
+  normalizeGraphDocumentMetadata,
   normalizeNodeMechanism,
   normalizeVariableModel,
   reconcileSimulationSpec
@@ -15,6 +18,7 @@ import {
 import type {
   EdgeKind,
   EdgeMechanism,
+  GraphDocumentMetadata,
   GraphDocument,
   GraphKind,
   GraphModel,
@@ -34,7 +38,7 @@ export const SHARE_COMPACT_HASH_KEY = "c";
 export const SHARE_EXAMPLE_HASH_KEY = "example";
 const SNAPSHOT_KIND = "nudagitty.snapshot";
 const SNAPSHOT_VERSION = 1;
-const COMPACT_SHARE_VERSION = 1;
+const COMPACT_SHARE_VERSION = 2;
 const ROLE_CODES: Array<[keyof NodeRoleFlags, string]> = [
   ["exposure", "e"],
   ["outcome", "o"],
@@ -84,6 +88,7 @@ type CompactShareDocument = {
   a?: string;
   t?: string;
   k?: GraphKind;
+  m?: GraphDocumentMetadata;
   n: CompactNode[];
   e: CompactEdge[];
   s?: CompactSimulation;
@@ -155,14 +160,15 @@ export function decodeCompactShareDocument(encoded: string): LoadedWorkbenchStat
 export function normalizeGraphDocument(raw: unknown): GraphDocument | null {
   if (!raw || typeof raw !== "object") return null;
   const candidate = raw as Partial<GraphDocument>;
-  if (candidate.schemaVersion !== 1 || !candidate.graph || !candidate.simulation) return null;
+  if (candidate.schemaVersion !== GRAPH_DOCUMENT_SCHEMA_VERSION || !candidate.graph || !candidate.simulation) return null;
   return {
     ...candidate,
-    schemaVersion: 1,
+    schemaVersion: GRAPH_DOCUMENT_SCHEMA_VERSION,
     id: typeof candidate.id === "string" ? candidate.id : crypto.randomUUID(),
     title: typeof candidate.title === "string" ? candidate.title : "Imported Nudagitty model",
     graph: candidate.graph,
     simulation: reconcileSimulationSpec(candidate.graph, candidate.simulation),
+    metadata: normalizeGraphDocumentMetadata(candidate.metadata),
     updatedAt: typeof candidate.updatedAt === "string" ? candidate.updatedAt : new Date().toISOString()
   };
 }
@@ -235,6 +241,8 @@ function compactShareDocument(document: GraphDocument, activeExampleId: string |
     n: compactNodes,
     e: compactEdges
   };
+  const metadata = stripDefaults(normalizeGraphDocumentMetadata(document.metadata), defaultGraphDocumentMetadata()) as GraphDocumentMetadata | undefined;
+  if (metadata && !isEmptyObject(metadata)) compact.m = metadata;
   const simulation = compactSimulation(graph, document.simulation);
   if (simulation) compact.s = simulation;
   return compact;
@@ -310,11 +318,12 @@ function compactShareDocumentToState(raw: unknown): LoadedWorkbenchState | null 
   });
   return {
     document: {
-      schemaVersion: 1,
+      schemaVersion: GRAPH_DOCUMENT_SCHEMA_VERSION,
       id: `shared-${crypto.randomUUID()}`,
       title: typeof compact.t === "string" && compact.t.trim() ? compact.t : "Shared Nudagitty model",
       graph,
       simulation,
+      metadata: normalizeGraphDocumentMetadata(compact.m),
       updatedAt: new Date().toISOString()
     },
     activeExampleId: validExampleId(compact.a),

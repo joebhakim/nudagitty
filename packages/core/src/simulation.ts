@@ -61,6 +61,20 @@ interface EmpiricalSimulation {
   conditioning: SimulationConditioningSummary;
 }
 
+interface StructuralContribution {
+  value: number;
+  absorbing: boolean;
+}
+
+export interface SimulationInterventionContext {
+  nodeId: string;
+  sampleIndex: number;
+  values: Readonly<Record<string, number>>;
+  variable: VariableModel;
+}
+
+export type SimulationIntervention = (context: SimulationInterventionContext) => number | null | undefined;
+
 export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?: SimulationResult): SimulationResult {
   const diagnostics: string[] = [];
   if (graph.kind !== "dag" && graph.kind !== "digraph") diagnostics.push("Simulation is only enabled for DAG-like graphs.");
@@ -107,7 +121,7 @@ export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?
       continue;
     }
     let value = mechanism.intercept;
-    const nodeContributions: number[] = [];
+    const nodeContributions: StructuralContribution[] = [];
     for (const parent of parents) {
       const edge = activeGraph.edges.find((candidate) => candidate.kind === "directed" && candidate.source === parent && candidate.target === id);
       if (!edge) continue;
@@ -115,8 +129,9 @@ export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?
       if (!edgeMechanism.enabled) continue;
       const contribution = edgeContribution(values[parent] ?? 0, edgeMechanism);
       contributions[edge.id] = contribution;
-      nodeContributions.push(contribution);
-      value += contribution;
+      const absorbing = edgeMechanism.kind === "absorbing";
+      nodeContributions.push({ value: contribution, absorbing });
+      if (!absorbing) value += contribution;
     }
     const interaction = interactionContribution(values, mechanism);
     const noise = sampleDistribution(mechanism.noise, rng);
@@ -167,8 +182,115 @@ export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?
   return { seed: spec.seed, values, nodeStates, contributions, changedNodes, diagnostics, conditioning };
 }
 
+export function runIntervenedEmpiricalSimulation(graph: GraphModel, spec: SimulationSpec, intervention: SimulationIntervention): SimulationResult {
+  const diagnostics: string[] = [];
+  if (graph.kind !== "dag" && graph.kind !== "digraph") diagnostics.push("Simulation is only enabled for DAG-like graphs.");
+  if (graph.edges.some((edge) => edge.kind !== "directed")) diagnostics.push("Simulation ignores non-directed edges.");
+  const activeGraph = {
+    ...graph,
+    edges: graph.edges.filter((edge) => edge.kind === "directed" && normalizeEdgeMechanism(spec.edges[edge.id]).enabled)
+  };
+  const disabledCount = graph.edges.filter((edge) => edge.kind === "directed" && !normalizeEdgeMechanism(spec.edges[edge.id]).enabled).length;
+  if (disabledCount > 0) diagnostics.push(`${disabledCount} disabled directed edge${disabledCount === 1 ? " is" : "s are"} omitted.`);
+  const order = topologicalOrder(activeGraph);
+  if (!order) {
+    diagnostics.push("Simulation disabled because the enabled directed graph contains a cycle.");
+    return {
+      seed: spec.seed,
+      values: {},
+      nodeStates: {},
+      contributions: {},
+      changedNodes: [],
+      diagnostics,
+      conditioning: emptyConditioningSummary()
+    };
+  }
+
+  const sampleCount = empiricalSampleSize(activeGraph);
+  const rng = createSeededRandomSource((spec.seed || 1) ^ 0x45d9f3b);
+  const nodesById = new Map(activeGraph.nodes.map((node) => [node.id, node]));
+  const samples: Record<string, number[]> = Object.fromEntries(order.map((id) => [id, []]));
+  let lastValues: Record<string, number> = {};
+
+  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+    const values: Record<string, number> = {};
+    for (const id of order) {
+      const mechanism = normalizeNodeMechanism(spec.nodes[id]);
+      const variable = normalizeVariableModel(nodesById.get(id)?.variable);
+      const intervened = intervention({ nodeId: id, sampleIndex, values, variable });
+      if (intervened !== null && intervened !== undefined) {
+        values[id] = coerceVariableValue(intervened, variable);
+        continue;
+      }
+      if (Object.hasOwn(spec.overrides, id)) {
+        values[id] = coerceVariableValue(spec.overrides[id] ?? 0, variable);
+        continue;
+      }
+      const parents = directedParents(activeGraph, id);
+      if (parents.length === 0) {
+        values[id] = sampleRootValue(mechanism.distribution, variable, rng, true);
+        continue;
+      }
+      const nodeContributions: StructuralContribution[] = [];
+      let value = mechanism.intercept;
+      for (const parent of parents) {
+        const edge = activeGraph.edges.find((candidate) => candidate.kind === "directed" && candidate.source === parent && candidate.target === id);
+        if (!edge) continue;
+        const edgeMechanism = normalizeEdgeMechanism(spec.edges[edge.id]);
+        if (!edgeMechanism.enabled) continue;
+        const contribution = edgeContribution(values[parent] ?? 0, edgeMechanism);
+        const absorbing = edgeMechanism.kind === "absorbing";
+        nodeContributions.push({ value: contribution, absorbing });
+        if (!absorbing) value += contribution;
+      }
+      const interaction = interactionContribution(values, mechanism);
+      const noise = sampleDistribution(mechanism.noise, rng);
+      value += interaction + noise;
+      values[id] = finalizeNodeValue(value, mechanism, variable, nodeContributions, mechanism.intercept + interaction + noise, rng, true);
+    }
+    lastValues = values;
+    for (const id of order) samples[id]?.push(values[id] ?? 0);
+  }
+
+  const weights = Array.from({ length: sampleCount }, () => 1);
+  const nodeStates: Record<string, SimulatedNodeState> = {};
+  for (const id of order) {
+    const variable = normalizeVariableModel(nodesById.get(id)?.variable);
+    const empirical = empiricalDistribution(samples[id] ?? [], weights);
+    const value = empirical.mean ?? lastValues[id] ?? 0;
+    nodeStates[id] = {
+      kind: variable.valueType === "distributional" ? "distribution" : "scalar",
+      value,
+      observed: value,
+      analytic: null,
+      empirical
+    };
+  }
+
+  return {
+    seed: spec.seed,
+    values: lastValues,
+    nodeStates,
+    contributions: {},
+    changedNodes: order,
+    diagnostics,
+    conditioning: {
+      totalSamples: sampleCount,
+      acceptedSamples: sampleCount,
+      activeConditions: [],
+      analytic: null,
+      empiricalMethod: "forward",
+      requestedInference: "auto",
+      primaryMethod: "forward",
+      effectiveSampleSize: computeEffectiveSampleSize(weights)
+    }
+  };
+}
+
 export function edgeContribution(parentValue: number, mechanism: EdgeMechanism): number {
   switch (mechanism.kind) {
+    case "absorbing":
+      return clamp01(parentValue);
     case "threshold":
       return parentValue < mechanism.threshold ? mechanism.low : mechanism.high;
     case "smooth_threshold":
@@ -220,17 +342,34 @@ function sampleRootValue(distribution: NodeDistribution, variable: VariableModel
   return coerceBinary(sampleDistribution(distribution, rng));
 }
 
-function finalizeNodeValue(value: number, mechanism: NodeMechanism, variable: VariableModel, contributions: number[], leakTerm: number, rng: () => number, forceDraw = false): number {
-  if (variable.valueType !== "binary") return applyCombiner(value, mechanism, contributions, leakTerm);
+function finalizeNodeValue(value: number, mechanism: NodeMechanism, variable: VariableModel, contributions: StructuralContribution[], leakTerm: number, rng: () => number, forceDraw = false): number {
+  const regularContributions = contributions.filter((contribution) => !contribution.absorbing).map((contribution) => contribution.value);
+  if (variable.valueType !== "binary") return applyCombiner(value, mechanism, regularContributions, leakTerm);
   const probability = binaryProbability(value, mechanism, contributions, leakTerm);
   if (!forceDraw && variable.simulation.mode === "expected_value") return probability;
   return sampleDistribution({ kind: "bernoulli", p: probability }, rng);
 }
 
-function binaryProbability(value: number, mechanism: NodeMechanism, contributions: number[], leakTerm: number): number {
+function binaryProbability(value: number, mechanism: NodeMechanism, contributions: StructuralContribution[], leakTerm: number): number {
+  const regularContributions = contributions.filter((contribution) => !contribution.absorbing).map((contribution) => contribution.value);
+  const laterRisk = rawBinaryProbability(value, mechanism, regularContributions, leakTerm);
+  const alreadyEvent = absorbingProbability(contributions);
+  return alreadyEvent + (1 - alreadyEvent) * laterRisk;
+}
+
+function rawBinaryProbability(value: number, mechanism: NodeMechanism, contributions: number[], leakTerm: number): number {
   if (mechanism.combiner === "bernoulli_logit" || mechanism.combiner === "bounded_logistic") return sigmoid(value);
   if (mechanism.combiner === "noisy_or") return noisyOr(contributions, leakTerm);
   return clamp01(applyCombiner(value, mechanism, contributions, leakTerm));
+}
+
+function absorbingProbability(contributions: StructuralContribution[]): number {
+  let probabilityOfNoPriorEvent = 1;
+  for (const contribution of contributions) {
+    if (!contribution.absorbing) continue;
+    probabilityOfNoPriorEvent *= 1 - clamp01(contribution.value);
+  }
+  return 1 - probabilityOfNoPriorEvent;
 }
 
 function hillEmax(value: number, mechanism: EdgeMechanism): number {
@@ -417,7 +556,7 @@ function simulateEmpiricalDistributions(
             values[id] = sampleRootValue(mechanism.distribution, variable, rng, true);
           }
         } else {
-          const nodeContributions: number[] = [];
+          const nodeContributions: StructuralContribution[] = [];
           let value = mechanism.intercept;
           for (const parent of parents) {
             const edge = graph.edges.find((candidate) => candidate.kind === "directed" && candidate.source === parent && candidate.target === id);
@@ -425,8 +564,9 @@ function simulateEmpiricalDistributions(
             const edgeMechanism = normalizeEdgeMechanism(spec.edges[edge.id]);
             if (!edgeMechanism.enabled) continue;
             const contribution = edgeContribution(values[parent] ?? 0, edgeMechanism);
-            nodeContributions.push(contribution);
-            value += contribution;
+            const absorbing = edgeMechanism.kind === "absorbing";
+            nodeContributions.push({ value: contribution, absorbing });
+            if (!absorbing) value += contribution;
           }
           const interaction = interactionContribution(values, mechanism);
           const base = value + interaction;

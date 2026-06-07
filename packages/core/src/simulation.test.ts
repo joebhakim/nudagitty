@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createSeededRandomSource, runSimulation, sampleDistribution } from "./simulation";
 import { parseModel } from "./parser";
-import { defaultEdgeMechanism, normalizeNodeMechanism } from "./graph";
+import { defaultEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel } from "./graph";
 import { exampleDocument } from "./examples";
 
 describe("SEM simulation", () => {
@@ -139,6 +139,31 @@ describe("SEM simulation", () => {
 
     expect(sampleDistribution({ kind: "laplace", mean: 0, scale: 1 }, () => 0.5)).toBe(0);
     expect(sampleDistribution({ kind: "exponential", rate: 2 }, () => 0)).toBeCloseTo(0);
+  });
+
+  it("supports absorbing edges for cumulative binary outcomes", () => {
+    const doc = parseModel(`dag {
+      D5
+      D10
+      D5 -> D10
+    }`).document;
+    const d5 = doc.graph.nodes.find((node) => node.id === "D5");
+    const d10 = doc.graph.nodes.find((node) => node.id === "D10");
+    const edge = doc.graph.edges.find((candidate) => candidate.source === "D5" && candidate.target === "D10");
+    if (!d5 || !d10 || !edge) throw new Error("missing cumulative death fixture");
+    d5.variable = normalizeVariableModel({ ...d5.variable, valueType: "binary", categories: ["0", "1"], simulation: { mode: "expected_value", sampleSize: 2000 } });
+    d10.variable = normalizeVariableModel({ ...d10.variable, valueType: "binary", categories: ["0", "1"], simulation: { mode: "expected_value", sampleSize: 2000 } });
+    doc.simulation.nodes.D5 = normalizeNodeMechanism({ distribution: { kind: "bernoulli", p: 0.3 }, noise: { kind: "constant", value: 0 } });
+    doc.simulation.nodes.D10 = normalizeNodeMechanism({ intercept: Math.log(0.2 / 0.8), noise: { kind: "constant", value: 0 }, combiner: "bernoulli_logit" });
+    doc.simulation.edges[edge.id] = { ...defaultEdgeMechanism("absorbing") };
+
+    const result = runSimulation(doc.graph, doc.simulation);
+
+    expect(result.values.D10).toBeCloseTo(0.44);
+    const d5Samples = result.nodeStates.D5?.empirical.samples ?? [];
+    const d10Samples = result.nodeStates.D10?.empirical.samples ?? [];
+    expect(d5Samples.some((value) => value === 1)).toBe(true);
+    expect(d5Samples.every((value, index) => value === 0 || d10Samples[index] === 1)).toBe(true);
   });
 
   it("samples expanded distributions reproducibly from a seeded source", () => {

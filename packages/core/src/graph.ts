@@ -2,11 +2,14 @@ import type {
   EdgeKind,
   EdgeMechanism,
   EdgeMechanismKind,
+  GraphDocumentMetadata,
   GraphDocument,
   GraphEdge,
   GraphKind,
   GraphModel,
   GraphNode,
+  LongitudinalEstimandType,
+  LongitudinalVariableRole,
   NodeDistribution,
   NodeInteraction,
   NodeMechanism,
@@ -18,9 +21,13 @@ import type {
   InterventionKind,
   MeasurementModelKind,
   SimulationDisplayMode,
+  TreatmentStrategyKind,
+  TreatmentStrategyRuleOperator,
   VariableValueType,
   VariableModel
 } from "./types";
+
+export const GRAPH_DOCUMENT_SCHEMA_VERSION = 2 as const;
 
 const NODE_COMBINER_KINDS = new Set([
   "additive",
@@ -34,6 +41,7 @@ const NODE_COMBINER_KINDS = new Set([
 
 const EDGE_MECHANISM_KINDS = new Set([
   "linear",
+  "absorbing",
   "threshold",
   "smooth_threshold",
   "saturating",
@@ -102,6 +110,26 @@ const ADJUSTMENT_METHOD_KINDS: ReadonlySet<AdjustmentMethodKind> = new Set([
   "propensity_score_todo"
 ]);
 
+const LONGITUDINAL_VARIABLE_ROLES: ReadonlySet<LongitudinalVariableRole> = new Set([
+  "baseline",
+  "treatment",
+  "time_varying_confounder",
+  "outcome",
+  "censoring",
+  "selection",
+  "competing_event",
+  "latent",
+  "other"
+]);
+
+const LONGITUDINAL_ESTIMAND_TYPES: ReadonlySet<LongitudinalEstimandType> = new Set([
+  "risk_difference",
+  "mean_difference",
+  "risk_ratio",
+  "hazard_ratio",
+  "survival_difference"
+]);
+
 export function roles(overrides: Partial<NodeRoleFlags> = {}): NodeRoleFlags {
   return { ...DEFAULT_ROLES, ...overrides };
 }
@@ -134,6 +162,20 @@ export function defaultVariableModel(): VariableModel {
       cutpoints: []
     },
     tags: []
+  };
+}
+
+export function defaultGraphDocumentMetadata(): GraphDocumentMetadata {
+  return {
+    longitudinal: {
+      timePoints: [],
+      variables: {},
+      treatmentStrategies: [],
+      estimands: [],
+      censoring: [],
+      survivalOutputs: []
+    },
+    sources: []
   };
 }
 
@@ -217,11 +259,12 @@ export function createGraphDocument(graph?: Partial<GraphModel>, title = "Untitl
     edges: graph?.edges ? graph.edges.map(cloneEdge) : []
   };
   return {
-    schemaVersion: 1,
+    schemaVersion: GRAPH_DOCUMENT_SCHEMA_VERSION,
     id: `model-${Math.random().toString(36).slice(2, 10)}`,
     title,
     graph: model,
     simulation: defaultSimulationSpec(model),
+    metadata: defaultGraphDocumentMetadata(),
     updatedAt: nowIso()
   };
 }
@@ -230,7 +273,8 @@ export function cloneDocument(document: GraphDocument): GraphDocument {
   return {
     ...document,
     graph: cloneGraph(document.graph),
-    simulation: cloneSimulationSpec(document.simulation)
+    simulation: cloneSimulationSpec(document.simulation),
+    metadata: normalizeGraphDocumentMetadata(document.metadata)
   };
 }
 
@@ -266,6 +310,136 @@ export function cloneSimulationSpec(spec: SimulationSpec): SimulationSpec {
     overrides: { ...(spec.overrides ?? {}) },
     selections: Object.fromEntries(Object.entries(spec.selections ?? {}).map(([id, condition]) => [id, normalizeSelectionCondition(condition)]))
   };
+}
+
+export function normalizeGraphDocumentMetadata(metadata: Partial<GraphDocumentMetadata> | undefined): GraphDocumentMetadata {
+  const raw = (metadata ?? {}) as Record<string, unknown>;
+  const longitudinal = (raw.longitudinal ?? {}) as Record<string, unknown>;
+  return {
+    longitudinal: {
+      timePoints: Array.isArray(longitudinal.timePoints)
+        ? longitudinal.timePoints.map((point) => {
+          const rawPoint = (point ?? {}) as Record<string, unknown>;
+          return {
+            id: stringOr(rawPoint.id, ""),
+            label: stringOr(rawPoint.label, stringOr(rawPoint.id, "")),
+            order: numberOr(rawPoint.order, 0)
+          };
+        }).filter((point) => point.id).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+        : [],
+      variables: normalizeLongitudinalVariables(longitudinal.variables),
+      treatmentStrategies: Array.isArray(longitudinal.treatmentStrategies)
+        ? longitudinal.treatmentStrategies.map((strategy) => {
+          const rawStrategy = (strategy ?? {}) as Record<string, unknown>;
+          const kind: TreatmentStrategyKind = rawStrategy.kind === "dynamic" || rawStrategy.kind === "stochastic" ? rawStrategy.kind : "static";
+          return {
+            id: stringOr(rawStrategy.id, ""),
+            label: stringOr(rawStrategy.label, stringOr(rawStrategy.id, "")),
+            description: stringOr(rawStrategy.description, ""),
+            kind,
+            assignments: Array.isArray(rawStrategy.assignments)
+              ? rawStrategy.assignments.map((assignment) => {
+                const rawAssignment = (assignment ?? {}) as Record<string, unknown>;
+                return {
+                  variable: stringOr(rawAssignment.variable, ""),
+                  value: numberOr(rawAssignment.value, 0)
+                };
+              }).filter((assignment) => assignment.variable)
+              : [],
+            rules: Array.isArray(rawStrategy.rules)
+              ? rawStrategy.rules.map((rule) => {
+                const rawRule = (rule ?? {}) as Record<string, unknown>;
+                const operator: TreatmentStrategyRuleOperator = rawRule.operator === "neq" || rawRule.operator === "lt" || rawRule.operator === "lte" || rawRule.operator === "gt" || rawRule.operator === "gte" ? rawRule.operator : "eq";
+                return {
+                  variable: stringOr(rawRule.variable, ""),
+                  value: numberOr(rawRule.value, 0),
+                  conditionVariable: stringOr(rawRule.conditionVariable, ""),
+                  operator,
+                  conditionValue: numberOr(rawRule.conditionValue, 0),
+                  otherwise: numberOr(rawRule.otherwise, 0)
+                };
+              }).filter((rule) => rule.variable && rule.conditionVariable)
+              : []
+          };
+        }).filter((strategy) => strategy.id)
+        : [],
+      estimands: Array.isArray(longitudinal.estimands)
+        ? longitudinal.estimands.map((estimand) => {
+          const rawEstimand = (estimand ?? {}) as Record<string, unknown>;
+          return {
+            id: stringOr(rawEstimand.id, ""),
+            label: stringOr(rawEstimand.label, stringOr(rawEstimand.id, "")),
+            type: isMember(rawEstimand.type, LONGITUDINAL_ESTIMAND_TYPES) ? rawEstimand.type : "risk_difference",
+            outcome: stringOr(rawEstimand.outcome, ""),
+            strategies: stringListOr(rawEstimand.strategies),
+            population: stringOr(rawEstimand.population, ""),
+            horizon: stringOr(rawEstimand.horizon, "")
+          };
+        }).filter((estimand) => estimand.id && estimand.outcome)
+        : [],
+      censoring: Array.isArray(longitudinal.censoring)
+        ? longitudinal.censoring.map((censoring) => {
+          const rawCensoring = (censoring ?? {}) as Record<string, unknown>;
+          return {
+            id: stringOr(rawCensoring.id, ""),
+            variable: stringOr(rawCensoring.variable, ""),
+            time: typeof rawCensoring.time === "string" && rawCensoring.time ? rawCensoring.time : null,
+            description: stringOr(rawCensoring.description, "")
+          };
+        }).filter((censoring) => censoring.id && censoring.variable)
+        : [],
+      survivalOutputs: Array.isArray(longitudinal.survivalOutputs)
+        ? longitudinal.survivalOutputs.map((survival) => {
+          const rawSurvival = (survival ?? {}) as Record<string, unknown>;
+          return {
+            id: stringOr(rawSurvival.id, ""),
+            label: stringOr(rawSurvival.label, stringOr(rawSurvival.id, "")),
+            timeVariable: typeof rawSurvival.timeVariable === "string" && rawSurvival.timeVariable ? rawSurvival.timeVariable : null,
+            eventVariable: stringOr(rawSurvival.eventVariable, ""),
+            eventVariables: stringListOr(rawSurvival.eventVariables),
+            censoringVariable: typeof rawSurvival.censoringVariable === "string" && rawSurvival.censoringVariable ? rawSurvival.censoringVariable : null,
+            censoringVariables: stringListOr(rawSurvival.censoringVariables),
+            timeScale: stringOr(rawSurvival.timeScale, "")
+          };
+        }).map((survival) => ({
+          ...survival,
+          eventVariables: survival.eventVariables.length ? survival.eventVariables : [survival.eventVariable].filter(Boolean),
+          censoringVariables: survival.censoringVariables.length ? survival.censoringVariables : [survival.censoringVariable].filter((value): value is string => Boolean(value))
+        })).filter((survival) => survival.id && survival.eventVariable)
+        : []
+    },
+    sources: Array.isArray(raw.sources)
+      ? raw.sources.map((source) => {
+        const rawSource = (source ?? {}) as Record<string, unknown>;
+        return {
+          id: stringOr(rawSource.id, ""),
+          label: stringOr(rawSource.label, stringOr(rawSource.id, "")),
+          authors: stringOr(rawSource.authors, ""),
+          title: stringOr(rawSource.title, ""),
+          year: stringOr(rawSource.year, ""),
+          url: stringOr(rawSource.url, ""),
+          chapter: stringOr(rawSource.chapter, ""),
+          section: stringOr(rawSource.section, ""),
+          reference: stringOr(rawSource.reference, ""),
+          note: stringOr(rawSource.note, "")
+        };
+      }).filter((source) => source.id)
+      : []
+  };
+}
+
+function normalizeLongitudinalVariables(value: unknown): GraphDocumentMetadata["longitudinal"]["variables"] {
+  if (!value || typeof value !== "object") return {};
+  const out: GraphDocumentMetadata["longitudinal"]["variables"] = {};
+  for (const [nodeId, metadata] of Object.entries(value as Record<string, unknown>)) {
+    const raw = (metadata ?? {}) as Record<string, unknown>;
+    out[nodeId] = {
+      series: stringOr(raw.series, nodeId),
+      time: typeof raw.time === "string" && raw.time ? raw.time : null,
+      role: isMember(raw.role, LONGITUDINAL_VARIABLE_ROLES) ? raw.role : "other"
+    };
+  }
+  return out;
 }
 
 export function cloneNodeMechanism(mechanism: NodeMechanism): NodeMechanism {

@@ -1,0 +1,584 @@
+@media (max-width: 1120px) {
+  .app-shell {
+    grid-template-rows: auto auto auto;
+    height: auto;
+    min-height: 100vh;
+    align-content: start;
+  }
+
+  .workspace {
+    display: block;
+    min-height: auto;
+  }
+
+  .workspace-panel-group {
+    display: block !important;
+    flex: none;
+    height: auto !important;
+    min-height: auto;
+    overflow: visible !important;
+  }
+
+  .workspace-output-panel-group {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .workspace-panel-group > [data-panel],
+  .workspace-output-panel-group > [data-panel] {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    flex: none !important;
+    overflow: visible !important;
+  }
+
+  .workspace-panel {
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0;
+    overflow: visible !important;
+  }
+
+  .workspace-resize-handle {
+    display: none !important;
+  }
+
+  .canvas-shell {
+    min-height: 560px;
+    height: 560px;
+  }
+
+  .scenario-column,
+  .pairwise-column,
+  .adjusted-output-column,
+  .basic-results-column,
+  .editor-column,
+  .advanced-drawer {
+    border: 0;
+    max-height: none;
+    overflow: visible;
+    border-top: 1px solid var(--line);
+  }
+
+  .module-pane {
+    grid-template-rows: auto auto;
+    overflow: visible;
+    touch-action: pan-y;
+  }
+
+  .module-frame {
+    overflow: visible;
+    touch-action: pan-y;
+  }
+
+  .module-pane-body {
+    overflow: visible;
+    touch-action: pan-y;
+  }
+
+  .graph-canvas {
+    height: 560px;
+  }
+
+  .advanced-grid,
+  .practitioner-modules-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    overflow-x: auto;
+  }
+
+  .paper-network-app-main {
+    overflow: visible;
+  }
+
+  .paper-network-view {
+    height: auto;
+    min-height: calc(100vh - 52px);
+  }
+
+  .paper-network-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .paper-network-sidebar {
+    order: 2;
+    overflow: visible;
+  }
+
+  .paper-network-main-panel {
+    grid-template-rows: auto 560px auto;
+  }
+
+  .intervention-main-panel {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 520px minmax(360px, auto);
+  }
+
+  .paper-mechanics-grid,
+  .intervention-summary-card,
+  .intervention-graph-card,
+  .effects-table-card {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .paper-mechanics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .paper-network-lower-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    overflow: visible;
+    padding: 6px 8px;
+  }
+
+  .brand {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    font-size: 16px;
+    line-height: 22px;
+  }
+
+  .toolbar {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .toolbar[aria-label="Main tools"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) repeat(3, 36px);
+    gap: 5px;
+  }
+
+  .toolbar[aria-label="Model actions"] {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .toolbar[aria-label="Model actions"] .example-menu {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .toolbar[aria-label="Model actions"] .icon-button {
+    grid-row: 2;
+  }
+
+  .mode-toggle {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+    width: auto;
+    min-width: 0;
+    grid-template-columns: repeat(3, 45px);
+  }
+
+  .mode-toggle button {
+    height: 30px;
+    min-height: 28px;
+    padding: 0 4px;
+    font-size: 10.5px;
+  }
+
+  .mode-basic .toolbar[aria-label="Model actions"] {
+    grid-row: 2;
+  }
+
+  .toolbar[aria-label="Main tools"] .icon-button:nth-child(n + 4),
+  .toolbar[aria-label="Model actions"] .icon-button {
+    padding: 0;
+  }
+
+  .toolbar[aria-label="Main tools"] .icon-button:nth-child(n + 4) .icon-button-label,
+  .toolbar[aria-label="Model actions"] .icon-button-label {
+    display: none;
+  }
+
+  .icon-button {
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    gap: 4px;
+    padding: 0 4px;
+  }
+
+  .icon-button svg {
+    flex: 0 0 auto;
+  }
+
+  .icon-button-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 10.5px;
+  }
+
+  .workspace {
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+
+  .workspace-panel-group,
+  .workspace-output-panel-group,
+  .workspace-panel,
+  .canvas-shell,
+  .flow-canvas-frame,
+  .flow-graph-canvas,
+  .flow-graph-canvas .react-flow__pane {
+    touch-action: pan-y !important;
+  }
+
+  .canvas-shell {
+    min-height: 220px;
+    height: min(34vh, 260px);
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .graph-canvas {
+    max-width: 100%;
+    height: 100%;
+  }
+
+  .canvas-status {
+    display: none;
+  }
+
+  .canvas-coachmark {
+    left: 8px;
+    right: 8px;
+    top: 86px;
+    max-width: none;
+    padding: 8px 9px;
+  }
+
+  .canvas-causal-controls {
+    left: 8px;
+    bottom: 8px;
+    max-width: calc(100% - 16px);
+  }
+
+  .canvas-zoom-controls {
+    right: 8px;
+    top: 8px;
+    bottom: auto;
+    max-width: calc(100% - 16px);
+    grid-template-columns: 30px 46px 30px minmax(48px, auto);
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .canvas-zoom-controls button {
+    min-height: 28px;
+    padding: 0 6px;
+  }
+
+  .canvas-legend-toggle {
+    top: 48px;
+    right: 8px;
+    min-height: 28px;
+    padding: 0 8px;
+  }
+
+  .panel-section {
+    padding: 10px;
+  }
+
+  .selection-editor-grid,
+  .two-field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .function-picker-menu {
+    width: min(238px, calc(100vw - 44px));
+  }
+
+  .example-menu [data-radix-popper-content-wrapper] {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    min-width: 0 !important;
+    transform: none !important;
+    z-index: 60 !important;
+  }
+
+  .example-menu-popover {
+    position: fixed;
+    top: auto;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    z-index: 60;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    width: auto;
+    min-height: 0;
+    max-height: min(82vh, 680px);
+    overflow: hidden;
+    touch-action: pan-y;
+    border-radius: 10px;
+    box-shadow: 0 18px 54px rgba(20, 31, 38, 0.28);
+  }
+
+  .example-menu-popover.basic {
+    width: auto;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .example-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    display: block;
+    width: auto;
+    min-width: 0;
+    height: auto;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgba(20, 31, 38, 0.24);
+  }
+
+  .example-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    background: #fff;
+  }
+
+  .example-sheet-head div {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .example-sheet-head strong {
+    color: #202428;
+    font-size: 16px;
+    line-height: 20px;
+  }
+
+  .example-sheet-head span {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .example-sheet-head button {
+    flex: 0 0 auto;
+    min-height: 30px;
+    padding: 0 10px;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .example-domain-list {
+    display: flex;
+    gap: 6px;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .example-domain-list button {
+    flex: 0 0 auto;
+    min-height: 34px;
+    white-space: nowrap;
+  }
+
+  .example-choice-list {
+    gap: 5px;
+    min-height: 0;
+    max-height: none;
+    overflow: auto;
+    padding: 10px;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+
+  .example-choice-head {
+    padding: 0 2px 4px;
+  }
+
+  .example-choice-head span {
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .example-choice-list button {
+    align-content: start;
+    padding: 8px 9px;
+    border-radius: 7px;
+  }
+
+  .example-choice-list button:not(.frontline):not(.secondary) {
+    grid-template-rows: auto auto;
+    gap: 4px;
+    min-height: 86px;
+  }
+
+  .example-choice-list button:not(.frontline):not(.secondary) strong {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: 13px;
+    line-height: 17px;
+    white-space: normal;
+  }
+
+  .example-choice-list button:not(.frontline):not(.secondary) span {
+    -webkit-line-clamp: 2;
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .example-choice-list button.frontline {
+    min-height: 66px;
+    padding: 10px;
+  }
+
+  .example-choice-list button.frontline strong {
+    font-size: 15px;
+    line-height: 19px;
+    white-space: normal;
+  }
+
+  .example-choice-list button.frontline span {
+    -webkit-line-clamp: 2;
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .example-more-divider {
+    display: block;
+    padding: 8px 2px 3px;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 14px;
+    text-transform: uppercase;
+  }
+
+  .example-choice-list button.secondary {
+    min-height: 38px;
+  }
+
+  .example-choice-list button.secondary strong {
+    font-size: 13px;
+    line-height: 17px;
+    white-space: normal;
+  }
+
+  .example-choice-list button.secondary span {
+    display: none;
+  }
+
+  .scatter-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .category-outcome-plot {
+    min-height: 150px;
+  }
+
+  .category-outcome-facet-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .scatterplot-svg {
+    min-height: 180px;
+  }
+
+  .paper-network-header,
+  .paper-network-canvas-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .paper-network-layout {
+    padding: 8px;
+  }
+
+  .paper-network-main-panel {
+    grid-template-rows: auto 430px auto;
+  }
+
+  .intervention-main-panel {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 420px minmax(340px, auto);
+  }
+
+  .paper-mechanics-grid,
+  .intervention-metric-grid,
+  .paper-anchor-grid,
+  .scenario-button-row {
+    grid-template-columns: 1fr;
+  }
+
+  .mechanic-card-body > strong {
+    font-size: 17px;
+  }
+
+  .paper-network-lower-grid,
+  .paper-metric-grid,
+  .paper-network-property-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .paper-search-results button {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .paper-search-results button span {
+    grid-column: 1 / -1;
+  }
+
+  .paper-network-overlay.top-left {
+    flex-direction: column;
+    gap: 3px;
+  }
+}

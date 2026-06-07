@@ -1,0 +1,98 @@
+.topbar select,
+.example-menu {
+  width: min(320px, 28vw);
+}
+
+.app-shell {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100vh;
+}
+
+.topbar {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: visible;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 128px;
+  font-weight: 700;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: max-content;
+}
+
+.presentation-mode .topbar {
+  gap: 12px;
+}
+
+.presentation-mode .toolbar[aria-label="Model actions"] {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.presentation-mode .example-menu {
+  width: min(420px, 42vw);
+}
+
+.presentation-mode .workspace-panel-group {
+  background: #eef2f4;
+}
+
+.analysis-sample-banner {
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 38px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: #eef6f4;
+  color: #263133;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.analysis-sample-banner strong {
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.analysis-sample-banner button {
+  min-height: 28px;
+  margin-left: auto;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.analysis-sample-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid #8fc4be;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1f5553;
+  font-weight: 700;
+}
+

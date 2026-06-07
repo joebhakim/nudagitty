@@ -1,10 +1,21 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import fs from "node:fs/promises";
+import { EXAMPLES, EXAMPLE_DOMAINS } from "@nudagitty/core";
 
 async function loadExample(page: Page, title: string) {
   await page.getByLabel("Examples").click();
-  await page.getByRole("menuitem").filter({ hasText: title }).click();
+  const menu = page.locator(".example-menu-popover");
+  await expect(menu).toBeVisible();
+  const example = EXAMPLES.find((candidate) => candidate.title === title) ?? EXAMPLES.find((candidate) => candidate.title.includes(title));
+  const targetTitle = example?.title ?? title;
+  const visibleItem = menu.getByRole("menuitem").filter({ hasText: targetTitle });
+  if (!(await visibleItem.first().isVisible())) {
+    const domain = example ? EXAMPLE_DOMAINS.find((candidate) => candidate.id === example.domain) : null;
+    const domainButton = domain ? menu.locator(".example-domain-list").getByRole("button", { name: domain.label }) : null;
+    if (domainButton && await domainButton.isVisible()) await domainButton.click();
+  }
+  await menu.getByRole("menuitem").filter({ hasText: targetTitle }).first().click();
 }
 
 async function flowViewportTransform(page: Page) {
@@ -43,12 +54,15 @@ test("loads the desktop guided basic shell", async ({ page }) => {
   await expect(page.getByRole("button", { name: "1 Tutoring" })).toBeVisible();
   await expect(page.getByRole("button", { name: "2 Simpson" })).toBeVisible();
   await expect(page.getByLabel("Examples")).toBeVisible();
+  await expect(page.getByRole("button", { name: "K562 paper network" })).toHaveCount(0);
   await expect(page.locator(".graph-legend")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Legend" })).toBeVisible();
   await page.getByRole("button", { name: "Legend" }).click();
   await expect(page.locator(".graph-legend")).toBeVisible();
-  await expect(page.locator(".graph-legend")).toContainText("Exposure");
-  await expect(page.locator(".graph-legend")).toContainText("Outcome");
+  await expect(page.locator(".graph-legend")).toContainText("adjusted");
+  await expect(page.locator(".graph-legend")).toContainText("sample marker");
+  await expect(page.locator(".graph-legend")).not.toContainText("Exposure");
+  await expect(page.locator(".graph-legend")).not.toContainText("Outcome");
   await expect(page.locator(".graph-legend")).not.toContainText("arrow");
   await page.getByRole("button", { name: "Legend" }).click();
   await expect(page.locator(".graph-legend")).toHaveCount(0);
@@ -61,15 +75,17 @@ test("loads the desktop guided basic shell", async ({ page }) => {
   await expect(page.locator(".editor-column")).toContainText("Try the flip");
   await expect(page.locator(".basic-results-column")).toBeVisible();
   await expect(page.locator(".basic-results-column")).toContainText("Raw comparison");
-  await expect(page.locator(".binary-continuous-svg")).toBeVisible();
+  await expect(page.locator(".basic-results-column .category-outcome-plot").first()).toBeVisible();
+  await expect(page.locator(".basic-results-column .category-outcome-observation").first()).toBeVisible();
+  await expect(page.locator(".basic-results-column .category-outcome-ci").first()).toBeVisible();
   await expect(page.locator(".binary-continuous-vertical-svg")).toHaveCount(0);
+  await expect(page.locator(".binary-rate-bar")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Close results" })).toBeVisible();
   await expect(page.locator("body")).not.toContainText("Live Node Values");
 });
 
 test("opens the K562 intervention mechanics explorer", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "K562 paper network" }).click();
+  await page.goto("/#paper=k562");
 
   const view = page.locator(".paper-network-view");
   await expect(page.getByRole("heading", { name: "Intervention mechanics from Perturb-seq" })).toBeVisible();
@@ -140,6 +156,104 @@ test("loads the Ota gene-program-trait reconstruction from the pro catalog", asy
   await expect(drawer).toContainText("Paper-derived reconstruction");
   await expect(drawer).toContainText("MCH, RDW, and IRF");
   await expect(drawer).toContainText("gene-trait association is a direct mechanism");
+});
+
+test("loads the What If treatment feedback g-method output", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Pro" }).click();
+  await loadExample(page, "treatment-confounder feedback");
+
+  await expect(page.getByLabel("Examples")).toContainText("treatment-confounder feedback");
+  await expect(page.locator("text.node-label").filter({ hasText: "treatment A0" })).toBeVisible();
+  await expect(page.locator("text.node-label").filter({ hasText: "risk L1" })).toBeVisible();
+  const output = page.locator(".adjusted-output-column");
+  await expect(output).toContainText("G-method comparison");
+  await expect(output).toContainText("Methods");
+  await expect(output).toContainText("always treat");
+  await expect(output).toContainText("never treat");
+  await expect(output).toContainText("Parametric g-formula");
+  await expect(output).toContainText("Additive g-estimation");
+});
+
+test("loads advanced What If examples with shared outputs", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Pro" }).click();
+
+  await loadExample(page, "censoring as a time-varying treatment");
+  let output = page.locator(".adjusted-output-column");
+  await expect(output).toContainText("Treatment and censoring weights");
+  await expect(output).toContainText("Stabilized IPW/IPCW");
+  await expect(output).toContainText("always treat");
+
+  await loadExample(page, "dynamic strategies and the g-formula");
+  output = page.locator(".adjusted-output-column");
+  await expect(output).toContainText("Dynamic g-formula");
+  await expect(output).toContainText("treat when risk is high");
+  await expect(output).toContainText("Sequential strategy g-formula");
+  await expect(output).toContainText("Rule support by visit");
+
+  await loadExample(page, "NHEFS smoking cessation and mortality");
+  output = page.locator(".adjusted-output-column");
+  await expect(output).toContainText("Mortality survival contrast");
+  await expect(output).toContainText("Survival curves by strategy");
+  await expect(output).toContainText("Final risk difference");
+
+  await loadExample(page, "What If: structural nested survival time");
+  output = page.locator(".adjusted-output-column");
+  await expect(output).toContainText("Structural nested survival time");
+  await expect(output).toContainText("Failure-time contrast");
+  await expect(output).toContainText("Observed-death survival by strategy");
+});
+
+test("pro catalog exposes What If feature showcase examples", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Pro" }).click();
+  await page.getByLabel("Examples").click();
+  const menu = page.locator(".example-menu-popover");
+  await expect(menu).toBeVisible();
+  await menu.locator(".example-domain-list").getByRole("button", { name: "Epidemiology / public health" }).click();
+  for (const title of [
+    "Showcase: sequential dynamic g-formula",
+    "Showcase: strategy-specific survival curves",
+    "Showcase: survivor denominators",
+    "Showcase: g-estimation blip coefficients",
+    "Showcase: censoring weights (IPCW)",
+    "Showcase: structural nested survival time"
+  ]) {
+    await expect(menu.getByRole("menuitem").filter({ hasText: title })).toBeVisible();
+  }
+  await menu.getByRole("menuitem").filter({ hasText: "Showcase: sequential dynamic g-formula" }).click();
+
+  const output = page.locator(".adjusted-output-column");
+  await expect(page.getByLabel("Examples")).toContainText("Showcase: sequential dynamic g-formula");
+  await expect(output).toContainText("Showcase guide");
+  await expect(output).toContainText("Sequential dynamic strategy");
+  await expect(output).toContainText("Sequential strategy g-formula");
+  await expect(output).toContainText("Rule support by visit");
+});
+
+test("What If dynamic output stays stable while dragging nodes", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Pro" }).click();
+  await loadExample(page, "dynamic strategies and the g-formula");
+
+  const output = page.locator(".adjusted-output-column");
+  await expect(output).toContainText("Sequential strategy g-formula");
+  await expect(output).toContainText("Rule support by visit");
+  const metricText = await output.locator(".completed-metric-grid").textContent();
+  const node = page.locator(".react-flow__node").filter({ hasText: "risk L1" }).first();
+  await expect(node).toBeVisible();
+  const box = await node.boundingBox();
+  if (!box) throw new Error("missing draggable dynamic node");
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 72, box.y + box.height / 2 + 44, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(output).toContainText("Sequential strategy g-formula");
+  await expect(output).toContainText("Rule support by visit");
+  expect(await output.locator(".completed-metric-grid").textContent()).toBe(metricText);
 });
 
 test("ignores legacy saved documents when opening the demo", async ({ page }) => {
@@ -262,23 +376,25 @@ test("pro snapshot actions download open and share documents", async ({ page }) 
   expect(fullLink.length).toBeGreaterThan(compactLink.length);
 
   await page.evaluate(() => window.localStorage.setItem("nudagitty.document.v2", JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "local-draft",
     title: "Wrong local draft",
     updatedAt: new Date().toISOString(),
     graph: { nodes: [], edges: [] },
-    simulation: { seed: 1, sampleSize: 100, nodes: {} }
+    simulation: { seed: 1, sampleSize: 100, nodes: {}, edges: {}, overrides: {}, selections: {} },
+    metadata: { longitudinal: { timePoints: [], variables: {}, treatmentStrategies: [], estimands: [], censoring: [], survivalOutputs: [] }, sources: [] }
   })));
   await page.goto(compactLink);
   await expect(page.locator("text.node-label").filter({ hasText: "opened need" })).toBeVisible();
   await expect(page.getByLabel("Examples")).toContainText("Choose one");
   await page.evaluate(() => window.localStorage.setItem("nudagitty.document.v2", JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "local-draft",
     title: "Wrong local draft",
     updatedAt: new Date().toISOString(),
     graph: { nodes: [], edges: [] },
-    simulation: { seed: 1, sampleSize: 100, nodes: {} }
+    simulation: { seed: 1, sampleSize: 100, nodes: {}, edges: {}, overrides: {}, selections: {} },
+    metadata: { longitudinal: { timePoints: [], variables: {}, treatmentStrategies: [], estimands: [], censoring: [], survivalOutputs: [] }, sources: [] }
   })));
   await page.goto(fullLink);
   await expect(page.locator("text.node-label").filter({ hasText: "opened need" })).toBeVisible();
@@ -343,6 +459,10 @@ test("basic examples surface the observed versus causal punchline", async ({ pag
   const results = page.locator(".basic-results-column");
   await expect(results).toContainText("Weighted relation");
   await expect(results).toContainText("Stabilized IPW");
+  await expect(results.locator(".category-outcome-plot").first()).toBeVisible();
+  await expect(results.locator(".category-outcome-observation").first()).toBeVisible();
+  await expect(results.locator(".category-outcome-ci").first()).toBeVisible();
+  await expect(results.locator(".binary-rate-bar")).toHaveCount(0);
   await expect(results).not.toContainText("DGP do difference");
   await expect(results).not.toContainText("do(Treatment=1)");
 });
@@ -598,6 +718,10 @@ test("Simpson example reports neutral raw and adjusted output grammar", async ({
 
   await expect(binaryOutput).toContainText("Adjusted estimate");
   await expect(binaryOutput).toContainText("Raw comparison");
+  await expect(binaryOutput.locator(".category-outcome-plot").first()).toBeVisible();
+  await expect(binaryOutput.locator(".category-outcome-observation").first()).toBeVisible();
+  await expect(binaryOutput.locator(".category-outcome-ci").first()).toBeVisible();
+  await expect(binaryOutput.locator(".binary-rate-bar")).toHaveCount(0);
   await expect(binaryOutput).not.toContainText("looks harmful");
   await expect(binaryOutput).not.toContainText("Unadjusted harms");
   await expect(binaryOutput).not.toContainText("Raw matrix");
@@ -618,10 +742,16 @@ test("pro adjusted output follows the selected binary continuous pair", async ({
   await page.getByRole("button", { name: "Pro" }).click();
   await loadExample(page, "M-bias: adjustment can create bias");
   const adjustedOutput = page.locator(".adjusted-output-column");
+  const pairwiseOutput = page.locator(".pairwise-column");
   await expect(adjustedOutput).toContainText("Adjusted estimate");
   await expect(adjustedOutput).toContainText("Raw mean difference");
   await expect(adjustedOutput).toContainText("Stratified mean difference");
   await expect(adjustedOutput).toContainText("Auto bins active");
+  await expect(pairwiseOutput.locator(".category-outcome-plot").first()).toBeVisible();
+  await expect(pairwiseOutput.locator(".category-outcome-observation").first()).toBeVisible();
+  await expect(adjustedOutput.locator(".category-outcome-facet-grid")).toBeVisible();
+  await expect(adjustedOutput.locator(".category-outcome-ci").first()).toBeVisible();
+  await expect(adjustedOutput.locator(".binary-rate-bar")).toHaveCount(0);
 
   await page.locator("text.node-label").filter({ hasText: "collider score" }).click({ force: true });
   await page.locator(".editor-column").getByLabel("adjusted").click();
@@ -633,7 +763,8 @@ test("three-variable adjusted strata labels stay readable", async ({ page }) => 
   await page.goto("/");
   await page.getByRole("button", { name: "Pro" }).click();
   await loadExample(page, "Policy evaluation: DiD and synthetic control");
-  const labels = page.locator(".adjusted-output-column .continuous-strata-label");
+  const facets = page.locator(".adjusted-output-column .category-outcome-facet");
+  const labels = facets.locator(".continuous-strata-label");
 
   await expect(labels.first()).toContainText("region baseline bin 1");
   await expect(labels.first()).toContainText("pre-trend bin 1");
@@ -641,23 +772,24 @@ test("three-variable adjusted strata labels stay readable", async ({ page }) => 
   await expect(labels.first()).not.toContainText("RB");
   await expect(labels.first()).not.toContainText("...");
   await expect(page.locator(".pairwise-column .continuous-strata-ci-bar")).toHaveCount(0);
-  await expect(page.locator(".adjusted-output-column .continuous-strata-point").first()).toBeVisible();
+  await expect(page.locator(".adjusted-output-column .category-outcome-observation").first()).toBeVisible();
+  await expect(page.locator(".adjusted-output-column .category-outcome-ci").first()).toBeVisible();
   await expect(page.locator(".adjusted-output-column .continuous-strata-ci-bar")).toHaveCount(0);
   await expect(page.locator(".adjusted-output-column .continuous-strata-violin")).toHaveCount(0);
-  const metrics = await page.locator(".continuous-adjustment-strata-plot").evaluate((svg) => {
-    const svgRect = svg.getBoundingClientRect();
-    const labelRects = Array.from(svg.querySelectorAll(".continuous-strata-label")).map((label) => label.getBoundingClientRect());
-    const yDeltas = labelRects.slice(1).map((rect, index) => {
-      const previous = labelRects[index];
-      return previous ? rect.top - previous.top : Infinity;
+  const metrics = await facets.evaluateAll((items) => {
+    return items.map((facet) => {
+      const facetRect = facet.getBoundingClientRect();
+      const labelRect = facet.querySelector(".continuous-strata-label")?.getBoundingClientRect();
+      return {
+        left: labelRect ? labelRect.left - facetRect.left : -Infinity,
+        rightOverflow: labelRect ? labelRect.right - facetRect.right : Infinity,
+        height: labelRect?.height ?? 0
+      };
     });
-    return {
-      minLeft: Math.min(...labelRects.map((rect) => rect.left - svgRect.left)),
-      minDeltaY: Math.min(...yDeltas)
-    };
   });
-  expect(metrics.minLeft).toBeGreaterThanOrEqual(-1);
-  expect(metrics.minDeltaY).toBeGreaterThan(18);
+  expect(Math.min(...metrics.map((metric) => metric.left))).toBeGreaterThanOrEqual(-1);
+  expect(Math.max(...metrics.map((metric) => metric.rightOverflow))).toBeLessThanOrEqual(1);
+  expect(Math.min(...metrics.map((metric) => metric.height))).toBeGreaterThan(0);
 });
 
 test("adjusted continuous variables expose draggable bin methodology and positivity warnings", async ({ page }) => {
@@ -801,7 +933,7 @@ test.skip("denouement panel switches by example and expands checklists", async (
   await expect(denouement).toContainText("No anticipation");
 });
 
-test("binary variable pairs render rate bars with confidence intervals", async ({ page }) => {
+test("binary variable pairs render jittered points with confidence intervals", async ({ page }) => {
   await page.goto("/");
   await loadExample(page, "Simpson's paradox: treatment by severity");
   await page.getByRole("button", { name: "Pro" }).click();
@@ -820,9 +952,10 @@ test("binary variable pairs render rate bars with confidence intervals", async (
   await expect(panel.locator(".pairwise-relation-title")).toContainText("by");
   await expect(panel.locator(".pairwise-relation-title")).toContainText("Treatment");
   await expect(panel).not.toContainText("Gap");
-  await expect(panel.locator(".binary-rate-comparison")).toBeVisible();
-  await expect(panel.locator(".binary-rate-ci")).toHaveCount(2);
-  await expect(panel.locator(".binary-rate-ci-label")).toContainText("95% CI");
+  await expect(panel.locator(".category-outcome-plot")).toBeVisible();
+  await expect(panel.locator(".category-outcome-observation").first()).toBeVisible();
+  await expect(panel.locator(".category-outcome-ci")).toHaveCount(2);
+  await expect(panel.locator(".binary-rate-bar")).toHaveCount(0);
   await panel.getByLabel("Pairwise details").click();
   await expect(panel.locator(".pairwise-info-card")).toBeVisible();
   await expect(panel.locator(".pairwise-info-card")).toContainText("risk diff -47.2 pp");
@@ -1003,6 +1136,7 @@ test("mobile examples menu opens as a selectable sheet", async ({ page }) => {
   await page.getByLabel("Examples").click();
   const menu = page.locator(".example-menu-popover");
   await expect(menu).toBeVisible();
+  await expect(menu.locator(".example-domain-list")).toHaveCount(0);
   const bounds = await menu.boundingBox();
   if (!bounds) throw new Error("missing mobile examples menu bounds");
   expect(bounds.x).toBeGreaterThanOrEqual(0);
@@ -1015,7 +1149,7 @@ test("mobile examples menu opens as a selectable sheet", async ({ page }) => {
   await expect(page.getByLabel("Demo result")).toContainText("Smoking -> infant mortality");
 });
 
-test("mobile pro examples menu uses one flat catalog", async ({ page }) => {
+test("mobile pro examples menu uses categorized catalog", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto("/");
   await page.getByRole("button", { name: "Pro" }).click();
@@ -1023,7 +1157,9 @@ test("mobile pro examples menu uses one flat catalog", async ({ page }) => {
   await page.getByLabel("Examples").click();
   const menu = page.locator(".example-menu-popover");
   await expect(menu).toBeVisible();
-  await expect(menu).toContainText("All examples");
+  const domains = menu.locator(".example-domain-list");
+  await expect(domains).toBeVisible();
+  await expect(domains.getByRole("button", { name: "Classic DAG patterns" })).toHaveClass(/active/);
   await expect(menu.getByRole("menuitem").filter({ hasText: "Does the ICU make patients die?" })).toBeVisible();
   const beforeScroll = await menu.locator(".example-choice-list").evaluate((element) => ({
     scrollTop: element.scrollTop,
@@ -1033,6 +1169,10 @@ test("mobile pro examples menu uses one flat catalog", async ({ page }) => {
   expect(beforeScroll.scrollHeight).toBeGreaterThan(beforeScroll.clientHeight + 200);
   await touchDrag(page, ".example-choice-list", -360);
   await expect.poll(() => menu.locator(".example-choice-list").evaluate((element) => element.scrollTop)).toBeGreaterThan(100);
+  await domains.getByRole("button", { name: "ML / data science" }).click();
+  await expect(domains.getByRole("button", { name: "ML / data science" })).toHaveClass(/active/);
+  await expect(menu).toContainText("Assumption declaration, graph refutation, discovery hypotheses, and treatment heterogeneity.");
+  await expect(menu.getByRole("menuitem").filter({ hasText: "Gene programs to traits" })).toBeVisible();
 
   const metrics = await page.evaluate(() => ({
     innerWidth: window.innerWidth,

@@ -23,7 +23,6 @@ import {
   Download,
   FilePlus2,
   MousePointer2,
-  Network,
   Presentation,
   Redo2,
   RefreshCw,
@@ -109,6 +108,15 @@ import {
   formatValue,
   formatWeightedCount
 } from "./shared/formatting";
+import {
+  CategoryOutcomePlot,
+  binaryOutcomeSummaries,
+  categoryOutcomeDomain,
+  continuousOutcomeSummaries,
+  weightedPointMoments
+} from "./charts/CategoryOutcomePlot";
+import type { ScatterPoint } from "./charts/CategoryOutcomePlot";
+import { startEngagementMilestones, trackAnalyticsEvent } from "./analytics";
 import { basicOutputPunchlineFromResult, computeCompletedOutput } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
@@ -137,7 +145,6 @@ import type { ScatterPair } from "./shared/pairs";
 import { useWorkbenchStore } from "./store/workbenchStore";
 
 type CanvasViewport = { cx: number; cy: number; zoom: number };
-type ScatterPoint = { x: number; y: number; weight: number; index: number };
 type BinaryCell = { x: 0 | 1; y: 0 | 1; weight: number; count: number; percent: number; columnPercent: number };
 type BinaryContinuousGroup = { value: 0 | 1; count: number; weight: number; mean: number | null; share: number };
 type BasicRelationSummary = {
@@ -397,6 +404,7 @@ function fitViewportToGraph(graph: GraphModel, mode: WorkbenchMode = "pro"): Can
 
 const EDGE_MECHANISMS: Array<{ kind: EdgeMechanismKind; label: string; description: string }> = [
   { kind: "linear", label: "linear", description: "Straight proportional effect." },
+  { kind: "absorbing", label: "absorbing event", description: "Deterministic cumulative-event edge: if the source event has happened, the target cumulative event has happened too." },
   { kind: "threshold", label: "threshold", description: "Step change after a cutoff." },
   { kind: "smooth_threshold", label: "smooth threshold", description: "Soft sigmoid transition around a cutoff." },
   { kind: "saturating", label: "saturating", description: "Effect rises and levels off." },
@@ -718,14 +726,16 @@ export function App() {
   const [simulationResultSignature, setSimulationResultSignature] = useState(() => simulationSignature);
   const outputSignature = graphOutputSignature(document.graph);
   const outputGraph = useMemo(() => document.graph, [outputSignature]);
+  const outputSimulation = useMemo(() => document.simulation, [simulationSignature]);
   const analysisPending = analysisResultSignature !== analysisSignature;
   const simulationPending = simulationResultSignature !== simulationSignature;
   const resultsPending: ResultPendingState = { analysis: analysisPending, simulation: simulationPending };
   const pairwisePending: ResultPendingState = { analysis: false, simulation: simulationPending };
   const computationDocument = useMemo<GraphDocument>(() => ({
     ...document,
-    graph: outputGraph
-  }), [document.id, document.schemaVersion, document.simulation, document.title, document.updatedAt, outputGraph]);
+    graph: outputGraph,
+    simulation: outputSimulation
+  }), [document.id, document.metadata, document.schemaVersion, outputGraph, outputSimulation]);
   const outputContext = useMemo<OutputContext>(() => ({
     analysis,
     document: computationDocument,
@@ -748,6 +758,11 @@ export function App() {
   const binaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived, activeOutputPair), [activeOutputPair, outputContext, simulationDerived]);
   const binaryContinuousAdjustmentOutput = useMemo(() => computeBinaryContinuousAdjustmentOutput(outputContext, simulationDerived, activeOutputPair), [activeOutputPair, outputContext, simulationDerived]);
   const adjustedOutputActive = ((binaryAdjustmentOutput?.adjustedNodes.length ?? 0) + (binaryContinuousAdjustmentOutput?.adjustedNodes.length ?? 0)) > 0;
+  const completedOutputActive = Boolean(activeExample?.outputModule?.startsWith("what-if-") && completedOutput);
+
+  useEffect(() => startEngagementMilestones(), []);
+  const adjustedFrameTitle = completedOutputActive ? "Model output" : adjustedOutputActive ? "After adjustment" : "Adjustment target";
+  const adjustedFrameDetail = completedOutputActive ? "Specialized readout for this example" : adjustedOutputActive ? "Same pair, using selected adjustment variables" : "Mark covariates to compare against the raw relation";
   const demoBinaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived, defaultOutputPair), [defaultOutputPair, outputContext, simulationDerived]);
   const basicRelationSummary = useMemo(
     () => computeBasicRelationSummary({ ...outputContext, moduleId: activeExample?.outputModule ?? null }, completedOutput, simulationDerived, demoBinaryAdjustmentOutput, { hideOracle: isBasicMode }),
@@ -940,6 +955,7 @@ export function App() {
   const addNodeAt = useCallback((point: Point) => {
     const id = createNewNodeId(document.graph);
     const graph = addNode(document.graph, createNode(id, point));
+    trackAnalyticsEvent("graph_action", { action: "add_node" });
     setSelection({ kind: "node", id });
     replaceGraph(graph);
   }, [document.graph, replaceGraph]);
@@ -963,6 +979,7 @@ export function App() {
     }
     const id = edgeId(edgeSource, target, "directed");
     const graph = addEdge(document.graph, edgeSource, target, "directed");
+    trackAnalyticsEvent("graph_action", { action: "add_edge" });
     selectEdge(id);
     setEdgeSource(null);
     replaceGraph(graph);
@@ -981,11 +998,17 @@ export function App() {
   const loadExample = useCallback((id: string) => {
     const document = exampleDocument(id);
     if (!document) return;
+    const example = EXAMPLES.find((candidate) => candidate.id === id);
+    trackAnalyticsEvent("example_loaded", {
+      example_id: id,
+      domain: example?.domain,
+      mode: workbenchMode
+    });
     setPaperNetworkOpen(false);
     commit(document);
     setActiveExampleId(id);
     setSelection(null);
-  }, [commit]);
+  }, [commit, setActiveExampleId, setSelection, workbenchMode]);
 
   const loadSnapshotState = useCallback((nextDocument: GraphDocument, nextExampleId: string | null) => {
     commit({
@@ -1021,6 +1044,7 @@ export function App() {
 
   const copyCompactShareLink = useCallback(async () => {
     const url = compactShareUrlForDocument(document, activeExampleId);
+    trackAnalyticsEvent("share_clicked", { kind: "compact" });
     if (url.length > MAX_SHARE_URL_LENGTH) {
       setCompactShareStatus("too-large");
       return;
@@ -1036,6 +1060,7 @@ export function App() {
 
   const copyFullShareLink = useCallback(async () => {
     const url = fullShareUrlForDocument(document, activeExampleId);
+    trackAnalyticsEvent("share_clicked", { kind: "full" });
     if (url.length > MAX_SHARE_URL_LENGTH) {
       setFullShareStatus("too-large");
       return;
@@ -1048,11 +1073,6 @@ export function App() {
       setFullShareStatus("failed");
     }
   }, [activeExampleId, document]);
-
-  const openPaperNetwork = useCallback(() => {
-    setPaperNetworkOpen(true);
-    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${PAPER_NETWORK_HASH}`);
-  }, []);
 
   const closePaperNetwork = useCallback(() => {
     setPaperNetworkOpen(false);
@@ -1171,6 +1191,7 @@ export function App() {
   }, [commit, document]);
 
   const resample = useCallback(() => {
+    trackAnalyticsEvent("graph_action", { action: "resample" });
     commit({ ...document, simulation: { ...document.simulation, seed: document.simulation.seed + 1 } });
   }, [commit, document]);
 
@@ -1211,6 +1232,29 @@ export function App() {
     else selections[nodeId] = condition;
     commit({ ...document, simulation: { ...document.simulation, selections } });
   }, [commit, document]);
+
+  const changeWorkbenchMode = useCallback((mode: WorkbenchMode) => {
+    trackAnalyticsEvent("mode_changed", { mode });
+    setWorkbenchMode(mode);
+  }, [setWorkbenchMode]);
+
+  const createNewDocument = useCallback(() => {
+    trackAnalyticsEvent("graph_action", { action: "new_graph" });
+    closePaperNetwork();
+    commit(emptyDocument());
+    setActiveExampleId(null);
+    setSelection(null);
+  }, [closePaperNetwork, commit, setActiveExampleId, setSelection]);
+
+  const exportGraphSvg = useCallback(() => {
+    trackAnalyticsEvent("export_clicked", { format: "svg" });
+    exportSvg();
+  }, []);
+
+  const exportGraphBitmap = useCallback((format: "png" | "jpeg") => {
+    trackAnalyticsEvent("export_clicked", { format });
+    exportBitmap(format);
+  }, []);
 
   const renderWorkspaceHandle = (key: string, vertical = compactWorkspace) => (
     <PanelResizeHandle key={key} className={vertical ? "workspace-resize-handle vertical" : "workspace-resize-handle"} />
@@ -1352,13 +1396,14 @@ export function App() {
               <aside className="side-panel module-pane adjusted-output-column">
                 <ModuleFrame
                   tone="output"
-                  label="Adjusted output"
-                  title={adjustedOutputActive ? "After adjustment" : "Adjustment target"}
-                  detail={adjustedOutputActive ? "Same pair, using selected adjustment variables" : "Mark covariates to compare against the raw relation"}
+                  label={completedOutputActive ? "Output" : "Adjusted output"}
+                  title={adjustedFrameTitle}
+                  detail={adjustedFrameDetail}
                   pending={resultPendingActive(resultsPending)}
                 >
                   <AdjustedOutputPanel
                     moduleId={activeExample?.outputModule ?? null}
+                    exampleId={activeExample?.id ?? null}
                     computedOutput={completedOutput}
                     binaryOutput={binaryAdjustmentOutput}
                     continuousOutput={binaryContinuousAdjustmentOutput}
@@ -1414,7 +1459,6 @@ export function App() {
           <Sigma size={20} />
           <span>Nudagitty</span>
         </div>
-        {!presentationActive && <IconButton label="K562 paper network" active={paperNetworkOpen} onClick={openPaperNetwork}><Network size={18} /></IconButton>}
         {!paperNetworkOpen && !isBasicMode && !presentationActive && <div className="toolbar" aria-label="Main tools">
           <IconButton label="Select" active={tool === "select"} onClick={() => setTool("select")}><MousePointer2 size={18} /></IconButton>
           <IconButton label="Variable" active={tool === "node"} onClick={() => setTool("node")}><CirclePlus size={18} /></IconButton>
@@ -1428,12 +1472,7 @@ export function App() {
             <BasicExampleTabs activeExampleId={activeExampleId} onSelect={loadExample} />
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
           </> : <>
-            {!presentationActive && <IconButton label="New" onClick={() => {
-              closePaperNetwork();
-              commit(emptyDocument());
-              setActiveExampleId(null);
-              setSelection(null);
-            }}><FilePlus2 size={18} /></IconButton>}
+            {!presentationActive && <IconButton label="New" onClick={createNewDocument}><FilePlus2 size={18} /></IconButton>}
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
             <input
               ref={snapshotInputRef}
@@ -1448,13 +1487,13 @@ export function App() {
               <IconButton label="Download" onClick={downloadSnapshot}><Download size={18} /></IconButton>
               <IconButton label={shareStatusLabel(compactShareStatus, "Compact link")} onClick={copyCompactShareLink}><Share2 size={18} /></IconButton>
               <IconButton label={shareStatusLabel(fullShareStatus, "Full link")} onClick={copyFullShareLink}><Share2 size={18} /></IconButton>
-              <IconButton label="SVG" onClick={() => exportSvg()}><Download size={18} /></IconButton>
-              <IconButton label="PNG" onClick={() => exportBitmap("png")}><Camera size={18} /></IconButton>
+              <IconButton label="SVG" onClick={exportGraphSvg}><Download size={18} /></IconButton>
+              <IconButton label="PNG" onClick={() => exportGraphBitmap("png")}><Camera size={18} /></IconButton>
             </>}
             <IconButton label="Presentation" active={presentationActive} pressed={presentationActive} onClick={() => setPresentationMode((active) => !active)}><Presentation size={18} /></IconButton>
           </>}
         </div>}
-        {!paperNetworkOpen && <ModeToggle value={workbenchMode} onChange={setWorkbenchMode} />}
+        {!paperNetworkOpen && <ModeToggle value={workbenchMode} onChange={changeWorkbenchMode} />}
       </header>
       {paperNetworkOpen ? (
         <main className="paper-network-app-main">
@@ -1572,7 +1611,7 @@ export function App() {
               <Section title="Export">
                 <button type="button" onClick={() => downloadText("nudagitty-model.dagitty", serializeModel(document))}><Download size={15} /> model code</button>
                 <button type="button" onClick={() => downloadText("nudagitty-model.tex", tikzDocument(document.graph))}><Download size={15} /> TikZ</button>
-                <button type="button" onClick={() => exportBitmap("jpeg")}><Camera size={15} /> JPEG</button>
+                <button type="button" onClick={() => exportGraphBitmap("jpeg")}><Camera size={15} /> JPEG</button>
               </Section>
               <Section title="Workbench TODOs">
                 <RoadmapTodoPanel />
@@ -1800,14 +1839,6 @@ function FlowGraphLegend() {
     <div className="graph-legend flow-graph-legend" aria-hidden="true">
       <div className="flow-graph-legend-title">Legend</div>
       <div className="flow-graph-legend-row">
-        <span className="flow-graph-legend-node role" />
-        <span>Exposure</span>
-      </div>
-      <div className="flow-graph-legend-row">
-        <span className="flow-graph-legend-node role" />
-        <span>Outcome</span>
-      </div>
-      <div className="flow-graph-legend-row">
         <span className="flow-graph-legend-node adjusted" />
         <span>adjusted</span>
       </div>
@@ -2021,8 +2052,8 @@ function GraphCanvas(props: {
   const viewBoxWidth = BASE_VIEWBOX.width / viewport.zoom;
   const viewBoxHeight = BASE_VIEWBOX.height / viewport.zoom;
   const viewBox = `${viewport.cx - viewBoxWidth / 2} ${viewport.cy - viewBoxHeight / 2} ${viewBoxWidth} ${viewBoxHeight}`;
-  const legendWidth = 210;
-  const legendHeight = 100;
+  const legendWidth = 168;
+  const legendHeight = 72;
   const legendX = viewport.cx + viewBoxWidth / 2 - legendWidth - 18;
   const legendY = viewport.cy - viewBoxHeight / 2 + (props.mode === "basic" ? 54 : 96);
   const canvasClassName = [
@@ -2356,17 +2387,12 @@ function GraphLegend({ x, y, width, height }: { x: number; y: number; width: num
     <g className="graph-legend" transform={`translate(${x}, ${y})`} aria-hidden="true">
       <rect className="graph-legend-card" x="0" y="0" width={width} height={height} rx="7" />
       <text className="graph-legend-heading" x="12" y="18">Legend</text>
-      <circle className="graph-legend-node role" cx="60" cy="46" r="24" />
-      <text className="graph-legend-node-label" x="60" y="49">Exposure</text>
-      <circle className="graph-legend-node role" cx="154" cy="46" r="24" />
-      <text className="graph-legend-node-label" x="154" y="49">Outcome</text>
-
-      <circle className="graph-legend-node" cx="24" cy="80" r="8" />
-      <rect className="graph-legend-adjusted" x="12" y="68" width="24" height="24" rx="4" />
-      <text className="graph-legend-text" x="42" y="84">adjusted</text>
-      <circle className="graph-legend-node" cx="124" cy="80" r="8" />
-      <path className="graph-legend-selected-mark" d="M 112 88 L 124 94 L 136 88" />
-      <text className="graph-legend-text" x="142" y="84">sample</text>
+      <circle className="graph-legend-node" cx="24" cy="42" r="8" />
+      <rect className="graph-legend-adjusted" x="12" y="30" width="24" height="24" rx="4" />
+      <text className="graph-legend-text" x="42" y="46">adjusted</text>
+      <circle className="graph-legend-node" cx="24" cy="62" r="8" />
+      <path className="graph-legend-selected-mark" d="M 12 70 L 24 76 L 36 70" />
+      <text className="graph-legend-text" x="42" y="66">sample marker</text>
     </g>
   );
 }
@@ -2400,6 +2426,7 @@ function edgeMechanismTitle(edge: GraphEdge, source: GraphNode, target: GraphNod
 
 function edgeMechanismCanvasLabel(mechanism: EdgeMechanism): { context: string; value: string } {
   if (mechanism.kind === "linear") return { context: "linear coef", value: formatSignedValue(mechanism.coefficient) };
+  if (mechanism.kind === "absorbing") return { context: "absorbing", value: "deterministic" };
   if (mechanism.kind === "threshold") return { context: "threshold", value: `t ${formatValue(mechanism.threshold)}` };
   if (mechanism.kind === "smooth_threshold") return { context: "smooth thresh", value: `t ${formatValue(mechanism.threshold)}` };
   if (mechanism.kind === "saturating") return { context: "saturating", value: `scale ${formatSignedValue(mechanism.scale)}` };
@@ -2413,6 +2440,7 @@ function edgeMechanismCanvasLabel(mechanism: EdgeMechanism): { context: string; 
 
 function edgeMechanismDisplayStrength(mechanism: EdgeMechanism): number {
   if (mechanism.kind === "linear") return mechanism.coefficient;
+  if (mechanism.kind === "absorbing") return 1;
   if (mechanism.kind === "threshold") return mechanism.high - mechanism.low;
   if (mechanism.kind === "smooth_threshold" || mechanism.kind === "saturating") return mechanism.scale;
   if (mechanism.kind === "quadratic") return mechanism.beta1 + mechanism.beta2;
@@ -2782,21 +2810,7 @@ function BinaryContinuousPairView(props: {
   const gap = groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined
     ? groupOne.mean - groupZero.mean
     : null;
-  const width = 420;
-  const height = 148;
-  const margin = { left: 126, right: 54, top: 22, bottom: 28 };
-  const plotWidth = width - margin.left - margin.right;
-  const yDomain = props.summary.ySampleDomain;
-  const [min, max] = yDomain;
-  const maxWeight = Math.max(...points.map((point) => point.weight), 1);
-  const valueToX = (value: number) => margin.left + ((value - min) / Math.max(max - min, 1e-9)) * plotWidth;
-  const y = margin.top + 46;
-  const groupZeroY = y - 11;
-  const groupOneY = y + 11;
-  const pointGroups = [
-    { value: 0 as const, centerY: groupZeroY, label: binaryAxisValueLabel(props.xLabel, 0), points: binaryContinuousPointsForGroup(points, 0), mean: groupZero?.mean ?? null },
-    { value: 1 as const, centerY: groupOneY, label: binaryAxisValueLabel(props.xLabel, 1), points: binaryContinuousPointsForGroup(points, 1), mean: groupOne?.mean ?? null }
-  ];
+  const summaries = continuousOutcomeSummaries(points, props.xLabel);
 
   if (points.length === 0 || totalWeight <= 0) {
     return <p className="muted">No finite paired samples are available for this variable pair.</p>;
@@ -2804,40 +2818,14 @@ function BinaryContinuousPairView(props: {
 
   return (
     <div className="binary-continuous-pair-view">
-      <svg
-        className="scatterplot-svg binary-continuous-svg"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label={`Horizontal comparison plot of ${props.yLabel} by ${props.xLabel}`}
-      >
-        <line className="continuous-strata-axis" x1={margin.left} x2={margin.left + plotWidth} y1={height - margin.bottom + 2} y2={height - margin.bottom + 2} />
-        <text className="continuous-strata-tick" x={margin.left} y={height - 5}>{formatValue(min)}</text>
-        <text className="continuous-strata-tick end" x={margin.left + plotWidth} y={height - 5}>{formatValue(max)}</text>
-        <text className="scatter-axis-label x" x={margin.left + plotWidth / 2} y={height - 3}>{abbreviateLabel(props.yLabel, 28)}</text>
-        {pointGroups.map((group) => (
-          <g className="continuous-strata-arm" key={group.value}>
-            <text className={`continuous-strata-arm-label ${group.value === 1 ? "treated" : "untreated"}`} x={margin.left - 10} y={group.centerY + 4}>{group.label}</text>
-            <line className="continuous-strata-row-guide" x1={margin.left} x2={margin.left + plotWidth} y1={group.centerY} y2={group.centerY} />
-            {group.points.map((point) => {
-              const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
-              return (
-                <circle
-                  className={`continuous-strata-point ${group.value === 1 ? "treated" : "untreated"}`}
-                  cx={valueToX(point.y)}
-                  cy={group.centerY + deterministicStrataJitter(point.index, group.value, 0) * 8.5}
-                  r={2.15 + normalizedWeight * 1.35}
-                  key={`${group.value}-${point.index}`}
-                  style={{ opacity: 0.46 + normalizedWeight * 0.32 }}
-                />
-              );
-            })}
-            {group.mean !== null && <circle className={`continuous-strata-mean ${group.value === 1 ? "treated" : "untreated"}`} cx={valueToX(group.mean)} cy={group.centerY} r="5.5" />}
-          </g>
-        ))}
-        {groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined && (
-          <line className="continuous-strata-gap-line" x1={valueToX(groupZero.mean)} x2={valueToX(groupOne.mean)} y1={groupZeroY} y2={groupOneY} />
-        )}
-      </svg>
+      <CategoryOutcomePlot
+        points={points}
+        summaries={summaries}
+        xLabel={props.xLabel}
+        yLabel={props.yLabel}
+        yDomain={categoryOutcomeDomain(props.summary.ySampleDomain, summaries, false)}
+        outcomeKind="continuous"
+      />
 
       {props.showStats !== false && <div className="scatter-stats binary-continuous-stats">
         <span>samples {points.length}</span>
@@ -2850,10 +2838,6 @@ function BinaryContinuousPairView(props: {
       </div>}
     </div>
   );
-}
-
-function binaryContinuousPointsForGroup(points: ScatterPoint[], groupValue: 0 | 1): ScatterPoint[] {
-  return points.filter((point) => point.weight > 0 && Number.isFinite(point.y) && coerceBinary(point.x) === groupValue);
 }
 
 function BinaryPairView(props: {
@@ -2878,10 +2862,7 @@ function BinaryPairView(props: {
   const xOneLabel = binaryAxisValueLabel(props.xLabel, 1);
   const xZeroRate = contrast.yAtX0 === null ? "n/a" : formatPercent(contrast.yAtX0);
   const xOneRate = contrast.yAtX1 === null ? "n/a" : formatPercent(contrast.yAtX1);
-  const rateBars = [
-    binaryRateInterval(points, 0, xZeroLabel, "untreated"),
-    binaryRateInterval(points, 1, xOneLabel, "treated")
-  ];
+  const summaries = binaryOutcomeSummaries(points, props.xLabel);
 
   if (points.length === 0 || totalWeight <= 0) {
     return <p className="muted">No finite paired samples are available for this variable pair.</p>;
@@ -2889,9 +2870,14 @@ function BinaryPairView(props: {
 
   return (
     <div className="binary-pair-view">
-      <div className="binary-rate-comparison">
-        <BinaryRateBars bars={rateBars} yLabel={yPositiveLabel} />
-      </div>
+      <CategoryOutcomePlot
+        points={points}
+        summaries={summaries}
+        xLabel={props.xLabel}
+        yLabel={yPositiveLabel}
+        yDomain={[0, 1]}
+        outcomeKind="binary"
+      />
 
       {props.showStats !== false && <div className="scatter-stats">
         <span>samples {points.length}</span>
@@ -2904,86 +2890,6 @@ function BinaryPairView(props: {
       </div>}
     </div>
   );
-}
-
-type BinaryRateBar = {
-  group: 0 | 1;
-  label: string;
-  tone: "treated" | "untreated";
-  rate: number | null;
-  lower: number | null;
-  upper: number | null;
-  nEff: number | null;
-};
-
-function BinaryRateBars(props: { bars: BinaryRateBar[]; yLabel: string }) {
-  const width = 320;
-  const height = 124;
-  const plot = { left: 38, right: 18, top: 28, bottom: 30 };
-  const baseline = height - plot.bottom;
-  const plotHeight = baseline - plot.top;
-  const barWidth = 52;
-  const xPositions: [number, number] = [104, 218];
-  const rateToY = (rate: number) => plot.top + (1 - clamp(rate, 0, 1)) * plotHeight;
-  return (
-    <svg className="binary-rate-bars" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${props.yLabel} rates with 95% confidence intervals`}>
-      <line className="binary-rate-axis" x1={plot.left} x2={width - plot.right} y1={baseline} y2={baseline} />
-      <line className="binary-rate-axis" x1={plot.left} x2={plot.left} y1={plot.top} y2={baseline} />
-      <text className="binary-rate-axis-label" x={plot.left - 6} y={plot.top + 4}>100%</text>
-      <text className="binary-rate-axis-label" x={plot.left - 6} y={baseline + 4}>0%</text>
-      <text className="binary-rate-ci-label" x={width - plot.right} y="15">95% CI</text>
-      {props.bars.map((bar, index) => {
-        const x = xPositions[index] ?? 104;
-        const y = bar.rate === null ? baseline : rateToY(bar.rate);
-        const lowerY = bar.lower === null ? null : rateToY(bar.lower);
-        const upperY = bar.upper === null ? null : rateToY(bar.upper);
-        return (
-          <g className={`binary-rate-bar-group ${bar.tone}`} key={bar.group}>
-            {lowerY !== null && upperY !== null && (
-              <g className="binary-rate-ci">
-                <line x1={x} x2={x} y1={upperY} y2={lowerY} />
-                <line x1={x - 10} x2={x + 10} y1={upperY} y2={upperY} />
-                <line x1={x - 10} x2={x + 10} y1={lowerY} y2={lowerY} />
-              </g>
-            )}
-            <rect className="binary-rate-bar" x={x - barWidth / 2} y={y} width={barWidth} height={Math.max(1, baseline - y)} rx="4" />
-            <circle className="binary-rate-point" cx={x} cy={y} r="4.5" />
-            <text className="binary-rate-value" x={x} y={Math.max(25, y - 7)}>{bar.rate === null ? "n/a" : formatPercent(bar.rate)}</text>
-            <text className="binary-rate-group-label" x={x} y={height - 8}>{bar.label}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function binaryRateInterval(points: ScatterPoint[], group: 0 | 1, label: string, tone: "treated" | "untreated"): BinaryRateBar {
-  let sumWeight = 0;
-  let sumWeightSquared = 0;
-  let successes = 0;
-  for (const point of points) {
-    if (point.weight <= 0 || !Number.isFinite(point.x) || !Number.isFinite(point.y) || coerceBinary(point.x) !== group) continue;
-    sumWeight += point.weight;
-    sumWeightSquared += point.weight * point.weight;
-    successes += coerceBinary(point.y) * point.weight;
-  }
-  if (sumWeight <= 0 || sumWeightSquared <= 0) return { group, label, tone, rate: null, lower: null, upper: null, nEff: null };
-  const rate = successes / sumWeight;
-  const nEff = sumWeight * sumWeight / sumWeightSquared;
-  if (!Number.isFinite(nEff) || nEff <= 0) return { group, label, tone, rate, lower: null, upper: null, nEff: null };
-  const z = 1.96;
-  const denominator = 1 + (z * z) / nEff;
-  const center = (rate + (z * z) / (2 * nEff)) / denominator;
-  const halfWidth = (z * Math.sqrt((rate * (1 - rate) + (z * z) / (4 * nEff)) / nEff)) / denominator;
-  return {
-    group,
-    label,
-    tone,
-    rate,
-    lower: clamp(center - halfWidth, 0, 1),
-    upper: clamp(center + halfWidth, 0, 1),
-    nEff
-  };
 }
 
 function ScenarioPanel(props: {
@@ -3805,28 +3711,6 @@ function weightedMeanDifferenceInterval(points: ScatterPoint[]): { lower: number
   };
 }
 
-function weightedPointMoments(points: ScatterPoint[], groupValue: 0 | 1): { mean: number; variance: number; nEff: number } | null {
-  let sumWeight = 0;
-  let sumWeightSquared = 0;
-  let sum = 0;
-  const retained: Array<{ value: number; weight: number }> = [];
-  for (const point of points) {
-    if (coerceBinary(point.x) !== groupValue || point.weight <= 0) continue;
-    retained.push({ value: point.y, weight: point.weight });
-    sumWeight += point.weight;
-    sumWeightSquared += point.weight * point.weight;
-    sum += point.y * point.weight;
-  }
-  if (sumWeight <= 0 || sumWeightSquared <= 0) return null;
-  const mean = sum / sumWeight;
-  const variance = retained.reduce((acc, item) => acc + item.weight * (item.value - mean) ** 2, 0) / sumWeight;
-  return {
-    mean,
-    variance,
-    nEff: sumWeight * sumWeight / sumWeightSquared
-  };
-}
-
 function metricTone(value: number | null): "negative" | "neutral" | "positive" {
   const sign = signForPunchline(value);
   if (sign < 0) return "negative";
@@ -3879,8 +3763,94 @@ function shortNodeLabel(node: GraphNode): string {
   return abbreviateLabel(node.label || node.id, 24);
 }
 
+type ShowcaseGuide = {
+  title: string;
+  target: string;
+  items: string[];
+};
+
+function showcaseGuideForExample(exampleId: string | null | undefined): ShowcaseGuide | null {
+  if (exampleId === "what-if-showcase-dynamic-rules") {
+    return {
+      title: "Sequential dynamic strategy",
+      target: "Look for the rule trace and support by visit.",
+      items: [
+        "The strategy assigns A0/A1/A2 from current risk history before later nodes are drawn.",
+        "Observed match is a support diagnostic, not the estimand."
+      ]
+    };
+  }
+  if (exampleId === "what-if-showcase-survival-curves") {
+    return {
+      title: "Strategy survival curves",
+      target: "Look for two curves and the final risk difference.",
+      items: [
+        "Each treatment strategy gets its own simulated follow-up curve.",
+        "The absorbing death edge means death by 5y carries into death by 10y."
+      ]
+    };
+  }
+  if (exampleId === "what-if-showcase-hazard-denominator") {
+    return {
+      title: "Survivor denominators",
+      target: "Open interval denominators under the curve.",
+      items: [
+        "Late hazards are conditional on remaining at risk.",
+        "At-risk counts prevent reading a late interval as the whole-horizon risk."
+      ]
+    };
+  }
+  if (exampleId === "what-if-showcase-g-estimation") {
+    return {
+      title: "G-estimation readout",
+      target: "Methods is open; inspect additive g-estimation.",
+      items: [
+        "The top metric uses the additive g-estimation row.",
+        "The diagnostic row reports sequential blip coefficients."
+      ]
+    };
+  }
+  if (exampleId === "what-if-showcase-ipcw") {
+    return {
+      title: "Censoring weights",
+      target: "Methods is open; inspect IPW/IPCW.",
+      items: [
+        "The IPW/IPCW metric weights treatment histories and remaining uncensored.",
+        "Support ESS tells whether the weighted contrast is fragile."
+      ]
+    };
+  }
+  if (exampleId === "what-if-showcase-snaft") {
+    return {
+      title: "Structural nested survival time",
+      target: "Separate failure time from observed death.",
+      items: [
+        "The main contrast is on failure time, not only an event indicator.",
+        "Observed-death survival is a follow-up diagnostic."
+      ]
+    };
+  }
+  return null;
+}
+
+function ShowcaseGuideCard(props: { guide: ShowcaseGuide }) {
+  return (
+    <section className="showcase-guide-card" aria-label="Showcase guide">
+      <div className="module-card-header">
+        <strong>Showcase guide</strong>
+        <span>{props.guide.title}</span>
+      </div>
+      <p>{props.guide.target}</p>
+      <ul>
+        {props.guide.items.map((item) => <li key={item}>{item}</li>)}
+      </ul>
+    </section>
+  );
+}
+
 function AdjustedOutputPanel(props: {
   moduleId: string | null;
+  exampleId?: string | null;
   computedOutput: ComputedCompletedOutput | null;
   binaryOutput: BinaryAdjustmentOutput | null;
   continuousOutput: BinaryContinuousAdjustmentOutput | null;
@@ -3891,13 +3861,16 @@ function AdjustedOutputPanel(props: {
   const binaryOutput = props.binaryOutput;
   const continuousOutput = props.continuousOutput;
   const pendingNotice = <ResultsPendingNotice pending={props.pending} label="Updating adjusted output" />;
+  const showcaseGuide = showcaseGuideForExample(props.exampleId);
+  const showGenericAdjustmentCards = !props.moduleId?.startsWith("what-if-");
   if (props.moduleId) {
     return (
       <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
         {pendingNotice}
-        {binaryOutput && shouldRenderBinaryAdjustmentOutput(binaryOutput) && <BinaryAdjustmentOutputCard output={binaryOutput} />}
-        {continuousOutput && shouldRenderBinaryContinuousAdjustmentOutput(continuousOutput) && <BinaryContinuousAdjustmentOutputCard output={continuousOutput} />}
+        {showcaseGuide && <ShowcaseGuideCard guide={showcaseGuide} />}
         <CompletedOutputPanel moduleId={props.moduleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
+        {showGenericAdjustmentCards && binaryOutput && shouldRenderBinaryAdjustmentOutput(binaryOutput) && <BinaryAdjustmentOutputCard output={binaryOutput} />}
+        {showGenericAdjustmentCards && continuousOutput && shouldRenderBinaryContinuousAdjustmentOutput(continuousOutput) && <BinaryContinuousAdjustmentOutputCard output={continuousOutput} />}
       </div>
     );
   }
@@ -4133,87 +4106,38 @@ function ContinuousAdjustmentStrataPlot({ output, xLabel, yLabel }: { output: Bi
     return groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined;
   });
   if (rows.length === 0) return <p className="muted">No adjusted stratum has both exposure groups represented.</p>;
-  const width = 420;
-  const maxLabelLines = Math.max(...rows.map((stratum) => stratum.displayLabels.length), 1);
-  const rowHeight = maxLabelLines > 1 ? 92 : 74;
-  const margin = { left: 170, right: 54, top: 26, bottom: 30 };
-  const height = margin.top + rows.length * rowHeight + margin.bottom;
-  const plotWidth = width - margin.left - margin.right;
-  const [min, max] = output.yDomain;
-  const valueToX = (value: number) => margin.left + ((value - min) / Math.max(max - min, 1e-9)) * plotWidth;
-  const maxWeight = Math.max(...rows.flatMap((stratum) => stratum.points.map((point) => point.weight)), 1);
+  const summaries = rows.map((stratum) => ({ stratum, summaries: continuousOutcomeSummaries(stratum.points, xLabel) }));
+  const yDomain = categoryOutcomeDomain(output.yDomain, summaries.flatMap((entry) => entry.summaries), false);
   return (
     <div className="continuous-adjustment-strata">
       <div className="module-card-header">
         <strong>Adjusted strata</strong>
-        <span>{binaryShortLabel(yLabel)} dots + means by {binaryShortLabel(xLabel)}</span>
+        <span>{binaryShortLabel(yLabel)} points + mean CIs by {binaryShortLabel(xLabel)}</span>
       </div>
-      <svg className="continuous-adjustment-strata-plot" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Adjusted ${yLabel} gaps by stratum`}>
-        <line className="continuous-strata-axis" x1={margin.left} x2={margin.left + plotWidth} y1={height - margin.bottom + 2} y2={height - margin.bottom + 2} />
-        <text className="continuous-strata-tick" x={margin.left} y={height - 5}>{formatValue(min)}</text>
-        <text className="continuous-strata-tick end" x={margin.left + plotWidth} y={height - 5}>{formatValue(max)}</text>
-        {rows.map((stratum, index) => {
-          const y = margin.top + index * rowHeight + rowHeight / 2;
-          const groupZero = stratum.groups[0]!;
-          const groupOne = stratum.groups[1]!;
-          const x0 = valueToX(groupZero.mean ?? min);
-          const x1 = valueToX(groupOne.mean ?? min);
-          const groupZeroY = y - 12;
-          const groupOneY = y + 12;
-          const pointGroups = [
-            { value: 0 as const, centerY: groupZeroY, points: continuousStrataGroupPoints(stratum, 0) },
-            { value: 1 as const, centerY: groupOneY, points: continuousStrataGroupPoints(stratum, 1) }
-          ];
-          const labelLines = stratum.displayLabels;
-          const labelStartY = y - ((labelLines.length - 1) * 5);
+      <div className="category-outcome-facet-grid" role="list" aria-label={`Adjusted ${yLabel} gaps by stratum`}>
+        {summaries.map(({ stratum, summaries: stratumSummaries }) => {
           return (
-            <g key={stratum.id} className="continuous-strata-row">
-              <title>{stratum.label}</title>
-              <text className={`continuous-strata-label${labelLines.length > 1 ? " multi" : ""}`} x={margin.left - 10} y={labelStartY + 3}>
-                {labelLines.map((label, labelIndex) => (
-                  <tspan x={margin.left - 10} dy={labelIndex === 0 ? 0 : 10} key={`${stratum.id}-${label}`}>
-                    {label}
-                  </tspan>
-                ))}
-              </text>
-              {pointGroups.map((group) => {
-                return (
-                  <Fragment key={group.value}>
-                    <line className="continuous-strata-row-guide" x1={margin.left} x2={margin.left + plotWidth} y1={group.centerY} y2={group.centerY} />
-                    {group.points.map((point) => {
-                      const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
-                      return (
-                        <circle
-                          className={`continuous-strata-point ${group.value === 1 ? "treated" : "untreated"}`}
-                          cx={valueToX(point.y)}
-                          cy={group.centerY + deterministicStrataJitter(point.index, group.value, index) * 9.5}
-                          r={2.15 + normalizedWeight * 1.4}
-                          key={`${group.value}-${point.index}`}
-                          style={{ opacity: 0.46 + normalizedWeight * 0.32 }}
-                        />
-                      );
-                    })}
-                  </Fragment>
-                );
-              })}
-              <line className="continuous-strata-gap-line" x1={x0} x2={x1} y1={groupZeroY} y2={groupOneY} />
-              <circle className="continuous-strata-mean untreated" cx={x0} cy={groupZeroY} r="5.8" />
-              <circle className="continuous-strata-mean treated" cx={x1} cy={groupOneY} r="5.8" />
-              <text className="continuous-strata-gap-text" x={width - 4} y={y + 4}>{stratum.gap === null ? "n/a" : formatSignedValue(stratum.gap)}</text>
-            </g>
+            <div className="category-outcome-facet" role="listitem" key={stratum.id}>
+              <div className="module-card-header">
+                <strong className="continuous-strata-label">{stratum.displayLabels.join("; ")}</strong>
+                <span className="continuous-strata-gap-text">{stratum.gap === null ? "n/a" : formatSignedValue(stratum.gap)}</span>
+              </div>
+              <CategoryOutcomePlot
+                points={stratum.points}
+                summaries={stratumSummaries}
+                xLabel={xLabel}
+                yLabel={yLabel}
+                yDomain={yDomain}
+                outcomeKind="continuous"
+                compact
+                ariaLabel={`${stratum.label}: ${yLabel} by ${xLabel}`}
+              />
+            </div>
           );
         })}
-      </svg>
+      </div>
     </div>
   );
-}
-
-function continuousStrataGroupPoints(stratum: BinaryContinuousAdjustmentStratum, groupValue: 0 | 1): ScatterPoint[] {
-  return binaryContinuousPointsForGroup(stratum.points, groupValue);
-}
-
-function deterministicStrataJitter(index: number, groupValue: 0 | 1, rowIndex: number): number {
-  return deterministicJitter(index + groupValue * 1009 + rowIndex * 9173);
 }
 
 function StabilizedIpwCard({ output }: { output: StabilizedIpwOutput }) {
@@ -5638,6 +5562,7 @@ function FunctionPicker(props: { label: string; value: EdgeMechanismKind; onOpen
 }
 
 function functionGlyphPath(kind: EdgeMechanismKind): string {
+  if (kind === "absorbing") return "M 4 16 L 12 16 L 12 7 L 20 7 L 20 16 L 28 16";
   if (kind === "threshold") return "M 4 16 H 15 V 5 H 28";
   if (kind === "smooth_threshold") return "M 4 16 C 10 16 11 5 18 5 C 22 5 24 4 28 4";
   if (kind === "saturating") return "M 4 16 C 9 16 11 10 16 10 C 21 10 23 4 28 4";

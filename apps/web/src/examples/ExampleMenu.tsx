@@ -1,6 +1,7 @@
-import { EXAMPLES } from "@nudagitty/core";
+import { EXAMPLES, EXAMPLE_DOMAINS } from "@nudagitty/core";
+import type { ExampleDomain } from "@nudagitty/core";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { WorkbenchMode } from "../shared/workbench";
 
 const BASIC_EXAMPLE_IDS = [
@@ -16,10 +17,20 @@ const BASIC_EXAMPLE_IDS = [
 export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: string | null; onSelect: (id: string) => void; compact?: boolean }) {
   const activeExample = EXAMPLES.find((example) => example.id === props.activeExampleId);
   const basicMode = props.mode === "basic";
+  const domains = exampleDomainsForMode(props.mode);
+  const domainIds = new Set<ExampleDomain>(domains.map((domain) => domain.id));
+  const activeDomain = activeExample && domainIds.has(activeExample.domain) ? activeExample.domain : domains[0]?.id ?? "classic";
   const [open, setOpen] = useState(false);
+  const [highlightedDomain, setHighlightedDomain] = useState<ExampleDomain>(activeDomain);
+
+  useEffect(() => {
+    setHighlightedDomain(activeDomain);
+  }, [activeDomain, props.mode]);
+
+  const highlighted = EXAMPLE_DOMAINS.find((domain) => domain.id === highlightedDomain) ?? domains[0];
   const examples = basicMode
     ? BASIC_EXAMPLE_IDS.map((id) => EXAMPLES.find((example) => example.id === id)).filter((example): example is typeof EXAMPLES[number] => example !== undefined)
-    : EXAMPLES;
+    : EXAMPLES.filter((example) => example.domain === highlighted?.id);
   return (
     <DropdownMenu.Root open={open} onOpenChange={setOpen}>
       <div className="example-menu">
@@ -48,14 +59,31 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
             <div className="example-sheet-head">
               <div>
                 <strong>Examples</strong>
-                <span>{basicMode ? "Start with Simpson or tutoring." : "All examples"}</span>
+                <span>{basicMode ? "Start with Simpson or tutoring." : highlighted?.label}</span>
               </div>
               <button type="button" aria-label="Close menu" onClick={() => setOpen(false)}>close</button>
             </div>
+            {!basicMode && <div className="example-domain-list" aria-label="Example domains">
+              {domains.map((domain) => (
+                <button
+                  type="button"
+                  className={domain.id === highlightedDomain ? "active" : ""}
+                  onMouseEnter={() => setHighlightedDomain(domain.id)}
+                  onFocus={() => setHighlightedDomain(domain.id)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setHighlightedDomain(domain.id);
+                  }}
+                  key={domain.id}
+                >
+                  <span>{domain.label}</span>
+                </button>
+              ))}
+            </div>}
             <div className="example-choice-list">
               <div className="example-choice-head">
-                <strong>{basicMode ? "Core causal patterns" : "All examples"}</strong>
-                <span>{basicMode ? "Start with the two sign flips, then use the rest as follow-up patterns." : "One flat catalog, ordered from teaching demos to advanced patterns."}</span>
+                <strong>{basicMode ? "Core causal patterns" : highlighted?.label}</strong>
+                <span>{basicMode ? "Start with the two sign flips, then use the rest as follow-up patterns." : highlighted?.description}</span>
               </div>
               {examples.map((example, index) => (
                 <Fragment key={example.id}>
@@ -80,4 +108,9 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
       </div>
     </DropdownMenu.Root>
   );
+}
+
+function exampleDomainsForMode(mode: WorkbenchMode): ReadonlyArray<typeof EXAMPLE_DOMAINS[number]> {
+  if (mode === "basic") return EXAMPLE_DOMAINS.filter((domain) => domain.id === "classic");
+  return EXAMPLE_DOMAINS;
 }

@@ -8,3 +8,9 @@ screenshots
 .vite
 *.tsbuildinfo
 .DS_Store
+.env
+.env.local
+.env.*.local
+infra/umami/.env
+infra/umami/.admin-password
+docs/references/*.pdf

@@ -1,0 +1,191 @@
+.mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(54px, 1fr));
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 190px;
+}
+
+.mode-toggle button {
+  min-height: 34px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mode-toggle button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.example-menu {
+  position: relative;
+  min-width: 220px;
+}
+
+.example-menu-trigger {
+  justify-content: space-between;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  text-align: left;
+}
+
+.example-menu-trigger::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+}
+
+.example-menu-trigger-text {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.example-menu-label {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.example-menu-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.example-menu-backdrop,
+.example-sheet-head,
+.example-more-divider {
+  display: none;
+}
+
+.example-menu-popover {
+  position: absolute;
+  top: calc(100% - 1px);
+  left: 0;
+  z-index: 35;
+  display: grid;
+  grid-template-columns: 230px minmax(320px, 440px);
+  width: min(680px, calc(100vw - 24px));
+  min-height: 260px;
+  max-height: calc(100vh - 54px);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 14px 34px rgba(20, 31, 38, 0.18);
+}
+
+.example-domain-list,
+.example-choice-list {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-height: 0;
+  max-height: calc(100vh - 54px);
+  overflow: auto;
+  padding: 7px;
+}
+
+.example-domain-list {
+  border-right: 1px solid var(--line);
+  background: #f8faf9;
+}
+
+.example-domain-list button,
+.example-choice-list button {
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  text-align: left;
+}
+
+.example-domain-list button {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.example-domain-list button span,
+.example-choice-list button span,
+.example-choice-list button strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.example-domain-list button.active,
+.example-choice-list button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.example-choice-head {
+  display: grid;
+  gap: 3px;
+  padding: 5px 4px 7px;
+}
+
+.example-choice-head strong {
+  color: #3d464e;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.example-choice-head span,
+.example-choice-list button span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.example-choice-list button span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}
+
+.example-choice-list button {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  height: auto;
+  min-height: 62px;
+  padding: 7px 8px;
+}
+
+.example-choice-list button strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #202428;
+  font-size: 13px;
+  line-height: 17px;
+  white-space: normal;
+}
+
+.example-choice-list button.frontline {
+  min-height: 46px;
+}
+
+.example-choice-list button.frontline strong {
+  font-size: 14px;
+}
+

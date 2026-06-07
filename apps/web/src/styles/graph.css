@@ -1,0 +1,652 @@
+.canvas-shell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: #fafafa;
+}
+
+.flow-canvas-shell {
+  overflow: hidden;
+}
+
+.flow-canvas-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+}
+
+.graph-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.flow-graph-canvas {
+  background: #fafafa;
+}
+
+.flow-graph-canvas .react-flow__pane {
+  cursor: grab;
+}
+
+.flow-graph-canvas .react-flow__pane.dragging {
+  cursor: grabbing;
+}
+
+.flow-graph-canvas .react-flow__node {
+  width: 142px;
+  height: 150px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.flow-graph-canvas .react-flow__node.selected {
+  box-shadow: none;
+}
+
+.flow-graph-canvas .react-flow__edges {
+  overflow: visible;
+}
+
+.flow-graph-canvas .react-flow__attribution {
+  display: none;
+}
+
+.graph-canvas.panning {
+  cursor: grabbing;
+}
+
+.canvas-grid {
+  fill: #fbfbfb;
+}
+
+.canvas-status {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.canvas-computation-status {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.canvas-coachmark {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 3;
+  display: grid;
+  gap: 3px;
+  max-width: 330px;
+  padding: 10px 12px;
+  border: 1px solid #95bcb7;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 28px rgba(20, 31, 38, 0.12);
+  color: #263133;
+}
+
+.canvas-coachmark strong {
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 17px;
+}
+
+.canvas-coachmark span {
+  color: #4f5b65;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.canvas-causal-controls {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 20px rgba(20, 31, 38, 0.08);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.canvas-causal-controls button {
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.canvas-zoom-controls {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  display: grid;
+  grid-template-columns: 32px 48px 32px auto;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 20px rgba(20, 31, 38, 0.08);
+}
+
+.canvas-zoom-controls button {
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.canvas-zoom-controls span {
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.react-flow-controls.canvas-zoom-controls {
+  top: 12px !important;
+  right: 12px !important;
+  bottom: auto !important;
+  left: auto !important;
+  display: flex;
+  grid-template-columns: none;
+}
+
+.react-flow-controls.canvas-zoom-controls button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  margin: 0;
+  border: 0;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.canvas-legend-toggle {
+  position: absolute;
+  top: 58px;
+  right: 12px;
+  z-index: 2;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 20px rgba(20, 31, 38, 0.08);
+  color: #3d464e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.canvas-legend-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mode-basic .canvas-legend-toggle {
+  top: 12px;
+  right: 12px;
+}
+
+.edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18px;
+  cursor: pointer;
+}
+
+.edge-line {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 2px;
+  stroke-linecap: round;
+}
+
+.edge-line.with-arrow {
+  stroke-linecap: butt;
+}
+
+.edge-arrow-head {
+  stroke: none;
+  pointer-events: none;
+}
+
+.edge-arrow-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.edge.disabled {
+  opacity: 0.32;
+}
+
+.edge.causal .edge-line {
+  stroke: var(--causal);
+}
+
+.edge.causal .edge-arrow-head {
+  fill: var(--causal);
+}
+
+.edge.biasing .edge-line {
+  stroke: var(--bias);
+}
+
+.edge.biasing .edge-arrow-head {
+  fill: var(--bias);
+}
+
+.edge.selected .edge-line {
+  stroke: #111820;
+}
+
+.edge.selected .edge-arrow-head {
+  fill: #111820;
+}
+
+.edge.coefficient-positive .edge-line {
+  stroke: var(--causal);
+}
+
+.edge.coefficient-positive .edge-arrow-head {
+  fill: var(--causal);
+}
+
+.edge.coefficient-negative .edge-line {
+  stroke: var(--bias);
+}
+
+.edge.coefficient-negative .edge-arrow-head {
+  fill: var(--bias);
+}
+
+.edge.coefficient-zero .edge-line {
+  stroke: #9aa7b1;
+}
+
+.edge.coefficient-zero .edge-arrow-head {
+  fill: #9aa7b1;
+}
+
+.edge-control {
+  fill: #fff;
+  stroke: #111820;
+  stroke-width: 2px;
+  cursor: move;
+}
+
+.edge-value {
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  text-anchor: middle;
+  font-size: 7.5px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.edge-value-context {
+  fill: #4f5b65;
+  letter-spacing: 0;
+}
+
+.edge-value-number {
+  font-size: 10px;
+}
+
+.edge.coefficient-positive .edge-value-number {
+  fill: var(--causal);
+}
+
+.edge.coefficient-negative .edge-value-number {
+  fill: var(--bias);
+}
+
+.edge.coefficient-zero .edge-value-number {
+  fill: #6b7780;
+}
+
+.edge-function-glyph {
+  pointer-events: none;
+}
+
+.edge-function-glyph-card {
+  fill: rgba(255, 255, 255, 0.94);
+  stroke: rgba(149, 163, 174, 0.82);
+  stroke-width: 1px;
+  filter: drop-shadow(0 1px 3px rgba(20, 31, 38, 0.14));
+}
+
+.edge-function-glyph-axis {
+  fill: none;
+  stroke: #c5cdd4;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+}
+
+.edge-function-glyph-curve {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.8px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.edge.coefficient-positive .edge-function-glyph-curve {
+  stroke: var(--causal);
+}
+
+.edge.coefficient-negative .edge-function-glyph-curve {
+  stroke: var(--bias);
+}
+
+.edge.coefficient-zero .edge-function-glyph-curve {
+  stroke: #6b7780;
+}
+
+.mode-basic .edge-value,
+.mode-basic .edge-function-glyph {
+  display: none;
+}
+
+.arrow-head {
+  fill: context-stroke;
+  stroke: none;
+}
+
+.node {
+  cursor: grab;
+}
+
+.flow-graph-node {
+  width: 142px;
+  height: 150px;
+}
+
+.flow-graph-node .flow-node-svg {
+  display: block;
+  width: 142px;
+  height: 150px;
+  overflow: visible;
+}
+
+.flow-node-handle {
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.node circle {
+  fill: #fff;
+  stroke: #3e4a53;
+  stroke-width: 2px;
+}
+
+.node.ancestor circle {
+  fill: #eef7f3;
+}
+
+.node.changed circle {
+  filter: drop-shadow(0 0 5px rgba(35, 113, 111, 0.35));
+}
+
+.node.latent circle {
+  stroke-dasharray: 4 3;
+  fill: #f5f3f0;
+}
+
+.node.selected circle,
+.node.edge-source circle {
+  stroke: var(--accent);
+  stroke-width: 3px;
+}
+
+.adjusted-ring {
+  fill: none;
+  stroke: #cf7a22;
+  stroke-width: 2px;
+}
+
+.selected-mark {
+  fill: none;
+  stroke: #7048a8;
+  stroke-width: 2px;
+}
+
+.node-label {
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.96);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  text-anchor: middle;
+  font-size: 13px;
+  font-weight: 700;
+  fill: #172028;
+  pointer-events: none;
+}
+
+.flow-graph-node .node-label {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.graph-legend {
+  pointer-events: none;
+}
+
+.flow-graph-legend {
+  position: absolute;
+  top: 96px;
+  right: 12px;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+  width: 168px;
+  padding: 10px 12px 11px;
+  border: 1px solid rgba(214, 221, 226, 0.95);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 18px rgba(20, 31, 38, 0.1);
+  color: #4f5b65;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.flow-graph-legend-title {
+  grid-column: 1 / -1;
+  color: #26333d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.flow-graph-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.flow-graph-legend-node {
+  position: relative;
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  border: 1.6px solid #3e4a53;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.flow-graph-legend-node.adjusted::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 1.8px solid #cf7a22;
+  border-radius: 4px;
+}
+
+.flow-graph-legend-node.selected::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: -7px;
+  height: 8px;
+  border-right: 2px solid #7048a8;
+  border-bottom: 2px solid #7048a8;
+  transform: rotate(45deg);
+}
+
+.graph-legend-card {
+  fill: rgba(255, 255, 255, 0.94);
+  stroke: rgba(214, 221, 226, 0.95);
+  stroke-width: 1px;
+  filter: drop-shadow(0 8px 18px rgba(20, 31, 38, 0.1));
+}
+
+.graph-legend-heading {
+  fill: #26333d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.graph-legend-text {
+  fill: #4f5b65;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.graph-legend-node {
+  fill: #fff;
+  stroke: #3e4a53;
+  stroke-width: 1.6px;
+}
+
+.graph-legend-adjusted {
+  fill: none;
+  stroke: #cf7a22;
+  stroke-width: 1.8px;
+}
+
+.graph-legend-selected-mark {
+  fill: none;
+  stroke: #7048a8;
+  stroke-width: 1.8px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.node-value {
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.98);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  text-anchor: middle;
+  font-size: 11px;
+  fill: var(--accent);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.node-distribution-label {
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.98);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  text-anchor: middle;
+  font-size: 9px;
+  fill: #4f5b65;
+  pointer-events: none;
+}
+
+.node-distribution-annotation {
+  pointer-events: none;
+}
+
+.node-distribution-plot {
+  pointer-events: none;
+}
+
+.distribution-backdrop {
+  fill: #fff;
+  opacity: 0.96;
+}
+
+.distribution-frame {
+  fill: #fff;
+  stroke: #8fa0ad;
+  stroke-width: 1.2px;
+}
+
+.distribution-empirical {
+  fill: rgba(86, 102, 116, 0.58);
+}
+
+.distribution-analytic {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.4px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.distribution-binary-axis {
+  stroke: #8fa0ad;
+  stroke-width: 1px;
+}
+
+.distribution-binary-bar {
+  fill: rgba(178, 69, 103, 0.42);
+}
+
+.distribution-binary-bar.positive {
+  fill: rgba(35, 113, 111, 0.62);
+}
+
+.distribution-binary-label {
+  text-anchor: middle;
+  font-size: 7px;
+  font-weight: 700;
+  fill: #4f5b65;
+}
+
+.cm-editor {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+}

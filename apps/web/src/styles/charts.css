@@ -1,0 +1,325 @@
+.scatter-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.compact-pairwise-frame .module-pane-body {
+  padding: 7px;
+}
+
+.compact-pairwise-frame .binary-continuous-pair-view {
+  gap: 6px;
+}
+
+.compact-pairwise-frame .scatterplot-svg {
+  min-height: 170px;
+}
+
+.pairwise-relation-header {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 8px;
+}
+
+.pairwise-relation-title {
+  display: grid;
+  grid-template-columns: minmax(88px, 1fr) auto minmax(88px, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.pair-variable-select {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pair-variable-select::after {
+  content: "";
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  margin-top: -1px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--accent);
+  pointer-events: none;
+}
+
+.pair-variable-select select {
+  width: 100%;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 5px 24px 5px 9px;
+  appearance: none;
+  border: 1px solid #b9d8d1;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pair-variable-select select:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.pair-variable-select select:focus-visible,
+.pairwise-info summary:focus-visible {
+  outline: 2px solid rgba(42, 116, 105, 0.3);
+  outline-offset: 2px;
+}
+
+.pairwise-info {
+  position: relative;
+  justify-self: end;
+}
+
+.pairwise-info summary {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 900;
+  font-family: Georgia, "Times New Roman", serif;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pairwise-info summary::-webkit-details-marker {
+  display: none;
+}
+
+.pairwise-info[open] summary {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.pairwise-info-card {
+  position: absolute;
+  z-index: 7;
+  right: 0;
+  top: 34px;
+  display: grid;
+  gap: 4px;
+  width: min(300px, calc(100vw - 42px));
+  padding: 8px;
+  border: 1px solid #cfdeda;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 10px 26px rgba(24, 35, 42, 0.16);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.pairwise-info-card span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.scatterplot-svg {
+  display: block;
+  width: 100%;
+  aspect-ratio: 14 / 11;
+  min-height: 210px;
+  overflow: visible;
+}
+
+.scatter-plot-background {
+  fill: #fbfcfc;
+  stroke: var(--line);
+}
+
+.scatter-axis {
+  stroke: #758390;
+  stroke-width: 1.2;
+}
+
+.scatter-tick-label,
+.scatter-axis-label {
+  fill: var(--muted);
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.scatter-axis-label {
+  fill: #394149;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.scatter-tick-label {
+  font-variant-numeric: tabular-nums;
+}
+
+.scatter-tick-label.end {
+  text-anchor: end;
+}
+
+.scatter-tick-label.y-start,
+.scatter-tick-label.y-end {
+  text-anchor: end;
+}
+
+.scatter-point {
+  fill: var(--causal);
+  stroke: #fff;
+  stroke-width: 0.55;
+}
+
+.scatter-regression {
+  stroke: var(--bias);
+  stroke-width: 2;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.category-outcome-plot {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 172px;
+  overflow: visible;
+}
+
+.category-outcome-plot.compact {
+  min-height: 150px;
+}
+
+.category-outcome-background {
+  fill: #fff;
+  stroke: #d6e5e2;
+  stroke-width: 1px;
+}
+
+.category-outcome-axis {
+  stroke: #cdd9dd;
+  stroke-width: 1.7px;
+  stroke-linecap: round;
+}
+
+.category-outcome-guide,
+.category-outcome-category-guide {
+  stroke: #e1e9ec;
+  stroke-width: 1px;
+  stroke-linecap: round;
+}
+
+.category-outcome-category-guide {
+  stroke-dasharray: 3 4;
+}
+
+.category-outcome-axis-label,
+.category-outcome-axis-title,
+.category-outcome-group-label,
+.category-outcome-summary-value {
+  fill: #52616d;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.category-outcome-axis-label {
+  text-anchor: end;
+}
+
+.category-outcome-axis-title.x,
+.category-outcome-group-label,
+.category-outcome-summary-value {
+  text-anchor: middle;
+}
+
+.category-outcome-axis-title.y {
+  text-anchor: middle;
+}
+
+.category-outcome-summary-value {
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  fill: #202428;
+  font-size: 11px;
+}
+
+.category-outcome-observation {
+  stroke: #fff;
+  stroke-width: 0.55px;
+}
+
+.category-outcome-observation.untreated {
+  fill: #65717d;
+}
+
+.category-outcome-observation.treated {
+  fill: var(--accent);
+}
+
+.category-outcome-ci line {
+  stroke-width: 2.4px;
+  stroke-linecap: round;
+}
+
+.category-outcome-ci.untreated line {
+  stroke: rgba(101, 113, 125, 0.76);
+}
+
+.category-outcome-ci.treated line {
+  stroke: rgba(35, 113, 111, 0.78);
+}
+
+.category-outcome-summary-point {
+  stroke: #fff;
+  stroke-width: 2px;
+}
+
+.category-outcome-summary-point.untreated {
+  fill: #65717d;
+}
+
+.category-outcome-summary-point.treated {
+  fill: var(--accent);
+}
+
+.binary-continuous-pair-view {
+  display: grid;
+  gap: 10px;
+}
+
+.scatter-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.binary-continuous-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.binary-pair-view {
+  display: grid;
+  gap: 8px;
+}
+
