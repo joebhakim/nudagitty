@@ -1,0 +1,758 @@
+% Exactness in causal inference: from conjugate/forward-exact inference to
+% efficient estimation with confidence-interval guarantees.
+%
+% Two senses of "exact" run through this list:
+%   Sense 1 (forward-exact) -- closed-form conditional/interventional LAWS
+%     from a fully specified DGP: conjugacy, Gaussian/discrete graphical
+%     inference, and symbolic do-calculus identification. Sections A-C.
+%   Sense 2 (efficient estimation) -- estimating a causal functional from
+%     DATA with the smallest variance and a valid confidence interval:
+%     semiparametric efficiency, EIF, DML, TMLE, auto-debiasing, GMM.
+%     Sections D-I.
+% Plus partial identification (J) for when point ID fails, and
+% finite-sample-exact randomization inference (K).
+%
+% Compiled for Nudagitty. Titles double-braced to preserve capitalization.
+
+% =====================================================================
+% A. Conjugate priors & exponential-family exact inference
+% =====================================================================
+
+@book{raiffa1961applied,
+  author    = {Raiffa, Howard and Schlaifer, Robert},
+  title     = {{Applied Statistical Decision Theory}},
+  year      = {1961},
+  publisher = {Division of Research, Graduate School of Business Administration, Harvard University},
+  address   = {Boston}
+}
+
+@book{degroot1970optimal,
+  author    = {DeGroot, Morris H.},
+  title     = {{Optimal Statistical Decisions}},
+  year      = {1970},
+  publisher = {McGraw-Hill},
+  note      = {Wiley Classics Library reprint, 2004}
+}
+
+@article{diaconis1979conjugate,
+  author  = {Diaconis, Persi and Ylvisaker, Donald},
+  title   = {{Conjugate Priors for Exponential Families}},
+  journal = {The Annals of Statistics},
+  year    = {1979},
+  volume  = {7},
+  number  = {2},
+  pages   = {269--281}
+}
+
+@book{brown1986fundamentals,
+  author    = {Brown, Lawrence D.},
+  title     = {{Fundamentals of Statistical Exponential Families, with Applications in Statistical Decision Theory}},
+  year      = {1986},
+  series    = {IMS Lecture Notes--Monograph Series},
+  volume    = {9},
+  publisher = {Institute of Mathematical Statistics}
+}
+
+@book{bernardo1994bayesian,
+  author    = {Bernardo, Jos\'{e} M. and Smith, Adrian F. M.},
+  title     = {{Bayesian Theory}},
+  year      = {1994},
+  publisher = {Wiley},
+  address   = {Chichester}
+}
+
+@article{gutierrezpena1997exponential,
+  author  = {Guti\'{e}rrez-Pe\~{n}a, Eduardo and Smith, Adrian F. M.},
+  title   = {{Exponential and Bayesian Conjugate Families: Review and Extensions}},
+  journal = {Test},
+  year    = {1997},
+  volume  = {6},
+  number  = {1},
+  pages   = {1--90},
+  note    = {With discussion}
+}
+
+@article{wainwright2008graphical,
+  author  = {Wainwright, Martin J. and Jordan, Michael I.},
+  title   = {{Graphical Models, Exponential Families, and Variational Inference}},
+  journal = {Foundations and Trends in Machine Learning},
+  year    = {2008},
+  volume  = {1},
+  number  = {1--2},
+  pages   = {1--305}
+}
+
+@book{gelman2013bayesian,
+  author    = {Gelman, Andrew and Carlin, John B. and Stern, Hal S. and Dunson, David B. and Vehtari, Aki and Rubin, Donald B.},
+  title     = {{Bayesian Data Analysis}},
+  year      = {2013},
+  edition   = {3rd},
+  publisher = {Chapman and Hall/CRC}
+}
+
+% =====================================================================
+% B. Exact inference in graphical models (Gaussian & discrete)
+% =====================================================================
+
+@article{lauritzen1988local,
+  author  = {Lauritzen, Steffen L. and Spiegelhalter, David J.},
+  title   = {{Local Computations with Probabilities on Graphical Structures and Their Application to Expert Systems}},
+  journal = {Journal of the Royal Statistical Society: Series B},
+  year    = {1988},
+  volume  = {50},
+  number  = {2},
+  pages   = {157--224},
+  note    = {With discussion}
+}
+
+@book{pearl1988probabilistic,
+  author    = {Pearl, Judea},
+  title     = {{Probabilistic Reasoning in Intelligent Systems: Networks of Plausible Inference}},
+  year      = {1988},
+  publisher = {Morgan Kaufmann}
+}
+
+@article{shafer1990probability,
+  author  = {Shafer, Glenn R. and Shenoy, Prakash P.},
+  title   = {{Probability Propagation}},
+  journal = {Annals of Mathematics and Artificial Intelligence},
+  year    = {1990},
+  volume  = {2},
+  pages   = {327--351}
+}
+
+@book{lauritzen1996graphical,
+  author    = {Lauritzen, Steffen L.},
+  title     = {{Graphical Models}},
+  year      = {1996},
+  publisher = {Oxford University Press}
+}
+
+@book{cowell1999probabilistic,
+  author    = {Cowell, Robert G. and Dawid, A. Philip and Lauritzen, Steffen L. and Spiegelhalter, David J.},
+  title     = {{Probabilistic Networks and Expert Systems}},
+  year      = {1999},
+  publisher = {Springer}
+}
+
+@article{malioutov2006walksums,
+  author  = {Malioutov, Dmitry M. and Johnson, Jason K. and Willsky, Alan S.},
+  title   = {{Walk-Sums and Belief Propagation in Gaussian Graphical Models}},
+  journal = {Journal of Machine Learning Research},
+  year    = {2006},
+  volume  = {7},
+  pages   = {2031--2064}
+}
+
+@book{koller2009probabilistic,
+  author    = {Koller, Daphne and Friedman, Nir},
+  title     = {{Probabilistic Graphical Models: Principles and Techniques}},
+  year      = {2009},
+  publisher = {MIT Press}
+}
+
+@article{cooper1990computational,
+  author  = {Cooper, Gregory F.},
+  title   = {{The Computational Complexity of Probabilistic Inference Using Bayesian Belief Networks}},
+  journal = {Artificial Intelligence},
+  year    = {1990},
+  volume  = {42},
+  number  = {2--3},
+  pages   = {393--405}
+}
+
+@article{dagum1993approximating,
+  author  = {Dagum, Paul and Luby, Michael},
+  title   = {{Approximating Probabilistic Inference in Bayesian Belief Networks is NP-Hard}},
+  journal = {Artificial Intelligence},
+  year    = {1993},
+  volume  = {60},
+  number  = {1},
+  pages   = {141--153}
+}
+
+@article{roth1996hardness,
+  author  = {Roth, Dan},
+  title   = {{On the Hardness of Approximate Reasoning}},
+  journal = {Artificial Intelligence},
+  year    = {1996},
+  volume  = {82},
+  number  = {1--2},
+  pages   = {273--302}
+}
+
+% =====================================================================
+% C. Causal identification & do-calculus (symbolic exact)
+% =====================================================================
+
+@article{pearl1995causal,
+  author  = {Pearl, Judea},
+  title   = {{Causal Diagrams for Empirical Research}},
+  journal = {Biometrika},
+  year    = {1995},
+  volume  = {82},
+  number  = {4},
+  pages   = {669--710},
+  note    = {With discussion}
+}
+
+@inproceedings{tian2002general,
+  author    = {Tian, Jin and Pearl, Judea},
+  title     = {{A General Identification Condition for Causal Effects}},
+  booktitle = {Proceedings of the 18th National Conference on Artificial Intelligence (AAAI-02)},
+  year      = {2002},
+  pages     = {567--573}
+}
+
+@inproceedings{shpitser2006identification,
+  author    = {Shpitser, Ilya and Pearl, Judea},
+  title     = {{Identification of Joint Interventional Distributions in Recursive Semi-Markovian Causal Models}},
+  booktitle = {Proceedings of the 21st National Conference on Artificial Intelligence (AAAI-06)},
+  year      = {2006},
+  pages     = {1219--1226}
+}
+
+@inproceedings{shpitser2006conditional,
+  author    = {Shpitser, Ilya and Pearl, Judea},
+  title     = {{Identification of Conditional Interventional Distributions}},
+  booktitle = {Proceedings of the 22nd Conference on Uncertainty in Artificial Intelligence (UAI-06)},
+  year      = {2006},
+  pages     = {437--444},
+  url       = {https://ftp.cs.ucla.edu/pub/stat_ser/r329-uai.pdf}
+}
+
+@inproceedings{huang2006pearls,
+  author    = {Huang, Yimin and Valtorta, Marco},
+  title     = {{Pearl's Calculus of Intervention is Complete}},
+  booktitle = {Proceedings of the 22nd Conference on Uncertainty in Artificial Intelligence (UAI-06)},
+  year      = {2006},
+  pages     = {217--224}
+}
+
+@book{pearl2009causality,
+  author    = {Pearl, Judea},
+  title     = {{Causality: Models, Reasoning, and Inference}},
+  year      = {2009},
+  edition   = {2nd},
+  publisher = {Cambridge University Press}
+}
+
+@article{bareinboim2016causal,
+  author  = {Bareinboim, Elias and Pearl, Judea},
+  title   = {{Causal Inference and the Data-Fusion Problem}},
+  journal = {Proceedings of the National Academy of Sciences},
+  year    = {2016},
+  volume  = {113},
+  number  = {27},
+  pages   = {7345--7352}
+}
+
+@article{textor2016robust,
+  author  = {Textor, Johannes and van der Zander, Benito and Gilthorpe, Mark S. and Li\'{s}kiewicz, Maciej and Ellison, George T. H.},
+  title   = {{Robust Causal Inference Using Directed Acyclic Graphs: The R Package 'dagitty'}},
+  journal = {International Journal of Epidemiology},
+  year    = {2016},
+  volume  = {45},
+  number  = {6},
+  pages   = {1887--1894}
+}
+
+% =====================================================================
+% D. Semiparametric efficiency theory & efficient influence functions
+% =====================================================================
+
+@article{hajek1970characterization,
+  author  = {H\'{a}jek, Jaroslav},
+  title   = {{A Characterization of Limiting Distributions of Regular Estimates}},
+  journal = {Zeitschrift f\"{u}r Wahrscheinlichkeitstheorie und verwandte Gebiete},
+  year    = {1970},
+  volume  = {14},
+  pages   = {323--330}
+}
+
+@book{pfanzagl1982contributions,
+  author    = {Pfanzagl, Johann},
+  title     = {{Contributions to a General Asymptotic Statistical Theory}},
+  year      = {1982},
+  publisher = {Springer}
+}
+
+@article{begun1983information,
+  author  = {Begun, Janet M. and Hall, W. J. and Huang, Wei-Min and Wellner, Jon A.},
+  title   = {{Information and Asymptotic Efficiency in Parametric--Nonparametric Models}},
+  journal = {The Annals of Statistics},
+  year    = {1983},
+  volume  = {11},
+  number  = {2},
+  pages   = {432--452}
+}
+
+@article{newey1990semiparametric,
+  author  = {Newey, Whitney K.},
+  title   = {{Semiparametric Efficiency Bounds}},
+  journal = {Journal of Applied Econometrics},
+  year    = {1990},
+  volume  = {5},
+  number  = {2},
+  pages   = {99--135}
+}
+
+@book{bickel1993efficient,
+  author    = {Bickel, Peter J. and Klaassen, Chris A. J. and Ritov, Ya'acov and Wellner, Jon A.},
+  title     = {{Efficient and Adaptive Estimation for Semiparametric Models}},
+  year      = {1993},
+  publisher = {Johns Hopkins University Press}
+}
+
+@article{vandervaart1991differentiable,
+  author  = {van der Vaart, Aad W.},
+  title   = {{On Differentiable Functionals}},
+  journal = {The Annals of Statistics},
+  year    = {1991},
+  volume  = {19},
+  number  = {1},
+  pages   = {178--204}
+}
+
+@book{vandervaart1996weak,
+  author    = {van der Vaart, Aad W. and Wellner, Jon A.},
+  title     = {{Weak Convergence and Empirical Processes: With Applications to Statistics}},
+  year      = {1996},
+  publisher = {Springer}
+}
+
+@book{vandervaart1998asymptotic,
+  author    = {van der Vaart, Aad W.},
+  title     = {{Asymptotic Statistics}},
+  year      = {1998},
+  publisher = {Cambridge University Press},
+  note      = {Chapter 25}
+}
+
+@incollection{vandervaart2002semiparametric,
+  author    = {van der Vaart, Aad W.},
+  title     = {{Semiparametric Statistics}},
+  booktitle = {Lectures on Probability Theory and Statistics (\'{E}cole d'\'{E}t\'{e} de Probabilit\'{e}s de Saint-Flour XXIX--1999)},
+  series    = {Lecture Notes in Mathematics},
+  volume    = {1781},
+  year      = {2002},
+  pages     = {331--457},
+  publisher = {Springer}
+}
+
+@incollection{robins2008higher,
+  author    = {Robins, James M. and Li, Lingling and Tchetgen Tchetgen, Eric and van der Vaart, Aad W.},
+  title     = {{Higher Order Influence Functions and Minimax Estimation of Nonlinear Functionals}},
+  booktitle = {Probability and Statistics: Essays in Honor of David A. Freedman},
+  series    = {IMS Collections},
+  volume    = {2},
+  year      = {2008},
+  pages     = {335--421},
+  publisher = {Institute of Mathematical Statistics}
+}
+
+@book{tsiatis2006semiparametric,
+  author    = {Tsiatis, Anastasios A.},
+  title     = {{Semiparametric Theory and Missing Data}},
+  year      = {2006},
+  publisher = {Springer}
+}
+
+@article{fisher2021visually,
+  author  = {Fisher, Aaron and Kennedy, Edward H.},
+  title   = {{Visually Communicating and Teaching Intuition for Influence Functions}},
+  journal = {The American Statistician},
+  year    = {2021},
+  volume  = {75},
+  number  = {2},
+  pages   = {162--172}
+}
+
+@article{hines2022demystifying,
+  author       = {Hines, Oliver and Dukes, Oliver and D\'{i}az-Ordaz, Karla and Vansteelandt, Stijn},
+  title        = {{Demystifying Statistical Learning Based on Efficient Influence Functions}},
+  journal      = {The American Statistician},
+  year         = {2022},
+  volume       = {76},
+  number       = {3},
+  pages        = {292--304},
+  eprint       = {2107.00681},
+  archivePrefix = {arXiv}
+}
+
+@article{kennedy2023semiparametric,
+  author        = {Kennedy, Edward H.},
+  title         = {{Semiparametric Doubly Robust Targeted Double Machine Learning: A Review}},
+  journal       = {arXiv preprint},
+  year          = {2023},
+  eprint        = {2203.06469},
+  archivePrefix = {arXiv}
+}
+
+% =====================================================================
+% E. Causal/ATE efficiency, doubly-robust estimation & g-methods
+% =====================================================================
+
+@article{robins1986new,
+  author  = {Robins, James M.},
+  title   = {{A New Approach to Causal Inference in Mortality Studies with a Sustained Exposure Period---Application to Control of the Healthy Worker Survivor Effect}},
+  journal = {Mathematical Modelling},
+  year    = {1986},
+  volume  = {7},
+  number  = {9--12},
+  pages   = {1393--1512}
+}
+
+@article{robins1994estimation,
+  author  = {Robins, James M. and Rotnitzky, Andrea and Zhao, Lue Ping},
+  title   = {{Estimation of Regression Coefficients When Some Regressors Are Not Always Observed}},
+  journal = {Journal of the American Statistical Association},
+  year    = {1994},
+  volume  = {89},
+  number  = {427},
+  pages   = {846--866}
+}
+
+@article{hahn1998role,
+  author  = {Hahn, Jinyong},
+  title   = {{On the Role of the Propensity Score in Efficient Semiparametric Estimation of Average Treatment Effects}},
+  journal = {Econometrica},
+  year    = {1998},
+  volume  = {66},
+  number  = {2},
+  pages   = {315--331}
+}
+
+@article{scharfstein1999adjusting,
+  author  = {Scharfstein, Daniel O. and Rotnitzky, Andrea and Robins, James M.},
+  title   = {{Adjusting for Nonignorable Drop-Out Using Semiparametric Nonresponse Models}},
+  journal = {Journal of the American Statistical Association},
+  year    = {1999},
+  volume  = {94},
+  number  = {448},
+  pages   = {1096--1146},
+  note    = {With discussion}
+}
+
+@article{robins2000marginal,
+  author  = {Robins, James M. and Hern\'{a}n, Miguel A. and Brumback, Babette},
+  title   = {{Marginal Structural Models and Causal Inference in Epidemiology}},
+  journal = {Epidemiology},
+  year    = {2000},
+  volume  = {11},
+  number  = {5},
+  pages   = {550--560}
+}
+
+@article{bang2005doubly,
+  author  = {Bang, Heejung and Robins, James M.},
+  title   = {{Doubly Robust Estimation in Missing Data and Causal Inference Models}},
+  journal = {Biometrics},
+  year    = {2005},
+  volume  = {61},
+  number  = {4},
+  pages   = {962--973}
+}
+
+@book{hernan2020causal,
+  author    = {Hern\'{a}n, Miguel A. and Robins, James M.},
+  title     = {{Causal Inference: What If}},
+  year      = {2020},
+  publisher = {Chapman and Hall/CRC},
+  address   = {Boca Raton}
+}
+
+% =====================================================================
+% F. Double/debiased & orthogonal machine learning
+% =====================================================================
+
+@incollection{neyman1959optimal,
+  author    = {Neyman, Jerzy},
+  title     = {{Optimal Asymptotic Tests of Composite Hypotheses}},
+  booktitle = {Probability and Statistics: The Harald Cram\'{e}r Volume},
+  editor    = {Grenander, Ulf},
+  year      = {1959},
+  pages     = {416--444},
+  publisher = {Wiley}
+}
+
+@article{chernozhukov2018double,
+  author  = {Chernozhukov, Victor and Chetverikov, Denis and Demirer, Mert and Duflo, Esther and Hansen, Christian and Newey, Whitney and Robins, James},
+  title   = {{Double/Debiased Machine Learning for Treatment and Structural Parameters}},
+  journal = {The Econometrics Journal},
+  year    = {2018},
+  volume  = {21},
+  number  = {1},
+  pages   = {C1--C68}
+}
+
+@article{chernozhukov2023simple,
+  author  = {Chernozhukov, Victor and Newey, Whitney K. and Singh, Rahul},
+  title   = {{A Simple and General Debiased Machine Learning Theorem with Finite-Sample Guarantees}},
+  journal = {Biometrika},
+  year    = {2023},
+  volume  = {110},
+  number  = {1},
+  pages   = {257--264},
+  doi     = {10.1093/biomet/asac033}
+}
+
+@article{dalal2024anytime,
+  author        = {Dalal, Abhinandan and Bl\"{o}baum, Patrick and Kasiviswanathan, Shiva and Ramdas, Aaditya},
+  title         = {{Anytime-Valid Inference for Double/Debiased Machine Learning of Causal Parameters}},
+  journal       = {arXiv preprint},
+  year          = {2024},
+  eprint        = {2408.09598},
+  archivePrefix = {arXiv}
+}
+
+@article{chernozhukov2022locally,
+  author  = {Chernozhukov, Victor and Escanciano, Juan Carlos and Ichimura, Hidehiko and Newey, Whitney K. and Robins, James M.},
+  title   = {{Locally Robust Semiparametric Estimation}},
+  journal = {Econometrica},
+  year    = {2022},
+  volume  = {90},
+  number  = {4},
+  pages   = {1501--1535}
+}
+
+@article{foster2023orthogonal,
+  author  = {Foster, Dylan J. and Syrgkanis, Vasilis},
+  title   = {{Orthogonal Statistical Learning}},
+  journal = {The Annals of Statistics},
+  year    = {2023},
+  volume  = {51},
+  number  = {3},
+  pages   = {879--908}
+}
+
+% =====================================================================
+% G. Targeted learning (TMLE)
+% =====================================================================
+
+@article{vanderlaan2006targeted,
+  author  = {van der Laan, Mark J. and Rubin, Daniel},
+  title   = {{Targeted Maximum Likelihood Learning}},
+  journal = {The International Journal of Biostatistics},
+  year    = {2006},
+  volume  = {2},
+  number  = {1},
+  pages   = {Article 11}
+}
+
+@book{vanderlaan2011targeted,
+  author    = {van der Laan, Mark J. and Rose, Sherri},
+  title     = {{Targeted Learning: Causal Inference for Observational and Experimental Data}},
+  year      = {2011},
+  publisher = {Springer}
+}
+
+@book{vanderlaan2018targeted,
+  author    = {van der Laan, Mark J. and Rose, Sherri},
+  title     = {{Targeted Learning in Data Science: Causal Inference for Complex Longitudinal Studies}},
+  year      = {2018},
+  publisher = {Springer}
+}
+
+% =====================================================================
+% H. Automatic / automated debiasing (the frontier)
+% =====================================================================
+
+@article{chernozhukov2021automatic,
+  author        = {Chernozhukov, Victor and Newey, Whitney K. and Quintas-Mart\'{i}nez, V\'{i}ctor and Syrgkanis, Vasilis},
+  title         = {{Automatic Debiased Machine Learning via Riesz Regression}},
+  journal       = {arXiv preprint},
+  year          = {2021},
+  eprint        = {2104.14737},
+  archivePrefix = {arXiv}
+}
+
+@article{chernozhukov2022automatic,
+  author  = {Chernozhukov, Victor and Newey, Whitney K. and Singh, Rahul},
+  title   = {{Automatic Debiased Machine Learning of Causal and Structural Effects}},
+  journal = {Econometrica},
+  year    = {2022},
+  volume  = {90},
+  number  = {3},
+  pages   = {967--1027}
+}
+
+@inproceedings{chernozhukov2022riesznet,
+  author    = {Chernozhukov, Victor and Newey, Whitney K. and Quintas-Mart\'{i}nez, V\'{i}ctor and Syrgkanis, Vasilis},
+  title     = {{RieszNet and ForestRiesz: Automatic Debiased Machine Learning with Neural Nets and Random Forests}},
+  booktitle = {Proceedings of the 39th International Conference on Machine Learning (ICML)},
+  series    = {PMLR},
+  volume    = {162},
+  year      = {2022},
+  url       = {https://proceedings.mlr.press/v162/chernozhukov22a/chernozhukov22a.pdf}
+}
+
+@inproceedings{agrawal2024automated,
+  author        = {Agrawal, Raj and Witty, Sam and Zane, Andy and Bingham, Eli},
+  title         = {{Automated Efficient Estimation Using Monte Carlo Efficient Influence Functions}},
+  booktitle     = {Advances in Neural Information Processing Systems 37 (NeurIPS 2024)},
+  year          = {2024},
+  eprint        = {2403.00158},
+  archivePrefix = {arXiv}
+}
+
+@article{vanderlaan2025automatic,
+  author        = {van der Laan, Lars and Bibaut, Aur\'{e}lien and Kallus, Nathan and Luedtke, Alex},
+  title         = {{Automatic Debiased Machine Learning for Smooth Functionals of Nonparametric M-Estimands}},
+  journal       = {arXiv preprint},
+  year          = {2025},
+  eprint        = {2501.11868},
+  archivePrefix = {arXiv}
+}
+
+@article{vanderlaan2025semiparametric,
+  author        = {van der Laan, Lars and Hubbard, David and Tran, Allen and Kallus, Nathan and Bibaut, Aur\'{e}lien},
+  title         = {{Semiparametric Double Reinforcement Learning with Applications to Long-Term Causal Inference}},
+  journal       = {arXiv preprint},
+  year          = {2025},
+  eprint        = {2501.06926},
+  archivePrefix = {arXiv}
+}
+
+% =====================================================================
+% I. GMM & econometric efficiency
+% =====================================================================
+
+@article{hansen1982large,
+  author  = {Hansen, Lars Peter},
+  title   = {{Large Sample Properties of Generalized Method of Moments Estimators}},
+  journal = {Econometrica},
+  year    = {1982},
+  volume  = {50},
+  number  = {4},
+  pages   = {1029--1054}
+}
+
+@article{chamberlain1987asymptotic,
+  author  = {Chamberlain, Gary},
+  title   = {{Asymptotic Efficiency in Estimation with Conditional Moment Restrictions}},
+  journal = {Journal of Econometrics},
+  year    = {1987},
+  volume  = {34},
+  number  = {3},
+  pages   = {305--334}
+}
+
+@article{imbens1994identification,
+  author  = {Imbens, Guido W. and Angrist, Joshua D.},
+  title   = {{Identification and Estimation of Local Average Treatment Effects}},
+  journal = {Econometrica},
+  year    = {1994},
+  volume  = {62},
+  number  = {2},
+  pages   = {467--475}
+}
+
+% =====================================================================
+% J. Partial identification (when exact point ID fails)
+% =====================================================================
+
+@article{manski1990nonparametric,
+  author  = {Manski, Charles F.},
+  title   = {{Nonparametric Bounds on Treatment Effects}},
+  journal = {American Economic Review},
+  year    = {1990},
+  volume  = {80},
+  number  = {2},
+  pages   = {319--323}
+}
+
+@article{balke1997bounds,
+  author  = {Balke, Alexander and Pearl, Judea},
+  title   = {{Bounds on Treatment Effects from Studies with Imperfect Compliance}},
+  journal = {Journal of the American Statistical Association},
+  year    = {1997},
+  volume  = {92},
+  number  = {439},
+  pages   = {1171--1176}
+}
+
+@book{manski2003partial,
+  author    = {Manski, Charles F.},
+  title     = {{Partial Identification of Probability Distributions}},
+  year      = {2003},
+  publisher = {Springer}
+}
+
+@article{duarte2024automated,
+  author  = {Duarte, Guilherme and Finkelstein, Noam and Knox, Dean and Mummolo, Jonathan and Shpitser, Ilya},
+  title   = {{An Automated Approach to Causal Inference in Discrete Settings}},
+  journal = {Journal of the American Statistical Association},
+  year    = {2024},
+  volume  = {119},
+  number  = {547},
+  pages   = {1778--1793},
+  url     = {https://dcknox.github.io/files/DuarteEtAl_Autobounds.pdf}
+}
+
+% =====================================================================
+% K. Finite-sample-exact (randomization) inference
+% =====================================================================
+
+@book{fisher1935design,
+  author    = {Fisher, Ronald A.},
+  title     = {{The Design of Experiments}},
+  year      = {1935},
+  publisher = {Oliver and Boyd},
+  address   = {Edinburgh}
+}
+
+@book{lehmann1975nonparametrics,
+  author    = {Lehmann, Erich L.},
+  title     = {{Nonparametrics: Statistical Methods Based on Ranks}},
+  year      = {1975},
+  publisher = {Holden-Day}
+}
+
+@book{rosenbaum2002observational,
+  author    = {Rosenbaum, Paul R.},
+  title     = {{Observational Studies}},
+  year      = {2002},
+  edition   = {2nd},
+  publisher = {Springer}
+}
+
+@article{rosenbaum2003exact,
+  author  = {Rosenbaum, Paul R.},
+  title   = {{Exact Confidence Intervals for Nonconstant Effects by Inverting the Signed Rank Test}},
+  journal = {The American Statistician},
+  year    = {2003},
+  volume  = {57},
+  number  = {2},
+  pages   = {132--138}
+}
+
+@article{imbens2005robust,
+  author  = {Imbens, Guido W. and Rosenbaum, Paul R.},
+  title   = {{Robust, Accurate Confidence Intervals with a Weak Instrument: Quarter of Birth and Education}},
+  journal = {Journal of the Royal Statistical Society: Series A},
+  year    = {2005},
+  volume  = {168},
+  number  = {1},
+  pages   = {109--126}
+}
+
+@article{lei2021conformal,
+  author  = {Lei, Lihua and Cand\`{e}s, Emmanuel J.},
+  title   = {{Conformal Inference of Counterfactuals and Individual Treatment Effects}},
+  journal = {Journal of the Royal Statistical Society: Series B},
+  year    = {2021},
+  volume  = {83},
+  number  = {5},
+  pages   = {911--938}
+}
+
+@article{caughey2023randomization,
+  author  = {Caughey, Devin and Dafoe, Allan and Li, Xinran and Miratrix, Luke},
+  title   = {{Randomization Inference Beyond the Sharp Null: Bounded Null Hypotheses and Quantiles of Individual Treatment Effects}},
+  journal = {Journal of the Royal Statistical Society: Series B},
+  year    = {2023},
+  volume  = {85},
+  number  = {5},
+  pages   = {1471--1491}
+}
