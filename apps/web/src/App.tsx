@@ -765,12 +765,31 @@ export function App() {
   const defaultOutputPair = useMemo(() => defaultScatterPair(computationDocument.graph), [computationDocument.graph]);
   const binaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived, activeOutputPair), [activeOutputPair, outputContext, simulationDerived]);
   const binaryContinuousAdjustmentOutput = useMemo(() => computeBinaryContinuousAdjustmentOutput(outputContext, simulationDerived, activeOutputPair), [activeOutputPair, outputContext, simulationDerived]);
-  const adjustedOutputActive = ((binaryAdjustmentOutput?.adjustedNodes.length ?? 0) + (binaryContinuousAdjustmentOutput?.adjustedNodes.length ?? 0)) > 0;
   const completedOutputActive = Boolean(activeExample?.outputModule?.startsWith("what-if-") && completedOutput);
+  // The output frame is operation-aware: select / condition / adjust are distinct estimands,
+  // not all "adjustment". With no conditioning operation it is a structural diagnosis of the
+  // DAG, not an "adjustment target".
+  const frameOperation = useMemo(() => {
+    const operations = document.graph.nodes
+      .filter((node) => node.roles.adjusted || node.roles.selected)
+      .map((node) => deriveOperation(document, node.id));
+    if (operations.includes("select")) return "select" as const;
+    if (operations.includes("adjust")) return "adjust" as const;
+    if (operations.includes("condition")) return "condition" as const;
+    return "none" as const;
+  }, [document]);
 
   useEffect(() => startEngagementMilestones(), []);
-  const adjustedFrameTitle = completedOutputActive ? "Model output" : adjustedOutputActive ? "After adjustment" : "Adjustment target";
-  const adjustedFrameDetail = completedOutputActive ? "Specialized readout for this example" : adjustedOutputActive ? "Same pair, using selected adjustment variables" : "Mark covariates to compare against the raw relation";
+  const adjustedFrameTitle = completedOutputActive ? "Model output"
+    : frameOperation === "adjust" ? "Adjusted (standardized) output"
+      : frameOperation === "condition" ? "Conditioned (stratified) output"
+        : frameOperation === "select" ? "Selected-sample output"
+          : "Structural diagnosis";
+  const adjustedFrameDetail = completedOutputActive ? "Specialized readout for this example"
+    : frameOperation === "adjust" ? "Stratify on every level of the adjustment set, then standardize to the population"
+      : frameOperation === "condition" ? "Each stratum shown separately — not combined or standardized"
+        : frameOperation === "select" ? "Restricted to the selected sub-population; the complement is unobserved"
+          : "Derived from the DAG structure — set an operation on a variable to refine the estimand";
   const demoBinaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived, defaultOutputPair), [defaultOutputPair, outputContext, simulationDerived]);
   const basicRelationSummary = useMemo(
     () => computeBasicRelationSummary({ ...outputContext, moduleId: activeExample?.outputModule ?? null }, completedOutput, simulationDerived, demoBinaryAdjustmentOutput, { hideOracle: isBasicMode }),
@@ -1410,7 +1429,11 @@ export function App() {
               <aside className="side-panel module-pane adjusted-output-column">
                 <ModuleFrame
                   tone="output"
-                  label={completedOutputActive ? "Output" : "Adjusted output"}
+                  label={completedOutputActive ? "Output"
+                    : frameOperation === "adjust" ? "Adjusted output"
+                      : frameOperation === "condition" ? "Conditioned output"
+                        : frameOperation === "select" ? "Selected output"
+                          : "Diagnosis"}
                   title={adjustedFrameTitle}
                   detail={adjustedFrameDetail}
                   pending={resultPendingActive(resultsPending)}
