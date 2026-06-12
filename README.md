@@ -21,11 +21,12 @@ Clean-room TypeScript causal graph workbench inspired by DAGitty's public behavi
 
 ```bash
 npm install
-npm run dev
-npm run typecheck
-npm test
+npm run dev               # Vite dev server (--host 0.0.0.0); pass -- --port <n> to choose the port
+npm run typecheck         # tsc -b across the monorepo
+npm test                  # vitest run (core + web); add --disable-console-intercept to see console.log
 npm run build
-npm run test:e2e
+npm run test:e2e          # Playwright (apps/web); config starts its own server on :5173
+npm run screenshots:examples   # regenerate example screenshots (NUDAGITTY_SCREENSHOTS=1)
 ```
 
 ## Web Deployment
