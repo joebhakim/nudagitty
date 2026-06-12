@@ -31,7 +31,7 @@ export function CategoryOutcomePlot(props: {
   ariaLabel?: string;
 }) {
   const width = props.compact ? 300 : 360;
-  const height = props.compact ? 168 : 188;
+  const height = props.compact ? 200 : 248;
   const plot = { left: 42, right: 18, top: 18, bottom: 46 };
   const plotWidth = width - plot.left - plot.right;
   const plotHeight = height - plot.top - plot.bottom;
@@ -75,9 +75,9 @@ export function CategoryOutcomePlot(props: {
                   className={`category-outcome-observation ${summary.tone}`}
                   cx={pointX(point, summary.group)}
                   cy={pointY(point, summary.group)}
-                  r={1.65 + normalizedWeight * 1.65}
+                  r={1.5 + normalizedWeight * 1.4}
                   key={`${summary.group}-${point.index}`}
-                  style={{ opacity: 0.16 + normalizedWeight * 0.32 }}
+                  style={{ opacity: 0.05 + normalizedWeight * 0.1 }}
                 />
               );
             })}

@@ -4152,16 +4152,20 @@ function BinaryContinuousAdjustmentOutputCard({ output }: { output: BinaryContin
   const yLabel = nodeOutputLabel(output.outcome);
   const groupZero = output.rawGroups[0];
   const groupOne = output.rawGroups[1];
-  const adjustedLabel = output.stabilizedIpw
-    ? "Stabilized IPW mean difference"
-    : output.adjustedNodes.length > 0
-      ? "Stratified mean difference"
-      : "No adjusted estimate";
+  // "condition" = stratify and show each stratum, do not standardize/combine; "adjust" = standardize.
+  const isCondition = output.adjustedNodes.some((node) => normalizeVariableModel(node.variable).adjustment.standardize === false);
+  const adjustedLabel = isCondition
+    ? "Within-stratum effects (not combined)"
+    : output.stabilizedIpw
+      ? "Stabilized IPW mean difference"
+      : output.adjustedNodes.length > 0
+        ? "Stratified (standardized) mean difference"
+        : "No adjusted estimate";
   return (
     <div className="continuous-adjustment-output">
       <div className="module-card-header">
-        <strong>Adjusted estimate</strong>
-        <span className="module-badge active">{output.adjustedNodes.length} adjusted</span>
+        <strong>{isCondition ? "Conditioned estimate" : "Adjusted estimate"}</strong>
+        <span className="module-badge active">{output.adjustedNodes.length} {isCondition ? "conditioned" : "adjusted"}</span>
       </div>
       <div className="continuous-adjustment-summary">
         <div>
@@ -4169,9 +4173,9 @@ function BinaryContinuousAdjustmentOutputCard({ output }: { output: BinaryContin
           <strong>{output.rawGap === null ? "n/a" : formatSignedValue(output.rawGap)}</strong>
           <small>{binaryAxisValueLabel(xLabel, 1)} vs {binaryAxisValueLabel(xLabel, 0)}</small>
         </div>
-        <div className={output.adjustedGap !== null ? "fixed" : ""}>
+        <div className={!isCondition && output.adjustedGap !== null ? "fixed" : ""}>
           <span>{adjustedLabel}</span>
-          <strong>{output.adjustedGap === null ? "n/a" : formatSignedValue(output.adjustedGap)}</strong>
+          <strong>{isCondition ? "per stratum →" : output.adjustedGap === null ? "n/a" : formatSignedValue(output.adjustedGap)}</strong>
           <small>{output.adjustedNodes.length > 0 ? output.adjustedNodes.map((node) => shortNodeLabel(node)).join(", ") : "mark covariates adjusted"}</small>
         </div>
       </div>

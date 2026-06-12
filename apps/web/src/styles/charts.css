@@ -262,8 +262,7 @@
 }
 
 .category-outcome-observation {
-  stroke: #fff;
-  stroke-width: 0.55px;
+  stroke: none;
 }
 
 .category-outcome-observation.untreated {
