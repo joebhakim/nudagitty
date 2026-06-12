@@ -428,16 +428,16 @@ export const EXAMPLES: ExampleModel[] = [
   },
   {
     id: "lords-paradox",
-    title: "Lord's paradox: baseline adjustment",
+    title: "Lord's paradox: did the new method help?",
     domain: "classic",
-    summary: "Change-score and baseline-adjusted comparisons can disagree because they answer different causal questions.",
+    summary: "Two classes take the same test before and after a term; the new-method class started ahead. The change-score (gain) and the pretest-adjusted (ANCOVA) comparison disagree because of regression to the mean — two estimands, not two answers.",
     code: `dag {
-  Baseline_weight [adjusted,label="baseline weight",pos="-2,0.9"]
-  Program [exposure,label="group / program",pos="-0.25,0"]
-  Final_weight [outcome,label="final weight",pos="1.8,0"]
-  Baseline_weight -> Final_weight
-  Baseline_weight -> Program
-  Program -> Final_weight
+  Pretest [adjusted,label="pretest score",pos="-2,0.9"]
+  Teaching_method [exposure,label="teaching method",pos="-0.25,0"]
+  Posttest [outcome,label="posttest score",pos="1.8,0"]
+  Pretest -> Posttest
+  Pretest -> Teaching_method
+  Teaching_method -> Posttest
 }`
   },
   {
@@ -2861,15 +2861,20 @@ function configureMBiasAdjustment(document: GraphDocument): GraphDocument {
 }
 
 function configureLordsParadox(document: GraphDocument): GraphDocument {
-  setBinaryVariable(document, "Program", "Group or program indicator. The groups differ at baseline before the final outcome is measured.", "group 1");
-  setContinuousVariable(document, "Baseline_weight", "Baseline measurement before the final outcome. It differs by group and strongly predicts final weight.", "kg");
-  setContinuousVariable(document, "Final_weight", "Final measurement after the program period.", "kg");
-  setNode(document, "Baseline_weight", { distribution: { kind: "normal", mean: 70, sd: 5 }, noise: ZERO_NOISE });
-  setLogitNode(document, "Program", -84);
-  setNode(document, "Final_weight", { intercept: 18, noise: { kind: "normal", mean: 0, sd: 2.2 } });
-  setLinearCoefficient(document, "Baseline_weight", "Program", 1.2);
-  setLinearCoefficient(document, "Baseline_weight", "Final_weight", 0.75);
-  setLinearCoefficient(document, "Program", "Final_weight", 1.2);
+  // Lord's paradox as a pretest/posttest study of a teaching method. The new-method class
+  // is not randomized: stronger students cluster in it, so it starts ahead at pretest. The
+  // within-class pretest->posttest slope is < 1 (regression to the mean), which is what makes
+  // the change-score (gain) and the pretest-adjusted (ANCOVA) effect disagree -- and here
+  // even take opposite signs.
+  setContinuousVariable(document, "Pretest", "Score on a test taken BEFORE the term, in points. The class that later used the new method happened to start higher.", "points");
+  setBinaryVariable(document, "Teaching_method", "Which class: 1 = new method, 0 = old method. Not randomized -- stronger students clustered in the new-method class.", "new method");
+  setContinuousVariable(document, "Posttest", "Score on the SAME test taken AFTER the term, in points. Same scale as the pretest, so a change score is meaningful.", "points");
+  setNode(document, "Pretest", { distribution: { kind: "normal", mean: 70, sd: 10 }, noise: ZERO_NOISE });
+  setLogitNode(document, "Teaching_method", -12.6);
+  setLinearCoefficient(document, "Pretest", "Teaching_method", 0.18);
+  setNode(document, "Posttest", { intercept: 35, noise: { kind: "normal", mean: 0, sd: 5 } });
+  setLinearCoefficient(document, "Pretest", "Posttest", 0.5); // < 1: regression to the mean
+  setLinearCoefficient(document, "Teaching_method", "Posttest", 3); // true causal effect at equal pretest
   return document;
 }
 

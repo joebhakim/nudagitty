@@ -2179,17 +2179,18 @@ export function computeStructuralDiagnosis(context: OutputContext): HuhCompleted
       return variable.valueType !== "binary" && variable.unit.length > 0 && variable.unit === outcomeVar.unit && parentOfOutcome;
     });
   let gainScore: number | null = null;
+  let baselineImbalance: number | null = null;
   if (gainNode && exposureBinary) {
     const gainState = simulation.nodeStates[gainNode.id];
     if (gainState) {
       const treated = weightedConditionalMean(exposureState, gainState, 1);
       const control = weightedConditionalMean(exposureState, gainState, 0);
-      const imbalance = treated !== null && control !== null ? treated - control : null;
+      baselineImbalance = treated !== null && control !== null ? treated - control : null;
       const gainTreated = weightedConditionalMeanOfDifference(exposureState, outcomeState, gainState, 1);
       const gainControl = weightedConditionalMeanOfDifference(exposureState, outcomeState, gainState, 0);
       gainScore = gainTreated !== null && gainControl !== null ? gainTreated - gainControl : null;
-      if (imbalance !== null) metrics.push({ label: `${gainNode.label} imbalance`, value: formatSignedValue(imbalance), detail: "the groups differ on the baseline measure", numericValue: imbalance });
-      if (gainScore !== null) metrics.push({ label: "change-score contrast", value: formatSignedValue(gainScore), detail: `gain score (${outcomeNode.label} − ${gainNode.label}) — a different estimand`, numericValue: gainScore });
+      if (baselineImbalance !== null) metrics.push({ label: `${gainNode.label} imbalance`, value: formatSignedValue(baselineImbalance), detail: "the groups differ on the baseline measure", numericValue: baselineImbalance });
+      if (gainScore !== null) metrics.push({ label: "change-score (gain)", value: formatSignedValue(gainScore), detail: `gain ${outcomeNode.label} − ${gainNode.label} — the effect on the change`, numericValue: gainScore });
     }
   }
 
@@ -2205,13 +2206,17 @@ export function computeStructuralDiagnosis(context: OutputContext): HuhCompleted
     value: primaryNode && normalizeVariableModel(primaryNode.variable).valueType === "binary" ? 1 : undefined
   });
 
+  const hasGainScore = gainNode !== undefined && gainScore !== null;
   let conclusion: string;
   let recommendation: string;
   if (colliders.length > 0) {
     conclusion = `${colliders[0]!.node} is a collider on ${exposureNode.label} → ${outcomeNode.label}; conditioning on it opens a biasing path, so the unconditioned (crude) estimate is the unbiased one.`;
     recommendation = `Do not control for ${colliders.map((role) => role.node).join(", ")}.`;
+  } else if (hasGainScore) {
+    conclusion = `Two analyses of the same pre/post data disagree. The change score (gain in ${outcomeNode.label}) makes ${exposureNode.label} look like ${formatSignedValue(gainScore!)}, while adjusting for ${gainNode!.label} (ANCOVA) gives ${causalContrast !== null ? formatSignedValue(causalContrast) : "n/a"}. These are different estimands — the effect on the change versus the effect at a fixed ${gainNode!.label}. The groups start ${baselineImbalance !== null ? `${formatSignedValue(baselineImbalance)} apart` : "apart"} on ${gainNode!.label} and high scorers regress toward the mean, so the two diverge. This is Lord's paradox, not generic confounding.`;
+    recommendation = `Choose the estimand before comparing: effect on the change (change score) versus the effect at equal ${gainNode!.label} (ANCOVA / adjust). With non-random groups the change score is biased for the level effect.`;
   } else if (adjusters.length > 0) {
-    conclusion = `${exposureNode.label} → ${outcomeNode.label} is confounded by ${adjusters.map((role) => role.node).join(", ")}. Adjusting identifies the effect: crude contrast ${crudeContrast !== null ? formatSignedValue(crudeContrast) : "n/a"} versus causal ${causalContrast !== null ? formatSignedValue(causalContrast) : "n/a"}.${gainScore !== null && gainNode ? ` Because ${gainNode.label} is a baseline measure of the outcome, the change-score gives ${formatSignedValue(gainScore)} — a different estimand, not a competing answer to the same question.` : ""}`;
+    conclusion = `${exposureNode.label} → ${outcomeNode.label} is confounded by ${adjusters.map((role) => role.node).join(", ")}. Adjusting identifies the effect: crude contrast ${crudeContrast !== null ? formatSignedValue(crudeContrast) : "n/a"} versus causal ${causalContrast !== null ? formatSignedValue(causalContrast) : "n/a"}.`;
     recommendation = analysis.totalEffect.valid ? `Identified by adjusting for ${(minimalSet.length > 0 ? minimalSet : adjusters.map((role) => role.node)).join(", ")}.` : `Adjust for ${minimalSet.join(", ") || "a valid backdoor set"} to identify the effect.`;
   } else if (analysis.openBiasingPathCount > 0) {
     conclusion = `${exposureNode.label} → ${outcomeNode.label} has ${analysis.openBiasingPathCount} open biasing path(s); the crude contrast ${crudeContrast !== null ? formatSignedValue(crudeContrast) : ""} is confounded.`;
@@ -2222,7 +2227,7 @@ export function computeStructuralDiagnosis(context: OutputContext): HuhCompleted
   }
 
   return {
-    badge: colliders.length > 0 ? "bad control" : adjusters.length > 0 ? "confounding" : "identified",
+    badge: colliders.length > 0 ? "bad control" : hasGainScore ? "estimand split" : adjusters.length > 0 ? "confounding" : "identified",
     conclusion,
     metrics,
     bullets: [
