@@ -136,7 +136,6 @@ describe("example catalog", () => {
       "cats-highrise-syndrome": "cats-highrise-syndrome",
       "policing-encounters": "policing-encounters",
       "m-bias-adjustment": "m-bias-adjustment",
-      "lords-paradox": "lords-paradox",
       "what-if-showcase-dynamic-rules": "what-if-dynamic-g-formula",
       "what-if-showcase-survival-curves": "what-if-nhefs-mortality-survival",
       "what-if-showcase-hazard-denominator": "what-if-hazard-selection",

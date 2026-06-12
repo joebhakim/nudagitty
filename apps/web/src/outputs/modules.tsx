@@ -266,11 +266,11 @@ export const completedOutputModules: CompletedOutputModule<unknown>[] = [
     fallback: fallbackOutput("needs roles", "This M-bias output needs Exposure, Collider_score, and Outcome in the graph.")
   },
   {
-    id: "lords-paradox",
-    label: "estimand split",
-    compute: computeLordsParadoxOutput,
+    id: "structural-diagnosis",
+    label: "diagnosis",
+    compute: computeStructuralDiagnosis,
     render: (result) => renderHuhOutput(result as HuhCompletedOutput),
-    fallback: fallbackOutput("needs roles", "This Lord's paradox output needs Program, Baseline_weight, and Final_weight in the graph.")
+    fallback: fallbackOutput("diagnosis", "Mark one exposure and one outcome to read a structural diagnosis of this DAG.")
   },
   {
     id: "chess-intelligence-practice-simple-flip",
@@ -345,13 +345,16 @@ export const completedOutputModules: CompletedOutputModule<unknown>[] = [
 ];
 
 export function computeCompletedOutput(context: OutputContext, moduleId: string | null): ComputedCompletedOutput | null {
-  const module = completedOutputModules.find((candidate) => candidate.id === moduleId);
-  if (!module || !moduleId) return null;
-  return {
-    moduleId,
-    module,
-    result: module.compute(context)
-  };
+  const module = moduleId ? completedOutputModules.find((candidate) => candidate.id === moduleId) : undefined;
+  if (module && moduleId) {
+    return { moduleId, module, result: module.compute(context) };
+  }
+  // No example-specific module: fall back to the generic, DAG-derived structural diagnosis.
+  const diagnosis = completedOutputModules.find((candidate) => candidate.id === "structural-diagnosis");
+  if (!diagnosis) return null;
+  const result = diagnosis.compute(context);
+  if (result === null) return null;
+  return { moduleId: "structural-diagnosis", module: diagnosis, result };
 }
 
 export function renderCompletedOutput(computed: ComputedCompletedOutput, options?: CompletedOutputRenderOptions) {
@@ -2126,37 +2129,106 @@ function computeMBiasOutput(context: OutputContext): HuhCompletedOutput | null {
   };
 }
 
-function computeLordsParadoxOutput(context: OutputContext): HuhCompletedOutput | null {
-  const { document, simulation } = context;
-  const program = simulation.nodeStates.Program;
-  const baseline = simulation.nodeStates.Baseline_weight;
-  const final = simulation.nodeStates.Final_weight;
-  if (!program || !baseline || !final) return null;
-  const baselineProgram = weightedConditionalMean(program, baseline, 1);
-  const baselineControl = weightedConditionalMean(program, baseline, 0);
-  const changeProgram = weightedConditionalMeanOfDifference(program, final, baseline, 1);
-  const changeControl = weightedConditionalMeanOfDifference(program, final, baseline, 0);
-  if (baselineProgram === null || baselineControl === null || changeProgram === null || changeControl === null) return null;
-  const doProgram = runSimulation(document.graph, { ...document.simulation, overrides: { Program: 1 }, selections: {} });
-  const doControl = runSimulation(document.graph, { ...document.simulation, overrides: { Program: 0 }, selections: {} });
-  const doProgramFinal = doProgram.nodeStates.Final_weight?.empirical.mean;
-  const doControlFinal = doControl.nodeStates.Final_weight?.empirical.mean;
-  if (doProgramFinal === null || doProgramFinal === undefined || doControlFinal === null || doControlFinal === undefined) return null;
-  const changeGap = changeProgram - changeControl;
-  const doGap = doProgramFinal - doControlFinal;
-  const baselineGap = baselineProgram - baselineControl;
+// Generic, example-agnostic diagnosis derived from the DAG structure: classify each
+// conditioned node (backdoor / collider / neutral), state the estimand, compute the crude
+// vs. causal (do) contrast for a binary exposure, and detect the gain-score pattern (a
+// continuous baseline measure of the outcome). This replaces hand-written per-example cards.
+export function computeStructuralDiagnosis(context: OutputContext): HuhCompletedOutput | null {
+  const { analysis, document, simulation } = context;
+  const exposureId = analysis.exposures[0];
+  const outcomeId = analysis.outcomes[0];
+  if (!exposureId || !outcomeId) return null;
+  const exposureNode = document.graph.nodes.find((node) => node.id === exposureId);
+  const outcomeNode = document.graph.nodes.find((node) => node.id === outcomeId);
+  if (!exposureNode || !outcomeNode) return null;
+  const exposureVar = normalizeVariableModel(exposureNode.variable);
+  const outcomeVar = normalizeVariableModel(outcomeNode.variable);
+  const exposureState = simulation.nodeStates[exposureId];
+  const outcomeState = simulation.nodeStates[outcomeId];
+  if (!exposureState || !outcomeState) return null;
+  const exposureBinary = exposureVar.valueType === "binary";
+
+  const colliders = analysis.conditioningRoles.filter((role) => role.classification === "collider");
+  const adjusters = analysis.conditioningRoles.filter((role) => role.classification === "backdoor");
+  const minimalSet = analysis.totalEffect.minimalSets[0] ?? [];
+
+  const metrics: HuhMetric[] = [];
+  let crudeContrast: number | null = null;
+  let causalContrast: number | null = null;
+  if (exposureBinary) {
+    const treated = weightedConditionalMean(exposureState, outcomeState, 1);
+    const control = weightedConditionalMean(exposureState, outcomeState, 0);
+    crudeContrast = treated !== null && control !== null ? treated - control : null;
+    const doTreated = runSimulation(document.graph, { ...document.simulation, overrides: { [exposureId]: 1 }, selections: {} });
+    const doControl = runSimulation(document.graph, { ...document.simulation, overrides: { [exposureId]: 0 }, selections: {} });
+    const dt = doTreated.nodeStates[outcomeId]?.empirical.mean;
+    const dc = doControl.nodeStates[outcomeId]?.empirical.mean;
+    causalContrast = dt !== null && dt !== undefined && dc !== null && dc !== undefined ? dt - dc : null;
+    if (crudeContrast !== null) metrics.push({ label: "crude contrast", value: formatSignedValue(crudeContrast), detail: `observed ${exposureNode.label} difference, unadjusted`, numericValue: crudeContrast });
+    if (causalContrast !== null) metrics.push({ label: "causal contrast — do()", value: formatSignedValue(causalContrast), detail: minimalSet.length > 0 ? `adjusted for ${minimalSet.join(", ")}` : "no adjustment needed", numericValue: causalContrast });
+  }
+
+  // gain-score pattern: a backdoor adjuster that is a continuous baseline measure of the
+  // outcome (same unit, and a direct cause of the outcome) — e.g. Lord's baseline weight.
+  const gainNode = adjusters
+    .map((role) => document.graph.nodes.find((node) => node.id === role.node))
+    .find((node) => {
+      if (!node) return false;
+      const variable = normalizeVariableModel(node.variable);
+      const parentOfOutcome = document.graph.edges.some((edge) => edge.kind === "directed" && edge.source === node.id && edge.target === outcomeId);
+      return variable.valueType !== "binary" && variable.unit.length > 0 && variable.unit === outcomeVar.unit && parentOfOutcome;
+    });
+  let gainScore: number | null = null;
+  if (gainNode && exposureBinary) {
+    const gainState = simulation.nodeStates[gainNode.id];
+    if (gainState) {
+      const treated = weightedConditionalMean(exposureState, gainState, 1);
+      const control = weightedConditionalMean(exposureState, gainState, 0);
+      const imbalance = treated !== null && control !== null ? treated - control : null;
+      const gainTreated = weightedConditionalMeanOfDifference(exposureState, outcomeState, gainState, 1);
+      const gainControl = weightedConditionalMeanOfDifference(exposureState, outcomeState, gainState, 0);
+      gainScore = gainTreated !== null && gainControl !== null ? gainTreated - gainControl : null;
+      if (imbalance !== null) metrics.push({ label: `${gainNode.label} imbalance`, value: formatSignedValue(imbalance), detail: "the groups differ on the baseline measure", numericValue: imbalance });
+      if (gainScore !== null) metrics.push({ label: "change-score contrast", value: formatSignedValue(gainScore), detail: `gain score (${outcomeNode.label} − ${gainNode.label}) — a different estimand`, numericValue: gainScore });
+    }
+  }
+
+  if (metrics.length === 0) return null;
+
+  const primaryRole = analysis.conditioningRoles[0];
+  const primaryNode = primaryRole ? document.graph.nodes.find((node) => node.id === primaryRole.node) : undefined;
+  const estimand = describeEstimand({
+    operation: primaryRole?.operation ?? "none",
+    exposureLabel: exposureNode.label,
+    outcomeLabel: outcomeNode.label,
+    nodeLabel: primaryNode?.label ?? primaryRole?.node,
+    value: primaryNode && normalizeVariableModel(primaryNode.variable).valueType === "binary" ? 1 : undefined
+  });
+
+  let conclusion: string;
+  let recommendation: string;
+  if (colliders.length > 0) {
+    conclusion = `${colliders[0]!.node} is a collider on ${exposureNode.label} → ${outcomeNode.label}; conditioning on it opens a biasing path, so the unconditioned (crude) estimate is the unbiased one.`;
+    recommendation = `Do not control for ${colliders.map((role) => role.node).join(", ")}.`;
+  } else if (adjusters.length > 0) {
+    conclusion = `${exposureNode.label} → ${outcomeNode.label} is confounded by ${adjusters.map((role) => role.node).join(", ")}. Adjusting identifies the effect: crude contrast ${crudeContrast !== null ? formatSignedValue(crudeContrast) : "n/a"} versus causal ${causalContrast !== null ? formatSignedValue(causalContrast) : "n/a"}.${gainScore !== null && gainNode ? ` Because ${gainNode.label} is a baseline measure of the outcome, the change-score gives ${formatSignedValue(gainScore)} — a different estimand, not a competing answer to the same question.` : ""}`;
+    recommendation = analysis.totalEffect.valid ? `Identified by adjusting for ${(minimalSet.length > 0 ? minimalSet : adjusters.map((role) => role.node)).join(", ")}.` : `Adjust for ${minimalSet.join(", ") || "a valid backdoor set"} to identify the effect.`;
+  } else if (analysis.openBiasingPathCount > 0) {
+    conclusion = `${exposureNode.label} → ${outcomeNode.label} has ${analysis.openBiasingPathCount} open biasing path(s); the crude contrast ${crudeContrast !== null ? formatSignedValue(crudeContrast) : ""} is confounded.`;
+    recommendation = minimalSet.length > 0 ? `Adjust for ${minimalSet.join(", ")}.` : "No valid adjustment set exists in this graph.";
+  } else {
+    conclusion = `No open biasing paths between ${exposureNode.label} and ${outcomeNode.label}; the crude contrast ${crudeContrast !== null ? formatSignedValue(crudeContrast) : ""} is already the causal effect.`;
+    recommendation = "No adjustment needed.";
+  }
+
   return {
-    badge: "estimand split",
-    conclusion: `The change-score comparison says Program changes weight by ${formatSignedValue(changeGap)} kg, while the baseline-standardized DGP do difference on final weight is ${formatSignedValue(doGap)} kg. The groups start ${formatSignedValue(baselineGap)} kg apart, so the two analyses are not answering the same question.`,
-    metrics: [
-      { label: "Change-score difference", value: formatSignedValue(changeGap), detail: `program ${formatValue(changeProgram)} kg vs control ${formatValue(changeControl)} kg`, numericValue: changeGap },
-      { label: "DGP do difference", value: formatSignedValue(doGap), detail: `do(program) ${formatValue(doProgramFinal)} kg vs do(control) ${formatValue(doControlFinal)}`, numericValue: doGap },
-      { label: "Baseline imbalance", value: formatSignedValue(baselineGap), detail: `program ${formatValue(baselineProgram)} kg vs control ${formatValue(baselineControl)} kg`, numericValue: baselineGap }
-    ],
+    badge: colliders.length > 0 ? "bad control" : adjusters.length > 0 ? "confounding" : "identified",
+    conclusion,
+    metrics,
     bullets: [
-      { label: "Huh", text: "Change scores and baseline-adjusted final outcomes can disagree because they encode different estimands." },
-      { label: "Question first", text: "Ask whether the target is change from baseline or final outcome at comparable baseline values." },
-      { label: "Report", text: "Do not treat this as a generic model-choice dispute; state the causal question." }
+      { label: "Estimand", text: `${estimand.formal} — ${estimand.plain}` },
+      { label: "Structure", text: analysis.conditioningRoles.length > 0 ? analysis.conditioningRoles.map((role) => `${role.node}: ${role.classification}`).join("; ") : "no variables conditioned" },
+      { label: "Recommendation", text: recommendation }
     ]
   };
 }

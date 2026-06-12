@@ -3974,13 +3974,16 @@ function AdjustedOutputPanel(props: {
   const continuousOutput = props.continuousOutput;
   const pendingNotice = <ResultsPendingNotice pending={props.pending} label="Updating adjusted output" />;
   const showcaseGuide = showcaseGuideForExample(props.exampleId);
-  const showGenericAdjustmentCards = !props.moduleId?.startsWith("what-if-");
-  if (props.moduleId) {
+  // Either an example-specific module, or the generic structural diagnosis fallback
+  // (computedOutput.moduleId === "structural-diagnosis") when the example has none.
+  const effectiveModuleId = props.moduleId ?? props.computedOutput?.moduleId ?? null;
+  const showGenericAdjustmentCards = !effectiveModuleId?.startsWith("what-if-");
+  if (effectiveModuleId) {
     return (
       <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
         {pendingNotice}
         {showcaseGuide && <ShowcaseGuideCard guide={showcaseGuide} />}
-        <CompletedOutputPanel moduleId={props.moduleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
+        <CompletedOutputPanel moduleId={effectiveModuleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
         {showGenericAdjustmentCards && binaryOutput && shouldRenderBinaryAdjustmentOutput(binaryOutput) && <BinaryAdjustmentOutputCard output={binaryOutput} />}
         {showGenericAdjustmentCards && continuousOutput && shouldRenderBinaryContinuousAdjustmentOutput(continuousOutput) && <BinaryContinuousAdjustmentOutputCard output={continuousOutput} />}
       </div>

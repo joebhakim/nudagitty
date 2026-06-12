@@ -1,4 +1,5 @@
 import { parseModel } from "./parser";
+import { analyzeGraph } from "./analysis";
 import { defaultEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "./graph";
 import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "./types";
 
@@ -430,7 +431,6 @@ export const EXAMPLES: ExampleModel[] = [
     title: "Lord's paradox: baseline adjustment",
     domain: "classic",
     summary: "Change-score and baseline-adjusted comparisons can disagree because they answer different causal questions.",
-    outputModule: "lords-paradox",
     code: `dag {
   Baseline_weight [adjusted,label="baseline weight",pos="-2,0.9"]
   Program [exposure,label="group / program",pos="-0.25,0"]
@@ -1572,45 +1572,6 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
       }
     ]
   },
-  "lords-paradox": {
-    module: "Estimand / baseline adjustment",
-    punchline: "A change-score comparison and a baseline-adjusted final-outcome comparison can disagree because they are answering different questions.",
-    estimand: "Effect of Program on Final_weight at comparable Baseline_weight, contrasted with the raw change-score comparison.",
-    primaryOutput: "Before/after comparison: Program group change score versus do(Program) final-weight contrast, plus baseline imbalance.",
-    validity: "Credible if Baseline_weight is truly pre-program and the target question is about final outcomes at comparable baseline values.",
-    nextAction: "Ask the causal question before choosing change scores or baseline adjustment.",
-    sections: [
-      {
-        title: "Claim packet",
-        defaultOpen: true,
-        items: [
-          "State whether the target is change from baseline or final outcome at comparable baseline.",
-          "Name Baseline_weight as a pre-treatment difference between groups.",
-          "Show how regression toward the mean makes change scores non-equivalent to baseline-adjusted final outcomes.",
-          "Report both outputs as different estimands, not as one model winning by default."
-        ]
-      },
-      {
-        title: "Diagnostics to show",
-        defaultOpen: true,
-        items: [
-          "Baseline imbalance by Program.",
-          "Raw change-score contrast.",
-          "do(Program=1) versus do(Program=0) final-outcome contrast.",
-          "Question-first warning before interpreting either number."
-        ]
-      },
-      {
-        title: "Threats and failure modes",
-        items: [
-          "Baseline may be affected by earlier causes that also affect group assignment.",
-          "Measurement error in baseline can make adjustment noisy.",
-          "If the causal question is literally weight change, the change-score contrast may be descriptive but still confounded.",
-          "The example is meant to force estimand language."
-        ]
-      }
-    ]
-  },
   "instrumental-encouragement": {
     module: "Instrumental variables",
     punchline: "Encouragement can identify a treatment effect only through its impact on Treatment uptake, while latent health confounds Treatment and Outcome.",
@@ -2402,7 +2363,94 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
 };
 
 export function exampleDenouement(id: string): ExampleDenouement | null {
-  return EXAMPLE_DENOUEMENTS[id] ?? whatIfDenouement(id) ?? null;
+  return EXAMPLE_DENOUEMENTS[id] ?? whatIfDenouement(id) ?? generatedDenouementForExample(id);
+}
+
+function generatedDenouementForExample(id: string): ExampleDenouement | null {
+  const example = EXAMPLES.find((candidate) => candidate.id === id);
+  if (!example) return null;
+  return generateDenouement(parseModel(example.code, example.title).document.graph);
+}
+
+// Build a denouement from the DAG structure alone (roles, d-separation, the minimal
+// adjustment set) rather than hand-writing one per example. See docs/causal-operations.md.
+export function generateDenouement(graph: GraphModel): ExampleDenouement | null {
+  const analysis = analyzeGraph(graph);
+  const exposureId = analysis.exposures[0];
+  const outcomeId = analysis.outcomes[0];
+  if (!exposureId || !outcomeId) return null;
+  const label = (nodeId: string) => graph.nodes.find((node) => node.id === nodeId)?.label ?? nodeId;
+  const exposure = label(exposureId);
+  const outcome = label(outcomeId);
+  const colliders = analysis.conditioningRoles.filter((role) => role.classification === "collider");
+  const adjusters = analysis.conditioningRoles.filter((role) => role.classification === "backdoor");
+  const minimalSet = analysis.totalEffect.minimalSets[0] ?? [];
+  const conditionedList = analysis.conditioningRoles.map((role) => `${label(role.node)} (${role.classification})`).join(", ") || "nothing";
+  const isCollider = colliders.length > 0;
+  const isConfounded = !isCollider && (adjusters.length > 0 || analysis.openBiasingPathCount > 0);
+
+  const module = isCollider ? "Selection / collider bias (auto)" : isConfounded ? "Adjustment / backdoor (auto)" : "Identified effect (auto)";
+  const punchline = isCollider
+    ? `${colliders.map((role) => label(role.node)).join(", ")} is a collider on ${exposure} → ${outcome}; conditioning on it opens a biasing path, so the unconditioned estimate is the unbiased one.`
+    : isConfounded
+      ? `${exposure} → ${outcome} is confounded; the crude comparison is biased, and adjusting for ${(minimalSet.length > 0 ? minimalSet.map(label) : adjusters.map((role) => label(role.node))).join(", ") || "the confounders"} identifies the effect.`
+      : `${exposure} → ${outcome} has no open biasing paths; the crude comparison already estimates the causal effect.`;
+  const estimand = isConfounded && minimalSet.length > 0
+    ? `Σ over ${minimalSet.map(label).join(", ")} of P(${outcome} | ${exposure}, covariates) · P(covariates) — backdoor-adjusted effect of ${exposure} on ${outcome}.`
+    : `P(${outcome} | do(${exposure})) — the interventional effect of ${exposure} on ${outcome}.`;
+
+  return {
+    module,
+    punchline,
+    estimand,
+    primaryOutput: `Crude ${exposure}–${outcome} contrast versus the ${isConfounded ? "adjusted" : "interventional"} contrast, with every conditioned variable classified as backdoor, collider, or neutral.`,
+    validity: "Auto-generated from the DAG structure (roles, d-separation, the minimal adjustment set). It assumes the drawn graph is correct.",
+    nextAction: isCollider
+      ? `Remove ${colliders.map((role) => label(role.node)).join(", ")} from the conditioning set and report the unconditioned effect.`
+      : isConfounded
+        ? `Adjust for ${minimalSet.map(label).join(", ") || "a valid backdoor set"} and report the adjusted effect.`
+        : "Report the crude effect; no adjustment is required.",
+    sections: [
+      {
+        title: "Structure",
+        defaultOpen: true,
+        items: [
+          `Exposure ${exposure}, outcome ${outcome}.`,
+          `Conditioned variables: ${conditionedList}.`,
+          `Open biasing paths: ${analysis.openBiasingPathCount}.`,
+          `Minimal adjustment set: ${minimalSet.length > 0 ? minimalSet.map(label).join(", ") : "none required / none found"}.`
+        ]
+      },
+      {
+        title: "Diagnostics",
+        defaultOpen: true,
+        items: [
+          `Crude ${exposure}–${outcome} contrast (the unadjusted comparison).`,
+          isConfounded
+            ? `Adjusted contrast, standardized over ${minimalSet.map(label).join(", ") || "the backdoor set"}.`
+            : `Interventional contrast do(${exposure}).`,
+          `Per-variable classification: ${conditionedList}.`
+        ]
+      },
+      {
+        title: "Report language",
+        items: isCollider
+          ? [
+            `Say: the apparent ${exposure}–${outcome} association under conditioning is a collider artifact.`,
+            `Do not control for ${colliders.map((role) => label(role.node)).join(", ")}.`
+          ]
+          : isConfounded
+            ? [
+              `Say: the crude ${exposure}–${outcome} comparison is confounded.`,
+              `Report the effect adjusted for ${minimalSet.map(label).join(", ") || "the backdoor set"}.`
+            ]
+            : [
+              `Say: ${exposure} and ${outcome} are unconfounded in this graph.`,
+              "Report the crude effect as the causal effect."
+            ]
+      }
+    ]
+  };
 }
 
 function whatIfDenouement(id: string): ExampleDenouement | null {
