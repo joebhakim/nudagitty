@@ -11,6 +11,7 @@ import {
 } from "../shared/formatting";
 import { empiricalSampleWeight, formatAdjustmentSet, weightedBinaryShare, weightedConditionalMean, weightedJointConditionalMean } from "./helpers";
 import { badControlWarning, describeEstimand } from "./estimand";
+import { stratifyRiskCurves } from "./stratify";
 import type { CompletedOutputModule, CompletedOutputRenderOptions, OutputContext } from "./types";
 
 type SimpsonCompletedOutput = {
@@ -2021,6 +2022,17 @@ function computeCatsHighriseSyndromeOutput(context: OutputContext): HuhCompleted
     value: 1
   });
   const badControl = vetRole ? badControlWarning("Brought_to_vet", vetRole.classification) : null;
+  // Three-way stratified contrast on the collider (all / select vet=1 / condition vet=0),
+  // plus the standardized "adjust" estimand, from the unconditioned population.
+  const stratified = stratifyRiskCurves(full, "Fall_height", "Survival", "Brought_to_vet", 7);
+  const stratifiedText = stratified
+    ? (() => {
+        const s1 = stratified.strata.find((s) => s.stratumValue === 1);
+        const s0 = stratified.strata.find((s) => s.stratumValue === 0);
+        const standardizedOverall = stratified.strata.reduce((sum, s) => sum + s.share * s.outcomeRate, 0);
+        return `Condition on Brought_to_vet and survival splits three ways: all ${formatPercent(stratified.crude.outcomeRate)}, select vet=1 ${s1 ? formatPercent(s1.outcomeRate) : "?"}, vet=0 ${s0 ? formatPercent(s0.outcomeRate) : "?"}. Selecting one stratum is the bias; adjusting (standardizing over vet) re-marginalizes back to ${formatPercent(standardizedOverall)} ≈ the crude truth.`;
+      })()
+    : null;
   return {
     badge: "falling-cats paradox",
     conclusion: `Recorded cats fall a mean of ${recordedMeanHeight === null ? "?" : formatValue(recordedMeanHeight)} stories and ${formatPercent(recordedSurvival)} survive, so the data makes long falls look safe. Two things drive it. A real terminal-velocity effect makes injury peak near the seventh story and then fall, and survivorship selection drops the cats killed outright. Intervening still says the 7th floor is the worst place to fall from: do(7 stories) survival is ${formatPercent(survivalPeak)} versus ${formatPercent(survivalTall)} at the 20th.`,
@@ -2034,6 +2046,7 @@ function computeCatsHighriseSyndromeOutput(context: OutputContext): HuhCompleted
       { label: "Physics", text: "Injury severity is non-monotonic in height: it peaks near terminal velocity, then drops as the cat relaxes and spreads out to add drag." },
       { label: "Estimand", text: `${estimand.formal} — ${estimand.plain}` },
       { label: "Bad control", text: badControl ?? "Brought_to_vet is the selected collider (a common effect of Survival and injury): cats that die on impact are rarely brought in, so the recorded sample is conditioned on it." },
+      ...(stratifiedText ? [{ label: "Stratify", text: stratifiedText }] : []),
       { label: "Report", text: "Do not read 'higher is safer' as a clean causal law: the deadliest do() is the mid-rise fall, and the records omit the cats that never arrived." }
     ]
   };
