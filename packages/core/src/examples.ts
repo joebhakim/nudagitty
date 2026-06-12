@@ -39,10 +39,11 @@ export interface ExampleDenouement {
   sections: ExampleDenouementSection[];
 }
 
-type VariablePatch = Partial<Omit<VariableModel, "measurement" | "simulation" | "intervention">> & {
+type VariablePatch = Partial<Omit<VariableModel, "measurement" | "simulation" | "intervention" | "adjustment">> & {
   measurement?: Partial<VariableModel["measurement"]>;
   simulation?: Partial<VariableModel["simulation"]>;
   intervention?: Partial<VariableModel["intervention"]>;
+  adjustment?: Partial<VariableModel["adjustment"]>;
 };
 
 const ZERO_NOISE: NodeDistribution = { kind: "constant", value: 0 };
@@ -4264,7 +4265,8 @@ function setVariable(document: GraphDocument, id: string, patch: VariablePatch) 
         ...patch,
         measurement: patch.measurement ? { ...variable.measurement, ...patch.measurement } : variable.measurement,
         simulation: patch.simulation ? { ...variable.simulation, ...patch.simulation } : variable.simulation,
-        intervention: patch.intervention ? { ...variable.intervention, ...patch.intervention } : variable.intervention
+        intervention: patch.intervention ? { ...variable.intervention, ...patch.intervention } : variable.intervention,
+        adjustment: patch.adjustment ? { ...variable.adjustment, ...patch.adjustment } : variable.adjustment
       })
     };
   });

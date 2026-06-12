@@ -159,7 +159,8 @@ export function defaultVariableModel(): VariableModel {
     },
     adjustment: {
       method: "none",
-      cutpoints: []
+      cutpoints: [],
+      standardize: true
     },
     tags: []
   };
@@ -517,7 +518,8 @@ export function normalizeVariableModel(model: Partial<VariableModel> | undefined
     },
     adjustment: {
       method: isMember(adjustment.method, ADJUSTMENT_METHOD_KINDS) ? adjustment.method : base.adjustment.method,
-      cutpoints: numberListOr(adjustment.cutpoints)
+      cutpoints: numberListOr(adjustment.cutpoints),
+      standardize: typeof adjustment.standardize === "boolean" ? adjustment.standardize : base.adjustment.standardize
     },
     tags: stringListOr(raw.tags)
   };

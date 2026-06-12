@@ -40,6 +40,7 @@ import {
   addNode,
   adjusted,
   analyzeGraph,
+  classifyConditioned,
   correlationGraph,
   createNewNodeId,
   createNode,
@@ -74,6 +75,7 @@ import {
   withGraph
 } from "@nudagitty/core";
 import type {
+  AnalysisOperation,
   AnalysisReport,
   EdgeMechanism,
   EdgeMechanismKind,
@@ -119,6 +121,8 @@ import {
 } from "./charts/CategoryOutcomePlot";
 import type { RiskBin, ScatterPoint } from "./charts/CategoryOutcomePlot";
 import { startEngagementMilestones, trackAnalyticsEvent } from "./analytics";
+import { OPERATION_BLURBS, OPERATION_LABELS, applyOperation, deriveOperation } from "./shared/operations";
+import { badControlWarning, describeEstimand } from "./outputs/estimand";
 import { basicOutputPunchlineFromResult, computeCompletedOutput } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
@@ -1235,6 +1239,11 @@ export function App() {
     commit({ ...document, simulation: { ...document.simulation, selections } });
   }, [commit, document]);
 
+  const setOperation = useCallback((nodeId: string, operation: AnalysisOperation) => {
+    trackAnalyticsEvent("graph_action", { action: "set_operation", operation });
+    commit(applyOperation(document, nodeId, operation));
+  }, [commit, document]);
+
   const changeWorkbenchMode = useCallback((mode: WorkbenchMode) => {
     trackAnalyticsEvent("mode_changed", { mode });
     setWorkbenchMode(mode);
@@ -1291,6 +1300,7 @@ export function App() {
             onVariableChange={updateVariableModel}
             onOverride={setOverride}
             onSelectionCondition={setSelectionCondition}
+            onSetOperation={setOperation}
             onCoefficient={updateEdgeCoefficient}
             onEdgeEnabled={updateEdgeEnabled}
             onEdgeMechanism={updateEdgeMechanism}
@@ -4747,6 +4757,7 @@ function SelectionEditor(props: {
   onVariableChange: (nodeId: string, variable: VariableModel) => void;
   onOverride: (id: string, value: number | null) => void;
   onSelectionCondition: (nodeId: string, condition: SimulationSelectionCondition | null) => void;
+  onSetOperation: (nodeId: string, operation: AnalysisOperation) => void;
   onCoefficient: (edge: GraphEdge, coefficient: number) => void;
   onEdgeEnabled: (edge: GraphEdge, enabled: boolean) => void;
   onEdgeMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
@@ -4766,6 +4777,7 @@ function SelectionEditor(props: {
     onVariableChange={props.onVariableChange}
     onOverride={props.onOverride}
     onSelectionCondition={props.onSelectionCondition}
+    onSetOperation={props.onSetOperation}
   />;
   if (props.edge) return <EdgeEditor
     edge={props.edge}
@@ -4978,6 +4990,7 @@ function VariableEditor(props: {
   onVariableChange: (nodeId: string, variable: VariableModel) => void;
   onOverride: (id: string, value: number | null) => void;
   onSelectionCondition: (nodeId: string, condition: SimulationSelectionCondition | null) => void;
+  onSetOperation: (nodeId: string, operation: AnalysisOperation) => void;
 }) {
   const [tab, setTab] = useState<VariableEditorTab>("model");
   const node = props.node;
@@ -4989,6 +5002,31 @@ function VariableEditor(props: {
   const isRoot = parentIds.length === 0;
   const inferredValueType = inferValueTypeFromMechanism(isRoot, mechanism, variable.valueType);
   const updateVariable = (patch: Partial<VariableModel>) => props.onVariableChange(node.id, normalizeVariableModel({ ...variable, ...patch }));
+
+  const currentOperation = deriveOperation(props.document, node.id);
+  const exposureNode = props.document.graph.nodes.find((candidate) => candidate.id === props.outputPair.x)
+    ?? props.document.graph.nodes.find((candidate) => candidate.roles.exposure);
+  const outcomeNode = props.document.graph.nodes.find((candidate) => candidate.id === props.outputPair.y)
+    ?? props.document.graph.nodes.find((candidate) => candidate.roles.outcome);
+  const isBinaryVariable = variable.valueType === "binary";
+  const estimand = describeEstimand({
+    operation: currentOperation,
+    exposureLabel: exposureNode ? nodeOutputLabel(exposureNode) : props.outputPair.x,
+    outcomeLabel: outcomeNode ? nodeOutputLabel(outcomeNode) : props.outputPair.y,
+    nodeLabel: node.id,
+    value: isBinaryVariable ? 1 : undefined
+  });
+  const conditionVerdict = currentOperation === "select" || currentOperation === "condition" || currentOperation === "adjust"
+    ? classifyConditioned(props.document.graph, node.id)
+    : null;
+  const badControl = conditionVerdict ? badControlWarning(node.id, conditionVerdict.classification) : null;
+  const tabForOperation: Record<AnalysisOperation, VariableEditorTab> = {
+    none: "model",
+    intervene: "interventions",
+    select: "selection",
+    condition: "adjustment",
+    adjust: "adjustment"
+  };
 
   useEffect(() => {
     setTab("model");
@@ -5007,6 +5045,31 @@ function VariableEditor(props: {
         <div className="value-card">
           <strong>current value</strong>
           <span>{formatValue(value)}</span>
+        </div>
+
+        <div className="operation-panel">
+          <div className="operation-panel-head">
+            <strong>Analysis operation</strong>
+            <span className="variable-pill">{OPERATION_LABELS[currentOperation]}</span>
+          </div>
+          <div className="operation-selector" role="group" aria-label="Analysis operation">
+            {(["none", "intervene", "select", "condition", "adjust"] as AnalysisOperation[]).map((operation) => (
+              <button
+                type="button"
+                key={operation}
+                className={currentOperation === operation ? "active" : ""}
+                aria-pressed={currentOperation === operation}
+                title={OPERATION_BLURBS[operation]}
+                onClick={() => { props.onSetOperation(node.id, operation); setTab(tabForOperation[operation]); }}
+              >{OPERATION_LABELS[operation]}</button>
+            ))}
+          </div>
+          <p className="operation-blurb">{OPERATION_BLURBS[currentOperation]}</p>
+          <div className="operation-estimand">
+            <code>{estimand.formal}</code>
+            <span>{estimand.plain}</span>
+          </div>
+          {badControl && <p className="operation-bad-control">⚠ {badControl}</p>}
         </div>
 
         <div className="variable-tabs" role="tablist" aria-label="Variable sections">

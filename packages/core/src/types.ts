@@ -92,6 +92,9 @@ export interface VariableSimulationView {
 export interface VariableAdjustmentModel {
   method: AdjustmentMethodKind;
   cutpoints: number[];
+  // true  -> adjust: stratify on every level and standardize back to the population
+  // false -> condition: stratify on every level and show each stratum, without combining
+  standardize: boolean;
 }
 
 export interface VariableModel {

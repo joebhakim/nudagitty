@@ -431,6 +431,78 @@
   color: var(--accent);
 }
 
+.operation-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border, #e2e8e6);
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.operation-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.operation-selector {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.operation-selector button {
+  min-height: 30px;
+  background: #f8faf9;
+  color: #4f5b65;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+.operation-selector button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.operation-blurb {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.operation-estimand {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--accent-soft, #eef5f3);
+}
+
+.operation-estimand code {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.operation-estimand span {
+  font-size: 12px;
+  color: #4f5b65;
+}
+
+.operation-bad-control {
+  margin: 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(193, 84, 70, 0.1);
+  border: 1px solid rgba(193, 84, 70, 0.35);
+  color: #9c3a2e;
+  font-size: 12px;
+  line-height: 16px;
+}
+
 .variable-tab-panel {
   display: grid;
   gap: 10px;
