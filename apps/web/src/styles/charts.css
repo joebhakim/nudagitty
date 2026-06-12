@@ -306,6 +306,48 @@
   gap: 10px;
 }
 
+.stratified-contrast-view {
+  display: grid;
+  gap: 8px;
+}
+
+.stratified-contrast-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.stratified-contrast-panel {
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--border, #e2e8e6);
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.stratified-contrast-label {
+  display: grid;
+  gap: 1px;
+}
+
+.stratified-contrast-label strong {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.stratified-contrast-label span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.stratified-contrast-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted);
+}
+
 .risk-curve-line {
   fill: none;
   stroke: var(--accent);

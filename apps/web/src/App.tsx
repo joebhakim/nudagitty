@@ -123,6 +123,8 @@ import type { RiskBin, ScatterPoint } from "./charts/CategoryOutcomePlot";
 import { startEngagementMilestones, trackAnalyticsEvent } from "./analytics";
 import { OPERATION_BLURBS, OPERATION_LABELS, applyOperation, deriveOperation } from "./shared/operations";
 import { badControlWarning, describeEstimand } from "./outputs/estimand";
+import { stratifyRiskCurves } from "./outputs/stratify";
+import type { StratifiedRiskContrast } from "./outputs/stratify";
 import { basicOutputPunchlineFromResult, computeCompletedOutput } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
@@ -2621,6 +2623,17 @@ function ScatterplotPanel(props: {
   const binaryPair = xIsBinary && yIsBinary;
   const binaryContinuousPair = xIsBinary && !yIsBinary;
   const continuousBinaryPair = !xIsBinary && yIsBinary;
+  // When a binary covariate is set to condition/adjust (roles.adjusted), stratify the
+  // continuous-exposure risk curve by it instead of showing the single crude curve.
+  const stratifyNode = props.graph.nodes.find((node) =>
+    node.roles.adjusted && node.id !== pair.x && node.id !== pair.y && normalizeVariableModel(node.variable).valueType === "binary"
+  );
+  const stratifyOperation: "condition" | "adjust" | null = stratifyNode
+    ? (normalizeVariableModel(stratifyNode.variable).adjustment.standardize ? "adjust" : "condition")
+    : null;
+  const stratifiedContrast = continuousBinaryPair && stratifyNode
+    ? stratifyRiskCurves(props.simulation, pair.x, pair.y, stratifyNode.id, 7)
+    : null;
   const relationPreposition = "by";
   const detailRows = pairwiseDetailRows({
     summary: pairSummary,
@@ -2685,6 +2698,8 @@ function ScatterplotPanel(props: {
         />
       ) : binaryContinuousPair ? (
         <BinaryContinuousPairView summary={pairSummary} xLabel={xLabel} yLabel={yLabel} showStats={demoVariant} />
+      ) : continuousBinaryPair && stratifiedContrast && stratifyOperation ? (
+        <StratifiedContrastView contrast={stratifiedContrast} operation={stratifyOperation} xLabel={xLabel} yLabel={yLabel} />
       ) : continuousBinaryPair ? (
         <ContinuousBinaryPairView summary={pairSummary} xLabel={xLabel} yLabel={yLabel} showStats={demoVariant} />
       ) : (
@@ -2887,6 +2902,52 @@ function ContinuousBinaryPairView(props: {
         <span>bands {bins.length}</span>
         <span>top-bottom {tailGap === null ? "n/a" : formatPercentagePoints(tailGap)}</span>
       </div>}
+    </div>
+  );
+}
+
+function StratifiedContrastView(props: {
+  contrast: StratifiedRiskContrast;
+  operation: "condition" | "adjust";
+  xLabel: string;
+  yLabel: string;
+}) {
+  const { contrast, operation } = props;
+  const yPositiveLabel = binaryAxisValueLabel(props.yLabel, 1);
+  const panels: Array<{ label: string; detail?: string; bins: RiskBin[] }> = operation === "condition"
+    ? [
+        { label: "all (crude)", detail: `${formatPercent(contrast.crude.outcomeRate)} overall`, bins: contrast.crude.bins },
+        ...contrast.strata.map((stratum) => ({
+          label: stratum.label,
+          detail: `${formatPercent(stratum.outcomeRate)} · ${formatPercent(stratum.share)} of population`,
+          bins: stratum.bins
+        }))
+      ]
+    : [
+        { label: "all (crude)", detail: "unconditioned — the unbiased causal curve here", bins: contrast.crude.bins },
+        { label: `standardized over ${contrast.conditioningId}`, detail: "backdoor-adjusted, re-weighted to the population", bins: contrast.standardized }
+      ];
+  if (panels.every((panel) => panel.bins.length === 0)) {
+    return <p className="muted">No finite paired samples are available to stratify.</p>;
+  }
+  return (
+    <div className="stratified-contrast-view">
+      <div className="stratified-contrast-grid">
+        {panels.map((panel) => (
+          <div className="stratified-contrast-panel" key={panel.label}>
+            <div className="stratified-contrast-label">
+              <strong>{panel.label}</strong>
+              {panel.detail && <span>{panel.detail}</span>}
+            </div>
+            <RiskCurvePlot bins={panel.bins} xLabel={props.xLabel} yLabel={yPositiveLabel} compact />
+          </div>
+        ))}
+      </div>
+      <p className="stratified-contrast-note">
+        {operation === "condition"
+          ? `Conditioning on ${contrast.conditioningId}: each stratum is shown separately and not combined. Selecting only one is the bias — the strata disagree because it is a collider.`
+          : `Adjusting for ${contrast.conditioningId}: the strata are standardized back to the population. Here that re-marginalizes toward the crude curve, so the danger of this collider is selection, not standardization.`}
+      </p>
     </div>
   );
 }
