@@ -1400,7 +1400,7 @@ export function App() {
   const renderProOutputsPane = (order: number) => (
     <Panel id="outputs" defaultSize={compactWorkspace ? 28 : presentationActive ? 42 : 28} minSize={compactWorkspace ? 24 : 22} className="workspace-panel outputs-panel" key="outputs">
       <PanelGroup orientation="vertical" className="workspace-output-panel-group">
-        <Panel id="pairwise" defaultSize={showAdjustedOutputColumn ? 39 : 76} minSize={30} className="workspace-panel">
+        <Panel id="pairwise" defaultSize={showAdjustedOutputColumn ? 36 : 100} minSize={26} className="workspace-panel">
           <aside className="side-panel module-pane pairwise-column">
             <ModuleFrame
               tone="output"
@@ -1425,7 +1425,7 @@ export function App() {
         {showAdjustedOutputColumn && (
           <>
             {renderWorkspaceHandle("pairwise-adjusted", true)}
-            <Panel id="adjusted" defaultSize={37} minSize={28} className="workspace-panel">
+            <Panel id="adjusted" defaultSize={64} minSize={30} className="workspace-panel">
               <aside className="side-panel module-pane adjusted-output-column">
                 <ModuleFrame
                   tone="output"
@@ -1452,27 +1452,6 @@ export function App() {
             </Panel>
           </>
         )}
-        {renderWorkspaceHandle(showAdjustedOutputColumn ? "adjusted-scenario" : "pairwise-scenario", true)}
-        <Panel id="scenario" defaultSize={showAdjustedOutputColumn ? 26 : 24} minSize={18} className="workspace-panel">
-          <aside className="side-panel module-pane scenario-column">
-            <ModuleFrame
-              tone="scenario"
-              label="Scenario"
-              title="Interventions + sample filters"
-              detail="Change the analysis sample or set node values"
-              pending={simulationPending}
-            >
-              <ScenarioPanel
-                document={document}
-                simulation={simulation}
-                pending={simulationPending}
-                onResample={resample}
-                onClearOverrides={clearOverrides}
-                onClearSelections={clearSelections}
-              />
-            </ModuleFrame>
-          </aside>
-        </Panel>
       </PanelGroup>
     </Panel>
   );
@@ -1594,6 +1573,16 @@ export function App() {
           <details>
             <summary>Advanced diagnostics and artifacts</summary>
             <div className="advanced-grid">
+              <Section title="Interventions + sample filters" pending={simulationPending}>
+                <ScenarioPanel
+                  document={document}
+                  simulation={simulation}
+                  pending={simulationPending}
+                  onResample={resample}
+                  onClearOverrides={clearOverrides}
+                  onClearSelections={clearSelections}
+                />
+              </Section>
               <Section title="View Mode">
                 <RadioGroup value={viewMode} options={[
                   ["normal", "normal"],
