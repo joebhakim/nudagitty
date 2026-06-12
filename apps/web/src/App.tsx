@@ -22,6 +22,7 @@ import {
   CirclePlus,
   Download,
   FilePlus2,
+  Info,
   MousePointer2,
   Presentation,
   Redo2,
@@ -130,6 +131,7 @@ import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedComplete
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
 import type { OutputContext } from "./outputs/types";
 import { DenouementPanel } from "./outputs/DenouementPanel";
+import { ExampleExplanation } from "./examples/ExampleExplanation";
 import { ExampleMenu } from "./examples/ExampleMenu";
 import { ModeToggle } from "./examples/ModeToggle";
 import { PaperNetworkView } from "./papers/PaperNetworkView";
@@ -723,6 +725,7 @@ export function App() {
   const [compactShareStatus, setCompactShareStatus] = useState<ShareStatus>("idle");
   const [fullShareStatus, setFullShareStatus] = useState<ShareStatus>("idle");
   const [paperNetworkOpen, setPaperNetworkOpen] = useState(() => hashMatchesPaperNetwork(window.location.hash));
+  const [showExplanation, setShowExplanation] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
   const analysisSignature = graphAnalysisSignature(document.graph);
@@ -1490,6 +1493,7 @@ export function App() {
           </> : <>
             {!presentationActive && <IconButton label="New" onClick={createNewDocument}><FilePlus2 size={18} /></IconButton>}
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
+            <IconButton label="Explain this example" pressed={showExplanation} onClick={() => setShowExplanation((open) => !open)}><Info size={18} /></IconButton>
             <input
               ref={snapshotInputRef}
               type="file"
@@ -1511,6 +1515,21 @@ export function App() {
         </div>}
         {!paperNetworkOpen && <ModeToggle value={workbenchMode} onChange={changeWorkbenchMode} />}
       </header>
+      {showExplanation && (
+        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Example explanation" onClick={() => setShowExplanation(false)}>
+          <div className="explanation-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="explanation-modal-header">
+              <strong>{activeExample?.title ?? "Explanation"}</strong>
+              <button type="button" aria-label="Close explanation" onClick={() => setShowExplanation(false)}><X size={16} /></button>
+            </div>
+            <ExampleExplanation
+              exampleId={activeExample?.id ?? ""}
+              denouement={activeDenouement ?? CUSTOM_DENOUEMENT}
+              title={activeExample?.title ?? document.title}
+            />
+          </div>
+        </div>
+      )}
       {paperNetworkOpen ? (
         <main className="paper-network-app-main">
           <PaperNetworkView study={K562_NETWORK_STUDY} onClose={closePaperNetwork} />
