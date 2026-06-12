@@ -13,6 +13,7 @@ describe("example catalog", () => {
       "berkson-hospital",
       "birthweight-paradox",
       "obesity-paradox",
+      "cats-highrise-syndrome",
       "instrumental-encouragement",
       "mediation-direct-total",
       "measurement-error-latent",
@@ -132,6 +133,7 @@ describe("example catalog", () => {
       "front-door-smoking": "front-door-smoking",
       "birthweight-paradox": "birthweight-paradox",
       "obesity-paradox": "obesity-paradox",
+      "cats-highrise-syndrome": "cats-highrise-syndrome",
       "policing-encounters": "policing-encounters",
       "m-bias-adjustment": "m-bias-adjustment",
       "lords-paradox": "lords-paradox",
@@ -319,6 +321,54 @@ describe("example catalog", () => {
     expect(selectedGap).toBeLessThan(0);
     expect(causalGap).toBeGreaterThan(0);
     expect(frailtyGap).toBeLessThan(-0.2);
+  });
+
+  it("calibrates the falling-cats example to the terminal-velocity-plus-selection story", () => {
+    const document = exampleDocument("cats-highrise-syndrome");
+    if (!document) throw new Error("missing cats example");
+    const selected = runSimulation(document.graph, document.simulation);
+    expect(selected.conditioning.activeConditions).toEqual(["Brought_to_vet in {1}"]);
+
+    // Structural correctness: a fall can only kill a cat by injuring it, so
+    // survival's sole structural parent is injury -- there is no direct
+    // fall-height-to-survival edge to reverse-engineer the numbers.
+    const survivalParents = document.graph.edges.filter((edge) => edge.target === "Survival").map((edge) => edge.source);
+    expect(survivalParents).toEqual(["Injury_severity"]);
+
+    // Recorded clinic sample is calibrated near Whitney & Mehlhaff (1987): mean
+    // fall around 5.5 stories and roughly 90% survival among recorded cats.
+    const recordedHeight = selected.nodeStates.Fall_height?.empirical.mean ?? 0;
+    const recordedSurvival = selected.nodeStates.Survival?.empirical.mean ?? 0;
+    expect(recordedHeight).toBeGreaterThan(4);
+    expect(recordedHeight).toBeLessThan(7);
+    expect(recordedSurvival).toBeGreaterThan(0.85);
+
+    // Terminal-velocity J-curve: population injury peaks near the seventh story.
+    const doLow = runSimulation(document.graph, { ...document.simulation, overrides: { Fall_height: 2 }, selections: {} });
+    const doPeak = runSimulation(document.graph, { ...document.simulation, overrides: { Fall_height: 7 }, selections: {} });
+    const doTall = runSimulation(document.graph, { ...document.simulation, overrides: { Fall_height: 20 }, selections: {} });
+    const injLow = doLow.nodeStates.Injury_severity?.empirical.mean ?? 0;
+    const injPeak = doPeak.nodeStates.Injury_severity?.empirical.mean ?? 0;
+    const injTall = doTall.nodeStates.Injury_severity?.empirical.mean ?? 0;
+    expect(injPeak).toBeGreaterThan(injLow);
+    expect(injPeak).toBeGreaterThan(injTall);
+    // Physically honest plateau: a terminal-velocity fall still injures MORE than
+    // a gentle two-story fall (the curve never dips below the short-fall baseline).
+    expect(injTall).toBeGreaterThan(injLow);
+
+    // Survival non-monotonicity, through injury alone: the mid-rise (7th-story)
+    // fall is the deadliest do(), tall falls recover, but a tall fall is never
+    // causally safer than a short one.
+    const survLow = doLow.nodeStates.Survival?.empirical.mean ?? 0;
+    const survPeak = doPeak.nodeStates.Survival?.empirical.mean ?? 1;
+    const survTall = doTall.nodeStates.Survival?.empirical.mean ?? 0;
+    expect(survPeak).toBeLessThan(survTall);
+    expect(survTall).toBeLessThan(survLow);
+
+    // Survivorship selection: recorded survival overstates the full-population rate.
+    const full = runSimulation(document.graph, { ...document.simulation, selections: {} });
+    const populationSurvival = full.nodeStates.Survival?.empirical.mean ?? 0;
+    expect(recordedSurvival).toBeGreaterThan(populationSurvival);
   });
 
   it("configures the policing example as an encounter-denominator reversal", () => {

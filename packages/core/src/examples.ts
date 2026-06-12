@@ -307,6 +307,23 @@ export const EXAMPLES: ExampleModel[] = [
 }`
   },
   {
+    id: "cats-highrise-syndrome",
+    title: "Falling-cats paradox: the vet-sample collider",
+    domain: "classic",
+    summary: "The urban legend that cats survive long falls better than short ones. Fall height and injury both decide whether a cat is ever carried into the clinic, so the recorded sample is a collider: among vet-treated cats, higher falls look less injured and more survivable even though dropping a cat from higher always harms it.",
+    outputModule: "cats-highrise-syndrome",
+    code: `dag {
+  Fall_height [exposure,label="fall height (stories)",pos="-2,0.4"]
+  Injury_severity [adjusted,label="injury severity",pos="0,1.2"]
+  Survival [outcome,pos="1.4,0"]
+  Brought_to_vet [selected,label="brought to vet",pos="2.6,-0.9"]
+  Fall_height -> Injury_severity
+  Injury_severity -> Survival
+  Injury_severity -> Brought_to_vet
+  Survival -> Brought_to_vet
+}`
+  },
+  {
     id: "instrumental-encouragement",
     title: "Instrumental variable: encouragement design",
     domain: "classic",
@@ -1437,6 +1454,45 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
       }
     ]
   },
+  "cats-highrise-syndrome": {
+    module: "Terminal-velocity physics + survivorship selection",
+    punchline: "The legend that cats survive long falls better than short ones is real in the data but doubly explained: a genuine non-monotonic injury curve that peaks near the seventh story and then falls, plus survivorship selection because cats killed outright are rarely recorded.",
+    estimand: "Population do(Fall_height) effect on injury and survival across heights, contrasted with the within-sample association in cats brought to the clinic.",
+    primaryOutput: "Terminal-velocity J-curve (injury at the 7th versus 20th story), the do(7th) versus do(20th) survival contrast showing the mid-rise fall is deadliest, and the gap between recorded and full-population survival.",
+    validity: "A stylized data-generating story calibrated to the qualitative findings of Whitney & Mehlhaff (1987): 115 cats, falls of 2-32 stories with a mean near 5.5, about 90% survival among treated cats, and injuries that stop rising past roughly the seventh story. It is not a refit of the paper's measurements.",
+    nextAction: "Use it to show how a DAG separates a real non-monotonic causal effect from selection bias, and why the recorded-sample association overstates how safe high falls are.",
+    sections: [
+      {
+        title: "Mechanism",
+        defaultOpen: true,
+        items: [
+          "Fall height raises injury up to a peak around the seventh story, then injury declines to a plateau: cats hit terminal velocity (~60 mph near the fifth story), stop accelerating, relax, and spread out to add drag. The plateau still sits above a gentle two-story fall, so a long fall is never causally safer than a short one.",
+          "Injury is the only cause of survival: a fall can kill a cat only by injuring it, so there is no direct fall-height-to-survival edge. All of height's effect on survival routes through injury.",
+          "Brought_to_vet is the selected collider: a cat that dies on impact is rarely carried in, and a visibly hurt but living cat is more likely recorded than an unscathed one, so the clinic sample is conditioned on both survival and injury.",
+          "do(fall height) on survival is non-monotonic through injury alone: lowest around the seventh story, recovering for terminal-velocity falls but never above the short-fall rate."
+        ]
+      },
+      {
+        title: "Why the legend looks true",
+        defaultOpen: true,
+        items: [
+          "Physics: among intact cats, the seventh-story fall is genuinely worse than the twentieth, so injury really does decline at the top of the range.",
+          "Selection: the most severely injured high-fall cats die and never reach the clinic, so recorded survival for tall falls is inflated.",
+          "Both push the same way, which is why the recorded data reads as 'higher is safer'.",
+          "The honest decomposition is the point: neither mechanism alone is the whole story, and a pure-selection model cannot reproduce the calibrated numbers."
+        ]
+      },
+      {
+        title: "Report language",
+        items: [
+          "Say: in the recorded sample, injuries stop rising past about the seventh story, partly real physics and partly survivorship.",
+          "Say: intervening to drop a cat from the seventh floor is the most dangerous height, even though the records make high falls look safe.",
+          "Do not say: falling from higher is causally safer than falling from lower.",
+          "State whether the target population is all falling cats or only cats brought to a clinic, because the two give opposite-looking answers."
+        ]
+      }
+    ]
+  },
   "policing-encounters": {
     module: "Selection / observed-data denominator",
     punchline: "An encounter-only comparison is already conditioned on police contact, and police contact is caused by group-linked surveillance and latent incident risk.",
@@ -2419,6 +2475,7 @@ function configureClassicExample(document: GraphDocument, id: string): GraphDocu
   if (id === "berkson-hospital") return configureBerksonHospital(next);
   if (id === "birthweight-paradox") return configureBirthweightParadox(next);
   if (id === "obesity-paradox") return configureObesityParadox(next);
+  if (id === "cats-highrise-syndrome") return configureCatsHighriseSyndrome(next);
   if (id === "instrumental-encouragement") return configureInstrumentalEncouragement(next);
   if (id === "mediation-direct-total") return configureMediationDirectTotal(next);
   if (id === "measurement-error-latent") return configureMeasurementErrorLatent(next);
@@ -2584,6 +2641,61 @@ function configureObesityParadox(document: GraphDocument): GraphDocument {
   setLinearCoefficient(document, "Frailty", "Mortality", 1.55);
   setLinearCoefficient(document, "Chronic_disease", "Mortality", 0.75);
   setSelection(document, "Chronic_disease", {
+    operator: "one_of",
+    value: 1,
+    values: [1],
+    sampling: "rejection"
+  });
+  return document;
+}
+
+function configureCatsHighriseSyndrome(document: GraphDocument): GraphDocument {
+  // Calibrated to Whitney & Mehlhaff (1987), JAVMA: 115 cats with known falls of
+  // 2-32 stories (mean ~5.5), ~90% survival among cats brought in for treatment,
+  // and the reported curvilinear pattern where injuries stop rising past ~7 stories.
+  setContinuousVariable(document, "Fall_height", "How many stories the cat fell. Most reported falls are from the lower floors with a long right tail toward the highest balconies.", "stories");
+  setContinuousVariable(document, "Injury_severity", "Injury severity on a standardized clinical scale. Trauma rises with fall height to a peak near the seventh story, then declines to a terminal-velocity plateau that still sits above a gentle fall. This is the only path from fall height to survival.", "severity z");
+  setBinaryVariable(document, "Survival", "Survived the fall. Caused by injury alone, so its dependence on fall height is non-monotonic: lowest around the seventh story and recovering for terminal-velocity falls, but never above the short-fall rate.", "survived");
+  setBinaryVariable(document, "Brought_to_vet", "Selection: the cat was carried into the clinic and recorded. Both a dramatic high fall and a visibly severe injury make this more likely, so it is a collider.", "selected");
+
+  setExampleSampleSize(document, 12000);
+  // Root marginal for fall height: lognormal floored near the low stories with a
+  // long tail so a handful of cats fall from ~20-32 stories.
+  setNode(document, "Fall_height", { distribution: { kind: "lognormal", meanLog: 1.46, sdLog: 0.6 }, noise: ZERO_NOISE });
+  // Terminal-velocity physics: injury severity rises with impact energy up to a
+  // peak around the seventh story (Whitney & Mehlhaff's reported inflection),
+  // then declines toward a PLATEAU as the cat reaches terminal velocity (~60 mph
+  // at ~5 stories), relaxes, and spreads out like a flying squirrel to add drag.
+  // Crucially the high-fall plateau sits ABOVE the gentle-fall baseline: a
+  // terminal-velocity impact is still far worse than a two-story tumble, just no
+  // worse than (in fact a little better than) the mid-rise peak. This is the
+  // only route by which fall height reaches survival -- there is no direct
+  // height->survival edge, because a fall can only kill a cat by injuring it.
+  setNode(document, "Injury_severity", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.5 } });
+  setEdgeMechanism(document, "Fall_height", "Injury_severity", "piecewise_linear", {
+    points: [
+      { x: 0, y: -0.5 },
+      { x: 2, y: -0.1 },
+      { x: 5, y: 0.62 },
+      { x: 7, y: 0.85 },
+      { x: 10, y: 0.62 },
+      { x: 15, y: 0.48 },
+      { x: 20, y: 0.45 },
+      { x: 32, y: 0.44 }
+    ]
+  });
+  // Survival is caused by injury alone: more trauma, less survival.
+  setLogitNode(document, "Survival", 2.85);
+  setLinearCoefficient(document, "Injury_severity", "Survival", -2.2);
+  // Survivorship selection: a cat that dies on impact is rarely carried in and
+  // recorded, and a visibly hurt (but living) cat is more likely to be taken in
+  // than an unscathed one. Conditioning on this recorded sample (Brought_to_vet)
+  // is what lifts recorded survival above the true population rate, on top of the
+  // real terminal-velocity physics in the injury curve.
+  setLogitNode(document, "Brought_to_vet", -1.3);
+  setLinearCoefficient(document, "Injury_severity", "Brought_to_vet", 0.5);
+  setLinearCoefficient(document, "Survival", "Brought_to_vet", 2.4);
+  setSelection(document, "Brought_to_vet", {
     operator: "one_of",
     value: 1,
     values: [1],

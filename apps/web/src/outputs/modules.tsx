@@ -10,6 +10,7 @@ import {
   formatWeightedCount
 } from "../shared/formatting";
 import { empiricalSampleWeight, formatAdjustmentSet, weightedBinaryShare, weightedConditionalMean, weightedJointConditionalMean } from "./helpers";
+import { badControlWarning, describeEstimand } from "./estimand";
 import type { CompletedOutputModule, CompletedOutputRenderOptions, OutputContext } from "./types";
 
 type SimpsonCompletedOutput = {
@@ -241,6 +242,13 @@ export const completedOutputModules: CompletedOutputModule<unknown>[] = [
     compute: computeObesityParadoxOutput,
     render: (result) => renderHuhOutput(result as HuhCompletedOutput),
     fallback: fallbackOutput("needs roles", "This obesity-paradox output needs Obesity, Chronic_disease, Frailty, and Mortality in the graph.")
+  },
+  {
+    id: "cats-highrise-syndrome",
+    label: "paradox ready",
+    compute: computeCatsHighriseSyndromeOutput,
+    render: (result) => renderHuhOutput(result as HuhCompletedOutput),
+    fallback: fallbackOutput("needs roles", "This falling-cats output needs Fall_height, Injury_severity, Survival, and Brought_to_vet in the graph.")
   },
   {
     id: "policing-encounters",
@@ -1972,6 +1980,61 @@ function computeObesityParadoxOutput(context: OutputContext): HuhCompletedOutput
       { label: "Huh", text: "Inside the diseased sample, obese patients can be less frail because obesity itself was one route into the sample." },
       { label: "Selection", text: "Chronic_disease is a selected common effect of Obesity and Frailty." },
       { label: "Report", text: "The disease-restricted association should not be read as a population obesity effect." }
+    ]
+  };
+}
+
+function computeCatsHighriseSyndromeOutput(context: OutputContext): HuhCompletedOutput | null {
+  const { document, simulation } = context;
+  const survival = simulation.nodeStates.Survival;
+  const injury = simulation.nodeStates.Injury_severity;
+  const height = simulation.nodeStates.Fall_height;
+  if (!survival || !injury || !height) return null;
+  const recordedSurvival = weightedBinaryShare(survival, 1);
+  if (recordedSurvival === null) return null;
+  const recordedMeanHeight = height.empirical.mean;
+  // Population terminal-velocity curve under do(fall height) plus the unselected population.
+  const doPeak = runSimulation(document.graph, { ...document.simulation, overrides: { Fall_height: 7 }, selections: {} });
+  const doTall = runSimulation(document.graph, { ...document.simulation, overrides: { Fall_height: 20 }, selections: {} });
+  const full = runSimulation(document.graph, { ...document.simulation, selections: {} });
+  const injuryPeak = doPeak.nodeStates.Injury_severity?.empirical.mean;
+  const injuryTall = doTall.nodeStates.Injury_severity?.empirical.mean;
+  const survivalPeak = doPeak.nodeStates.Survival?.empirical.mean;
+  const survivalTall = doTall.nodeStates.Survival?.empirical.mean;
+  const fullSurvival = full.nodeStates.Survival;
+  const populationSurvival = fullSurvival ? weightedBinaryShare(fullSurvival, 1) : null;
+  if (
+    injuryPeak === null || injuryPeak === undefined || injuryTall === null || injuryTall === undefined ||
+    survivalPeak === null || survivalPeak === undefined || survivalTall === null || survivalTall === undefined ||
+    populationSurvival === null
+  ) return null;
+  const injuryGap = injuryPeak - injuryTall; // positive: the 7th floor injures more than the 20th
+  const survivalGap = survivalPeak - survivalTall; // negative: the 7th floor is deadlier than the 20th
+  const selectionInflation = recordedSurvival - populationSurvival; // positive: records overstate survival
+  // Precise estimand + bad-control verdict for the active operation on Brought_to_vet.
+  const vetRole = context.analysis.conditioningRoles.find((entry) => entry.node === "Brought_to_vet");
+  const estimand = describeEstimand({
+    operation: vetRole?.operation ?? "select",
+    exposureLabel: "fall height",
+    outcomeLabel: "Survival",
+    nodeLabel: "Brought_to_vet",
+    value: 1
+  });
+  const badControl = vetRole ? badControlWarning("Brought_to_vet", vetRole.classification) : null;
+  return {
+    badge: "falling-cats paradox",
+    conclusion: `Recorded cats fall a mean of ${recordedMeanHeight === null ? "?" : formatValue(recordedMeanHeight)} stories and ${formatPercent(recordedSurvival)} survive, so the data makes long falls look safe. Two things drive it. A real terminal-velocity effect makes injury peak near the seventh story and then fall, and survivorship selection drops the cats killed outright. Intervening still says the 7th floor is the worst place to fall from: do(7 stories) survival is ${formatPercent(survivalPeak)} versus ${formatPercent(survivalTall)} at the 20th.`,
+    metrics: [
+      { label: "injury: 7th vs 20th floor", value: formatSignedValue(injuryGap), detail: `terminal-velocity J-curve: severity ${formatValue(injuryPeak)} at 7 stories vs ${formatValue(injuryTall)} at 20`, numericValue: injuryGap },
+      { label: "do(7th) vs do(20th) survival", value: formatPercentagePoints(survivalGap), detail: "the deadliest height is the mid-rise fall, not the 32nd floor", numericValue: survivalGap },
+      { label: "recorded vs true survival", value: formatPercentagePoints(selectionInflation), detail: `clinic records ${formatPercent(recordedSurvival)} vs full population ${formatPercent(populationSurvival)}`, numericValue: selectionInflation }
+    ],
+    bullets: [
+      { label: "Huh", text: "In the recorded data, cats from very high falls look as safe as cats from the seventh floor." },
+      { label: "Physics", text: "Injury severity is non-monotonic in height: it peaks near terminal velocity, then drops as the cat relaxes and spreads out to add drag." },
+      { label: "Estimand", text: `${estimand.formal} — ${estimand.plain}` },
+      { label: "Bad control", text: badControl ?? "Brought_to_vet is the selected collider (a common effect of Survival and injury): cats that die on impact are rarely brought in, so the recorded sample is conditioned on it." },
+      { label: "Report", text: "Do not read 'higher is safer' as a clean causal law: the deadliest do() is the mid-rise fall, and the records omit the cats that never arrived." }
     ]
   };
 }

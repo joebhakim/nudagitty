@@ -12,8 +12,11 @@ import {
 } from "./graph";
 import type {
   AdjustmentReport,
+  AnalysisOperation,
   AnalysisReport,
   ConditionalIndependence,
+  ConditionedClassification,
+  ConditioningRole,
   EdgeKind,
   GraphEdge,
   GraphModel,
@@ -44,12 +47,59 @@ export function analyzeGraph(graph: GraphModel): AnalysisReport {
     openBiasingPathCount: biasingPaths.length,
     causalPaths,
     biasingPaths,
+    conditioningRoles: buildConditioningRoles(graph, adjustedIds, selectedIds),
     totalEffect: adjustmentReport(graph, "total"),
     directEffect: adjustmentReport(graph, "direct"),
     causalOdds: causalOddsReport(graph),
     instruments: instrumentReport(graph),
     implications: listImplications(graph, 12)
   };
+}
+
+// Classify a single conditioned-on variable against the exposure -> outcome estimand by
+// comparing every non-causal path's openness with no conditioning versus conditioning on
+// just this node. If conditioning OPENS a path it is a collider / bad control; if it CLOSES
+// one it is a backdoor adjuster; otherwise it is neutral. Opening dominates (the dangerous
+// case), so a node that both opens and closes paths is reported as a collider.
+export function classifyConditioned(graph: GraphModel, nodeId: string): {
+  classification: ConditionedClassification;
+  opensBiasingPath: boolean;
+  blocksBiasingPath: boolean;
+} {
+  const sourceIds = exposures(graph);
+  const targetIds = outcomes(graph);
+  if (sourceIds.length === 0 || targetIds.length === 0) {
+    return { classification: "neutral", opensBiasingPath: false, blocksBiasingPath: false };
+  }
+  const paths = simplePathsBetweenSets(graph, sourceIds, targetIds, 250);
+  let opens = false;
+  let blocks = false;
+  for (const path of paths) {
+    if (isDirectedPath(graph, path)) continue; // a causal path, never a biasing path
+    const openEmpty = isPathOpen(graph, path, []);
+    const openWithNode = isPathOpen(graph, path, [nodeId]);
+    if (openWithNode && !openEmpty) opens = true;
+    if (!openWithNode && openEmpty) blocks = true;
+  }
+  return {
+    classification: opens ? "collider" : blocks ? "backdoor" : "neutral",
+    opensBiasingPath: opens,
+    blocksBiasingPath: blocks
+  };
+}
+
+function buildConditioningRoles(graph: GraphModel, adjustedIds: string[], selectedIds: string[]): ConditioningRole[] {
+  const seen = new Set<string>();
+  const roles: ConditioningRole[] = [];
+  const add = (nodeId: string, operation: AnalysisOperation) => {
+    if (seen.has(nodeId)) return;
+    seen.add(nodeId);
+    roles.push({ node: nodeId, operation, ...classifyConditioned(graph, nodeId) });
+  };
+  // selection takes precedence in the label when a node carries both legacy flags
+  for (const id of selectedIds) add(id, "select");
+  for (const id of adjustedIds) add(id, "adjust");
+  return roles;
 }
 
 export function findDirectedCycle(graph: GraphModel): string[] | null {

@@ -410,6 +410,25 @@ export interface InstrumentReport {
   message: string;
 }
 
+// How a conditioned-on variable relates to the exposure -> outcome estimand.
+//  - "backdoor": conditioning on it CLOSES an otherwise-open biasing path (a valid adjuster)
+//  - "collider": conditioning on it OPENS a biasing path (a bad control)
+//  - "neutral":  conditioning on it neither opens nor closes any exposure->outcome path
+export type ConditionedClassification = "backdoor" | "neutral" | "collider";
+
+// The estimand operation applied to a variable. See docs/causal-operations.md.
+//  intervene = do(V=v); select = condition on one stratum (sample inclusion);
+//  condition = stratify and show every stratum; adjust = stratify and standardize.
+export type AnalysisOperation = "none" | "intervene" | "select" | "condition" | "adjust";
+
+export interface ConditioningRole {
+  node: string;
+  operation: AnalysisOperation;
+  classification: ConditionedClassification;
+  opensBiasingPath: boolean;
+  blocksBiasingPath: boolean;
+}
+
 export interface AnalysisReport {
   cycle: string[] | null;
   semiCycle: string[] | null;
@@ -423,6 +442,7 @@ export interface AnalysisReport {
   openBiasingPathCount: number;
   causalPaths: string[][];
   biasingPaths: string[][];
+  conditioningRoles: ConditioningRole[];
   totalEffect: AdjustmentReport;
   directEffect: AdjustmentReport;
   causalOdds: AdjustmentReport;

@@ -110,12 +110,14 @@ import {
 } from "./shared/formatting";
 import {
   CategoryOutcomePlot,
+  RiskCurvePlot,
   binaryOutcomeSummaries,
+  binnedBinaryRiskSummaries,
   categoryOutcomeDomain,
   continuousOutcomeSummaries,
   weightedPointMoments
 } from "./charts/CategoryOutcomePlot";
-import type { ScatterPoint } from "./charts/CategoryOutcomePlot";
+import type { RiskBin, ScatterPoint } from "./charts/CategoryOutcomePlot";
 import { startEngagementMilestones, trackAnalyticsEvent } from "./analytics";
 import { basicOutputPunchlineFromResult, computeCompletedOutput } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
@@ -335,7 +337,7 @@ const BASIC_NODE_VIEW_MARGIN = { x: 66, top: 86, bottom: 118 };
 const BASIC_VIEWPORT_ZOOM_BONUS = 1.12;
 const EMPIRICAL_DRAW_MIN = 80;
 const EMPIRICAL_DRAW_DEFAULT = 320;
-const EMPIRICAL_DRAW_MAX = 5000;
+const EMPIRICAL_DRAW_MAX = 50000;
 const EMPIRICAL_DRAW_STEP = 80;
 const WORKER_FALLBACK_MS = 2500;
 const MAX_SHARE_URL_LENGTH = 16000;
@@ -2608,6 +2610,7 @@ function ScatterplotPanel(props: {
   const yIsBinary = yNode !== undefined && normalizeVariableModel(yNode.variable).valueType === "binary";
   const binaryPair = xIsBinary && yIsBinary;
   const binaryContinuousPair = xIsBinary && !yIsBinary;
+  const continuousBinaryPair = !xIsBinary && yIsBinary;
   const relationPreposition = "by";
   const detailRows = pairwiseDetailRows({
     summary: pairSummary,
@@ -2672,6 +2675,8 @@ function ScatterplotPanel(props: {
         />
       ) : binaryContinuousPair ? (
         <BinaryContinuousPairView summary={pairSummary} xLabel={xLabel} yLabel={yLabel} showStats={demoVariant} />
+      ) : continuousBinaryPair ? (
+        <ContinuousBinaryPairView summary={pairSummary} xLabel={xLabel} yLabel={yLabel} showStats={demoVariant} />
       ) : (
         <>
           <svg
@@ -2835,6 +2840,42 @@ function BinaryContinuousPairView(props: {
         <span>x=0 n {groupZero ? formatWeightedCount(groupZero.weight) : "0"}</span>
         <span>x=1 n {groupOne ? formatWeightedCount(groupOne.weight) : "0"}</span>
         <span>difference 1-0 {gap === null ? "n/a" : formatSignedValue(gap)}</span>
+      </div>}
+    </div>
+  );
+}
+
+function ContinuousBinaryPairView(props: {
+  summary: PairDerivedSummary;
+  xLabel: string;
+  yLabel: string;
+  showStats?: boolean;
+}) {
+  const points = props.summary.points;
+  const bins = binnedBinaryRiskSummaries(points, 7);
+  const totalWeight = points.reduce((sum, point) => sum + point.weight, 0);
+  const successes = points.reduce((sum, point) => sum + coerceBinary(point.y) * point.weight, 0);
+  const overall = totalWeight > 0 ? successes / totalWeight : null;
+  const yPositiveLabel = binaryAxisValueLabel(props.yLabel, 1);
+  const firstBin: RiskBin | undefined = bins[0];
+  const lastBin: RiskBin | undefined = bins[bins.length - 1];
+  const tailGap = firstBin && lastBin ? lastBin.mean - firstBin.mean : null;
+
+  if (points.length === 0 || totalWeight <= 0 || bins.length === 0) {
+    return <p className="muted">No finite paired samples are available for this variable pair.</p>;
+  }
+
+  return (
+    <div className="continuous-binary-pair-view">
+      <RiskCurvePlot bins={bins} xLabel={props.xLabel} yLabel={yPositiveLabel} />
+
+      {props.showStats !== false && <div className="scatter-stats">
+        <span>samples {points.length}</span>
+        <span>{binaryShortLabel(props.yLabel)} overall {overall === null ? "n/a" : formatPercent(overall)}</span>
+        <span>lowest band {firstBin ? formatPercent(firstBin.mean) : "n/a"}</span>
+        <span>highest band {lastBin ? formatPercent(lastBin.mean) : "n/a"}</span>
+        <span>bands {bins.length}</span>
+        <span>top-bottom {tailGap === null ? "n/a" : formatPercentagePoints(tailGap)}</span>
       </div>}
     </div>
   );

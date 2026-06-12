@@ -300,9 +300,24 @@
   fill: var(--accent);
 }
 
-.binary-continuous-pair-view {
+.binary-continuous-pair-view,
+.continuous-binary-pair-view {
   display: grid;
   gap: 10px;
+}
+
+.risk-curve-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+
+.risk-curve-band-label {
+  fill: var(--muted);
+  font-size: 10px;
 }
 
 .scatter-stats {

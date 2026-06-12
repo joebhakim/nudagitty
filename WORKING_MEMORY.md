@@ -47,3 +47,17 @@ Candidates for further baked-in conditioning examples: `berkson-hospital`, `case
 ## `selected`-roled node ≠ within-stratum analysis
 
 The chess examples now use both pieces explicitly: the `Elite_sample` binary node makes the collider visible in the DAG, and `simulation.selections.Elite_sample = one_of {1}` slices the simulated draws for the displayed analysis sample. Without the `selections` entry, a selected-role node is still only a regular generated variable.
+
+## Two-axis causal-operations model (in progress — see `docs/causal-operations.md`)
+
+We are making **selection / conditioning / adjustment** precise as distinct estimand operations (the old app conflated them: `overrides`=intervene, `selections`+`selected` role=select-ish, `adjusted` role=adjust, with `analysis.ts` lumping adjusted ∪ selected into one `conditioned` set). Plan file: `/home/joe/.claude/plans/bubbly-herding-sphinx.md`. The model has **two orthogonal axes**: (A) graphical conditioning membership → d-separation (select/condition/adjust all enter it; intervene does not); (B) estimand operation → the number computed (`intervene`=`do`, `select`=one stratum no re-marginalize, `condition`=stratify+show every stratum, `adjust`=stratify+standardize `Σ_v P(Y|X,v)P(v)`). Payoff: adjusting a *confounder* (Simpson `Severity`) removes bias; conditioning a *collider* (cats `Brought_to_vet`) — by select, condition, OR adjust — *introduces* it.
+
+**Done (phases 1–2 + part of 4):**
+- `docs/causal-operations.md` — the precise vocabulary + two-axis table.
+- `packages/core/src/types.ts` — `AnalysisOperation`, `ConditionedClassification`, `ConditioningRole`, and `AnalysisReport.conditioningRoles`.
+- `packages/core/src/analysis.ts` — `classifyConditioned(graph, nodeId)` (compares each non-causal path's openness under `{}` vs `{node}`; opens→collider/bad-control, closes→backdoor, else neutral) and `buildConditioningRoles`; `analyzeGraph` now populates `conditioningRoles`. `analyzeGraph` is the only source-level `AnalysisReport` constructor.
+- `apps/web/src/outputs/estimand.ts` — `describeEstimand` (formal + plain per operation) and `badControlWarning`.
+- Cats output card (`modules.tsx` `computeCatsHighriseSyndromeOutput`) now surfaces the precise estimand bullet + the collider bad-control verdict, driven by `context.analysis.conditioningRoles`. (Also fixed a stale "Survival is a collider" line — the collider is `Brought_to_vet`.)
+- Tests: `packages/core/src/conditioning-roles.test.ts`, `apps/web/src/outputs/cats-estimand.test.ts`.
+
+**Remaining (phases 3, 5, 6):** continuous-exposure stratified ("condition", all/0/1) + standardized ("adjust") derivation/output reusing `binnedBinaryRiskSummaries`/`RiskCurvePlot` (the continuous-X × binary-Y taxonomy gap); a generic per-node **operation selector** UI replacing the separate `selection`/`adjustment` editor tabs (`VariableEditorTab`, `App.tsx`), with the live formal+plain estimand string + node ring styling; cats example shipped as `select` with one-click condition/adjust + a Simpson(confounder)-vs-cats(collider) denouement contrast. The `analysisOperation` field on `VariableModel` is still derived from roles+`selections`; the `condition` vs `adjust` distinction will need a `stratify`-vs-`standardize` marker (e.g. on `VariableAdjustmentModel`).
