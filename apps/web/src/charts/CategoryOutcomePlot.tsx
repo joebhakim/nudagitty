@@ -1,9 +1,28 @@
+import { useEffect, useRef, useState } from "react";
 import {
   clamp,
   coerceBinary,
   formatPercent,
   formatValue
 } from "../shared/formatting";
+
+// Measure a container so a chart can render at its actual pixel size (and fill it) instead
+// of being locked to a fixed viewBox aspect ratio that leaves whitespace.
+function useElementSize(fallback: { width: number; height: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState(fallback);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (rect && rect.width > 10 && rect.height > 10) setSize({ width: rect.width, height: rect.height });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return { ref, size };
+}
 
 export type ScatterPoint = { x: number; y: number; weight: number; index: number };
 
@@ -30,8 +49,9 @@ export function CategoryOutcomePlot(props: {
   compact?: boolean;
   ariaLabel?: string;
 }) {
-  const width = props.compact ? 300 : 360;
-  const height = props.compact ? 200 : 248;
+  const { ref: wrapRef, size } = useElementSize({ width: props.compact ? 300 : 360, height: props.compact ? 200 : 248 });
+  const width = size.width;
+  const height = size.height;
   const plot = { left: 42, right: 18, top: 18, bottom: 46 };
   const plotWidth = width - plot.left - plot.right;
   const plotHeight = height - plot.top - plot.bottom;
@@ -48,6 +68,7 @@ export function CategoryOutcomePlot(props: {
   };
   const pointX = (point: ScatterPoint, group: 0 | 1) => groupX(group) + deterministicCategoryOutcomeJitter(point.index, group, 29) * (props.compact ? 26 : 34);
   return (
+    <div ref={wrapRef} className={`category-outcome-plot-wrap${props.compact ? " compact" : ""}`}>
     <svg
       className={`category-outcome-plot${props.compact ? " compact" : ""}`}
       viewBox={`0 0 ${width} ${height}`}
@@ -99,6 +120,7 @@ export function CategoryOutcomePlot(props: {
         );
       })}
     </svg>
+    </div>
   );
 }
 
