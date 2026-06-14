@@ -121,9 +121,13 @@ import {
   weightedPointMoments
 } from "./charts/CategoryOutcomePlot";
 import type { RiskBin, ScatterPoint } from "./charts/CategoryOutcomePlot";
+import { computeEdgeTransfer } from "./charts/edgeTransfer";
+import { chartFrame, niceTicks, paddedDomain } from "./charts/chartFrame";
 import { startEngagementMilestones, trackAnalyticsEvent } from "./analytics";
 import { OPERATION_BLURBS, OPERATION_LABELS, applyOperation, deriveOperation } from "./shared/operations";
-import { badControlWarning, describeEstimand } from "./outputs/estimand";
+import { badControlWarning, describeEstimand, displayNodeName } from "./outputs/estimand";
+import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
+import { HighlightNames, NodeNamesProvider, SvgAxisName } from "./shared/NodeNames";
 import { stratifyRiskCurves } from "./outputs/stratify";
 import type { StratifiedRiskContrast } from "./outputs/stratify";
 import { basicOutputPunchlineFromResult, computeCompletedOutput } from "./outputs/modules";
@@ -1302,7 +1306,7 @@ export function App() {
           tone="edit"
           label="Edit"
           title={selectedNode ? "Node editor" : selectedEdge ? "Connection editor" : "DAG editor"}
-          detail={selectedNode ? nodeDisplayName(selectedNode) : selectedEdge ? `${selectedEdge.source} to ${selectedEdge.target}` : "Select a node or arrow"}
+          detail={selectedNode ? nodeDisplayName(selectedNode) : selectedEdge ? `${displayNodeName(selectedEdge.source)} → ${displayNodeName(selectedEdge.target)}` : "Select a node or arrow"}
         >
           {isBasicMode && !basicResultsOpen && (
             <button type="button" className="demo-show-result-button" onClick={() => setBasicResultsOpen(true)}>
@@ -1403,7 +1407,7 @@ export function App() {
   const renderProOutputsPane = (order: number) => (
     <Panel id="outputs" defaultSize={compactWorkspace ? 28 : presentationActive ? 42 : 28} minSize={compactWorkspace ? 24 : 22} className="workspace-panel outputs-panel" key="outputs">
       <PanelGroup orientation="vertical" className="workspace-output-panel-group">
-        <Panel id="pairwise" defaultSize={showAdjustedOutputColumn ? 36 : 100} minSize={26} className="workspace-panel">
+        <Panel id="pairwise" defaultSize={showAdjustedOutputColumn ? 47 : 100} minSize={26} className="workspace-panel">
           <aside className="side-panel module-pane pairwise-column">
             <ModuleFrame
               tone="output"
@@ -1472,6 +1476,7 @@ export function App() {
   );
 
   return (
+    <NodeNamesProvider nodes={document.graph.nodes}>
     <div className={`app-shell mode-${workbenchMode} ${basicResultsOpen ? "results-open" : ""}${presentationActive ? " presentation-mode" : ""}`}>
       <header className="topbar">
         <div className="brand">
@@ -1667,6 +1672,7 @@ export function App() {
       </main>
       </>}
     </div>
+    </NodeNamesProvider>
   );
 }
 
@@ -2641,9 +2647,9 @@ function ScatterplotPanel(props: {
   const stats = pairSummary.stats;
   const width = 280;
   const height = 220;
-  const margin = { left: 38, right: 12, top: 14, bottom: 34 };
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
+  const scatterFrame = chartFrame({ width, height, x: { ticks: true, title: true }, y: { ticks: true, title: true }, xDomain, yDomain, insetX: 6, insetY: 6 });
+  const scatterXTicks = niceTicks(xDomain[0], xDomain[1], 4);
+  const scatterYTicks = niceTicks(yDomain[0], yDomain[1], 4);
   const maxWeight = Math.max(...points.map((point) => point.weight), 1);
   const xNode = props.graph.nodes.find((node) => node.id === pair.x);
   const yNode = props.graph.nodes.find((node) => node.id === pair.y);
@@ -2674,8 +2680,8 @@ function ScatterplotPanel(props: {
     binaryContinuousPair,
     effectiveSampleSize: props.simulation.conditioning.effectiveSampleSize
   });
-  const toX = (value: number) => margin.left + ((value - xDomain[0]) / (xDomain[1] - xDomain[0] || 1)) * plotWidth;
-  const toY = (value: number) => margin.top + plotHeight - ((value - yDomain[0]) / (yDomain[1] - yDomain[0] || 1)) * plotHeight;
+  const toX = scatterFrame.xScale;
+  const toY = scatterFrame.yScale;
   const regression = stats && Number.isFinite(stats.slope) && Number.isFinite(stats.intercept)
     ? {
       x1: xDomain[0],
@@ -2741,15 +2747,20 @@ function ScatterplotPanel(props: {
             role="img"
             aria-label={`Scatterplot of ${xLabel} and ${yLabel}`}
           >
-            <rect className="scatter-plot-background" x={margin.left} y={margin.top} width={plotWidth} height={plotHeight} />
-            <line className="scatter-axis" x1={margin.left} y1={margin.top + plotHeight} x2={margin.left + plotWidth} y2={margin.top + plotHeight} />
-            <line className="scatter-axis" x1={margin.left} y1={margin.top} x2={margin.left} y2={margin.top + plotHeight} />
-            <text className="scatter-tick-label" x={margin.left} y={height - 17}>{formatValue(xDomain[0])}</text>
-            <text className="scatter-tick-label end" x={margin.left + plotWidth} y={height - 17}>{formatValue(xDomain[1])}</text>
-            <text className="scatter-tick-label y-start" x={margin.left - 7} y={margin.top + plotHeight}>{formatValue(yDomain[0])}</text>
-            <text className="scatter-tick-label y-end" x={margin.left - 7} y={margin.top + 4}>{formatValue(yDomain[1])}</text>
-            <text className="scatter-axis-label x" x={margin.left + plotWidth / 2} y={height - 3}>{abbreviateLabel(xLabel, 28)}</text>
-            <text className="scatter-axis-label y" x={12} y={margin.top + plotHeight / 2} transform={`rotate(-90 12 ${margin.top + plotHeight / 2})`}>{abbreviateLabel(yLabel, 24)}</text>
+            <rect className="scatter-plot-background" x={scatterFrame.plot.x} y={scatterFrame.plot.y} width={scatterFrame.plot.width} height={scatterFrame.plot.height} />
+            <line className="scatter-axis" x1={scatterFrame.plot.x} y1={scatterFrame.plot.bottom} x2={scatterFrame.plot.right} y2={scatterFrame.plot.bottom} />
+            <line className="scatter-axis" x1={scatterFrame.plot.x} y1={scatterFrame.plot.y} x2={scatterFrame.plot.x} y2={scatterFrame.plot.bottom} />
+            {scatterYTicks.map((tick) => (
+              <g key={`sy${tick}`}>
+                <line className="scatter-grid" x1={scatterFrame.plot.x} x2={scatterFrame.plot.right} y1={toY(tick)} y2={toY(tick)} />
+                <text className="scatter-tick-label end" x={scatterFrame.anchors.ticks.yX} y={toY(tick) + 4}>{formatValue(tick)}</text>
+              </g>
+            ))}
+            {scatterXTicks.map((tick) => (
+              <text key={`sx${tick}`} className="scatter-tick-label" x={toX(tick)} y={scatterFrame.anchors.ticks.xY} textAnchor="middle">{formatValue(tick)}</text>
+            ))}
+            <SvgAxisName className="scatter-axis-label x" label={xLabel} x={scatterFrame.plot.cx} y={scatterFrame.anchors.title.xY} maxChars={28} />
+            <SvgAxisName className="scatter-axis-label y" label={yLabel} x={scatterFrame.anchors.title.yX} y={scatterFrame.plot.cy} transform={`rotate(-90 ${scatterFrame.anchors.title.yX} ${scatterFrame.plot.cy})`} maxChars={20} />
             {points.map((point) => {
               const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
               return (
@@ -2805,7 +2816,7 @@ function PairVariableSelect(props: {
         value={props.value}
         onChange={(event) => props.onChange(event.target.value)}
       >
-        {props.nodes.map((node) => <option value={node.id} key={node.id}>{nodeOutputLabel(node)}</option>)}
+        {props.nodes.map((node) => <option value={node.id} key={node.id}>{displayNodeName(nodeOutputLabel(node))}</option>)}
       </select>
     </label>
   );
@@ -2922,6 +2933,7 @@ function ContinuousBinaryPairView(props: {
   }
 
   return (
+    <HighlightNames>
     <div className="continuous-binary-pair-view">
       <RiskCurvePlot bins={bins} xLabel={props.xLabel} yLabel={yPositiveLabel} />
 
@@ -2934,6 +2946,7 @@ function ContinuousBinaryPairView(props: {
         <span>top-bottom {tailGap === null ? "n/a" : formatPercentagePoints(tailGap)}</span>
       </div>}
     </div>
+    </HighlightNames>
   );
 }
 
@@ -2961,7 +2974,15 @@ function StratifiedContrastView(props: {
   if (panels.every((panel) => panel.bins.length === 0)) {
     return <p className="muted">No finite paired samples are available to stratify.</p>;
   }
+  // One shared, cropped y-domain across panels: tight (no empty 0–50% band) yet
+  // comparable, since every small-multiple uses the same axis.
+  const rates = panels.flatMap((panel) => panel.bins.flatMap((bin) => [bin.mean, bin.lower, bin.upper]))
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  const sharedYDomain = rates.length > 0
+    ? paddedDomain(Math.min(...rates), Math.max(...rates), { pad: 0.12, clampMin: 0, clampMax: 1 })
+    : ([0, 1] as [number, number]);
   return (
+    <HighlightNames>
     <div className="stratified-contrast-view">
       <div className="stratified-contrast-grid">
         {panels.map((panel) => (
@@ -2970,7 +2991,7 @@ function StratifiedContrastView(props: {
               <strong>{panel.label}</strong>
               {panel.detail && <span>{panel.detail}</span>}
             </div>
-            <RiskCurvePlot bins={panel.bins} xLabel={props.xLabel} yLabel={yPositiveLabel} compact />
+            <RiskCurvePlot bins={panel.bins} xLabel={props.xLabel} yLabel={yPositiveLabel} yDomain={sharedYDomain} compact />
           </div>
         ))}
       </div>
@@ -2980,6 +3001,7 @@ function StratifiedContrastView(props: {
           : `Adjusting for ${contrast.conditioningId}: the strata are standardized back to the population. Here that re-marginalizes toward the crude curve, so the danger of this collider is selection, not standardization.`}
       </p>
     </div>
+    </HighlightNames>
   );
 }
 
@@ -3102,6 +3124,7 @@ function AnalysisSampleBanner(props: {
   const conditioning = props.simulation.conditioning;
   if (conditioning.activeConditions.length === 0) return null;
   return (
+    <HighlightNames>
     <div className="analysis-sample-banner" role="status" aria-label="Analysis sample" aria-busy={props.pending}>
       <strong>Analysis sample</strong>
       {props.pending && <PendingChip pending label="updating sample" />}
@@ -3113,6 +3136,7 @@ function AnalysisSampleBanner(props: {
       {conditioning.effectiveSampleSize !== null && <span>ESS {formatValue(conditioning.effectiveSampleSize)}</span>}
       <button type="button" onClick={props.onClearSelections}>clear conditions</button>
     </div>
+    </HighlightNames>
   );
 }
 
@@ -4089,6 +4113,7 @@ function BinaryAdjustmentOutputCard({ output }: { output: BinaryAdjustmentOutput
       ? `${output.strata.length} strata`
       : "Raw comparison";
   return (
+    <HighlightNames>
     <div className="binary-adjustment-output">
       <div className="module-card-header">
         <strong>Adjusted estimate</strong>
@@ -4144,6 +4169,7 @@ function BinaryAdjustmentOutputCard({ output }: { output: BinaryAdjustmentOutput
         <p className="binary-output-summary">Only the first three binary adjusted variables are expanded to avoid an unreadable matrix grid.</p>
       )}
     </div>
+    </HighlightNames>
   );
 }
 
@@ -4162,6 +4188,7 @@ function BinaryContinuousAdjustmentOutputCard({ output }: { output: BinaryContin
         ? "Stratified (standardized) mean difference"
         : "No adjusted estimate";
   return (
+    <HighlightNames>
     <div className="continuous-adjustment-output">
       <div className="module-card-header">
         <strong>{isCondition ? "Conditioned estimate" : "Adjusted estimate"}</strong>
@@ -4225,6 +4252,7 @@ function BinaryContinuousAdjustmentOutputCard({ output }: { output: BinaryContin
         <p className="binary-output-summary">Only the first three adjusted variables are expanded to avoid an unreadable stratum grid.</p>
       )}
     </div>
+    </HighlightNames>
   );
 }
 
@@ -4998,11 +5026,8 @@ function BasicEdgeEditor(props: Parameters<typeof SelectionEditor>[0] & { edge: 
           <summary>More arrow settings</summary>
           <EdgePanel
             edge={props.edge}
-            document={props.document}
-            simulation={props.simulation}
-            onCoefficient={props.onCoefficient}
-            onEnabled={props.onEdgeEnabled}
-            onMechanism={props.onEdgeMechanism}
+            mechanism={normalizeEdgeMechanism(props.document.simulation.edges[props.edge.id])}
+            onDraft={(mechanism) => props.onEdgeMechanism(props.edge, mechanism)}
           />
         </details>
         <div className="button-row">
@@ -5136,7 +5161,7 @@ function VariableEditor(props: {
       <div className="selection-editor-header">
         <div>
           <span>Variable</span>
-          <strong>{node.id}</strong>
+          <strong className="connection-title"><NodeName>{node.id}</NodeName></strong>
         </div>
       </div>
 
@@ -5165,7 +5190,7 @@ function VariableEditor(props: {
           </div>
           <p className="operation-blurb">{OPERATION_BLURBS[currentOperation]}</p>
           <div className="operation-estimand">
-            <code>{estimand.formal}</code>
+            <EstimandFormula tokens={estimand.formalTokens} />
             <span>{estimand.plain}</span>
           </div>
           {badControl && <p className="operation-bad-control">⚠ {badControl}</p>}
@@ -5558,28 +5583,46 @@ function EdgeEditor(props: {
   onMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
   onDelete: (edgeId: string) => void;
 }) {
+  const committed = useMemo(() => normalizeEdgeMechanism(props.document.simulation.edges[props.edge.id]), [props.document.simulation.edges, props.edge.id]);
+  // The edge is edited as a local draft so dragging/typing only repaints the transfer
+  // preview; the simulation is only rebuilt when the user commits.
+  const [draft, setDraft] = useState<EdgeMechanism>(committed);
+  useEffect(() => { setDraft(committed); }, [props.edge.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(committed), [draft, committed]);
   const contribution = props.simulation.contributions[props.edge.id] ?? 0;
+  const sourceState = props.simulation.nodeStates[props.edge.source];
+  const sourceNode = props.document.graph.nodes.find((node) => node.id === props.edge.source);
+  const targetNode = props.document.graph.nodes.find((node) => node.id === props.edge.target);
+  const sourceLabel = sourceNode ? nodeOutputLabel(sourceNode) : props.edge.source;
+  const targetLabel = targetNode ? nodeOutputLabel(targetNode) : props.edge.target;
+  const editablePoints = draft.kind === "piecewise_linear" || draft.kind === "monotone_spline";
   return (
     <div className="selection-editor connection-editor" aria-label={`Connection ${props.edge.source} to ${props.edge.target}`}>
       <div className="selection-editor-header">
         <div>
           <span>Connection</span>
-          <strong>{props.edge.source} to {props.edge.target}</strong>
+          <strong className="connection-title"><NodeName>{sourceLabel}</NodeName><span className="node-op"> → </span><NodeName>{targetLabel}</NodeName></strong>
         </div>
       </div>
       <div className="selection-editor-body">
+        <EdgeTransferPlot
+          mechanism={draft}
+          state={sourceState}
+          sourceLabel={sourceLabel}
+          targetLabel={targetLabel}
+          onPoints={editablePoints ? (points) => setDraft({ ...draft, points }) : undefined}
+        />
         <div className="value-card">
           <strong>current contribution</strong>
           <span className={contribution >= 0 ? "positive" : "negative"}>{formatSignedValue(contribution)}</span>
         </div>
-        <EdgePanel
-          edge={props.edge}
-          document={props.document}
-          simulation={props.simulation}
-          onCoefficient={props.onCoefficient}
-          onEnabled={props.onEnabled}
-          onMechanism={props.onMechanism}
-        />
+        <EdgePanel edge={props.edge} mechanism={draft} onDraft={setDraft} />
+        <div className="edge-commit-row">
+          <button type="button" className="primary" disabled={!dirty} onClick={() => props.onMechanism(props.edge, draft)}>
+            {dirty ? "Commit & simulate" : "Up to date"}
+          </button>
+          <button type="button" disabled={!dirty} onClick={() => setDraft(committed)}>Reset</button>
+        </div>
         <div className="button-row">
           <button type="button" onClick={() => props.onDelete(props.edge.id)}>delete</button>
         </div>
@@ -5590,37 +5633,138 @@ function EdgeEditor(props: {
 
 function EdgePanel(props: {
   edge: GraphEdge;
-  document: GraphDocument;
-  simulation: SimulationResult;
-  onCoefficient: (edge: GraphEdge, coefficient: number) => void;
-  onEnabled: (edge: GraphEdge, enabled: boolean) => void;
-  onMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
+  mechanism: EdgeMechanism;
+  onDraft: (mechanism: EdgeMechanism) => void;
 }) {
-  const mechanism = normalizeEdgeMechanism(props.document.simulation.edges[props.edge.id]);
-  const contribution = props.simulation.contributions[props.edge.id] ?? 0;
+  const mechanism = props.mechanism;
   return (
     <div className="edge-panel">
-      <Checkbox label="enabled in simulation" checked={mechanism.enabled} onChange={(enabled) => props.onEnabled(props.edge, enabled)} />
+      <Checkbox label="enabled in simulation" checked={mechanism.enabled} onChange={(enabled) => props.onDraft({ ...mechanism, enabled })} />
       <div className="field">
         <span>function</span>
         <FunctionPicker
           label={`function ${props.edge.source} to ${props.edge.target}`}
           value={mechanism.kind}
           onOpen={() => undefined}
-          onChange={(kind) => props.onMechanism(props.edge, defaultEdgeMechanism(kind))}
+          onChange={(kind) => props.onDraft(defaultEdgeMechanism(kind))}
         />
       </div>
-      <EdgeMechanismFields edge={props.edge} mechanism={mechanism} onMechanism={props.onMechanism} />
+      <EdgeMechanismFields edge={props.edge} mechanism={mechanism} onMechanism={(_edge, patch) => props.onDraft({ ...mechanism, ...patch })} />
       {mechanism.kind === "linear" && (
         <TactileNumberField
           label="coefficient"
           value={mechanism.coefficient}
           step={0.1}
           nudge={1}
-          onChange={(coefficient) => props.onCoefficient(props.edge, coefficient)}
+          onChange={(coefficient) => props.onDraft({ ...mechanism, coefficient })}
         />
       )}
-      <p className={contribution >= 0 ? "assurance" : "warning"}>contribution {formatSignedValue(contribution)}</p>
+    </div>
+  );
+}
+
+function EdgeTransferPlot(props: {
+  mechanism: EdgeMechanism;
+  state?: SimulatedNodeState;
+  sourceLabel: string;
+  targetLabel: string;
+  onPoints?: (points: { x: number; y: number }[]) => void;
+}) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const emp = props.state?.empirical;
+  const pts = props.mechanism.points ?? [];
+  // Domain + sampled curve are computed by a pure helper so the axes auto-fit
+  // each function (no forced zero baseline) and the logic is unit-testable.
+  const empMin = emp?.min;
+  const empMax = emp?.max;
+  const model = computeEdgeTransfer(props.mechanism, {
+    domain: typeof empMin === "number" && typeof empMax === "number" ? { min: empMin, max: empMax } : null
+  });
+  const { x0, x1, y0, y1 } = model;
+  const W = 320, H = 188;
+  const frame = chartFrame({ width: W, height: H, x: { ticks: true, title: true }, y: { ticks: true, title: true }, xDomain: [x0, x1], yDomain: [y0, y1] });
+  const { plot, anchors } = frame;
+  const sx = frame.xScale;
+  const sy = frame.yScale;
+  const line = model.samples.filter((point) => point.finite).map((point) => `${sx(point.x).toFixed(1)},${sy(point.y).toFixed(1)}`).join(" ");
+  const mean = emp?.mean;
+
+  const toData = (clientX: number, clientY: number) => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const rect = svg.getBoundingClientRect();
+    const vx = ((clientX - rect.left) / rect.width) * W;
+    const vy = ((clientY - rect.top) / rect.height) * H;
+    const dataX = x0 + ((vx - plot.x) / plot.width) * (x1 - x0);
+    const dataY = y0 + (1 - (vy - plot.y) / plot.height) * (y1 - y0);
+    return { x: dataX, y: dataY };
+  };
+  const onMove = (event: React.PointerEvent) => {
+    if (dragIndex === null || !props.onPoints) return;
+    const data = toData(event.clientX, event.clientY);
+    if (!data) return;
+    // Clamp loosely (one plot-width of slack) rather than to the current axis,
+    // so dragging a knot outward lets the axes grow to follow it next render.
+    const span = x1 - x0;
+    const clampedX = Math.min(Math.max(data.x, x0 - span), x1 + span);
+    const next = pts.map((point, index) => index === dragIndex ? { x: clampedX, y: data.y } : point);
+    next.sort((a, b) => a.x - b.x);
+    props.onPoints(next);
+  };
+
+  return (
+    <div className="edge-transfer-plot">
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        className="edge-transfer-svg"
+        role="img"
+        aria-label={`Transfer function from ${props.sourceLabel} to ${props.targetLabel}`}
+        onPointerMove={onMove}
+        onPointerUp={() => setDragIndex(null)}
+        onPointerLeave={() => setDragIndex(null)}
+      >
+        <rect className="edge-transfer-bg" x={plot.x} y={plot.y} width={plot.width} height={plot.height} rx="5" />
+        {model.hasZeroLine && <line className="edge-transfer-zero" x1={plot.x} x2={plot.right} y1={sy(0)} y2={sy(0)} />}
+        {mean !== null && mean !== undefined && mean >= x0 && mean <= x1 && (
+          <line className="edge-transfer-mean" x1={sx(mean)} x2={sx(mean)} y1={plot.y} y2={plot.bottom} />
+        )}
+        <polyline className="edge-transfer-line" points={line} />
+        {model.xTicks.map((tick, index) => (
+          <text
+            key={`x${index}`}
+            className="edge-transfer-tick"
+            x={sx(tick)}
+            y={anchors.ticks.xY}
+            textAnchor={index === 0 ? "start" : index === model.xTicks.length - 1 ? "end" : "middle"}
+          >{formatValue(tick)}</text>
+        ))}
+        {model.yTicks.map((tick, index) => (
+          <text key={`y${index}`} className="edge-transfer-tick" x={anchors.ticks.yX} y={sy(tick) + 4} textAnchor="end">{formatValue(tick)}</text>
+        ))}
+        <SvgAxisName className="edge-transfer-axis-title" label={props.sourceLabel} x={plot.cx} y={anchors.title.xY} maxChars={26} />
+        <text className="edge-transfer-axis-label" x={anchors.title.yX} y={plot.cy} textAnchor="middle" transform={`rotate(-90 ${anchors.title.yX} ${plot.cy})`}>contribution</text>
+        {props.onPoints && pts.map((point, index) => (
+          <circle
+            key={index}
+            className={`edge-transfer-handle${dragIndex === index ? " active" : ""}`}
+            cx={sx(point.x)}
+            cy={sy(point.y)}
+            r={5}
+            onPointerDown={(event) => {
+              setDragIndex(index);
+              try { (event.currentTarget as Element).setPointerCapture(event.pointerId); } catch { /* capture is best-effort */ }
+            }}
+            onPointerMove={(event) => { if (dragIndex === index) onMove(event); }}
+            onPointerUp={() => setDragIndex(null)}
+          />
+        ))}
+      </svg>
+      <div className="edge-transfer-caption">
+        <span>{props.sourceLabel} → contribution to {props.targetLabel}</span>
+        {props.onPoints && <span className="muted">drag the points to shape the curve</span>}
+      </div>
     </div>
   );
 }
@@ -5808,13 +5952,7 @@ function EdgeMechanismFields(props: { edge: GraphEdge; mechanism: EdgeMechanism;
     </>;
   }
   if (props.mechanism.kind === "piecewise_linear") {
-    return <label className="field">
-      <span>points</span>
-      <input
-        value={pointsToText(props.mechanism.points)}
-        onChange={(event) => set({ points: parsePoints(event.target.value) })}
-      />
-    </label>;
+    return <PointsEditor points={props.mechanism.points} onChange={(points) => set({ points })} />;
   }
   if (props.mechanism.kind === "hill_emax") {
     return <>
@@ -5841,15 +5979,35 @@ function EdgeMechanismFields(props: { edge: GraphEdge; mechanism: EdgeMechanism;
     </>;
   }
   if (props.mechanism.kind === "monotone_spline") {
-    return <label className="field">
-      <span>knots</span>
-      <input
-        value={pointsToText(props.mechanism.points)}
-        onChange={(event) => set({ points: parsePoints(event.target.value) })}
-      />
-    </label>;
+    return <PointsEditor points={props.mechanism.points} onChange={(points) => set({ points })} />;
   }
   return null;
+}
+
+// Add / remove knots for piecewise & spline edges; the heights are dragged on the preview.
+function PointsEditor(props: { points: { x: number; y: number }[]; onChange: (points: { x: number; y: number }[]) => void }) {
+  const points = props.points;
+  const addKnot = () => {
+    const sorted = [...points].sort((a, b) => a.x - b.x);
+    const last = sorted[sorted.length - 1];
+    const first = sorted[0];
+    const x = last && first ? (last.x + (last.x - first.x) / Math.max(1, sorted.length - 1)) : 1;
+    props.onChange([...sorted, { x: Number(x.toFixed(2)), y: last?.y ?? 0 }]);
+  };
+  const removeKnot = () => {
+    if (points.length <= 2) return;
+    const sorted = [...points].sort((a, b) => a.x - b.x);
+    props.onChange(sorted.slice(0, -1));
+  };
+  return (
+    <div className="points-editor">
+      <span className="muted">{points.length} knots — drag the points on the graph above to shape the curve.</span>
+      <div className="compact-row">
+        <button type="button" onClick={addKnot}>add knot</button>
+        <button type="button" disabled={points.length <= 2} onClick={removeKnot}>remove knot</button>
+      </div>
+    </div>
+  );
 }
 
 function DistributionEditor(props: { label: string; distribution: NodeDistribution; onChange: (distribution: NodeDistribution) => void }) {
@@ -6203,7 +6361,9 @@ function designModuleScopeLabel(mode: WorkbenchMode): string {
 }
 
 function nodeDisplayName(node: GraphNode): string {
-  return node.label && node.label !== node.id ? `${node.label} (${node.id})` : node.id;
+  // Normalized name (unit + id parenthetical stripped, underscores → spaces) so
+  // headings read like the node-name chips instead of exposing raw ids.
+  return displayNodeName(node.label || node.id);
 }
 
 function nodeOutputLabel(node: GraphNode): string {
@@ -7506,22 +7666,6 @@ function defaultDistribution(kind: NodeDistribution["kind"]): NodeDistribution {
   if (kind === "gamma") return { kind, shape: 2, scale: 1 };
   if (kind === "exponential") return { kind, rate: 1 };
   return { kind: "constant", value: 0 };
-}
-
-function pointsToText(points: EdgeMechanism["points"]): string {
-  return points.map((point) => `${trimNumber(point.x)}:${trimNumber(point.y)}`).join(", ");
-}
-
-function parsePoints(value: string): EdgeMechanism["points"] {
-  const parsed = value.split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const [xRaw, yRaw] = part.split(":");
-      return { x: Number(xRaw), y: Number(yRaw) };
-    })
-    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
-  return parsed.length >= 2 ? parsed : defaultEdgeMechanism("piecewise_linear").points;
 }
 
 function trimNumber(value: number): string {

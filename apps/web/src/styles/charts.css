@@ -4,10 +4,15 @@
   gap: 8px;
 }
 
+/* The compact pairwise body must CONSTRAIN its chart (flex column), not scroll it
+   — otherwise the chart takes its natural aspect-ratio height and overflows the
+   panel, clipping the x-axis. */
 .compact-pairwise-frame .module-pane-body {
   padding: 7px;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .compact-pairwise-frame .scatterplot-panel {
@@ -17,7 +22,8 @@
   min-height: 0;
 }
 
-.compact-pairwise-frame .binary-continuous-pair-view {
+.compact-pairwise-frame .binary-continuous-pair-view,
+.compact-pairwise-frame .continuous-binary-pair-view {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -25,13 +31,74 @@
   gap: 6px;
 }
 
-.compact-pairwise-frame .binary-continuous-pair-view .category-outcome-plot-wrap {
+.compact-pairwise-frame .binary-continuous-pair-view .category-outcome-plot-wrap,
+.compact-pairwise-frame .continuous-binary-pair-view .category-outcome-plot-wrap {
   flex: 1;
-  min-height: 120px;
+  min-height: 0;
+}
+
+/* Binary x binary (.binary-pair-view) needs the same flex-fill, and its stats
+   grid is redundant with the adjusted output below, so drop it in the panel. */
+.compact-pairwise-frame .binary-pair-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 6px;
+}
+
+.compact-pairwise-frame .binary-pair-view .category-outcome-plot-wrap {
+  flex: 1;
+  min-height: 0;
+}
+
+.compact-pairwise-frame .scatter-stats {
+  display: none;
+}
+
+/* When condition/adjust renders the stratified small-multiples in the (short)
+   observed-relation panel, fit them as a horizontal scroll row instead of
+   stacking and overflowing the panel (the cats-adjust glitch). */
+.compact-pairwise-frame .stratified-contrast-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 4px;
+}
+
+.compact-pairwise-frame .stratified-contrast-grid {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.compact-pairwise-frame .stratified-contrast-panel {
+  /* Share the frame width so the 2–3 strata fit without a horizontal scrollbar;
+     min-width lets a rare many-stratum case fall back to overflow-x scroll. */
+  flex: 1 1 0;
+  min-width: 96px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.compact-pairwise-frame .stratified-contrast-panel .category-outcome-plot {
+  flex: 1;
+  min-height: 0;
+}
+
+.compact-pairwise-frame .stratified-contrast-note {
+  flex: 0 0 auto;
+  margin: 0;
 }
 
 .compact-pairwise-frame .scatterplot-svg {
-  min-height: 170px;
+  min-height: 0;
 }
 
 .pairwise-relation-header {
@@ -163,13 +230,20 @@
 }
 
 .scatter-plot-background {
-  fill: #fbfcfc;
-  stroke: var(--line);
+  fill: #ffffff;
+  stroke: #d6e5e2;
+  stroke-width: 1px;
+}
+
+.scatter-grid {
+  stroke: #e1e9ec;
+  stroke-width: 1px;
 }
 
 .scatter-axis {
-  stroke: #758390;
-  stroke-width: 1.2;
+  stroke: #cdd9dd;
+  stroke-width: 1.7px;
+  stroke-linecap: round;
 }
 
 .scatter-tick-label,
@@ -199,14 +273,13 @@
 }
 
 .scatter-point {
-  fill: var(--causal);
-  stroke: #fff;
-  stroke-width: 0.55;
+  fill: var(--chart-muted);
+  stroke: none;
 }
 
 .scatter-regression {
-  stroke: var(--bias);
-  stroke-width: 2;
+  stroke: var(--accent);
+  stroke-width: 2.5;
   stroke-linecap: round;
   pointer-events: none;
 }
@@ -402,3 +475,16 @@
   gap: 8px;
 }
 
+
+/* SVG-native node-name chip for figure axes — matches the HTML .node-name chip. */
+.svg-node-name-bg {
+  fill: #ffffff;
+  stroke: #cbe0dc;
+  stroke-width: 1px;
+}
+
+.svg-node-name {
+  fill: #1f5f5d;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-weight: 600;
+}

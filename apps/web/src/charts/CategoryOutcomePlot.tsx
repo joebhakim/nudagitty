@@ -5,6 +5,8 @@ import {
   formatPercent,
   formatValue
 } from "../shared/formatting";
+import { SvgAxisName } from "../shared/NodeNames";
+import { chartFrame, niceTicks, paddedDomain } from "./chartFrame";
 
 // Measure a container so a chart can render at its actual pixel size (and fill it) instead
 // of being locked to a fixed viewBox aspect ratio that leaves whitespace.
@@ -49,24 +51,49 @@ export function CategoryOutcomePlot(props: {
   compact?: boolean;
   ariaLabel?: string;
 }) {
-  const { ref: wrapRef, size } = useElementSize({ width: props.compact ? 300 : 360, height: props.compact ? 200 : 248 });
+  const { ref: wrapRef, size } = useElementSize({ width: props.compact ? 300 : 360, height: props.compact ? 200 : 210 });
   const width = size.width;
   const height = size.height;
-  const plot = { left: 42, right: 18, top: 18, bottom: 46 };
-  const plotWidth = width - plot.left - plot.right;
-  const plotHeight = height - plot.top - plot.bottom;
-  const [min, max] = props.yDomain;
-  const y = (value: number) => plot.top + (1 - ((value - min) / Math.max(max - min, 1e-9))) * plotHeight;
-  const groupX = (group: 0 | 1) => plot.left + plotWidth * (group === 0 ? 0.3 : 0.7);
+  const isBinary = props.outcomeKind === "binary";
+
+  // Data-driven y-domain: crop to where the means/CIs (and, for continuous, the
+  // points) actually live, padded for headroom and clamped to [0,1] for a rate
+  // axis — so there's no empty 0–100% band, but 0/100 values still get spacing
+  // (via insetY) and the axis never shows negative / >100%.
+  const domainValues: number[] = [];
+  for (const summary of props.summaries) {
+    if (summary.mean !== null) domainValues.push(summary.mean);
+    if (summary.lower !== null) domainValues.push(summary.lower);
+    if (summary.upper !== null) domainValues.push(summary.upper);
+  }
+  if (!isBinary) for (const point of props.points) if (Number.isFinite(point.y)) domainValues.push(point.y);
+  const dataMin = domainValues.length ? Math.min(...domainValues) : 0;
+  const dataMax = domainValues.length ? Math.max(...domainValues) : 1;
+  const [yMin, yMax] = paddedDomain(dataMin, dataMax, {
+    pad: 0.1,
+    clampMin: isBinary ? 0 : undefined,
+    clampMax: isBinary ? 1 : undefined
+  });
+
+  // Below ~132px there isn't room for the x-axis title band; drop it (the group
+  // labels still identify the axis) and thin the y-ticks so nothing overlaps or
+  // clips. This lets the chart degrade gracefully into very short panels.
+  const shortChart = height < 132;
+  const frame = chartFrame({
+    width,
+    height,
+    y: { ticks: true, title: true },
+    x: shortChart ? { ticks: true } : { ticks: true, title: true },
+    yDomain: [yMin, yMax],
+    insetY: shortChart ? 7 : 12
+  });
+  const { plot, yScale, anchors } = frame;
+  const groupX = (group: 0 | 1) => plot.x + plot.width * (group === 0 ? 0.32 : 0.68);
   const maxWeight = Math.max(...props.points.map((point) => point.weight), 1);
-  const formatOutcome = (value: number) => props.outcomeKind === "binary" ? formatPercent(value) : formatValue(value);
-  const pointY = (point: ScatterPoint, group: 0 | 1) => {
-    if (props.outcomeKind !== "binary") return y(point.y);
-    const outcome = coerceBinary(point.y);
-    const jitter = deterministicCategoryOutcomeJitter(point.index, group, 13) * 0.045;
-    return y(outcome === 1 ? clamp(0.97 + jitter, 0.93, 1) : clamp(0.03 + jitter, 0, 0.07));
-  };
-  const pointX = (point: ScatterPoint, group: 0 | 1) => groupX(group) + deterministicCategoryOutcomeJitter(point.index, group, 29) * (props.compact ? 26 : 34);
+  const formatOutcome = (value: number) => isBinary ? formatPercent(value) : formatValue(value);
+  const ticks = niceTicks(yMin, yMax, shortChart || props.compact ? 2 : 3);
+  const pointX = (point: ScatterPoint, group: 0 | 1) => groupX(group) + deterministicCategoryOutcomeJitter(point.index, group, 29) * (props.compact ? 22 : 30);
+
   return (
     <div ref={wrapRef} className={`category-outcome-plot-wrap${props.compact ? " compact" : ""}`}>
     <svg
@@ -75,27 +102,29 @@ export function CategoryOutcomePlot(props: {
       role="img"
       aria-label={props.ariaLabel ?? `${props.yLabel} by ${props.xLabel}`}
     >
-      <rect className="category-outcome-background" x={plot.left} y={plot.top} width={plotWidth} height={plotHeight} rx="5" />
-      <line className="category-outcome-axis" x1={plot.left} x2={plot.left + plotWidth} y1={plot.top + plotHeight} y2={plot.top + plotHeight} />
-      <line className="category-outcome-axis" x1={plot.left} x2={plot.left} y1={plot.top} y2={plot.top + plotHeight} />
-      <line className="category-outcome-guide" x1={plot.left} x2={plot.left + plotWidth} y1={y(max)} y2={y(max)} />
-      <line className="category-outcome-guide" x1={plot.left} x2={plot.left + plotWidth} y1={y(min)} y2={y(min)} />
-      <text className="category-outcome-axis-label y-start" x={plot.left - 7} y={y(min) + 4}>{formatOutcome(min)}</text>
-      <text className="category-outcome-axis-label y-end" x={plot.left - 7} y={y(max) + 4}>{formatOutcome(max)}</text>
-      <text className="category-outcome-axis-title x" x={plot.left + plotWidth / 2} y={height - 4}>{abbreviateLabel(props.xLabel, props.compact ? 22 : 28)}</text>
-      <text className="category-outcome-axis-title y" x="12" y={plot.top + plotHeight / 2} transform={`rotate(-90 12 ${plot.top + plotHeight / 2})`}>{abbreviateLabel(props.yLabel, props.compact ? 18 : 24)}</text>
+      <rect className="category-outcome-background" x={plot.x} y={plot.y} width={plot.width} height={plot.height} rx="5" />
+      <line className="category-outcome-axis" x1={plot.x} x2={plot.right} y1={plot.bottom} y2={plot.bottom} />
+      <line className="category-outcome-axis" x1={plot.x} x2={plot.x} y1={plot.y} y2={plot.bottom} />
+      {ticks.map((tick) => (
+        <g key={tick}>
+          <line className="category-outcome-guide" x1={plot.x} x2={plot.right} y1={yScale(tick)} y2={yScale(tick)} />
+          <text className="category-outcome-axis-label" x={anchors.ticks.yX} y={yScale(tick) + 4}>{formatOutcome(tick)}</text>
+        </g>
+      ))}
+      {!shortChart && <SvgAxisName className="category-outcome-axis-title x" label={props.xLabel} x={plot.cx} y={anchors.title.xY} maxChars={props.compact ? 22 : 28} />}
+      <SvgAxisName className="category-outcome-axis-title y" label={props.yLabel} x={anchors.title.yX} y={plot.cy} transform={`rotate(-90 ${anchors.title.yX} ${plot.cy})`} maxChars={props.compact ? 16 : 22} />
       {props.summaries.map((summary) => {
         const x = groupX(summary.group);
         return (
           <g className={`category-outcome-group ${summary.tone}`} key={summary.group}>
-            <line className="category-outcome-category-guide" x1={x} x2={x} y1={plot.top} y2={plot.top + plotHeight} />
-            {summary.points.map((point) => {
+            <line className="category-outcome-category-guide" x1={x} x2={x} y1={plot.y} y2={plot.bottom} />
+            {!isBinary && summary.points.map((point) => {
               const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
               return (
                 <circle
                   className={`category-outcome-observation ${summary.tone}`}
                   cx={pointX(point, summary.group)}
-                  cy={pointY(point, summary.group)}
+                  cy={yScale(point.y)}
                   r={1.5 + normalizedWeight * 1.4}
                   key={`${summary.group}-${point.index}`}
                   style={{ opacity: 0.05 + normalizedWeight * 0.1 }}
@@ -104,18 +133,18 @@ export function CategoryOutcomePlot(props: {
             })}
             {summary.lower !== null && summary.upper !== null && (
               <g className={`category-outcome-ci ${summary.tone}`}>
-                <line x1={x} x2={x} y1={y(summary.upper)} y2={y(summary.lower)} />
-                <line x1={x - 9} x2={x + 9} y1={y(summary.upper)} y2={y(summary.upper)} />
-                <line x1={x - 9} x2={x + 9} y1={y(summary.lower)} y2={y(summary.lower)} />
+                <line x1={x} x2={x} y1={yScale(summary.upper)} y2={yScale(summary.lower)} />
+                <line x1={x - 9} x2={x + 9} y1={yScale(summary.upper)} y2={yScale(summary.upper)} />
+                <line x1={x - 9} x2={x + 9} y1={yScale(summary.lower)} y2={yScale(summary.lower)} />
               </g>
             )}
             {summary.mean !== null && (
               <>
-                <circle className={`category-outcome-summary-point ${summary.tone}`} cx={x} cy={y(summary.mean)} r={5.2} />
-                <text className="category-outcome-summary-value" x={x} y={Math.max(plot.top + 10, y(summary.mean) - 8)}>{formatOutcome(summary.mean)}</text>
+                <circle className={`category-outcome-summary-point ${summary.tone}`} cx={x} cy={yScale(summary.mean)} r={5.2} />
+                <text className="category-outcome-summary-value" x={x} y={Math.max(plot.y + 11, yScale(summary.mean) - 9)}>{formatOutcome(summary.mean)}</text>
               </>
             )}
-            <text className="category-outcome-group-label" x={x} y={height - 23}>{categoryOutcomeGroupTickLabel(summary.label, summary.group, Boolean(props.compact))}</text>
+            <text className="category-outcome-group-label" x={x} y={anchors.ticks.xY}>{categoryOutcomeGroupTickLabel(summary.label, summary.group, Boolean(props.compact))}</text>
           </g>
         );
       })}
@@ -325,19 +354,43 @@ export function RiskCurvePlot(props: {
   bins: RiskBin[];
   xLabel: string;
   yLabel: string;
+  /** Shared y-domain (e.g. across small-multiples). Defaults to full 0–100%. */
+  yDomain?: [number, number];
   compact?: boolean;
   ariaLabel?: string;
 }) {
   const width = props.compact ? 300 : 360;
-  const height = props.compact ? 168 : 196;
-  const plot = { left: 42, right: 18, top: 22, bottom: 54 };
-  const plotWidth = width - plot.left - plot.right;
-  const plotHeight = height - plot.top - plot.bottom;
-  const count = props.bins.length;
-  const bandX = (index: number) => plot.left + plotWidth * ((index + 0.5) / Math.max(count, 1));
-  const y = (value: number) => plot.top + (1 - clamp(value, 0, 1)) * plotHeight;
-  const linePoints = props.bins
-    .map((bin, index) => (Number.isFinite(bin.mean) ? `${bandX(index)},${y(bin.mean)}` : null))
+  const height = props.compact ? 172 : 200;
+  const bins = props.bins;
+  const lastBin = bins[bins.length - 1];
+  // Continuous exposure x-axis from the band edges, so we can show a few nice
+  // numeric ticks instead of cramming a range label under every band (which
+  // overlapped). y stays 0–100% so stacked small-multiples are comparable.
+  const xMin = bins.length ? Math.min(bins[0]!.loEdge, ...bins.map((bin) => bin.center)) : 0;
+  const xMax = lastBin ? (lastBin.hiEdge ?? Math.max(...bins.map((bin) => bin.center))) : 1;
+  // A shared yDomain (small-multiples) wins; otherwise crop to the data so a
+  // "flat high" curve (90–99%) doesn't sit in an empty 0–100% band.
+  const rates = bins.flatMap((bin) => [bin.mean, bin.lower, bin.upper]).filter((value): value is number => value !== null && Number.isFinite(value));
+  const [yMin, yMax] = props.yDomain
+    ?? (rates.length ? paddedDomain(Math.min(...rates), Math.max(...rates), { pad: 0.12, clampMin: 0, clampMax: 1 }) : [0, 1]);
+  // Value labels are noise (and overlap) once there are many bins.
+  const showValues = bins.length <= 8;
+  const frame = chartFrame({
+    width,
+    height,
+    y: { ticks: true, title: true },
+    x: { ticks: true, title: true },
+    xDomain: [xMin, xMax],
+    yDomain: [yMin, yMax],
+    insetX: 14,
+    insetY: 8
+  });
+  const { plot, xScale, yScale, anchors } = frame;
+  const bandX = (bin: RiskBin) => xScale(bin.center);
+  const yTicks = niceTicks(yMin, yMax, props.compact ? 2 : 3);
+  const xTicks = niceTicks(xMin, xMax, props.compact ? 3 : 5);
+  const linePoints = bins
+    .map((bin) => (Number.isFinite(bin.mean) ? `${bandX(bin)},${yScale(bin.mean)}` : null))
     .filter((point): point is string => point !== null)
     .join(" ");
   return (
@@ -347,32 +400,34 @@ export function RiskCurvePlot(props: {
       role="img"
       aria-label={props.ariaLabel ?? `${props.yLabel} by ${props.xLabel}`}
     >
-      <rect className="category-outcome-background" x={plot.left} y={plot.top} width={plotWidth} height={plotHeight} rx="5" />
-      <line className="category-outcome-axis" x1={plot.left} x2={plot.left + plotWidth} y1={plot.top + plotHeight} y2={plot.top + plotHeight} />
-      <line className="category-outcome-axis" x1={plot.left} x2={plot.left} y1={plot.top} y2={plot.top + plotHeight} />
-      <line className="category-outcome-guide" x1={plot.left} x2={plot.left + plotWidth} y1={y(1)} y2={y(1)} />
-      <line className="category-outcome-guide" x1={plot.left} x2={plot.left + plotWidth} y1={y(0.5)} y2={y(0.5)} />
-      <line className="category-outcome-guide" x1={plot.left} x2={plot.left + plotWidth} y1={y(0)} y2={y(0)} />
-      <text className="category-outcome-axis-label y-end" x={plot.left - 7} y={y(1) + 4}>{formatPercent(1)}</text>
-      <text className="category-outcome-axis-label y-start" x={plot.left - 7} y={y(0.5) + 4}>{formatPercent(0.5)}</text>
-      <text className="category-outcome-axis-label y-start" x={plot.left - 7} y={y(0) + 4}>{formatPercent(0)}</text>
-      <text className="category-outcome-axis-title x" x={plot.left + plotWidth / 2} y={height - 4}>{abbreviateLabel(props.xLabel, props.compact ? 22 : 28)}</text>
-      <text className="category-outcome-axis-title y" x="12" y={plot.top + plotHeight / 2} transform={`rotate(-90 12 ${plot.top + plotHeight / 2})`}>{abbreviateLabel(props.yLabel, props.compact ? 18 : 24)}</text>
+      <rect className="category-outcome-background" x={plot.x} y={plot.y} width={plot.width} height={plot.height} rx="5" />
+      <line className="category-outcome-axis" x1={plot.x} x2={plot.right} y1={plot.bottom} y2={plot.bottom} />
+      <line className="category-outcome-axis" x1={plot.x} x2={plot.x} y1={plot.y} y2={plot.bottom} />
+      {yTicks.map((tick) => (
+        <g key={tick}>
+          <line className="category-outcome-guide" x1={plot.x} x2={plot.right} y1={yScale(tick)} y2={yScale(tick)} />
+          <text className="category-outcome-axis-label" x={anchors.ticks.yX} y={yScale(tick) + 4}>{formatPercent(tick)}</text>
+        </g>
+      ))}
+      {xTicks.map((tick) => (
+        <text key={`x${tick}`} className="risk-curve-band-label" x={xScale(tick)} y={anchors.ticks.xY} textAnchor="middle">{roundBandEdge(tick)}</text>
+      ))}
+      <SvgAxisName className="category-outcome-axis-title x" label={props.xLabel} x={plot.cx} y={anchors.title.xY} maxChars={props.compact ? 22 : 28} />
+      <SvgAxisName className="category-outcome-axis-title y" label={props.yLabel} x={anchors.title.yX} y={plot.cy} transform={`rotate(-90 ${anchors.title.yX} ${plot.cy})`} maxChars={props.compact ? 16 : 22} />
       {linePoints.length > 0 && <polyline className="risk-curve-line" points={linePoints} />}
-      {props.bins.map((bin, index) => {
-        const cx = bandX(index);
+      {bins.map((bin, index) => {
+        const cx = bandX(bin);
         return (
           <g className="risk-curve-bin" key={`${index}-${bin.center}`}>
             {bin.lower !== null && bin.upper !== null && (
               <g className="category-outcome-ci treated">
-                <line x1={cx} x2={cx} y1={y(bin.upper)} y2={y(bin.lower)} />
-                <line x1={cx - 6} x2={cx + 6} y1={y(bin.upper)} y2={y(bin.upper)} />
-                <line x1={cx - 6} x2={cx + 6} y1={y(bin.lower)} y2={y(bin.lower)} />
+                <line x1={cx} x2={cx} y1={yScale(bin.upper)} y2={yScale(bin.lower)} />
+                <line x1={cx - 6} x2={cx + 6} y1={yScale(bin.upper)} y2={yScale(bin.upper)} />
+                <line x1={cx - 6} x2={cx + 6} y1={yScale(bin.lower)} y2={yScale(bin.lower)} />
               </g>
             )}
-            <circle className="category-outcome-summary-point treated" cx={cx} cy={y(bin.mean)} r={4.2} />
-            <text className="category-outcome-summary-value" x={cx} y={Math.max(plot.top + 10, y(bin.mean) - 9)}>{formatPercent(bin.mean)}</text>
-            <text className="risk-curve-band-label" x={cx} y={plot.top + plotHeight + 15} textAnchor="middle">{formatBandEdges(bin.loEdge, bin.hiEdge)}</text>
+            <circle className="category-outcome-summary-point treated" cx={cx} cy={yScale(bin.mean)} r={4.2} />
+            {showValues && <text className="category-outcome-summary-value" x={cx} y={Math.max(plot.y + 10, yScale(bin.mean) - 9)}>{formatPercent(bin.mean)}</text>}
           </g>
         );
       })}

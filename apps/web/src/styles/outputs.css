@@ -311,10 +311,9 @@
 
 .completed-metric-grid span {
   color: #3d464e;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  line-height: 13px;
-  text-transform: uppercase;
+  line-height: 14px;
 }
 
 .completed-metric-grid strong {
@@ -343,10 +342,9 @@
 }
 
 .huh-shift-plot-card > .module-card-header strong {
-  color: #3d464e;
-  font-size: 11px;
-  line-height: 15px;
-  text-transform: uppercase;
+  color: #263133;
+  font-size: 12.5px;
+  line-height: 16px;
 }
 
 .huh-shift-plot-card > .module-card-header span {
@@ -391,11 +389,13 @@
   stroke-width: 2px;
 }
 
-.huh-shift-dot.before {
+.huh-shift-dot.before,
+.huh-shift-dot.observed {
   fill: #6f858f;
 }
 
-.huh-shift-dot.after {
+.huh-shift-dot.after,
+.huh-shift-dot.causal {
   fill: var(--accent);
 }
 
@@ -418,6 +418,19 @@
   font-weight: 750;
 }
 
+.huh-shift-row-sublabel {
+  fill: var(--muted);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+.huh-shift-caption {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 15px;
+}
+
 .huh-shift-value {
   fill: #202428;
   font-size: 11px;
@@ -426,6 +439,12 @@
 
 .huh-shift-axis-label.end {
   text-anchor: end;
+}
+
+.huh-shift-axis-title {
+  fill: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .completed-output-list {
@@ -628,7 +647,7 @@
 }
 
 .what-if-survival-line.series-1 {
-  stroke: #b45f3a;
+  stroke: var(--chart-series-2);
 }
 
 .what-if-survival-dot {
@@ -638,7 +657,7 @@
 }
 
 .what-if-survival-dot.series-1 {
-  stroke: #b45f3a;
+  stroke: var(--chart-series-2);
 }
 
 .what-if-survival-label {
@@ -646,6 +665,12 @@
   font-size: 10px;
   font-weight: 800;
   text-anchor: middle;
+}
+
+.what-if-survival-axis-title {
+  fill: #52616d;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .what-if-survival-legend,
