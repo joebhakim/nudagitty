@@ -2733,9 +2733,19 @@ function configureCatsHighriseSyndrome(document: GraphDocument): GraphDocument {
       { x: 32, y: 0.44 }
     ]
   });
-  // Survival is caused by injury alone: more trauma, less survival.
-  setLogitNode(document, "Survival", 2.85);
-  setLinearCoefficient(document, "Injury_severity", "Survival", -2.2);
+  // Survival is caused by injury alone, but NOT linearly in the log-odds: a cat
+  // shrugs off minor trauma (survival stays at its baseline high rate), then once
+  // injury crosses a roughly fatal threshold the odds of survival collapse, and
+  // for catastrophic trauma they bottom out on a floor (more injury past "almost
+  // certainly fatal" can't lower survival further). That S-shaped dose-response is
+  // a falling smooth_threshold on the logit scale, which is far more honest than a
+  // straight line that would imply every extra unit of injury costs the same odds.
+  setLogitNode(document, "Survival", 4.2);
+  setEdgeMechanism(document, "Injury_severity", "Survival", "smooth_threshold", {
+    scale: -6.8,
+    threshold: 0.78,
+    steepness: 3.2
+  });
   // Survivorship selection: a cat that dies on impact is rarely carried in and
   // recorded, and a visibly hurt (but living) cat is more likely to be taken in
   // than an unscathed one. Conditioning on this recorded sample (Brought_to_vet)
