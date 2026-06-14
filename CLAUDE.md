@@ -43,3 +43,29 @@ Gotchas:
   **vitest-only**, not Playwright.
 - `apps/web/screenshots/` is gitignored, so probes don't dirty the tree. Still delete the temp
   spec and `apps/web/test-results/` when finished.
+
+## Responsive check for major UI changes
+
+For any significant UI/visual change, sanity-check it across screen sizes with the reusable
+tool `apps/web/tests/responsive-screenshots.spec.ts` (gated, so normal runs skip it):
+
+```
+cd apps/web && npm run screenshots:responsive
+```
+
+It drives the app to a target view and shoots it at three sizes — desktop (1440×900), tablet
+(834×1112), and a mainline iPhone (393×852, real mobile emulation) — into
+`apps/web/screenshots/responsive/`. Parameterize via env without editing the file:
+`SHOT_EXAMPLE` (title filter, `""` to skip), `SHOT_MODE` (`pro`|`demo`), `SHOT_SELECT_NODE=0`,
+`SHOT_SELECTOR` (shoot one element), `SHOT_FULLPAGE=1`, `SHOT_NAME` (file prefix). E.g.
+`SHOT_NAME=edge SHOT_SELECTOR=".connection-editor" npm run screenshots:responsive`.
+
+## Reporting generated artifacts
+
+When a screenshot, log, or other file is produced for the user to open, always print its
+**absolute path** (so it's clickable / copy-pasteable without digging around), and use brace
+expansion to enumerate related files compactly. Examples:
+
+- `/home/joe/skunks/nudagitty/apps/web/screenshots/verify/namestyle-{gallery,card-0,card-1}.png`
+- `/home/joe/skunks/nudagitty/apps/web/screenshots/verify/edge-{editor,axes}.png`
+- one card per candidate: `…/verify/namestyle-card-{0..3}.png`
