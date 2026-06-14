@@ -1,0 +1,101 @@
+.gallery-root {
+  padding: 20px 24px 80px;
+  background: #eef2f3;
+  min-height: 100vh;
+}
+
+.gallery-header h1 {
+  margin: 0;
+  font-size: 22px;
+  color: #202428;
+}
+
+.gallery-header p {
+  margin: 4px 0 10px;
+  color: #52616d;
+  font-size: 13px;
+}
+
+.g-cell-code {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #23716f;
+  color: #fff;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.g-section {
+  margin-bottom: 28px;
+}
+
+.g-section > h2 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #3d464e;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.g-grid {
+  display: grid;
+  gap: 10px;
+  align-items: start;
+  width: max-content;
+}
+
+.g-corner {
+  /* empty top-left */
+}
+
+.g-col-head {
+  font-size: 11px;
+  font-weight: 700;
+  color: #65717d;
+  text-align: center;
+  align-self: end;
+  padding-bottom: 2px;
+}
+
+.g-row-head {
+  font-size: 12px;
+  font-weight: 700;
+  color: #3d464e;
+  align-self: center;
+  padding-right: 6px;
+  white-space: nowrap;
+}
+
+.g-cell {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+
+/* The chart fills the box; overflow is hidden so a chart that doesn't fit reads
+   as a clip (and the invariant test catches scrollHeight > clientHeight). */
+.g-chart {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid #cbd5dc;
+  border-radius: 7px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(24, 35, 42, 0.06);
+}
+
+.g-chart > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* In the gallery the chart should fill the given box (no fixed floor), matching
+   how the app's panels constrain it. */
+.g-chart .category-outcome-plot-wrap {
+  min-height: 0;
+  height: 100%;
+}
