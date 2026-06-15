@@ -11,6 +11,8 @@ import {
 } from "../shared/formatting";
 import { empiricalSampleWeight, formatAdjustmentSet, weightedBinaryShare, weightedConditionalMean, weightedJointConditionalMean } from "./helpers";
 import { badControlWarning, describeEstimand } from "./estimand";
+import { HighlightNames, NodeText } from "../shared/NodeNames";
+import { chartFrame } from "../charts/chartFrame";
 import { stratifyRiskCurves } from "./stratify";
 import type { CompletedOutputModule, CompletedOutputRenderOptions, OutputContext } from "./types";
 
@@ -126,11 +128,25 @@ type HuhMetric = {
   upper?: number;
 };
 
+// The contrast at the heart of a paradox card: a naive observed estimate versus
+// the corrected causal estimate of the SAME quantity. Replaces the old, ambiguous
+// "before / after" plot (which just charted metrics[0] vs metrics[1], even when
+// those were unrelated quantities).
+type HuhShiftRow = { label: string; sublabel?: string; value: string; numeric: number; lower?: number; upper?: number };
+type HuhShift = {
+  title: string;
+  axisLabel: string;
+  caption: string;
+  observed: HuhShiftRow;
+  causal: HuhShiftRow;
+};
+
 type HuhCompletedOutput = {
   badge: string;
   conclusion: string;
   metrics: HuhMetric[];
   bullets: Array<{ label: string; text: string }>;
+  shift?: HuhShift;
 };
 
 type WhatIfOutputScale = "risk" | "mean";
@@ -266,11 +282,11 @@ export const completedOutputModules: CompletedOutputModule<unknown>[] = [
     fallback: fallbackOutput("needs roles", "This M-bias output needs Exposure, Collider_score, and Outcome in the graph.")
   },
   {
-    id: "lords-paradox",
-    label: "estimand split",
-    compute: computeLordsParadoxOutput,
+    id: "structural-diagnosis",
+    label: "diagnosis",
+    compute: computeStructuralDiagnosis,
     render: (result) => renderHuhOutput(result as HuhCompletedOutput),
-    fallback: fallbackOutput("needs roles", "This Lord's paradox output needs Program, Baseline_weight, and Final_weight in the graph.")
+    fallback: fallbackOutput("diagnosis", "Mark one exposure and one outcome to read a structural diagnosis of this DAG.")
   },
   {
     id: "chess-intelligence-practice-simple-flip",
@@ -345,13 +361,16 @@ export const completedOutputModules: CompletedOutputModule<unknown>[] = [
 ];
 
 export function computeCompletedOutput(context: OutputContext, moduleId: string | null): ComputedCompletedOutput | null {
-  const module = completedOutputModules.find((candidate) => candidate.id === moduleId);
-  if (!module || !moduleId) return null;
-  return {
-    moduleId,
-    module,
-    result: module.compute(context)
-  };
+  const module = moduleId ? completedOutputModules.find((candidate) => candidate.id === moduleId) : undefined;
+  if (module && moduleId) {
+    return { moduleId, module, result: module.compute(context) };
+  }
+  // No example-specific module: fall back to the generic, DAG-derived structural diagnosis.
+  const diagnosis = completedOutputModules.find((candidate) => candidate.id === "structural-diagnosis");
+  if (!diagnosis) return null;
+  const result = diagnosis.compute(context);
+  if (result === null) return null;
+  return { moduleId: "structural-diagnosis", module: diagnosis, result };
 }
 
 export function renderCompletedOutput(computed: ComputedCompletedOutput, options?: CompletedOutputRenderOptions) {
@@ -714,7 +733,7 @@ function TutoringAdjustedPairsGraph({ output }: { output: TutoringCompletedOutpu
         <strong>Stratified adjustment</strong>
         <span className="module-badge active">Academic_need adjusted</span>
       </div>
-      <svg className="adjusted-pair-graph" viewBox="0 0 340 184" role="img" aria-label="Within academic need vertical score scatterplots">
+      <svg className="adjusted-pair-graph" viewBox="0 0 340 202" role="img" aria-label="Within academic need vertical score scatterplots">
         <line className="adjusted-pair-axis" x1="26" y1="44" x2="26" y2="150" />
         <text className="adjusted-pair-axis-label" x="22" y="48">{formatValue(maxScore)}</text>
         <text className="adjusted-pair-axis-label" x="22" y="154">{formatValue(minScore)}</text>
@@ -748,10 +767,10 @@ function TutoringAdjustedPairsGraph({ output }: { output: TutoringCompletedOutpu
           );
         })}
         <g className="adjusted-pair-legend">
-          <circle className="adjusted-pair-mean untreated" cx="105" cy="14" r="4" />
-          <text x="114" y="18">no tutoring</text>
-          <circle className="adjusted-pair-mean treated" cx="184" cy="14" r="4" />
-          <text x="193" y="18">tutoring</text>
+          <circle className="adjusted-pair-mean untreated" cx="100" cy="193" r="4" />
+          <text x="109" y="197">no tutoring</text>
+          <circle className="adjusted-pair-mean treated" cx="195" cy="193" r="4" />
+          <text x="204" y="197">tutoring</text>
         </g>
       </svg>
       <div className="adjusted-pair-summary">
@@ -763,21 +782,19 @@ function TutoringAdjustedPairsGraph({ output }: { output: TutoringCompletedOutpu
 }
 
 function renderHuhOutput(output: HuhCompletedOutput) {
-  const before = output.metrics[0];
-  const after = output.metrics[1];
   return (
     <CompletedOutputShell badge={output.badge} conclusion={output.conclusion}>
-      <div className="completed-metric-grid">
-        {output.metrics.map((metric) => (
-          <div key={metric.label}>
-            <span>{metric.label}</span>
-            <strong>{metric.value}</strong>
-            <small>{metric.detail}</small>
-          </div>
-        ))}
-      </div>
-      {before && after && before.numericValue !== undefined && after.numericValue !== undefined && (
-        <HuhShiftPlot before={before} after={after} />
+      {output.shift && <HuhShiftPlot shift={output.shift} />}
+      {output.metrics.length > 0 && (
+        <div className="completed-metric-grid">
+          {output.metrics.map((metric) => (
+            <div key={metric.label}>
+              <span>{metric.label}</span>
+              <strong>{metric.value}</strong>
+              <small>{metric.detail}</small>
+            </div>
+          ))}
+        </div>
       )}
       <ul className="completed-output-list">
         {output.bullets.map((bullet) => (
@@ -996,13 +1013,14 @@ function WhatIfMetricGrid(props: { output: WhatIfAdvancedOutput }) {
 
 function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; survivalTime: boolean; denominatorsOpen: boolean }) {
   const width = 340;
-  const height = 142;
-  const plot = { left: 38, right: 18, top: 16, bottom: 26 };
   const series = props.summary.strategies.length > 0 ? props.summary.strategies : props.summary.natural ? [props.summary.natural] : [];
   if (series.length === 0) return null;
   const pointCount = Math.max(...series.map((entry) => entry.points.length));
-  const x = (index: number) => plot.left + (pointCount <= 1 ? 0 : (index / (pointCount - 1)) * (width - plot.left - plot.right));
-  const y = (survival: number) => plot.top + (1 - survival) * (height - plot.top - plot.bottom);
+  const frame = chartFrame({ width, height: 162, x: { ticks: true, title: true }, y: { ticks: true, title: true }, yDomain: [0, 1], insetX: 12, insetY: 6 });
+  const { plot, anchors } = frame;
+  const x = (index: number) => plot.x + (pointCount <= 1 ? plot.width / 2 : (index / (pointCount - 1)) * plot.width);
+  const y = frame.yScale;
+  const yTicks = [0, 0.5, 1];
   const path = (entry: WhatIfStrategySurvivalSummary) => entry.points.map((point, index) => `${index === 0 ? "M" : "L"} ${x(index)} ${y(point.survival)}`).join(" ");
   return (
     <div className="what-if-survival-card">
@@ -1010,11 +1028,12 @@ function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; su
         <strong>{props.survivalTime ? "Observed-death survival by strategy" : "Survival curves by strategy"}</strong>
         <span>{props.summary.label}</span>
       </div>
-      <svg className="what-if-survival-plot" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${props.summary.label} survival curves by strategy`}>
-        <line className="huh-shift-axis" x1={plot.left} y1={height - plot.bottom} x2={width - plot.right} y2={height - plot.bottom} />
-        <line className="huh-shift-axis" x1={plot.left} y1={plot.top} x2={plot.left} y2={height - plot.bottom} />
-        <text className="huh-shift-axis-label" x="2" y={y(1) + 4}>100%</text>
-        <text className="huh-shift-axis-label" x="8" y={y(0) - 2}>0%</text>
+      <svg className="what-if-survival-plot" viewBox={`0 0 ${width} ${frame.height}`} role="img" aria-label={`${props.summary.label} survival curves by strategy`}>
+        <line className="huh-shift-axis" x1={plot.x} y1={plot.bottom} x2={plot.right} y2={plot.bottom} />
+        <line className="huh-shift-axis" x1={plot.x} y1={plot.y} x2={plot.x} y2={plot.bottom} />
+        {yTicks.map((tick) => (
+          <text key={tick} className="huh-shift-axis-label" x={anchors.ticks.yX} y={y(tick) + 4} style={{ textAnchor: "end" }}>{formatPercent(tick)}</text>
+        ))}
         {series.map((entry, seriesIndex) => (
           <g key={entry.strategyId}>
             <path className={`what-if-survival-line series-${seriesIndex}`} d={path(entry)} />
@@ -1024,8 +1043,10 @@ function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; su
           </g>
         ))}
         {series[0]?.points.map((point, index) => (
-          <text key={point.interval} className="what-if-survival-label" x={x(index)} y={height - 5}>{index + 1}</text>
+          <text key={point.interval} className="what-if-survival-label" x={x(index)} y={anchors.ticks.xY}>{index + 1}</text>
         ))}
+        <text className="what-if-survival-axis-title" x={plot.cx} y={anchors.title.xY} style={{ textAnchor: "middle" }}>follow-up interval</text>
+        <text className="what-if-survival-axis-title" x={anchors.title.yX} y={plot.cy} style={{ textAnchor: "middle" }} transform={`rotate(-90 ${anchors.title.yX} ${plot.cy})`}>survival</text>
       </svg>
       <div className="what-if-survival-legend">
         {series.map((entry, index) => (
@@ -1122,55 +1143,58 @@ function WhatIfDynamicSupport(props: { comparison: GMethodsComparison }) {
   );
 }
 
-function HuhShiftPlot(props: { before: HuhMetric; after: HuhMetric }) {
-  const width = 320;
-  const height = 104;
-  const plot = { left: 78, right: 28, top: 18, rowGap: 32 };
-  const values = [
-    props.before.numericValue,
-    props.after.numericValue,
-    props.before.lower,
-    props.before.upper,
-    props.after.lower,
-    props.after.upper
-  ].filter((value): value is number => value !== undefined && Number.isFinite(value));
-  if (values.length === 0) return null;
-  const maxAbs = Math.max(0.1, ...values.map((value) => Math.abs(value)));
-  const domain = maxAbs * 1.18;
-  const x = (value: number) => plot.left + ((value + domain) / (2 * domain)) * (width - plot.left - plot.right);
-  const rows = [
-    { key: "before", label: "before", metric: props.before, y: plot.top + 15 },
-    { key: "after", label: "after", metric: props.after, y: plot.top + 15 + plot.rowGap }
-  ] as const;
+function HuhShiftPlot(props: { shift: HuhShift }) {
+  const { observed, causal } = props.shift;
+  const rows = [{ key: "observed", row: observed }, { key: "causal", row: causal }] as const;
+  const rowGap = 38;
+  const values = rows.flatMap(({ row }) => [row.numeric, row.lower, row.upper])
+    .filter((value): value is number => value !== undefined && Number.isFinite(value));
+  const maxAbs = Math.max(0.05, ...values.map((value) => Math.abs(value)));
+  const domain = maxAbs * 1.28;
+
+  // Declare the layout instead of hand-computing offsets: a fixed left gutter for
+  // the row labels, and a bottom axis carrying tick labels + a title.
+  const frame = chartFrame({
+    width: 360,
+    plotHeight: rowGap * rows.length,
+    y: { size: 150 },
+    x: { ticks: true, title: true },
+    xDomain: [-domain, domain]
+  });
+  const { plot, xScale, anchors } = frame;
+  const rowY = (index: number) => plot.y + rowGap * (index + 0.5);
+
   return (
     <div className="huh-shift-plot-card">
       <div className="module-card-header">
-        <strong>Before / after</strong>
-        <span>same signed scale</span>
+        <strong>{props.shift.title}</strong>
       </div>
-      <svg className="huh-shift-plot" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${props.before.label} compared with ${props.after.label}`}>
-        <line className="huh-shift-axis" x1={plot.left} y1={height - 20} x2={width - plot.right} y2={height - 20} />
-        <line className="huh-shift-zero" x1={x(0)} y1="12" x2={x(0)} y2={height - 18} />
-        <text className="huh-shift-axis-label" x={plot.left} y={height - 4}>{formatSignedValue(-domain)}</text>
-        <text className="huh-shift-axis-label end" x={width - plot.right} y={height - 4}>{formatSignedValue(domain)}</text>
-        {rows.map((row) => (
-          <g key={row.key}>
-            <text className="huh-shift-row-label" x="10" y={row.y + 4}>{row.label}</text>
-            {row.metric.lower !== undefined && row.metric.upper !== undefined && (
-              <line className="huh-shift-interval" x1={x(row.metric.lower)} y1={row.y} x2={x(row.metric.upper)} y2={row.y} />
-            )}
-            <circle className={`huh-shift-dot ${row.key} ${metricToneClass(row.metric.numericValue ?? null)}`} cx={x(row.metric.numericValue ?? 0)} cy={row.y} r="5" />
-            <text className="huh-shift-value" x={Math.min(width - 8, x(row.metric.numericValue ?? 0) + 9)} y={row.y + 4}>{row.metric.value}</text>
-          </g>
-        ))}
+      <svg className="huh-shift-plot" viewBox={`0 0 ${frame.width} ${frame.height}`} role="img" aria-label={props.shift.title}>
+        <line className="huh-shift-zero" x1={xScale(0)} y1={plot.y - 6} x2={xScale(0)} y2={plot.bottom} />
+        {rows.map(({ key, row }, index) => {
+          const y = rowY(index);
+          return (
+            <g key={key}>
+              <text className="huh-shift-row-label" x="8" y={y - 4}>{row.label}</text>
+              {row.sublabel && <text className="huh-shift-row-sublabel" x="8" y={y + 9}>{row.sublabel}</text>}
+              {row.lower !== undefined && row.upper !== undefined && (
+                <line className="huh-shift-interval" x1={xScale(row.lower)} y1={y} x2={xScale(row.upper)} y2={y} />
+              )}
+              <circle className={`huh-shift-dot ${key}`} cx={xScale(row.numeric)} cy={y} r="5.5" />
+              {/* Value sits on the toward-zero side of the dot so it always stays inside the plot. */}
+              <text className="huh-shift-value" x={row.numeric < 0 ? xScale(row.numeric) + 10 : xScale(row.numeric) - 10} y={y + 4} style={{ textAnchor: row.numeric < 0 ? "start" : "end" }}>{row.value}</text>
+            </g>
+          );
+        })}
+        <line className="huh-shift-axis" x1={plot.x} y1={plot.bottom} x2={plot.right} y2={plot.bottom} />
+        <text className="huh-shift-axis-label" x={plot.x} y={anchors.ticks.xY}>{formatSignedValue(-domain)}</text>
+        <text className="huh-shift-axis-label" x={xScale(0)} y={anchors.ticks.xY} style={{ textAnchor: "middle" }}>0</text>
+        <text className="huh-shift-axis-label end" x={plot.right} y={anchors.ticks.xY}>{formatSignedValue(domain)}</text>
+        <text className="huh-shift-axis-title" x={plot.cx} y={anchors.title.xY} style={{ textAnchor: "middle" }}>{props.shift.axisLabel}</text>
       </svg>
+      <p className="huh-shift-caption"><NodeText>{props.shift.caption}</NodeText></p>
     </div>
   );
-}
-
-function metricToneClass(value: number | null): "negative" | "neutral" | "positive" {
-  if (value === null || Math.abs(value) < 0.005) return "neutral";
-  return value < 0 ? "negative" : "positive";
 }
 
 function minimumObservedSupport(comparison: GMethodsComparison): number | null {
@@ -1254,10 +1278,14 @@ function CompletedOutputShell(props: { badge: string; conclusion: string; title?
         <strong>{props.title ?? "Interpretation"}</strong>
         <span className="module-badge active">{props.badge}</span>
       </summary>
-      <div className="completed-output-body">
-        <p className="completed-conclusion">{props.conclusion}</p>
-        {props.children}
-      </div>
+      {/* One wrapper auto-chips every node name in the conclusion, visual reads,
+          backdoor lines, metric labels and bullets below. */}
+      <HighlightNames>
+        <div className="completed-output-body">
+          <p className="completed-conclusion">{props.conclusion}</p>
+          {props.children}
+        </div>
+      </HighlightNames>
     </details>
   );
 }
@@ -1971,14 +1999,28 @@ function computeObesityParadoxOutput(context: OutputContext): HuhCompletedOutput
   const frailtyGap = selectedObeseFrailty - selectedNonObeseFrailty;
   return {
     badge: "obesity paradox",
-    conclusion: `Among people selected for chronic disease, obesity is associated with a ${formatPercentagePoints(selectedDiff)} mortality difference. In the population DGP, do(Obesity=1) changes mortality by ${formatPercentagePoints(doDiff)}. The selected cohort makes obesity and latent frailty substitute routes into disease.`,
+    conclusion: `Obesity looks protective here — but that is the selection talking. Chronic_disease is a collider of Obesity and Frailty, so inside the diseased sample an obese patient is on average less frail than a non-obese one. Intervene on the whole population and the sign flips: Obesity raises Mortality.`,
+    shift: {
+      title: "What the records show vs. what intervening would do",
+      axisLabel: "mortality difference (percentage points)",
+      observed: {
+        label: "In the diseased records",
+        sublabel: `obese ${formatPercent(selectedObeseMortality)} · non-obese ${formatPercent(selectedNonObeseMortality)}`,
+        value: formatPercentagePoints(selectedDiff),
+        numeric: selectedDiff
+      },
+      causal: {
+        label: "If you intervened on everyone",
+        sublabel: `do(1) ${formatPercent(doObeseMortality)} · do(0) ${formatPercent(doNonObeseMortality)}`,
+        value: formatPercentagePoints(doDiff),
+        numeric: doDiff
+      },
+      caption: `Same outcome, two estimands. Selecting on Chronic_disease — a common effect of Obesity and Frailty — opens a backdoor that the population do() closes, so the observed association lands on the opposite side of zero from the real effect.`
+    },
     metrics: [
-      { label: "Selected-sample difference", value: formatPercentagePoints(selectedDiff), detail: `obese ${formatPercent(selectedObeseMortality)} vs non-obese ${formatPercent(selectedNonObeseMortality)}`, numericValue: selectedDiff },
-      { label: "DGP do difference", value: formatPercentagePoints(doDiff), detail: `do(obese) ${formatPercent(doObeseMortality)} vs do(non-obese) ${formatPercent(doNonObeseMortality)}`, numericValue: doDiff },
-      { label: "Frailty imbalance", value: formatSignedValue(frailtyGap), detail: `obese ${formatValue(selectedObeseFrailty)} vs non-obese ${formatValue(selectedNonObeseFrailty)}`, numericValue: frailtyGap }
+      { label: "Frailty imbalance in the sample", value: formatSignedValue(frailtyGap), detail: `obese ${formatValue(selectedObeseFrailty)} vs non-obese ${formatValue(selectedNonObeseFrailty)} — the collider artefact`, numericValue: frailtyGap }
     ],
     bullets: [
-      { label: "Huh", text: "Inside the diseased sample, obese patients can be less frail because obesity itself was one route into the sample." },
       { label: "Selection", text: "Chronic_disease is a selected common effect of Obesity and Frailty." },
       { label: "Report", text: "The disease-restricted association should not be read as a population obesity effect." }
     ]
@@ -2035,9 +2077,9 @@ function computeCatsHighriseSyndromeOutput(context: OutputContext): HuhCompleted
     : null;
   return {
     badge: "falling-cats paradox",
-    conclusion: `Recorded cats fall a mean of ${recordedMeanHeight === null ? "?" : formatValue(recordedMeanHeight)} stories and ${formatPercent(recordedSurvival)} survive, so the data makes long falls look safe. Two things drive it. A real terminal-velocity effect makes injury peak near the seventh story and then fall, and survivorship selection drops the cats killed outright. Intervening still says the 7th floor is the worst place to fall from: do(7 stories) survival is ${formatPercent(survivalPeak)} versus ${formatPercent(survivalTall)} at the 20th.`,
+    conclusion: `Recorded cats fall from a mean of ${recordedMeanHeight === null ? "?" : formatValue(recordedMeanHeight)} stories and ${formatPercent(recordedSurvival)} survive, so the data makes long falls look safe. Two things drive it: a real terminal-velocity effect makes injury severity peak near the seventh story and then fall, and selecting on brought to vet drops the cats killed outright. Intervening still says the 7th floor is the worst place to fall from — at do(fall height = 7), Survival is ${formatPercent(survivalPeak)} versus ${formatPercent(survivalTall)} at the 20th.`,
     metrics: [
-      { label: "injury: 7th vs 20th floor", value: formatSignedValue(injuryGap), detail: `terminal-velocity J-curve: severity ${formatValue(injuryPeak)} at 7 stories vs ${formatValue(injuryTall)} at 20`, numericValue: injuryGap },
+      { label: "injury severity: 7th vs 20th floor", value: formatSignedValue(injuryGap), detail: `terminal-velocity J-curve: injury severity ${formatValue(injuryPeak)} at 7 stories vs ${formatValue(injuryTall)} at 20`, numericValue: injuryGap },
       { label: "do(7th) vs do(20th) survival", value: formatPercentagePoints(survivalGap), detail: "the deadliest height is the mid-rise fall, not the 32nd floor", numericValue: survivalGap },
       { label: "recorded vs true survival", value: formatPercentagePoints(selectionInflation), detail: `clinic records ${formatPercent(recordedSurvival)} vs full population ${formatPercent(populationSurvival)}`, numericValue: selectionInflation }
     ],
@@ -2126,37 +2168,111 @@ function computeMBiasOutput(context: OutputContext): HuhCompletedOutput | null {
   };
 }
 
-function computeLordsParadoxOutput(context: OutputContext): HuhCompletedOutput | null {
-  const { document, simulation } = context;
-  const program = simulation.nodeStates.Program;
-  const baseline = simulation.nodeStates.Baseline_weight;
-  const final = simulation.nodeStates.Final_weight;
-  if (!program || !baseline || !final) return null;
-  const baselineProgram = weightedConditionalMean(program, baseline, 1);
-  const baselineControl = weightedConditionalMean(program, baseline, 0);
-  const changeProgram = weightedConditionalMeanOfDifference(program, final, baseline, 1);
-  const changeControl = weightedConditionalMeanOfDifference(program, final, baseline, 0);
-  if (baselineProgram === null || baselineControl === null || changeProgram === null || changeControl === null) return null;
-  const doProgram = runSimulation(document.graph, { ...document.simulation, overrides: { Program: 1 }, selections: {} });
-  const doControl = runSimulation(document.graph, { ...document.simulation, overrides: { Program: 0 }, selections: {} });
-  const doProgramFinal = doProgram.nodeStates.Final_weight?.empirical.mean;
-  const doControlFinal = doControl.nodeStates.Final_weight?.empirical.mean;
-  if (doProgramFinal === null || doProgramFinal === undefined || doControlFinal === null || doControlFinal === undefined) return null;
-  const changeGap = changeProgram - changeControl;
-  const doGap = doProgramFinal - doControlFinal;
-  const baselineGap = baselineProgram - baselineControl;
+// Generic, example-agnostic diagnosis derived from the DAG structure: classify each
+// conditioned node (backdoor / collider / neutral), state the estimand, compute the crude
+// vs. causal (do) contrast for a binary exposure, and detect the gain-score pattern (a
+// continuous baseline measure of the outcome). This replaces hand-written per-example cards.
+export function computeStructuralDiagnosis(context: OutputContext): HuhCompletedOutput | null {
+  const { analysis, document, simulation } = context;
+  const exposureId = analysis.exposures[0];
+  const outcomeId = analysis.outcomes[0];
+  if (!exposureId || !outcomeId) return null;
+  const exposureNode = document.graph.nodes.find((node) => node.id === exposureId);
+  const outcomeNode = document.graph.nodes.find((node) => node.id === outcomeId);
+  if (!exposureNode || !outcomeNode) return null;
+  const exposureVar = normalizeVariableModel(exposureNode.variable);
+  const outcomeVar = normalizeVariableModel(outcomeNode.variable);
+  const exposureState = simulation.nodeStates[exposureId];
+  const outcomeState = simulation.nodeStates[outcomeId];
+  if (!exposureState || !outcomeState) return null;
+  const exposureBinary = exposureVar.valueType === "binary";
+
+  const colliders = analysis.conditioningRoles.filter((role) => role.classification === "collider");
+  const adjusters = analysis.conditioningRoles.filter((role) => role.classification === "backdoor");
+  const minimalSet = analysis.totalEffect.minimalSets[0] ?? [];
+
+  const metrics: HuhMetric[] = [];
+  let crudeContrast: number | null = null;
+  let causalContrast: number | null = null;
+  if (exposureBinary) {
+    const treated = weightedConditionalMean(exposureState, outcomeState, 1);
+    const control = weightedConditionalMean(exposureState, outcomeState, 0);
+    crudeContrast = treated !== null && control !== null ? treated - control : null;
+    const doTreated = runSimulation(document.graph, { ...document.simulation, overrides: { [exposureId]: 1 }, selections: {} });
+    const doControl = runSimulation(document.graph, { ...document.simulation, overrides: { [exposureId]: 0 }, selections: {} });
+    const dt = doTreated.nodeStates[outcomeId]?.empirical.mean;
+    const dc = doControl.nodeStates[outcomeId]?.empirical.mean;
+    causalContrast = dt !== null && dt !== undefined && dc !== null && dc !== undefined ? dt - dc : null;
+    if (crudeContrast !== null) metrics.push({ label: "crude contrast", value: formatSignedValue(crudeContrast), detail: `observed ${exposureNode.label} difference, unadjusted`, numericValue: crudeContrast });
+    if (causalContrast !== null) metrics.push({ label: "causal contrast — do()", value: formatSignedValue(causalContrast), detail: minimalSet.length > 0 ? `adjusted for ${minimalSet.join(", ")}` : "no adjustment needed", numericValue: causalContrast });
+  }
+
+  // gain-score pattern: a backdoor adjuster that is a continuous baseline measure of the
+  // outcome (same unit, and a direct cause of the outcome) — e.g. Lord's baseline weight.
+  const gainNode = adjusters
+    .map((role) => document.graph.nodes.find((node) => node.id === role.node))
+    .find((node) => {
+      if (!node) return false;
+      const variable = normalizeVariableModel(node.variable);
+      const parentOfOutcome = document.graph.edges.some((edge) => edge.kind === "directed" && edge.source === node.id && edge.target === outcomeId);
+      return variable.valueType !== "binary" && variable.unit.length > 0 && variable.unit === outcomeVar.unit && parentOfOutcome;
+    });
+  let gainScore: number | null = null;
+  let baselineImbalance: number | null = null;
+  if (gainNode && exposureBinary) {
+    const gainState = simulation.nodeStates[gainNode.id];
+    if (gainState) {
+      const treated = weightedConditionalMean(exposureState, gainState, 1);
+      const control = weightedConditionalMean(exposureState, gainState, 0);
+      baselineImbalance = treated !== null && control !== null ? treated - control : null;
+      const gainTreated = weightedConditionalMeanOfDifference(exposureState, outcomeState, gainState, 1);
+      const gainControl = weightedConditionalMeanOfDifference(exposureState, outcomeState, gainState, 0);
+      gainScore = gainTreated !== null && gainControl !== null ? gainTreated - gainControl : null;
+      if (baselineImbalance !== null) metrics.push({ label: `${gainNode.label} imbalance`, value: formatSignedValue(baselineImbalance), detail: "the groups differ on the baseline measure", numericValue: baselineImbalance });
+      if (gainScore !== null) metrics.push({ label: "change-score (gain)", value: formatSignedValue(gainScore), detail: `gain ${outcomeNode.label} − ${gainNode.label} — the effect on the change`, numericValue: gainScore });
+    }
+  }
+
+  if (metrics.length === 0) return null;
+
+  const primaryRole = analysis.conditioningRoles[0];
+  const primaryNode = primaryRole ? document.graph.nodes.find((node) => node.id === primaryRole.node) : undefined;
+  const estimand = describeEstimand({
+    operation: primaryRole?.operation ?? "none",
+    exposureLabel: exposureNode.label,
+    outcomeLabel: outcomeNode.label,
+    nodeLabel: primaryNode?.label ?? primaryRole?.node,
+    value: primaryNode && normalizeVariableModel(primaryNode.variable).valueType === "binary" ? 1 : undefined
+  });
+
+  const hasGainScore = gainNode !== undefined && gainScore !== null;
+  let conclusion: string;
+  let recommendation: string;
+  if (colliders.length > 0) {
+    conclusion = `${colliders[0]!.node} is a collider on ${exposureNode.label} → ${outcomeNode.label}; conditioning on it opens a biasing path, so the unconditioned (crude) estimate is the unbiased one.`;
+    recommendation = `Do not control for ${colliders.map((role) => role.node).join(", ")}.`;
+  } else if (hasGainScore) {
+    conclusion = `Two analyses of the same pre/post data disagree. The change score (gain in ${outcomeNode.label}) makes ${exposureNode.label} look like ${formatSignedValue(gainScore!)}, while adjusting for ${gainNode!.label} (ANCOVA) gives ${causalContrast !== null ? formatSignedValue(causalContrast) : "n/a"}. These are different estimands — the effect on the change versus the effect at a fixed ${gainNode!.label}. The groups start ${baselineImbalance !== null ? `${formatSignedValue(baselineImbalance)} apart` : "apart"} on ${gainNode!.label} and high scorers regress toward the mean, so the two diverge. This is Lord's paradox, not generic confounding.`;
+    recommendation = `Choose the estimand before comparing: effect on the change (change score) versus the effect at equal ${gainNode!.label} (ANCOVA / adjust). With non-random groups the change score is biased for the level effect.`;
+  } else if (adjusters.length > 0) {
+    conclusion = `${exposureNode.label} → ${outcomeNode.label} is confounded by ${adjusters.map((role) => role.node).join(", ")}. Adjusting identifies the effect: crude contrast ${crudeContrast !== null ? formatSignedValue(crudeContrast) : "n/a"} versus causal ${causalContrast !== null ? formatSignedValue(causalContrast) : "n/a"}.`;
+    recommendation = analysis.totalEffect.valid ? `Identified by adjusting for ${(minimalSet.length > 0 ? minimalSet : adjusters.map((role) => role.node)).join(", ")}.` : `Adjust for ${minimalSet.join(", ") || "a valid backdoor set"} to identify the effect.`;
+  } else if (analysis.openBiasingPathCount > 0) {
+    conclusion = `${exposureNode.label} → ${outcomeNode.label} has ${analysis.openBiasingPathCount} open biasing path(s); the crude contrast ${crudeContrast !== null ? formatSignedValue(crudeContrast) : ""} is confounded.`;
+    recommendation = minimalSet.length > 0 ? `Adjust for ${minimalSet.join(", ")}.` : "No valid adjustment set exists in this graph.";
+  } else {
+    conclusion = `No open biasing paths between ${exposureNode.label} and ${outcomeNode.label}; the crude contrast ${crudeContrast !== null ? formatSignedValue(crudeContrast) : ""} is already the causal effect.`;
+    recommendation = "No adjustment needed.";
+  }
+
   return {
-    badge: "estimand split",
-    conclusion: `The change-score comparison says Program changes weight by ${formatSignedValue(changeGap)} kg, while the baseline-standardized DGP do difference on final weight is ${formatSignedValue(doGap)} kg. The groups start ${formatSignedValue(baselineGap)} kg apart, so the two analyses are not answering the same question.`,
-    metrics: [
-      { label: "Change-score difference", value: formatSignedValue(changeGap), detail: `program ${formatValue(changeProgram)} kg vs control ${formatValue(changeControl)} kg`, numericValue: changeGap },
-      { label: "DGP do difference", value: formatSignedValue(doGap), detail: `do(program) ${formatValue(doProgramFinal)} kg vs do(control) ${formatValue(doControlFinal)}`, numericValue: doGap },
-      { label: "Baseline imbalance", value: formatSignedValue(baselineGap), detail: `program ${formatValue(baselineProgram)} kg vs control ${formatValue(baselineControl)} kg`, numericValue: baselineGap }
-    ],
+    badge: colliders.length > 0 ? "bad control" : hasGainScore ? "estimand split" : adjusters.length > 0 ? "confounding" : "identified",
+    conclusion,
+    metrics,
     bullets: [
-      { label: "Huh", text: "Change scores and baseline-adjusted final outcomes can disagree because they encode different estimands." },
-      { label: "Question first", text: "Ask whether the target is change from baseline or final outcome at comparable baseline values." },
-      { label: "Report", text: "Do not treat this as a generic model-choice dispute; state the causal question." }
+      { label: "Estimand", text: `${estimand.formal} — ${estimand.plain}` },
+      { label: "Structure", text: analysis.conditioningRoles.length > 0 ? analysis.conditioningRoles.map((role) => `${role.node}: ${role.classification}`).join("; ") : "no variables conditioned" },
+      { label: "Recommendation", text: recommendation }
     ]
   };
 }

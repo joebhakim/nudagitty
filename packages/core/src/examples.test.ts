@@ -136,7 +136,6 @@ describe("example catalog", () => {
       "cats-highrise-syndrome": "cats-highrise-syndrome",
       "policing-encounters": "policing-encounters",
       "m-bias-adjustment": "m-bias-adjustment",
-      "lords-paradox": "lords-paradox",
       "what-if-showcase-dynamic-rules": "what-if-dynamic-g-formula",
       "what-if-showcase-survival-curves": "what-if-nhefs-mortality-survival",
       "what-if-showcase-hazard-denominator": "what-if-hazard-selection",
@@ -415,21 +414,22 @@ describe("example catalog", () => {
     const document = exampleDocument("lords-paradox");
     if (!document) throw new Error("missing Lord's paradox example");
     const result = runSimulation(document.graph, document.simulation);
-    const program = result.nodeStates.Program;
-    const baseline = result.nodeStates.Baseline_weight;
-    const final = result.nodeStates.Final_weight;
-    if (!program || !baseline || !final) throw new Error("missing Lord node state");
-    const changeGap = conditionalMeanOfDifference(program.empirical.samples, final.empirical.samples, baseline.empirical.samples, 1) -
-      conditionalMeanOfDifference(program.empirical.samples, final.empirical.samples, baseline.empirical.samples, 0);
-    const baselineGap = conditionalMean(program.empirical.samples, baseline.empirical.samples, 1) -
-      conditionalMean(program.empirical.samples, baseline.empirical.samples, 0);
-    const doProgram = runSimulation(document.graph, { ...document.simulation, overrides: { Program: 1 }, selections: {} });
-    const doControl = runSimulation(document.graph, { ...document.simulation, overrides: { Program: 0 }, selections: {} });
-    const adjustedFinalGap = (doProgram.nodeStates.Final_weight?.empirical.mean ?? 0) - (doControl.nodeStates.Final_weight?.empirical.mean ?? 0);
+    const method = result.nodeStates.Teaching_method;
+    const pretest = result.nodeStates.Pretest;
+    const posttest = result.nodeStates.Posttest;
+    if (!method || !pretest || !posttest) throw new Error("missing Lord node state");
+    // change score (gain) is negative for the new-method class, even though the method helps
+    const changeGap = conditionalMeanOfDifference(method.empirical.samples, posttest.empirical.samples, pretest.empirical.samples, 1) -
+      conditionalMeanOfDifference(method.empirical.samples, posttest.empirical.samples, pretest.empirical.samples, 0);
+    const baselineGap = conditionalMean(method.empirical.samples, pretest.empirical.samples, 1) -
+      conditionalMean(method.empirical.samples, pretest.empirical.samples, 0);
+    const doNew = runSimulation(document.graph, { ...document.simulation, overrides: { Teaching_method: 1 }, selections: {} });
+    const doOld = runSimulation(document.graph, { ...document.simulation, overrides: { Teaching_method: 0 }, selections: {} });
+    const adjustedFinalGap = (doNew.nodeStates.Posttest?.empirical.mean ?? 0) - (doOld.nodeStates.Posttest?.empirical.mean ?? 0);
 
-    expect(changeGap).toBeLessThan(0);
-    expect(adjustedFinalGap).toBeGreaterThan(0);
-    expect(baselineGap).toBeGreaterThan(6);
+    expect(changeGap).toBeLessThan(0); // gain-score says the new method is worse
+    expect(adjustedFinalGap).toBeGreaterThan(0); // ANCOVA says it helps (opposite sign)
+    expect(baselineGap).toBeGreaterThan(6); // the new-method class started well ahead
   });
 
   it("ships a paper-shaped chess selected-sample example that fails to flip sign", () => {

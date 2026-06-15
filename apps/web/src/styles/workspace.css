@@ -521,6 +521,17 @@
   border-left: 1px solid var(--line);
 }
 
+/* Output frames fill their resizable panel so a short chart/card does not leave
+   bare panel whitespace below it. */
+.workspace-output-panel-group .side-panel {
+  height: 100%;
+  min-height: 0;
+}
+
+.workspace-output-panel-group .module-frame {
+  height: 100%;
+}
+
 .editor-column {
   padding: 12px;
   border-right: 1px solid var(--line);

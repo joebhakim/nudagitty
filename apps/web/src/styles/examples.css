@@ -189,3 +189,62 @@
   font-size: 14px;
 }
 
+
+/* Per-example "i" explanation overlay */
+.explanation-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 30, 28, 0.4);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 1000;
+  padding: 48px 16px;
+  overflow: auto;
+}
+
+.explanation-modal {
+  background: #fff;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 760px;
+  max-height: 85vh;
+  overflow: auto;
+  padding: 18px 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.explanation-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.explanation-modal-header strong { font-size: 16px; }
+
+.explanation-modal-header button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--muted);
+}
+
+.example-explanation { display: grid; gap: 16px; }
+
+.explanation-explainer { display: grid; gap: 10px; font-size: 13px; line-height: 19px; }
+.explanation-explainer p, .explanation-explainer ul { margin: 0; }
+.explanation-explainer ul { padding-left: 18px; display: grid; gap: 4px; }
+
+.explanation-comparison { display: grid; gap: 8px; }
+.explanation-comparison table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.explanation-comparison th, .explanation-comparison td {
+  border: 1px solid var(--border, #e2e8e6);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.explanation-comparison thead th { background: var(--accent-soft, #eef5f3); color: var(--accent); }
+.explanation-comparison tbody th { font-weight: 600; color: #4f5b65; width: 26%; }
+.explanation-comparison p { margin: 0; font-size: 12px; color: var(--muted); }

@@ -33,3 +33,26 @@ Keep lightweight follow-ups here when a branch is reviewable but still needs pro
 - [ ] Add a phone-ban/school-policy example if the 2026 NBER source is stable and accessible. Target: staggered adoption, baseline trends, student composition, distraction/discipline/well-being/test-score mediators, and interference across students/classrooms.
 - [ ] Add a climate/wildfire-smoke health example from 2025 Nature work. Target: climate -> fire/weather -> smoke PM2.5 -> exposure -> mortality, with spatial/temporal confounding, nonlinear dose response, adaptation, and projection versus causal-estimation distinction.
 - [ ] For this track, avoid presenting reconstructed graphs as "the paper's DAG" unless the paper explicitly supplies one. Label them as "Nudagitty reconstruction of the paper's implicit causal model" and keep assumptions editable.
+
+## Hand-Written Copy: Staleness + Auto-Population Sweep
+
+From a codebase sweep (2026-06-12). The recurring risk: output prose and labels hardcode node names, structural claims, or calibrated numbers that drift when a DAG is renamed/recalibrated. The recurring opportunity: most of it is derivable from the existing analysis layer (`conditioningRoles`/`classifyConditioned`, `computeStructuralDiagnosis`, the estimand descriptor). Note: the cats recalibration did NOT break existing cats copy — the injury J-curve drives the "seventh story" claims and was untouched — but it is exactly this coupling that motivates the work below.
+
+Highest leverage: a `(operation, exposure, outcome, adjuster, conditioningRoles) -> { narrative, explainer }` helper so renaming a node or recalibrating can never desync the prose, and every example gets an "i" panel for free.
+
+Review for staleness (hand-written, drifts silently):
+
+- [ ] Migrate per-example output narratives off literal node names. `modules.tsx` `visualRead`/`verdict`/`conclusion` for Simpson (~1504), ICU (~1568), College (~1629), Tutoring (~1791), the demo conclusions (~491, ~666), and all 7 "huh" examples (front-door ~1892, birthweight ~1927, obesity ~1962, cats ~2029, policing ~2078, m-bias ~2117, chess ~2256). Interpolated numbers are fine; the embedded variable names and structural claims ("no Exposure -> Outcome path") are the drift risk.
+- [ ] Replace the ICU hardcoded collider warning (`modules.tsx:1569`, the `ICU_admission -> Triage_score <- Severity` string) with the generic `badControlWarning` + `classifyConditioned` path it predates.
+- [ ] Derive the App.tsx ledger notes (`~3568, ~3576-3577, ~3611, ~3618`) — currently name Severity/Academic_need and their estimand semantics by hand.
+- [ ] Showcase guide `App.tsx:3933` hardcodes the Death_5y/Death_10y horizons ("death by 5y carries into death by 10y") — read timepoints from graph/metadata.
+- [ ] Justify or centralize hardcoded numeric thresholds: weak-support cutoff `n<8 || <8%` (`modules.tsx:1757`), M-bias stratification `quantile(…, 0.7)` (`modules.tsx:2103`), and the cats injury bin `7` passed to `stratifyRiskCurves`.
+- [ ] Add a calibration-snapshot test that fails when copy numbers (e.g. cats "~90% survival", "mean near 5.5") drift from the live simulation, so recalibration surfaces stale prose instead of hiding it.
+
+Auto-population opportunities (derivable from DAG/sim today):
+
+- [ ] Delete the App.tsx per-example label special-cases that already have generic graph-derived fallbacks beside them: `rawAdjustmentLabel` (~3426-3427), `selectedAdjustmentLabel` (~3434-3435), `basicDemoRecommendedAdjustmentId` (~3448-3451).
+- [ ] Auto-generate the "i" explainer (`ExampleExplanation.tsx`): only 2 of ~87 examples (`lords-paradox`, `simpson-severity`) have an entry; the rest show nothing. Generate a baseline from `conditioningRoles`/`classifyConditioned` + `computeStructuralDiagnosis` + estimand descriptor, falling back to hand-authored prose for the special pair. Keep the Simpson<->Lord table editorial.
+- [ ] Template the what-if conclusions (`modules.tsx:1305-1397`) off each config's metadata names (L1/A0/A1/CD4/ART) instead of interpolating them by hand.
+
+Genuinely fine (do not touch): estimand strings (`estimand.ts:20-50`), `OPERATION_LABELS/BLURBS`, `frameOperation` titles (`App.tsx:776`), the Simpson-vs-Lord table, and the docs (no stale numbers quoted).

@@ -1,4 +1,5 @@
 import { parseModel } from "./parser";
+import { analyzeGraph } from "./analysis";
 import { defaultEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "./graph";
 import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "./types";
 
@@ -39,10 +40,11 @@ export interface ExampleDenouement {
   sections: ExampleDenouementSection[];
 }
 
-type VariablePatch = Partial<Omit<VariableModel, "measurement" | "simulation" | "intervention">> & {
+type VariablePatch = Partial<Omit<VariableModel, "measurement" | "simulation" | "intervention" | "adjustment">> & {
   measurement?: Partial<VariableModel["measurement"]>;
   simulation?: Partial<VariableModel["simulation"]>;
   intervention?: Partial<VariableModel["intervention"]>;
+  adjustment?: Partial<VariableModel["adjustment"]>;
 };
 
 const ZERO_NOISE: NodeDistribution = { kind: "constant", value: 0 };
@@ -426,17 +428,16 @@ export const EXAMPLES: ExampleModel[] = [
   },
   {
     id: "lords-paradox",
-    title: "Lord's paradox: baseline adjustment",
+    title: "Lord's paradox: did the new method help?",
     domain: "classic",
-    summary: "Change-score and baseline-adjusted comparisons can disagree because they answer different causal questions.",
-    outputModule: "lords-paradox",
+    summary: "Two classes take the same test before and after a term; the new-method class started ahead. The change-score (gain) and the pretest-adjusted (ANCOVA) comparison disagree because of regression to the mean — two estimands, not two answers.",
     code: `dag {
-  Baseline_weight [adjusted,label="baseline weight",pos="-2,0.9"]
-  Program [exposure,label="group / program",pos="-0.25,0"]
-  Final_weight [outcome,label="final weight",pos="1.8,0"]
-  Baseline_weight -> Final_weight
-  Baseline_weight -> Program
-  Program -> Final_weight
+  Pretest [adjusted,label="pretest score",pos="-2,0.9"]
+  Teaching_method [exposure,label="teaching method",pos="-0.25,0"]
+  Posttest [outcome,label="posttest score",pos="1.8,0"]
+  Pretest -> Posttest
+  Pretest -> Teaching_method
+  Teaching_method -> Posttest
 }`
   },
   {
@@ -1571,45 +1572,6 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
       }
     ]
   },
-  "lords-paradox": {
-    module: "Estimand / baseline adjustment",
-    punchline: "A change-score comparison and a baseline-adjusted final-outcome comparison can disagree because they are answering different questions.",
-    estimand: "Effect of Program on Final_weight at comparable Baseline_weight, contrasted with the raw change-score comparison.",
-    primaryOutput: "Before/after comparison: Program group change score versus do(Program) final-weight contrast, plus baseline imbalance.",
-    validity: "Credible if Baseline_weight is truly pre-program and the target question is about final outcomes at comparable baseline values.",
-    nextAction: "Ask the causal question before choosing change scores or baseline adjustment.",
-    sections: [
-      {
-        title: "Claim packet",
-        defaultOpen: true,
-        items: [
-          "State whether the target is change from baseline or final outcome at comparable baseline.",
-          "Name Baseline_weight as a pre-treatment difference between groups.",
-          "Show how regression toward the mean makes change scores non-equivalent to baseline-adjusted final outcomes.",
-          "Report both outputs as different estimands, not as one model winning by default."
-        ]
-      },
-      {
-        title: "Diagnostics to show",
-        defaultOpen: true,
-        items: [
-          "Baseline imbalance by Program.",
-          "Raw change-score contrast.",
-          "do(Program=1) versus do(Program=0) final-outcome contrast.",
-          "Question-first warning before interpreting either number."
-        ]
-      },
-      {
-        title: "Threats and failure modes",
-        items: [
-          "Baseline may be affected by earlier causes that also affect group assignment.",
-          "Measurement error in baseline can make adjustment noisy.",
-          "If the causal question is literally weight change, the change-score contrast may be descriptive but still confounded.",
-          "The example is meant to force estimand language."
-        ]
-      }
-    ]
-  },
   "instrumental-encouragement": {
     module: "Instrumental variables",
     punchline: "Encouragement can identify a treatment effect only through its impact on Treatment uptake, while latent health confounds Treatment and Outcome.",
@@ -2401,7 +2363,94 @@ const EXAMPLE_DENOUEMENTS: Record<string, ExampleDenouement> = {
 };
 
 export function exampleDenouement(id: string): ExampleDenouement | null {
-  return EXAMPLE_DENOUEMENTS[id] ?? whatIfDenouement(id) ?? null;
+  return EXAMPLE_DENOUEMENTS[id] ?? whatIfDenouement(id) ?? generatedDenouementForExample(id);
+}
+
+function generatedDenouementForExample(id: string): ExampleDenouement | null {
+  const example = EXAMPLES.find((candidate) => candidate.id === id);
+  if (!example) return null;
+  return generateDenouement(parseModel(example.code, example.title).document.graph);
+}
+
+// Build a denouement from the DAG structure alone (roles, d-separation, the minimal
+// adjustment set) rather than hand-writing one per example. See docs/causal-operations.md.
+export function generateDenouement(graph: GraphModel): ExampleDenouement | null {
+  const analysis = analyzeGraph(graph);
+  const exposureId = analysis.exposures[0];
+  const outcomeId = analysis.outcomes[0];
+  if (!exposureId || !outcomeId) return null;
+  const label = (nodeId: string) => graph.nodes.find((node) => node.id === nodeId)?.label ?? nodeId;
+  const exposure = label(exposureId);
+  const outcome = label(outcomeId);
+  const colliders = analysis.conditioningRoles.filter((role) => role.classification === "collider");
+  const adjusters = analysis.conditioningRoles.filter((role) => role.classification === "backdoor");
+  const minimalSet = analysis.totalEffect.minimalSets[0] ?? [];
+  const conditionedList = analysis.conditioningRoles.map((role) => `${label(role.node)} (${role.classification})`).join(", ") || "nothing";
+  const isCollider = colliders.length > 0;
+  const isConfounded = !isCollider && (adjusters.length > 0 || analysis.openBiasingPathCount > 0);
+
+  const module = isCollider ? "Selection / collider bias (auto)" : isConfounded ? "Adjustment / backdoor (auto)" : "Identified effect (auto)";
+  const punchline = isCollider
+    ? `${colliders.map((role) => label(role.node)).join(", ")} is a collider on ${exposure} → ${outcome}; conditioning on it opens a biasing path, so the unconditioned estimate is the unbiased one.`
+    : isConfounded
+      ? `${exposure} → ${outcome} is confounded; the crude comparison is biased, and adjusting for ${(minimalSet.length > 0 ? minimalSet.map(label) : adjusters.map((role) => label(role.node))).join(", ") || "the confounders"} identifies the effect.`
+      : `${exposure} → ${outcome} has no open biasing paths; the crude comparison already estimates the causal effect.`;
+  const estimand = isConfounded && minimalSet.length > 0
+    ? `Σ over ${minimalSet.map(label).join(", ")} of P(${outcome} | ${exposure}, covariates) · P(covariates) — backdoor-adjusted effect of ${exposure} on ${outcome}.`
+    : `P(${outcome} | do(${exposure})) — the interventional effect of ${exposure} on ${outcome}.`;
+
+  return {
+    module,
+    punchline,
+    estimand,
+    primaryOutput: `Crude ${exposure}–${outcome} contrast versus the ${isConfounded ? "adjusted" : "interventional"} contrast, with every conditioned variable classified as backdoor, collider, or neutral.`,
+    validity: "Auto-generated from the DAG structure (roles, d-separation, the minimal adjustment set). It assumes the drawn graph is correct.",
+    nextAction: isCollider
+      ? `Remove ${colliders.map((role) => label(role.node)).join(", ")} from the conditioning set and report the unconditioned effect.`
+      : isConfounded
+        ? `Adjust for ${minimalSet.map(label).join(", ") || "a valid backdoor set"} and report the adjusted effect.`
+        : "Report the crude effect; no adjustment is required.",
+    sections: [
+      {
+        title: "Structure",
+        defaultOpen: true,
+        items: [
+          `Exposure ${exposure}, outcome ${outcome}.`,
+          `Conditioned variables: ${conditionedList}.`,
+          `Open biasing paths: ${analysis.openBiasingPathCount}.`,
+          `Minimal adjustment set: ${minimalSet.length > 0 ? minimalSet.map(label).join(", ") : "none required / none found"}.`
+        ]
+      },
+      {
+        title: "Diagnostics",
+        defaultOpen: true,
+        items: [
+          `Crude ${exposure}–${outcome} contrast (the unadjusted comparison).`,
+          isConfounded
+            ? `Adjusted contrast, standardized over ${minimalSet.map(label).join(", ") || "the backdoor set"}.`
+            : `Interventional contrast do(${exposure}).`,
+          `Per-variable classification: ${conditionedList}.`
+        ]
+      },
+      {
+        title: "Report language",
+        items: isCollider
+          ? [
+            `Say: the apparent ${exposure}–${outcome} association under conditioning is a collider artifact.`,
+            `Do not control for ${colliders.map((role) => label(role.node)).join(", ")}.`
+          ]
+          : isConfounded
+            ? [
+              `Say: the crude ${exposure}–${outcome} comparison is confounded.`,
+              `Report the effect adjusted for ${minimalSet.map(label).join(", ") || "the backdoor set"}.`
+            ]
+            : [
+              `Say: ${exposure} and ${outcome} are unconfounded in this graph.`,
+              "Report the crude effect as the causal effect."
+            ]
+      }
+    ]
+  };
 }
 
 function whatIfDenouement(id: string): ExampleDenouement | null {
@@ -2684,9 +2733,19 @@ function configureCatsHighriseSyndrome(document: GraphDocument): GraphDocument {
       { x: 32, y: 0.44 }
     ]
   });
-  // Survival is caused by injury alone: more trauma, less survival.
-  setLogitNode(document, "Survival", 2.85);
-  setLinearCoefficient(document, "Injury_severity", "Survival", -2.2);
+  // Survival is caused by injury alone, but NOT linearly in the log-odds: a cat
+  // shrugs off minor trauma (survival stays at its baseline high rate), then once
+  // injury crosses a roughly fatal threshold the odds of survival collapse, and
+  // for catastrophic trauma they bottom out on a floor (more injury past "almost
+  // certainly fatal" can't lower survival further). That S-shaped dose-response is
+  // a falling smooth_threshold on the logit scale, which is far more honest than a
+  // straight line that would imply every extra unit of injury costs the same odds.
+  setLogitNode(document, "Survival", 4.2);
+  setEdgeMechanism(document, "Injury_severity", "Survival", "smooth_threshold", {
+    scale: -6.8,
+    threshold: 0.78,
+    steepness: 3.2
+  });
   // Survivorship selection: a cat that dies on impact is rarely carried in and
   // recorded, and a visibly hurt (but living) cat is more likely to be taken in
   // than an unscathed one. Conditioning on this recorded sample (Brought_to_vet)
@@ -2812,15 +2871,20 @@ function configureMBiasAdjustment(document: GraphDocument): GraphDocument {
 }
 
 function configureLordsParadox(document: GraphDocument): GraphDocument {
-  setBinaryVariable(document, "Program", "Group or program indicator. The groups differ at baseline before the final outcome is measured.", "group 1");
-  setContinuousVariable(document, "Baseline_weight", "Baseline measurement before the final outcome. It differs by group and strongly predicts final weight.", "kg");
-  setContinuousVariable(document, "Final_weight", "Final measurement after the program period.", "kg");
-  setNode(document, "Baseline_weight", { distribution: { kind: "normal", mean: 70, sd: 5 }, noise: ZERO_NOISE });
-  setLogitNode(document, "Program", -84);
-  setNode(document, "Final_weight", { intercept: 18, noise: { kind: "normal", mean: 0, sd: 2.2 } });
-  setLinearCoefficient(document, "Baseline_weight", "Program", 1.2);
-  setLinearCoefficient(document, "Baseline_weight", "Final_weight", 0.75);
-  setLinearCoefficient(document, "Program", "Final_weight", 1.2);
+  // Lord's paradox as a pretest/posttest study of a teaching method. The new-method class
+  // is not randomized: stronger students cluster in it, so it starts ahead at pretest. The
+  // within-class pretest->posttest slope is < 1 (regression to the mean), which is what makes
+  // the change-score (gain) and the pretest-adjusted (ANCOVA) effect disagree -- and here
+  // even take opposite signs.
+  setContinuousVariable(document, "Pretest", "Score on a test taken BEFORE the term, in points. The class that later used the new method happened to start higher.", "points");
+  setBinaryVariable(document, "Teaching_method", "Which class: 1 = new method, 0 = old method. Not randomized -- stronger students clustered in the new-method class.", "new method");
+  setContinuousVariable(document, "Posttest", "Score on the SAME test taken AFTER the term, in points. Same scale as the pretest, so a change score is meaningful.", "points");
+  setNode(document, "Pretest", { distribution: { kind: "normal", mean: 70, sd: 10 }, noise: ZERO_NOISE });
+  setLogitNode(document, "Teaching_method", -12.6);
+  setLinearCoefficient(document, "Pretest", "Teaching_method", 0.18);
+  setNode(document, "Posttest", { intercept: 35, noise: { kind: "normal", mean: 0, sd: 5 } });
+  setLinearCoefficient(document, "Pretest", "Posttest", 0.5); // < 1: regression to the mean
+  setLinearCoefficient(document, "Teaching_method", "Posttest", 3); // true causal effect at equal pretest
   return document;
 }
 
@@ -4264,7 +4328,8 @@ function setVariable(document: GraphDocument, id: string, patch: VariablePatch) 
         ...patch,
         measurement: patch.measurement ? { ...variable.measurement, ...patch.measurement } : variable.measurement,
         simulation: patch.simulation ? { ...variable.simulation, ...patch.simulation } : variable.simulation,
-        intervention: patch.intervention ? { ...variable.intervention, ...patch.intervention } : variable.intervention
+        intervention: patch.intervention ? { ...variable.intervention, ...patch.intervention } : variable.intervention,
+        adjustment: patch.adjustment ? { ...variable.adjustment, ...patch.adjustment } : variable.adjustment
       })
     };
   });

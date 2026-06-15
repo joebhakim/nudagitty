@@ -12,7 +12,8 @@ describe("cats card estimand + bad control", () => {
     const result = computed?.result as { bullets: Array<{ label: string; text: string }> } | undefined;
     if (!result) throw new Error("no result");
     const byLabel = Object.fromEntries(result.bullets.map((b) => [b.label, b.text]));
-    expect(byLabel.Estimand).toContain("P(Survival | fall height, Brought_to_vet = 1)");
+    // Node-name ids are normalized to spaces and the formula is spaced for the chip renderer.
+    expect(byLabel.Estimand).toContain("P( Survival | fall height, Brought to vet = 1 )");
     expect(byLabel["Bad control"]).toContain("collider");
     expect(byLabel["Bad control"]).toContain("do not control");
   });

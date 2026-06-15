@@ -8,6 +8,9 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "screenshots:examples": "NUDAGITTY_SCREENSHOTS=1 playwright test tests/example-screenshots.spec.ts --workers=1",
+    "screenshots:responsive": "NUDAGITTY_RESPONSIVE=1 playwright test tests/responsive-screenshots.spec.ts --workers=1",
+    "gallery:check": "NUDAGITTY_GALLERY=1 playwright test tests/gallery.spec.ts --workers=1",
+    "app-states:check": "NUDAGITTY_APPSTATES=1 playwright test tests/app-states.spec.ts --workers=1",
     "test:e2e": "playwright test"
   },
   "dependencies": {

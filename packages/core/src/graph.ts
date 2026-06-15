@@ -159,7 +159,8 @@ export function defaultVariableModel(): VariableModel {
     },
     adjustment: {
       method: "none",
-      cutpoints: []
+      cutpoints: [],
+      standardize: true
     },
     tags: []
   };
@@ -468,7 +469,9 @@ export function normalizeEdgeMechanism(mechanism: Partial<EdgeMechanism> | undef
     threshold: numberOr(mechanism?.threshold, base.threshold),
     low: numberOr(mechanism?.low, base.low),
     high: numberOr(mechanism?.high, base.high),
-    scale: positiveOr(mechanism?.scale, base.scale),
+    // scale may be negative: a falling smooth_threshold / saturating edge is an
+    // inhibitory transfer function (e.g. injury severity suppressing survival).
+    scale: numberOr(mechanism?.scale, base.scale),
     steepness: positiveOr(mechanism?.steepness, base.steepness),
     midpoint: numberOr(mechanism?.midpoint, base.midpoint),
     beta1: numberOr(mechanism?.beta1, base.beta1),
@@ -517,7 +520,8 @@ export function normalizeVariableModel(model: Partial<VariableModel> | undefined
     },
     adjustment: {
       method: isMember(adjustment.method, ADJUSTMENT_METHOD_KINDS) ? adjustment.method : base.adjustment.method,
-      cutpoints: numberListOr(adjustment.cutpoints)
+      cutpoints: numberListOr(adjustment.cutpoints),
+      standardize: typeof adjustment.standardize === "boolean" ? adjustment.standardize : base.adjustment.standardize
     },
     tags: stringListOr(raw.tags)
   };

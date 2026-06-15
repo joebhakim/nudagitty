@@ -16,6 +16,12 @@
   --ok: #1f6b3b;
   --bias: #b24567;
   --causal: #2368a2;
+  /* Categorical chart series — one shared palette so every chart speaks it. */
+  --chart-series-1: #23716f; /* teal (= accent) */
+  --chart-series-2: #cf7a22; /* ochre (matches the "adjusted" ring) */
+  --chart-series-3: #2f6e87; /* slate teal-blue */
+  /* Neutral observed / reference series (means, untreated). */
+  --chart-muted: #65717d;
 }
 
 * {
