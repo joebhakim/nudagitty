@@ -20,6 +20,8 @@ Run `apps/web/src/analytics.test.ts`. It must assert:
 | every typed helper emits an event whose name + props are in `ANALYTICS_SCHEMA` | no undeclared event / prop can ship |
 | every prop value is an enum member / `int` / slug (no free text) | structural-only payloads |
 | `sanitizeAnalyticsProps` drops a label-like string (`"Brought to vet …"`) and `"P(Y \| X, S=1)"` | runtime backstop against leaks |
+| every event carries a `client` ∈ {human, automated, bot, test} | human-vs-automation split |
+| `clientClass()`: webdriver→automated, bot UA→bot, `?nu_client=test`→test (over detection) | correct labeling |
 | `edit_committed` throttles repeated calls | slider drags don't flood |
 
 Add-an-event regression guard: a new `trackX` helper with an off-schema prop should
@@ -68,6 +70,12 @@ spec with `test.use({ channel: "chromium" })`.
 | I | Mark an exposure with no outcome (or empty graph) | `output_empty{no_exposure_outcome\|needs_roles}` | D |
 | J | Stay on a view > 10s | `example_dwell{…,10}` | C |
 
+### Client tagging (in any drive)
+Because Playwright sets `navigator.webdriver`, **every event from a drive is tagged
+`client: "automated"`** — assert this, and assert that loading with `?nu_client=test`
+flips them all to `client: "test"`. This is what keeps harness traffic out of the
+human metrics (in addition to `data-domains` excluding non-prod hosts entirely).
+
 ### The invariant that protects the no-banner promise
 Across **every** scenario: no captured event may carry a string value containing a
 space or sentence punctuation. The drive asserts
@@ -94,9 +102,13 @@ At `https://analytics.joeha.kim/websites` (Nudagitty site):
 3. Build the reports from `analytics.md`: the funnel (`example_loaded → node_selected
    → operation_set → output_viewed`) and the friction overlay (`output_empty`,
    `sim_state=empty/failed`, `sampling_fallback`, `analysis_sample_small`).
-4. Privacy spot-check in the dashboard: open several event property values and
+4. Segment by **`client`**: confirm your own session shows up as `human` (or `test`
+   if you appended `?nu_client=test`), and that filtering `client = human` is the
+   default for usage analysis. (For non-JS scrapers, check **Cloudflare** bot
+   analytics on the tunnel hostname — they never reach Umami.)
+5. Privacy spot-check in the dashboard: open several event property values and
    confirm they're all enums/slugs — **no node names, no graph text, no link payloads**.
-5. Confirm **no cookie is set** (DevTools → Application → Cookies is empty for the
+6. Confirm **no cookie is set** (DevTools → Application → Cookies is empty for the
    origin) and no `localStorage` visitor id — the basis for shipping without a banner.
 
 ## Regression triggers (re-run this plan when…)
