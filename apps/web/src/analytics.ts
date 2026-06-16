@@ -25,6 +25,53 @@ const ENGAGEMENT_MILESTONES_SECONDS = [5, 20, 60, 180, 300, 600] as const;
 let queuedEvents: { name: string; props?: SanitizedAnalyticsProps }[] = [];
 let engagementStop: (() => void) | null = null;
 
+// --- Client classification ---------------------------------------------------
+//
+// Every event carries a `client` dimension so the dashboard can separate human
+// usage from automation / bots / our own test drives. All signals are coarse and
+// non-identifying (a boolean + a UA word-match + an explicit opt-in flag), so this
+// stays cookieless and banner-free. Note: pure scrapers that never run JS never
+// fire an event at all — for those, see Cloudflare edge analytics (out of scope here).
+export type ClientClass = "human" | "automated" | "bot" | "test";
+const CLIENT_CLASSES: ClientClass[] = ["human", "automated", "bot", "test"];
+const CLIENT_OVERRIDE_KEY = "nudagitty_analytics_client";
+const BOT_UA_PATTERN = /bot|crawl|spider|slurp|headless|puppeteer|playwright|selenium|phantom|lighthouse|pingdom|gtmetrix|chrome-lighthouse|google web preview/i;
+
+function isClientClass(value: string | null): value is ClientClass {
+  return value !== null && (CLIENT_CLASSES as string[]).includes(value);
+}
+
+// An explicit, deliberate marker (`?nu_client=test|automated|bot`) for scripted runs
+// that aren't otherwise detectable (e.g. a real-browser QA pass against prod). Held
+// in sessionStorage so it lasts the tab session only — never a cross-session id.
+function readClientOverride(): ClientClass | null {
+  try {
+    const param = new URL(window.location.href).searchParams.get("nu_client");
+    if (isClientClass(param)) {
+      window.sessionStorage.setItem(CLIENT_OVERRIDE_KEY, param);
+      return param;
+    }
+    const stored = window.sessionStorage.getItem(CLIENT_OVERRIDE_KEY);
+    if (isClientClass(stored)) return stored;
+  } catch {
+    // sessionStorage / URL unavailable — fall through to detection
+  }
+  return null;
+}
+
+export function clientClass(): ClientClass {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return "human";
+  const override = readClientOverride();
+  if (override) return override;
+  if (navigator.webdriver === true) return "automated";
+  if (BOT_UA_PATTERN.test(navigator.userAgent || "")) return "bot";
+  return "human";
+}
+
+// Props attached to EVERY event (merged in trackAnalyticsEvent); allowed on every
+// event by the schema guard.
+export const GLOBAL_EVENT_PROPS = { client: CLIENT_CLASSES } as const;
+
 function analyticsEnv(): Record<string, string | boolean | undefined> {
   const meta = (import.meta as ViteImportMeta).env ?? {};
   // In the browser build, import.meta.env carries the inlined values and `process`
@@ -73,7 +120,9 @@ export function initAnalytics() {
 
 export function trackAnalyticsEvent(name: string, props?: AnalyticsProps) {
   if (!analyticsConfig().enabled || !EVENT_NAME_PATTERN.test(name)) return;
-  const sanitized = props ? sanitizeAnalyticsProps(props) : undefined;
+  // Tag every event with the client class so human vs automated/bot/test usage is
+  // separable in the dashboard. Placed last so an event can't shadow it.
+  const sanitized = sanitizeAnalyticsProps({ ...props, client: clientClass() });
   const tracker = typeof window === "undefined" ? undefined : window.umami;
   if (tracker) {
     tracker.track(name, sanitized);

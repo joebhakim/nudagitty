@@ -29,6 +29,34 @@ The hard rule for anyone adding an event: **props are structural categories only
 constant), booleans, bucketed integers. Never labels, graph text, link payloads, or
 input.
 
+## Client classification (human vs automated vs bot vs test)
+
+Every event carries a global **`client`** prop so the dashboard can separate real
+usage from automation, bots, and our own test drives. It's computed once per event
+in `clientClass()` (`apps/web/src/analytics.ts`) from coarse, non-identifying signals
+(banner-safe — a boolean + a UA word-match + an opt-in flag, no cookie / id):
+
+| `client` | How it's decided |
+|---|---|
+| `test` | explicit opt-in: `?nu_client=test` in the URL (persisted to **sessionStorage** for the tab), for deliberate QA/scripted runs against a real browser |
+| `automated` | `navigator.webdriver === true` — Playwright / Selenium / Puppeteer set this |
+| `bot` | `navigator.userAgent` matches a crawler/headless pattern |
+| `human` | none of the above |
+
+In the dashboard, **filter `client = human`** for real usage, or break down by
+`client` to see automated/test traffic. Two existing safeguards mean this mostly
+catches *automation that reaches the live domain*: (1) `data-domains=nudag.joeha.kim`
+already stops localhost/dev drives from reporting at all, and (2) Umami drops known
+UA bots server-side.
+
+> **Scrapers without JS** (curl, wget, most crawlers) never run the tracker, so they
+> never appear here at all. For that traffic, use **Cloudflare** edge analytics /
+> bot classification on the tunnel hostname — it sees every request. The `client`
+> dimension only classifies the JS-capable subset.
+
+Mark a scripted run as test by loading `https://nudag.joeha.kim/?nu_client=test`
+(our Playwright harness can `goto` that URL); the tag sticks for the tab session.
+
 ## Event taxonomy
 
 Friction-first: the funnel (A) shows *where* users stall; the dead-end events (D)

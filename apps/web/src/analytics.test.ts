@@ -1,6 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ANALYTICS_SCHEMA,
+  GLOBAL_EVENT_PROPS,
+  clientClass,
   sanitizeAnalyticsProps,
   trackAnalysisSampleSmall,
   trackBadControlShown,
@@ -58,8 +60,11 @@ afterEach(() => {
 const SLUG = /^[a-zA-Z0-9_.:-]{1,80}$/;
 
 function assertConforms(event: Tracked) {
-  const spec = (ANALYTICS_SCHEMA as Record<string, Record<string, unknown>>)[event.name];
-  if (!spec) throw new Error(`unknown event "${event.name}"`);
+  const base = (ANALYTICS_SCHEMA as Record<string, Record<string, unknown>>)[event.name];
+  if (!base) throw new Error(`unknown event "${event.name}"`);
+  // client is attached to every event globally.
+  const spec = { ...base, ...GLOBAL_EVENT_PROPS } as Record<string, unknown>;
+  expect(event.props, `event "${event.name}" missing client tag`).toHaveProperty("client");
   for (const [key, value] of Object.entries(event.props ?? {})) {
     const rule = spec[key];
     expect(rule, `event "${event.name}" has prop "${key}" not in schema`).toBeTruthy();
@@ -95,6 +100,11 @@ describe("typed analytics helpers stay within the privacy schema", () => {
     for (const event of tracked) assertConforms(event);
   });
 
+  it("tags every event with a client class", () => {
+    trackNodeSelected("exposure");
+    expect(tracked[0]?.props?.client).toBe("human"); // no navigator stub in this scope
+  });
+
   it("never lets free-form text through (the no-banner guarantee)", () => {
     const sanitized = sanitizeAnalyticsProps({
       role: "collider", // enum-safe -> kept
@@ -108,5 +118,35 @@ describe("typed analytics helpers stay within the privacy schema", () => {
     trackEditCommitted("edge");
     trackEditCommitted("edge"); // within throttle window (performance.now() === 0)
     expect(tracked.filter((event) => event.name === "edit_committed")).toHaveLength(1);
+  });
+});
+
+describe("clientClass separates human / automated / bot / test", () => {
+  function setup(opts: { webdriver?: boolean; ua?: string; href?: string; sessionTest?: string }) {
+    const store: Record<string, string> = {};
+    if (opts.sessionTest) store["nudagitty_analytics_client"] = opts.sessionTest;
+    // navigator is a read-only global in Node — stub via vi.stubGlobal.
+    vi.stubGlobal("window", {
+      location: { href: opts.href ?? "http://localhost/" },
+      sessionStorage: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => { store[k] = v; }
+      }
+    });
+    vi.stubGlobal("navigator", { webdriver: opts.webdriver ?? false, userAgent: opts.ua ?? "Mozilla/5.0 (human)" });
+  }
+
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("defaults to human", () => { setup({}); expect(clientClass()).toBe("human"); });
+  it("flags webdriver automation (Playwright/Selenium)", () => { setup({ webdriver: true }); expect(clientClass()).toBe("automated"); });
+  it("flags bot user agents", () => { setup({ ua: "Mozilla/5.0 (compatible; Googlebot/2.1)" }); expect(clientClass()).toBe("bot"); });
+  it("honors an explicit ?nu_client=test over detection", () => {
+    setup({ webdriver: true, href: "http://nudag.joeha.kim/?nu_client=test" });
+    expect(clientClass()).toBe("test");
+  });
+  it("persists the override for the tab session", () => {
+    setup({ sessionTest: "test" });
+    expect(clientClass()).toBe("test");
   });
 });
