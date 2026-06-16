@@ -43,6 +43,19 @@ in `clientClass()` (`apps/web/src/analytics.ts`) from coarse, non-identifying si
 | `bot` | `navigator.userAgent` matches a crawler/headless pattern |
 | `human` | none of the above |
 
+It's sent two ways: as a prop on **every event**, and as **session data**
+(`umami.identify`) so pageview/visitor metrics filter by it too. The session
+payload is richer — `{ client, client_reason, app_version }` — so a session is
+self-describing (e.g. `client=test, client_reason=override, app_version=9b1ea4c`
+rather than a bare `client=test`). `client_reason` ∈ `human | override | webdriver
+| bot_ua` explains *how* it was classified; `app_version` is the build commit.
+
+> Session data is **last-write-wins** per key: if one session emits more than one
+> class (only really happens when testing from a single IP/UA), the session shows
+> the last `identify`'d value, while the **per-event** `client` keeps every value.
+> So segment **events** by `client` for accuracy; the session tag is for coarse
+> visitor/pageview filtering.
+
 In the dashboard, **filter `client = human`** for real usage, or break down by
 `client` to see automated/test traffic. Two existing safeguards mean this mostly
 catches *automation that reaches the live domain*: (1) `data-domains=nudag.joeha.kim`
