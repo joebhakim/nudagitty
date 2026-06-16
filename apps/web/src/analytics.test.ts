@@ -3,6 +3,7 @@ import {
   ANALYTICS_SCHEMA,
   GLOBAL_EVENT_PROPS,
   clientClass,
+  identifyClient,
   sanitizeAnalyticsProps,
   trackAnalysisSampleSmall,
   trackBadControlShown,
@@ -148,5 +149,13 @@ describe("clientClass separates human / automated / bot / test", () => {
   it("persists the override for the tab session", () => {
     setup({ sessionTest: "test" });
     expect(clientClass()).toBe("test");
+  });
+
+  it("identifyClient sends the client class as session data", () => {
+    const identified: unknown[] = [];
+    vi.stubGlobal("window", { umami: { track: () => {}, identify: (d: unknown) => identified.push(d) } });
+    vi.stubGlobal("navigator", { webdriver: true, userAgent: "x" });
+    identifyClient();
+    expect(identified).toEqual([{ client: "automated" }]);
   });
 });

@@ -4,6 +4,7 @@ type SanitizedAnalyticsProps = Record<string, AnalyticsPrimitive>;
 
 type UmamiTracker = {
   track: (eventName: string, data?: SanitizedAnalyticsProps) => void;
+  identify?: (data: SanitizedAnalyticsProps) => void;
 };
 
 type ViteImportMeta = ImportMeta & {
@@ -101,6 +102,7 @@ export function initAnalytics() {
   const config = analyticsConfig();
   if (!config.enabled || !config.scriptSrc || !config.websiteId) return;
   if (document.querySelector(`script[${SCRIPT_MARKER}="umami"]`)) {
+    identifyClient();
     flushQueuedEvents();
     return;
   }
@@ -114,8 +116,20 @@ export function initAnalytics() {
   script.setAttribute("data-exclude-search", "true");
   script.setAttribute("data-do-not-track", "true");
   if (config.domains) script.setAttribute("data-domains", config.domains);
-  script.addEventListener("load", flushQueuedEvents);
+  script.addEventListener("load", () => {
+    identifyClient();
+    flushQueuedEvents();
+  });
   document.head.appendChild(script);
+}
+
+// Attach the client class as SESSION data (umami.identify), so pageview/visitor
+// metrics — not just custom events — are filterable by human/automated/bot/test.
+// Session data is a categorical attribute, not a persistent cross-session id, so
+// this stays cookieless and banner-free.
+export function identifyClient() {
+  const tracker = typeof window === "undefined" ? undefined : window.umami;
+  tracker?.identify?.({ client: clientClass() });
 }
 
 export function trackAnalyticsEvent(name: string, props?: AnalyticsProps) {
