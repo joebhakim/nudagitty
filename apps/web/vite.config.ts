@@ -1,12 +1,25 @@
 import react from "@vitejs/plugin-react";
+import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { defineConfig } from "vite";
 
 const root = dirname(fileURLToPath(import.meta.url));
 
+// Short commit of the build, surfaced to analytics so a session can be tied to the
+// deploy it ran on. Falls back to "dev" outside a git checkout.
+let appVersion = "dev";
+try {
+  appVersion = execSync("git rev-parse --short HEAD", { cwd: root }).toString().trim() || "dev";
+} catch {
+  appVersion = "dev";
+}
+
 export default defineConfig({
   root,
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion)
+  },
   plugins: [react()],
   build: {
     rollupOptions: {

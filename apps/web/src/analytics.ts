@@ -34,9 +34,18 @@ let engagementStop: (() => void) | null = null;
 // stays cookieless and banner-free. Note: pure scrapers that never run JS never
 // fire an event at all — for those, see Cloudflare edge analytics (out of scope here).
 export type ClientClass = "human" | "automated" | "bot" | "test";
+// Why a client was classified — sent as session data so a session is self-describing
+// ("test" alone isn't very informative; "test via override" / "automated via webdriver"
+// is). Maps 1:1 to the branches of classifyClient().
+export type ClientReason = "human" | "override" | "webdriver" | "bot_ua";
 const CLIENT_CLASSES: ClientClass[] = ["human", "automated", "bot", "test"];
 const CLIENT_OVERRIDE_KEY = "nudagitty_analytics_client";
 const BOT_UA_PATTERN = /bot|crawl|spider|slurp|headless|puppeteer|playwright|selenium|phantom|lighthouse|pingdom|gtmetrix|chrome-lighthouse|google web preview/i;
+
+// Build commit (injected by vite define; "dev" under vitest / local). Lets a session
+// be correlated to the deploy it ran on.
+declare const __APP_VERSION__: string;
+const APP_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
 
 function isClientClass(value: string | null): value is ClientClass {
   return value !== null && (CLIENT_CLASSES as string[]).includes(value);
@@ -60,13 +69,17 @@ function readClientOverride(): ClientClass | null {
   return null;
 }
 
-export function clientClass(): ClientClass {
-  if (typeof window === "undefined" || typeof navigator === "undefined") return "human";
+export function classifyClient(): { client: ClientClass; reason: ClientReason } {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return { client: "human", reason: "human" };
   const override = readClientOverride();
-  if (override) return override;
-  if (navigator.webdriver === true) return "automated";
-  if (BOT_UA_PATTERN.test(navigator.userAgent || "")) return "bot";
-  return "human";
+  if (override) return { client: override, reason: "override" };
+  if (navigator.webdriver === true) return { client: "automated", reason: "webdriver" };
+  if (BOT_UA_PATTERN.test(navigator.userAgent || "")) return { client: "bot", reason: "bot_ua" };
+  return { client: "human", reason: "human" };
+}
+
+export function clientClass(): ClientClass {
+  return classifyClient().client;
 }
 
 // Props attached to EVERY event (merged in trackAnalyticsEvent); allowed on every
@@ -123,13 +136,17 @@ export function initAnalytics() {
   document.head.appendChild(script);
 }
 
-// Attach the client class as SESSION data (umami.identify), so pageview/visitor
-// metrics — not just custom events — are filterable by human/automated/bot/test.
-// Session data is a categorical attribute, not a persistent cross-session id, so
-// this stays cookieless and banner-free.
+// Attach the client classification as SESSION data (umami.identify), so pageview/
+// visitor metrics — not just custom events — are filterable, and a session is
+// self-describing (client + why it was classified + which build). All categorical /
+// non-identifying, so this stays cookieless and banner-free.
+let sessionIdentified = false;
 export function identifyClient() {
   const tracker = typeof window === "undefined" ? undefined : window.umami;
-  tracker?.identify?.({ client: clientClass() });
+  if (!tracker?.identify) return;
+  const { client, reason } = classifyClient();
+  tracker.identify(sanitizeAnalyticsProps({ client, client_reason: reason, app_version: APP_VERSION }));
+  sessionIdentified = true;
 }
 
 export function trackAnalyticsEvent(name: string, props?: AnalyticsProps) {
@@ -139,6 +156,9 @@ export function trackAnalyticsEvent(name: string, props?: AnalyticsProps) {
   const sanitized = sanitizeAnalyticsProps({ ...props, client: clientClass() });
   const tracker = typeof window === "undefined" ? undefined : window.umami;
   if (tracker) {
+    // Defensive: make sure the session carries the client tag even if the
+    // script-load identify was missed (idempotent — fires once per session).
+    if (!sessionIdentified) identifyClient();
     tracker.track(name, sanitized);
     return;
   }

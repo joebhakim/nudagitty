@@ -151,11 +151,23 @@ describe("clientClass separates human / automated / bot / test", () => {
     expect(clientClass()).toBe("test");
   });
 
-  it("identifyClient sends the client class as session data", () => {
+  it("identifyClient sends client + reason + app_version as session data", () => {
     const identified: unknown[] = [];
     vi.stubGlobal("window", { umami: { track: () => {}, identify: (d: unknown) => identified.push(d) } });
     vi.stubGlobal("navigator", { webdriver: true, userAgent: "x" });
     identifyClient();
-    expect(identified).toEqual([{ client: "automated" }]);
+    expect(identified).toEqual([{ client: "automated", client_reason: "webdriver", app_version: "dev" }]);
+  });
+
+  it("explains the reason: override beats webdriver, bot UA is bot_ua", () => {
+    const seen: any[] = [];
+    vi.stubGlobal("window", {
+      location: { href: "http://nudag.joeha.kim/?nu_client=test" },
+      sessionStorage: { getItem: () => null, setItem: () => {} },
+      umami: { track: () => {}, identify: (d: any) => seen.push(d) }
+    });
+    vi.stubGlobal("navigator", { webdriver: true, userAgent: "Googlebot" });
+    identifyClient();
+    expect(seen[0]).toMatchObject({ client: "test", client_reason: "override" });
   });
 });
