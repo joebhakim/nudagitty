@@ -42,6 +42,7 @@ import {
   adjusted,
   analyzeGraph,
   classifyConditioned,
+  structuralRoleOf,
   correlationGraph,
   createNewNodeId,
   createNode,
@@ -123,7 +124,8 @@ import {
 import type { RiskBin, ScatterPoint } from "./charts/CategoryOutcomePlot";
 import { computeEdgeTransfer } from "./charts/edgeTransfer";
 import { chartFrame, niceTicks, paddedDomain } from "./charts/chartFrame";
-import { startEngagementMilestones, trackAnalyticsEvent } from "./analytics";
+import { startEngagementMilestones, trackAnalyticsEvent, trackDenouementViewed, trackEditCommitted, trackInfoOverlayOpened, trackOperationSet, type ChartKind, type EmptyReason, type FunnelRole, type OutputKind } from "./analytics";
+import { useAnalyticsTelemetry, type TelemetrySignals } from "./analyticsTelemetry";
 import { OPERATION_BLURBS, OPERATION_LABELS, applyOperation, deriveOperation } from "./shared/operations";
 import { badControlWarning, describeEstimand, displayNodeName } from "./outputs/estimand";
 import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
@@ -809,6 +811,58 @@ export function App() {
   const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null, activeOutputPair);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
+  // Granular, privacy-preserving telemetry (see analyticsTelemetry). Every field is
+  // a categorical signal derived from the analysis report / simulation summary —
+  // never a node label or free-form value — so it stays banner-free.
+  const telemetrySignals = useMemo<TelemetrySignals>(() => {
+    const hasEstimand = analysis.exposures.length > 0 && analysis.outcomes.length > 0;
+    const selectedNodeId = selection?.kind === "node" ? selection.id : null;
+    const conditionedOps = analysis.adjusted.map((id) => deriveOperation(document, id));
+    const conditioningActive = simulation.conditioning.activeConditions.length > 0;
+    const acceptedSamples = simulation.conditioning.acceptedSamples;
+
+    const outputKind: OutputKind | null = !hasEstimand ? null
+      : conditionedOps.includes("adjust") ? "standardized"
+      : conditionedOps.includes("condition") ? "stratified"
+      : completedOutput?.result ? "completed"
+      : activeExample && !activeExample.outputModule ? "diagnosis"
+      : "crude";
+
+    const outputEmptyReason: EmptyReason | null = !hasEstimand ? "no_exposure_outcome"
+      : completedOutput && completedOutput.result === null ? "needs_roles"
+      : conditioningActive && acceptedSamples === 0 ? "no_data"
+      : null;
+
+    let chartKind: ChartKind | null = null;
+    if (activeOutputPair) {
+      const xNode = findNode(document.graph, activeOutputPair.x);
+      const yNode = findNode(document.graph, activeOutputPair.y);
+      if (xNode && yNode) {
+        const xBinary = isBinaryGraphNode(xNode, simulation.nodeStates[xNode.id]);
+        const yBinary = isBinaryGraphNode(yNode, simulation.nodeStates[yNode.id]);
+        chartKind = xBinary && yBinary ? "category_binary"
+          : xBinary && !yBinary ? "category_continuous"
+          : !xBinary && yBinary ? "risk_curve"
+          : "scatter";
+      }
+    }
+
+    return {
+      exampleId: activeExample?.id ?? "",
+      selectedNodeId,
+      selectedRole: selectedNodeId ? (structuralRoleOf(document.graph, analysis, selectedNodeId) as FunnelRole) : null,
+      outputKind,
+      outputEmptyReason,
+      chartKind,
+      badControlActive: analysis.conditioningRoles.some((role) => role.opensBiasingPath),
+      simStatus: conditioningActive && acceptedSamples === 0 ? "empty" : "ok",
+      conditioningActive,
+      samplingMethod: simulation.conditioning.empiricalMethod,
+      acceptedSamples
+    };
+  }, [activeExample, analysis, completedOutput, document, selection, simulation, activeOutputPair]);
+  useAnalyticsTelemetry(telemetrySignals);
+
   useEffect(() => {
     let cancelled = false;
     let settled = false;
@@ -1128,6 +1182,7 @@ export function App() {
   }, [fullShareStatus]);
 
   const updateNodeMechanism = useCallback((nodeId: string, patch: Partial<NodeMechanism>) => {
+    trackEditCommitted("node");
     const current = normalizeNodeMechanism(document.simulation.nodes[nodeId]);
     const nextMechanism = normalizeNodeMechanism({ ...current, ...patch });
     const currentNode = findNode(document.graph, nodeId);
@@ -1157,6 +1212,7 @@ export function App() {
   }, [commit, document]);
 
   const updateVariableModel = useCallback((nodeId: string, variable: VariableModel) => {
+    trackEditCommitted("node");
     const currentNode = findNode(document.graph, nodeId);
     const previous = normalizeVariableModel(currentNode?.variable);
     const nextVariable = normalizeVariableModel(variable);
@@ -1193,6 +1249,7 @@ export function App() {
   }, [commit, document]);
 
   const updateEdgeMechanism = useCallback((edge: GraphEdge, patch: Partial<EdgeMechanism>) => {
+    trackEditCommitted("edge");
     const current = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
     commit({
       ...document,
@@ -1269,8 +1326,16 @@ export function App() {
 
   const setOperation = useCallback((nodeId: string, operation: AnalysisOperation) => {
     trackAnalyticsEvent("graph_action", { action: "set_operation", operation });
+    // Pair the operation with the node's structural classification so the funnel can
+    // tell "adjust a confounder" (valid) from "adjust a collider" (the teachable bug).
+    const classification = operation === "none" || operation === "intervene"
+      ? "na"
+      : analysis.exposures.length > 0 && analysis.outcomes.length > 0
+        ? classifyConditioned(document.graph, nodeId).classification
+        : "na";
+    trackOperationSet(operation, classification);
     commit(applyOperation(document, nodeId, operation));
-  }, [commit, document]);
+  }, [analysis, commit, document]);
 
   const changeWorkbenchMode = useCallback((mode: WorkbenchMode) => {
     trackAnalyticsEvent("mode_changed", { mode });
@@ -1465,7 +1530,7 @@ export function App() {
 
   const renderPractitionerModulesDrawer = () => (
     <section className="advanced-drawer practitioner-modules-drawer">
-      <details>
+      <details onToggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open) trackDenouementViewed(activeExample?.id ?? "custom"); }}>
         <summary>Practitioner modules</summary>
         <div className="practitioner-modules-grid">
           <DenouementPanel denouement={activeDenouement ?? CUSTOM_DENOUEMENT} title={activeExample?.title ?? document.title} />
@@ -1498,7 +1563,7 @@ export function App() {
           </> : <>
             {!presentationActive && <IconButton label="New" onClick={createNewDocument}><FilePlus2 size={18} /></IconButton>}
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
-            <IconButton label="Explain this example" pressed={showExplanation} onClick={() => setShowExplanation((open) => !open)}><Info size={18} /></IconButton>
+            <IconButton label="Explain this example" pressed={showExplanation} onClick={() => setShowExplanation((open) => { if (!open) trackInfoOverlayOpened("explanation"); return !open; })}><Info size={18} /></IconButton>
             <input
               ref={snapshotInputRef}
               type="file"
@@ -2716,7 +2781,7 @@ function ScatterplotPanel(props: {
         ) : (
           <p className="pairwise-role-warning muted">Mark at least one exposure and one outcome to choose this output.</p>
         )}
-        <details className="pairwise-info">
+        <details className="pairwise-info" onToggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open) trackInfoOverlayOpened("pairwise"); }}>
           <summary aria-label="Pairwise details" title="Pairwise details">i</summary>
           <div className="pairwise-info-card">
             {detailRows.map((row) => <span key={row}>{row}</span>)}
