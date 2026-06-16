@@ -25,8 +25,16 @@ const ENGAGEMENT_MILESTONES_SECONDS = [5, 20, 60, 180, 300, 600] as const;
 let queuedEvents: { name: string; props?: SanitizedAnalyticsProps }[] = [];
 let engagementStop: (() => void) | null = null;
 
-function analyticsEnv() {
-  return (import.meta as ViteImportMeta).env ?? {};
+function analyticsEnv(): Record<string, string | boolean | undefined> {
+  const meta = (import.meta as ViteImportMeta).env ?? {};
+  // In the browser build, import.meta.env carries the inlined values and `process`
+  // is undefined. Under vitest, import.meta.env is module-local (can't be set from a
+  // test), but process.env is a shared global — so merge it as a test/SSR fallback
+  // with import.meta.env still taking precedence in production.
+  if (typeof process !== "undefined" && process.env) {
+    return { ...process.env, ...meta };
+  }
+  return meta;
 }
 
 function analyticsConfig() {
@@ -72,6 +80,103 @@ export function trackAnalyticsEvent(name: string, props?: AnalyticsProps) {
     return;
   }
   queuedEvents = [...queuedEvents, { name, props: sanitized }].slice(-30);
+}
+
+// --- Typed event layer -------------------------------------------------------
+//
+// Every custom event goes through one of the typed helpers below. Their params
+// are LITERAL UNIONS, so passing a node label / free-form string is a *compile*
+// error, not a runtime privacy leak. ANALYTICS_SCHEMA is the single source of
+// truth (event name -> allowed prop keys + enum values); the guard test asserts
+// each helper conforms and that sanitizeAnalyticsProps strips anything off-enum.
+// This is what keeps the tracker cookieless-and-PII-free => no consent banner.
+
+export type FunnelRole = "exposure" | "outcome" | "latent" | "mediator" | "collider" | "confounder" | "other";
+export type OperationName = "none" | "intervene" | "select" | "condition" | "adjust";
+export type OperationClassification = "backdoor" | "collider" | "neutral" | "na";
+export type OutputKind = "crude" | "stratified" | "standardized" | "completed" | "diagnosis";
+export type EmptyReason = "needs_roles" | "no_exposure_outcome" | "no_data";
+export type SimStatus = "ok" | "empty" | "failed";
+export type SamplingMethod = "forward" | "rejection" | "importance";
+export type ChartKind = "scatter" | "category_binary" | "category_continuous" | "risk_curve";
+export type OverlaySource = "explanation" | "pairwise";
+export type EditTarget = "node" | "edge";
+
+// Prop value rule per event. "slug" = a fixed app-defined identifier (example id),
+// never user content; "int" = a bucketed integer; an array = an exact enum.
+export const ANALYTICS_SCHEMA = {
+  // pre-existing coarse events (kept for the guard's name allowlist)
+  example_loaded: { example: "slug" },
+  graph_action: { action: ["add_node", "add_edge", "resample", "set_operation", "new_graph"], operation: ["none", "intervene", "select", "condition", "adjust"] },
+  mode_changed: { mode: ["demo", "pro"] },
+  share_clicked: { kind: ["compact", "full"] },
+  export_clicked: { format: ["svg", "png", "jpeg"] },
+  engagement_milestone: { seconds: "int" },
+  // new granular, friction-first events
+  node_selected: { role: ["exposure", "outcome", "latent", "mediator", "collider", "confounder", "other"] },
+  operation_set: { operation: ["none", "intervene", "select", "condition", "adjust"], classification: ["backdoor", "collider", "neutral", "na"] },
+  output_viewed: { kind: ["crude", "stratified", "standardized", "completed", "diagnosis"] },
+  output_empty: { reason: ["needs_roles", "no_exposure_outcome", "no_data"] },
+  bad_control_shown: { classification: ["collider"] },
+  sim_state: { status: ["ok", "empty", "failed"] },
+  sampling_fallback: { method: ["forward", "rejection", "importance"] },
+  analysis_sample_small: { bucket: "int" },
+  chart_rendered: { chart_kind: ["scatter", "category_binary", "category_continuous", "risk_curve"] },
+  example_dwell: { example: "slug", seconds: "int" },
+  info_overlay_opened: { source: ["explanation", "pairwise"] },
+  denouement_viewed: { example: "slug" },
+  edit_committed: { target: ["node", "edge"] }
+} as const;
+
+export type AnalyticsEventName = keyof typeof ANALYTICS_SCHEMA;
+
+export function trackNodeSelected(role: FunnelRole) {
+  trackAnalyticsEvent("node_selected", { role });
+}
+export function trackOperationSet(operation: OperationName, classification: OperationClassification) {
+  trackAnalyticsEvent("operation_set", { operation, classification });
+}
+export function trackOutputViewed(kind: OutputKind) {
+  trackAnalyticsEvent("output_viewed", { kind });
+}
+export function trackOutputEmpty(reason: EmptyReason) {
+  trackAnalyticsEvent("output_empty", { reason });
+}
+export function trackBadControlShown() {
+  trackAnalyticsEvent("bad_control_shown", { classification: "collider" });
+}
+export function trackSimState(status: SimStatus) {
+  trackAnalyticsEvent("sim_state", { status });
+}
+export function trackSamplingFallback(method: SamplingMethod) {
+  trackAnalyticsEvent("sampling_fallback", { method });
+}
+export function trackAnalysisSampleSmall(bucket: number) {
+  trackAnalyticsEvent("analysis_sample_small", { bucket });
+}
+export function trackChartRendered(chartKind: ChartKind) {
+  trackAnalyticsEvent("chart_rendered", { chart_kind: chartKind });
+}
+export function trackExampleDwell(example: string, seconds: number) {
+  trackAnalyticsEvent("example_dwell", { example, seconds });
+}
+export function trackInfoOverlayOpened(source: OverlaySource) {
+  trackAnalyticsEvent("info_overlay_opened", { source });
+}
+export function trackDenouementViewed(example: string) {
+  trackAnalyticsEvent("denouement_viewed", { example });
+}
+
+// Editing is continuous (slider drags), so throttle commits to one per target per
+// window to avoid flooding while still capturing that an edit session happened.
+const EDIT_THROTTLE_MS = 4000;
+const lastEditAt: Record<EditTarget, number> = { node: -Infinity, edge: -Infinity };
+export function trackEditCommitted(target: EditTarget) {
+  if (typeof window === "undefined") return;
+  const now = window.performance.now();
+  if (now - lastEditAt[target] < EDIT_THROTTLE_MS) return;
+  lastEditAt[target] = now;
+  trackAnalyticsEvent("edit_committed", { target });
 }
 
 export function startEngagementMilestones() {
