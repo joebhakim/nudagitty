@@ -88,6 +88,33 @@ export function classifyConditioned(graph: GraphModel, nodeId: string): {
   };
 }
 
+// A coarse, categorical structural role for a node relative to the exposure -> outcome
+// estimand, for analytics. Returns only the bucket (never the node id / label), so it is
+// safe to send to a privacy-preserving tracker. Priority: declared roles first, then
+// mediator (interior of a causal path), then collider / confounder by conditioning effect.
+export type StructuralRole =
+  | "exposure"
+  | "outcome"
+  | "latent"
+  | "mediator"
+  | "collider"
+  | "confounder"
+  | "other";
+
+export function structuralRoleOf(graph: GraphModel, report: AnalysisReport, nodeId: string): StructuralRole {
+  if (report.exposures.includes(nodeId)) return "exposure";
+  if (report.outcomes.includes(nodeId)) return "outcome";
+  if (report.latent.includes(nodeId)) return "latent";
+  const onCausalInterior = report.causalPaths.some(
+    (path) => path.length > 2 && path.slice(1, -1).includes(nodeId)
+  );
+  if (onCausalInterior) return "mediator";
+  const { classification } = classifyConditioned(graph, nodeId);
+  if (classification === "collider") return "collider";
+  if (classification === "backdoor") return "confounder";
+  return "other";
+}
+
 function buildConditioningRoles(graph: GraphModel, adjustedIds: string[], selectedIds: string[]): ConditioningRole[] {
   const seen = new Set<string>();
   const roles: ConditioningRole[] = [];
