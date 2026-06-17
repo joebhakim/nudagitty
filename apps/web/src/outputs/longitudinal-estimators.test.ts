@@ -43,9 +43,9 @@ describe("longitudinal g-methods adjust for continuous confounders", () => {
     expect(Math.abs(e.stratified - e.naive)).toBeGreaterThan(0.05);
     // Standardization and IP weighting now agree (both genuinely adjust).
     expect(Math.abs(e.stratified - e.ipw)).toBeLessThan(0.03);
-    // They recover the majority of the naive confounding bias relative to the oracle.
-    // (A residual gap to g_formula remains from the censoring-as-cause DGP kludge —
-    // that's a separate DGP cleanup, not the estimator machinery.)
-    expect(Math.abs(e.ipw - e.gFormula)).toBeLessThan(Math.abs(e.naive - e.gFormula) / 2);
+    // With the censoring kludge removed and adaptive quantile binning, IPW now
+    // converges to the oracle (the residual is finite-sample within-bin confounding,
+    // far smaller than the naive bias).
+    expect(Math.abs(e.ipw - e.gFormula)).toBeLessThan(0.04);
   });
 });

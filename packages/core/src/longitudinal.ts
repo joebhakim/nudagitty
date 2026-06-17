@@ -615,15 +615,35 @@ function probabilityFromTable(table: BinaryProbabilityTable, row: Record<string,
 // continuous columns key on quantile bins, so standardization and propensity models
 // actually condition on the confounder.
 type CovariateBinner = (row: Record<string, number>) => string;
-const QUANTILE_BINS = 4;
+// Quantile-bin resolution is adaptive (see continuousBinCount): more bins shrink
+// within-bin residual confounding, but each joint cell needs enough rows to keep
+// both treatment arms supported, so resolution scales with sample size and shrinks
+// with the number of continuous covariates.
+const MIN_QUANTILE_BINS = 2;
+const MAX_QUANTILE_BINS = 10;
+const MIN_PER_STRATUM = 40;
 
-function buildBinners(cohort: LongitudinalCohort, ids: string[], bins = QUANTILE_BINS): Map<string, CovariateBinner> {
+function buildBinners(cohort: LongitudinalCohort, ids: string[]): Map<string, CovariateBinner> {
   const binners = new Map<string, CovariateBinner>();
+  const valuesById = new Map<string, number[]>();
+  for (const id of ids) {
+    if (valuesById.has(id)) continue;
+    valuesById.set(id, cohort.rows
+      .map((row) => row[id])
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value)));
+  }
+  // How many covariates are actually continuous (the ones we quantile-bin). The joint
+  // strata count is bins^(that many), so pick a per-covariate bin count that keeps each
+  // joint cell populated (~MIN_PER_STRATUM rows) — finer resolution shrinks within-bin
+  // confounding, but too-fine cells lose both-arm support and add noise.
+  const continuousCount = [...valuesById.values()].filter((values) => {
+    const levels = new Set(values.map((value) => Math.round(value * 1e6) / 1e6));
+    return levels.size > MAX_QUANTILE_BINS;
+  }).length;
+  const bins = continuousBinCount(cohort.rows.length, Math.max(1, continuousCount));
   for (const id of ids) {
     if (binners.has(id)) continue;
-    const values = cohort.rows
-      .map((row) => row[id])
-      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    const values = valuesById.get(id) ?? [];
     const levels = new Set(values.map((value) => Math.round(value * 1e6) / 1e6));
     if (levels.size <= bins) {
       // Discrete / few-valued (incl. binary treatments): key on the raw value.
@@ -634,6 +654,12 @@ function buildBinners(cohort: LongitudinalCohort, ids: string[], bins = QUANTILE
     }
   }
   return binners;
+}
+
+function continuousBinCount(sampleSize: number, continuousCovariates: number): number {
+  const targetStrata = Math.max(1, sampleSize / MIN_PER_STRATUM);
+  const perCovariate = Math.floor(targetStrata ** (1 / continuousCovariates));
+  return Math.max(MIN_QUANTILE_BINS, Math.min(MAX_QUANTILE_BINS, perCovariate));
 }
 
 function keyFromBinners(row: Record<string, number>, ids: string[], binners: Map<string, CovariateBinner>): string {
