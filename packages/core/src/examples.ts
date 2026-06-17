@@ -3106,10 +3106,36 @@ function configureWhatIfNhefsMortalitySurvival(document: GraphDocument): GraphDo
   setLogitNode(document, "Censoring_5y", -2.4);
   setLogitNode(document, "Death_5y", -3.3);
   setLogitNode(document, "Death_10y", -2.7);
-  setLinearCoefficient(document, "Age", "Quit_smoking", -0.012);
+  // Quitting is not monotone in age: young smokers rarely quit, cessation peaks in
+  // middle age (health scares), then tapers in the oldest. A linear age slope can't
+  // express that hump. (logit contributions)
+  setEdgeMechanism(document, "Age", "Quit_smoking", "piecewise_linear", {
+    points: [
+      { x: 25, y: -0.5 },
+      { x: 45, y: 0.35 },
+      { x: 60, y: 0.1 },
+      { x: 80, y: -0.45 }
+    ]
+  });
   setLinearCoefficient(document, "Age", "Censoring_5y", 0.025);
-  setLinearCoefficient(document, "Age", "Death_5y", 0.035);
-  setLinearCoefficient(document, "Age", "Death_10y", 0.032);
+  // Age -> mortality accelerates (Gompertz-like), so the logit rises faster at older
+  // ages than a constant per-year slope would.
+  setEdgeMechanism(document, "Age", "Death_5y", "piecewise_linear", {
+    points: [
+      { x: 30, y: 0.6 },
+      { x: 50, y: 1.5 },
+      { x: 65, y: 2.7 },
+      { x: 80, y: 4.4 }
+    ]
+  });
+  setEdgeMechanism(document, "Age", "Death_10y", "piecewise_linear", {
+    points: [
+      { x: 30, y: 0.5 },
+      { x: 50, y: 1.3 },
+      { x: 65, y: 2.5 },
+      { x: 80, y: 4.2 }
+    ]
+  });
   setLinearCoefficient(document, "Baseline_risk", "Quit_smoking", -0.55);
   setLinearCoefficient(document, "Baseline_risk", "Weight_gain_2y", -0.7);
   setLinearCoefficient(document, "Baseline_risk", "Censoring_5y", 0.6);

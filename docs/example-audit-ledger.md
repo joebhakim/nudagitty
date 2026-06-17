@@ -20,7 +20,7 @@ Legend: ❌ not done · 🔶 partial · ✅ done
 | `college-earnings` | classic | ❌ | ❌ |  |
 | `front-door-smoking` | classic | ❌ | ❌ |  |
 | `berkson-hospital` | classic | ❌ | ❌ |  |
-| `birthweight-paradox` | classic | ❌ | ❌ |  |
+| `birthweight-paradox` | classic | ❌ | ❌ | ⚠ marginal smoking→mortality reads ~null/protective (should be harmful) — calibration check needed; collider paradox itself holds |
 | `obesity-paradox` | classic | ❌ | ❌ |  |
 | `cats-highrise-syndrome` | classic | ❌ | ❌ |  |
 | `instrumental-encouragement` | classic | ❌ | ❌ |  |
