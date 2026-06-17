@@ -846,6 +846,7 @@ function renderWhatIfAdvancedOutput(output: WhatIfAdvancedOutput) {
           </table>
         </details>
       )}
+      {comparison && <WhatIfMethodGlossary comparison={comparison} />}
       {comparison && (
         <div className="what-if-strategy-grid">
           {comparison.strategies.map((strategy) => (
@@ -869,6 +870,58 @@ function renderWhatIfAdvancedOutput(output: WhatIfAdvancedOutput) {
         </div>
       </details>
     </CompletedOutputShell>
+  );
+}
+
+// Plain-language + formula for each g-method row, so the table isn't just labels.
+const METHOD_GLOSSARY: Record<GMethodEstimate["id"], { plain: string; formula: string }> = {
+  naive: {
+    plain: "Compares the outcome by the treatment people actually took. Confounded by anything that drives both the treatment and the outcome.",
+    formula: "E[ Y | A = a, uncensored ]"
+  },
+  stratified: {
+    plain: "Averages the outcome inside confounder strata, then re-weights those strata to the whole population. Unbiased only if every confounder is in L (and the bins are fine enough).",
+    formula: "Σ_l  E[ Y | A = a, L = l ] · P(L = l)"
+  },
+  g_formula: {
+    plain: "Re-simulates the whole population under each complete strategy from the fitted model. With the true model this is the oracle effect.",
+    formula: "E[ Y | do(A = a) ]   (sequential over time for time-varying A)"
+  },
+  ipw: {
+    plain: "Re-weights each person by the inverse probability of their own treatment (and of staying uncensored), building a pseudo-population where treatment is independent of the measured confounders.",
+    formula: "E[ Y · 1(A = a) / P(A = a | L) ]   (stabilized; × censoring weights for IPCW)"
+  },
+  g_estimation: {
+    plain: "Backs out the additive per-step treatment effect (the 'blip') by finding the value that makes the treatment-removed outcome independent of treatment given history.",
+    formula: "U(ψ) = Y − ψ·A ;  solve  E[ (A − E[A | L]) · U(ψ) ] = 0"
+  }
+};
+
+function WhatIfMethodGlossary(props: { comparison: GMethodsComparison }) {
+  return (
+    <details className="what-if-method-glossary">
+      <summary>How to read these methods</summary>
+      <dl>
+        {props.comparison.estimates.map((estimate) => {
+          const entry = METHOD_GLOSSARY[estimate.id];
+          if (!entry) return null;
+          return (
+            <div key={estimate.id}>
+              <dt>{estimate.label}</dt>
+              <dd>
+                <p>{entry.plain}</p>
+                <code className="what-if-method-formula">{entry.formula}</code>
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+      <p className="what-if-method-glossary-note">
+        g-formula is the do()-resimulated oracle here. The others estimate the same effect from the observed
+        cohort — they agree with the oracle when the confounders are correctly adjusted, and reveal bias when
+        they don&rsquo;t.
+      </p>
+    </details>
   );
 }
 
@@ -1028,6 +1081,11 @@ function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; su
         <strong>{props.survivalTime ? "Observed-death survival by strategy" : "Survival curves by strategy"}</strong>
         <span>{props.summary.label}</span>
       </div>
+      <p className="what-if-survival-method">
+        Counterfactual survival under each strategy — the g-formula curve: the model is re-simulated with
+        <em> everyone</em> assigned that strategy, not the observed (confounded) sub-group. The natural-course
+        line below is the observed cohort for reference.
+      </p>
       <svg className="what-if-survival-plot" viewBox={`0 0 ${width} ${frame.height}`} role="img" aria-label={`${props.summary.label} survival curves by strategy`}>
         <line className="huh-shift-axis" x1={plot.x} y1={plot.bottom} x2={plot.right} y2={plot.bottom} />
         <line className="huh-shift-axis" x1={plot.x} y1={plot.y} x2={plot.x} y2={plot.bottom} />

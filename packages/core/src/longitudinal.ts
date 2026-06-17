@@ -274,7 +274,10 @@ export function buildPersonTimeRows(cohort: LongitudinalCohort, spec: SurvivalOu
       const eventVariable = eventVariables[interval]!;
       const censoringVariable = censoringVariables[interval] ?? null;
       const event = asBinary(row[eventVariable]);
-      const censored = censoringVariable ? asBinary(row[censoringVariable]) : 0;
+      // An event takes precedence over same-interval censoring: a subject who dies
+      // in the interval is an event, not censored (otherwise they'd be double-counted
+      // in both the events and censored tallies).
+      const censored = event === 1 ? 0 : censoringVariable ? asBinary(row[censoringVariable]) : 0;
       const time = spec.timeVariable ? row[spec.timeVariable] ?? interval + 1 : interval + 1;
       rows.push({
         subject,

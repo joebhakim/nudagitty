@@ -583,6 +583,69 @@
   font-weight: 800;
 }
 
+.what-if-survival-method {
+  margin: 2px 0 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 16px;
+}
+
+.what-if-method-glossary {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.what-if-method-glossary > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.what-if-method-glossary dl {
+  display: grid;
+  gap: 9px;
+  margin: 8px 0 6px;
+}
+
+.what-if-method-glossary dt {
+  color: #3d464e;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.what-if-method-glossary dd {
+  margin: 2px 0 0;
+  display: grid;
+  gap: 4px;
+}
+
+.what-if-method-glossary dd p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 15px;
+}
+
+.what-if-method-formula {
+  display: block;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #f1f5f4;
+  border: 1px solid #e0e9e7;
+  color: #2b3a3a;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 15px;
+  overflow-x: auto;
+}
+
+.what-if-method-glossary-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 15px;
+}
+
 .what-if-strategy-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
