@@ -4126,26 +4126,6 @@ function AdjustedOutputPanel(props: {
         {showcaseGuide && <ShowcaseGuideCard guide={showcaseGuide} />}
         <CompletedOutputPanel moduleId={effectiveModuleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
         {showGenericAdjustmentCards && unifiedPanel}
-        {showGenericAdjustmentCards && binaryOutput && shouldRenderBinaryAdjustmentOutput(binaryOutput) && <BinaryAdjustmentOutputCard output={binaryOutput} />}
-        {showGenericAdjustmentCards && continuousOutput && shouldRenderBinaryContinuousAdjustmentOutput(continuousOutput) && <BinaryContinuousAdjustmentOutputCard output={continuousOutput} />}
-      </div>
-    );
-  }
-  if (binaryOutput) {
-    return (
-      <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
-        {pendingNotice}
-        {unifiedPanel}
-        <BinaryAdjustmentOutputCard output={binaryOutput} />
-      </div>
-    );
-  }
-  if (continuousOutput) {
-    return (
-      <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
-        {pendingNotice}
-        {unifiedPanel}
-        <BinaryContinuousAdjustmentOutputCard output={continuousOutput} />
       </div>
     );
   }
