@@ -814,17 +814,19 @@ export function App() {
   const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null, activeOutputPair);
 
   // Classic examples (no what-if module) get the SAME canonical g-method panel as the
-  // longitudinal ones, derived from the current adjust/condition operations + the active
-  // pair — so the same operation renders the same output everywhere.
-  const unifiedAdjustment = useMemo(() => {
+  // longitudinal ones, derived from the current adjust/condition operations + the pair —
+  // so the same operation renders the same output everywhere (Pro and Demo alike).
+  const computeUnifiedAdjustment = useCallback((pair: ScatterPair) => {
     if (activeExample?.outputModule?.startsWith("what-if-")) return null;
-    const spec = deriveAdjustmentSpec(computationDocument, { exposure: activeOutputPair.x, outcome: activeOutputPair.y });
+    const spec = deriveAdjustmentSpec(computationDocument, { exposure: pair.x, outcome: pair.y });
     if (!spec || spec.covariates.length === 0) return null;
     const comparison = analyzeAdjustment(computationDocument, spec);
     if (!comparison) return null;
     const outcomeNode = computationDocument.graph.nodes.find((node) => node.id === spec.outcome);
     return { comparison, outcomeScale: spec.outcomeScale, outcomeUnit: outcomeNode?.variable.unit ?? "" };
-  }, [activeExample, computationDocument, activeOutputPair]);
+  }, [activeExample, computationDocument]);
+  const unifiedAdjustment = useMemo(() => computeUnifiedAdjustment(activeOutputPair), [computeUnifiedAdjustment, activeOutputPair]);
+  const demoUnifiedAdjustment = useMemo(() => computeUnifiedAdjustment(defaultOutputPair), [computeUnifiedAdjustment, defaultOutputPair]);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
   // Granular, privacy-preserving telemetry (see analyticsTelemetry). Every field is
@@ -1470,6 +1472,7 @@ export function App() {
             moduleId={activeExample?.outputModule ?? null}
             computedOutput={completedOutput}
             binaryOutput={demoBinaryAdjustmentOutput}
+            unified={demoUnifiedAdjustment}
             recommendedAdjustmentId={basicRecommendedAdjustmentId}
             onPair={setScatterPair}
             onSelectNode={selectNode}
@@ -3254,6 +3257,7 @@ function DemoResultPanel(props: {
   moduleId: string | null;
   computedOutput: ComputedCompletedOutput | null;
   binaryOutput: BinaryAdjustmentOutput | null;
+  unified?: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string } | null;
   recommendedAdjustmentId: string | null;
   onPair: (pair: ScatterPair) => void;
   onSelectNode: (id: string) => void;
@@ -3266,6 +3270,7 @@ function DemoResultPanel(props: {
   const adjustedActive = props.graph.nodes.some((node) => node.roles.adjusted);
   const showAdjustmentReveal = adjustedActive && (
     props.computedOutput !== null ||
+    props.unified != null ||
     (props.binaryOutput !== null && shouldRenderBinaryAdjustmentOutput(props.binaryOutput))
   );
 
@@ -3328,6 +3333,7 @@ function DemoResultPanel(props: {
             computedOutput={props.computedOutput}
             binaryOutput={props.binaryOutput}
             continuousOutput={null}
+            unified={props.unified}
             pending={props.pending}
             hideOracle
           />
