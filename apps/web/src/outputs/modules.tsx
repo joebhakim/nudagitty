@@ -815,38 +815,7 @@ function renderWhatIfAdvancedOutput(output: WhatIfAdvancedOutput) {
         <WhatIfStrategySurvivalCurve summary={output.survival} survivalTime={output.view === "survival_time"} denominatorsOpen={output.denominatorsOpen} />
       )}
       {comparison && output.view === "dynamic" && <WhatIfDynamicSupport comparison={comparison} />}
-      {comparison && (
-        <details className="what-if-method-table-card" open={methodsOpen}>
-          <summary className="module-card-header">
-            <strong>Methods</strong>
-            <span>{formatWeightedCount(comparison.cohort.sampleSize)} simulated rows</span>
-          </summary>
-          <table className="what-if-method-table">
-            <thead>
-              <tr>
-                <th>Method</th>
-                <th>{comparison.strategies[0].label}</th>
-                <th>{comparison.strategies[1].label}</th>
-                <th>Difference</th>
-              </tr>
-            </thead>
-            <tbody>
-              {comparison.estimates.map((estimate) => (
-                <tr key={estimate.id}>
-                  <td>
-                    <strong>{estimate.label}</strong>
-                    <small>{estimate.diagnostics[0] ?? ""}</small>
-                  </td>
-                  <td>{formatOutcomeValue(estimate.arms[0].mean, output.outcomeScale, output.outcomeUnit)}</td>
-                  <td>{formatOutcomeValue(estimate.arms[1].mean, output.outcomeScale, output.outcomeUnit)}</td>
-                  <td className={estimateToneClass(estimate.estimate)}>{formatOutcomeDifference(estimate.estimate, output.outcomeScale, output.outcomeUnit)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
-      )}
-      {comparison && <WhatIfMethodGlossary comparison={comparison} />}
+      {comparison && <MethodsComparisonPanel comparison={comparison} outcomeScale={output.outcomeScale} outcomeUnit={output.outcomeUnit} defaultOpen={methodsOpen} />}
       {comparison && (
         <div className="what-if-strategy-grid">
           {comparison.strategies.map((strategy) => (
@@ -896,6 +865,47 @@ const METHOD_GLOSSARY: Record<GMethodEstimate["id"], { plain: string; formula: s
     formula: "U(ψ) = Y − ψ·A ;  solve  E[ (A − E[A | L]) · U(ψ) ] = 0"
   }
 };
+
+// The canonical adjustment readout — the g-method estimator table + the glossary.
+// Used identically for every example (classic or longitudinal) so the same operation
+// always renders the same panel.
+export function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean }) {
+  const { comparison, outcomeScale, outcomeUnit } = props;
+  return (
+    <>
+      <details className="what-if-method-table-card" open={props.defaultOpen}>
+        <summary className="module-card-header">
+          <strong>Methods</strong>
+          <span>{formatWeightedCount(comparison.cohort.sampleSize)} simulated rows</span>
+        </summary>
+        <table className="what-if-method-table">
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>{comparison.strategies[0].label}</th>
+              <th>{comparison.strategies[1].label}</th>
+              <th>Difference</th>
+            </tr>
+          </thead>
+          <tbody>
+            {comparison.estimates.map((estimate) => (
+              <tr key={estimate.id}>
+                <td>
+                  <strong>{estimate.label}</strong>
+                  <small>{estimate.diagnostics[0] ?? ""}</small>
+                </td>
+                <td>{formatOutcomeValue(estimate.arms[0].mean, outcomeScale, outcomeUnit)}</td>
+                <td>{formatOutcomeValue(estimate.arms[1].mean, outcomeScale, outcomeUnit)}</td>
+                <td className={estimateToneClass(estimate.estimate)}>{formatOutcomeDifference(estimate.estimate, outcomeScale, outcomeUnit)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+      <WhatIfMethodGlossary comparison={comparison} />
+    </>
+  );
+}
 
 function WhatIfMethodGlossary(props: { comparison: GMethodsComparison }) {
   return (

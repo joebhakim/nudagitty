@@ -41,6 +41,8 @@ import {
   addNode,
   adjusted,
   analyzeGraph,
+  analyzeAdjustment,
+  deriveAdjustmentSpec,
   classifyConditioned,
   structuralRoleOf,
   correlationGraph,
@@ -84,6 +86,7 @@ import type {
   EdgeKind,
   ExampleDenouement,
   EffectKind,
+  GMethodsComparison,
   GraphDocument,
   GraphEdge,
   GraphModel,
@@ -132,7 +135,7 @@ import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
 import { HighlightNames, NodeNamesProvider, SvgAxisName } from "./shared/NodeNames";
 import { stratifyRiskCurves } from "./outputs/stratify";
 import type { StratifiedRiskContrast } from "./outputs/stratify";
-import { basicOutputPunchlineFromResult, computeCompletedOutput } from "./outputs/modules";
+import { MethodsComparisonPanel, basicOutputPunchlineFromResult, computeCompletedOutput } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
 import type { OutputContext } from "./outputs/types";
@@ -809,6 +812,19 @@ export function App() {
     selections: simulation.conditioning.activeConditions
   }), [document.graph, document.simulation.overrides, simulation.conditioning.activeConditions]);
   const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null, activeOutputPair);
+
+  // Classic examples (no what-if module) get the SAME canonical g-method panel as the
+  // longitudinal ones, derived from the current adjust/condition operations + the active
+  // pair — so the same operation renders the same output everywhere.
+  const unifiedAdjustment = useMemo(() => {
+    if (activeExample?.outputModule?.startsWith("what-if-")) return null;
+    const spec = deriveAdjustmentSpec(computationDocument, { exposure: activeOutputPair.x, outcome: activeOutputPair.y });
+    if (!spec || spec.covariates.length === 0) return null;
+    const comparison = analyzeAdjustment(computationDocument, spec);
+    if (!comparison) return null;
+    const outcomeNode = computationDocument.graph.nodes.find((node) => node.id === spec.outcome);
+    return { comparison, outcomeScale: spec.outcomeScale, outcomeUnit: outcomeNode?.variable.unit ?? "" };
+  }, [activeExample, computationDocument, activeOutputPair]);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
   // Granular, privacy-preserving telemetry (see analyticsTelemetry). Every field is
@@ -1516,6 +1532,7 @@ export function App() {
                     computedOutput={completedOutput}
                     binaryOutput={binaryAdjustmentOutput}
                     continuousOutput={binaryContinuousAdjustmentOutput}
+                    unified={unifiedAdjustment}
                     pending={resultsPending}
                     hideOracle={false}
                   />
@@ -4086,9 +4103,13 @@ function AdjustedOutputPanel(props: {
   computedOutput: ComputedCompletedOutput | null;
   binaryOutput: BinaryAdjustmentOutput | null;
   continuousOutput: BinaryContinuousAdjustmentOutput | null;
+  unified?: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string } | null;
   pending?: ResultPendingState;
   hideOracle?: boolean;
 }) {
+  const unifiedPanel = props.unified
+    ? <MethodsComparisonPanel comparison={props.unified.comparison} outcomeScale={props.unified.outcomeScale} outcomeUnit={props.unified.outcomeUnit} defaultOpen />
+    : null;
   const adjustedNodes = props.binaryOutput?.adjustedNodes ?? props.continuousOutput?.adjustedNodes ?? [];
   const binaryOutput = props.binaryOutput;
   const continuousOutput = props.continuousOutput;
@@ -4104,6 +4125,7 @@ function AdjustedOutputPanel(props: {
         {pendingNotice}
         {showcaseGuide && <ShowcaseGuideCard guide={showcaseGuide} />}
         <CompletedOutputPanel moduleId={effectiveModuleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
+        {showGenericAdjustmentCards && unifiedPanel}
         {showGenericAdjustmentCards && binaryOutput && shouldRenderBinaryAdjustmentOutput(binaryOutput) && <BinaryAdjustmentOutputCard output={binaryOutput} />}
         {showGenericAdjustmentCards && continuousOutput && shouldRenderBinaryContinuousAdjustmentOutput(continuousOutput) && <BinaryContinuousAdjustmentOutputCard output={continuousOutput} />}
       </div>
@@ -4113,6 +4135,7 @@ function AdjustedOutputPanel(props: {
     return (
       <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
         {pendingNotice}
+        {unifiedPanel}
         <BinaryAdjustmentOutputCard output={binaryOutput} />
       </div>
     );
@@ -4121,7 +4144,16 @@ function AdjustedOutputPanel(props: {
     return (
       <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
         {pendingNotice}
+        {unifiedPanel}
         <BinaryContinuousAdjustmentOutputCard output={continuousOutput} />
+      </div>
+    );
+  }
+  if (unifiedPanel) {
+    return (
+      <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
+        {pendingNotice}
+        {unifiedPanel}
       </div>
     );
   }
