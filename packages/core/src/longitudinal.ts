@@ -1,4 +1,4 @@
-import { normalizeGraphDocumentMetadata } from "./graph";
+import { normalizeGraphDocumentMetadata, normalizeVariableModel } from "./graph";
 import { runIntervenedEmpiricalSimulation, runSimulation } from "./simulation";
 import type {
   GraphDocument,
@@ -895,4 +895,102 @@ function asBinary(value: number | undefined): 0 | 1 {
 
 function roundForDiagnostic(value: number): string {
   return Number.isFinite(value) ? value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "") : "NA";
+}
+
+// --- Unified adjustment analysis ---------------------------------------------
+//
+// Every adjustment-flavoured operation (adjust / condition) on a DAG should map to
+// ONE predictable analysis, regardless of whether the example is "classic" (single
+// binary exposure) or longitudinal. deriveAdjustmentSpec reads the analysis spec
+// from the graph's roles + longitudinal metadata (NOT from hard-coded per-example
+// config), and analyzeAdjustment runs the same g-methods engine for all of them.
+export interface AdjustmentSpec {
+  treatments: string[];
+  covariates: string[];
+  outcome: string;
+  standardize: boolean;
+  censoring: string[];
+  outcomeScale: "risk" | "mean";
+  strategies: [TreatmentStrategy, TreatmentStrategy];
+}
+
+function synthesizeBinaryStrategies(treatments: string[]): [TreatmentStrategy, TreatmentStrategy] {
+  const make = (id: string, label: string, value: number): TreatmentStrategy => ({
+    id,
+    label,
+    description: `Set ${treatments.join(", ")} = ${value}.`,
+    kind: "static",
+    assignments: treatments.map((variable) => ({ variable, value })),
+    rules: []
+  });
+  return [make("all-treated", "Treated", 1), make("none-treated", "Untreated", 0)];
+}
+
+export function deriveAdjustmentSpec(
+  document: GraphDocument,
+  override?: { exposure?: string; outcome?: string }
+): AdjustmentSpec | null {
+  const meta = normalizeGraphDocumentMetadata(document.metadata).longitudinal;
+  const variables = meta.variables;
+  const hasMeta = Object.keys(variables).length > 0;
+  const order = new Map(meta.timePoints.map((point, index) => [point.id, point.order ?? index]));
+  const byTime = (id: string) => {
+    const time = variables[id]?.time;
+    return time && order.has(time) ? order.get(time)! : Number.MAX_SAFE_INTEGER;
+  };
+  const nodeIds = new Set(document.graph.nodes.map((node) => node.id));
+
+  // The adjustment set is exactly the nodes the operation marks as adjusted — uniform
+  // for classic and longitudinal graphs (their covariates are all [adjusted]).
+  let covariates = document.graph.nodes
+    .filter((node) => node.roles.adjusted)
+    .map((node) => node.id)
+    .sort((a, b) => byTime(a) - byTime(b));
+
+  const ofRole = (role: string) => Object.entries(variables)
+    .filter(([id, variable]) => variable.role === role && nodeIds.has(id))
+    .map(([id]) => id)
+    .sort((a, b) => byTime(a) - byTime(b));
+
+  // Treatments: the metadata treatment role captures multi-step regimens (A0,A1,A2);
+  // a classic single-exposure graph falls back to the [exposure] role.
+  let treatments = override?.exposure
+    ? [override.exposure]
+    : hasMeta ? ofRole("treatment") : document.graph.nodes.filter((node) => node.roles.exposure).map((node) => node.id);
+  const censoring = ofRole("censoring");
+  // The estimand declares the outcome explicitly (e.g. SNAFT observes a death
+  // indicator, not the latent failure time); fall back to the role heuristics.
+  let outcome: string | undefined = override?.outcome
+    ?? (meta.estimands[0]?.outcome && nodeIds.has(meta.estimands[0].outcome) ? meta.estimands[0].outcome : undefined)
+    ?? (hasMeta ? ofRole("outcome").sort((a, b) => byTime(b) - byTime(a))[0] : undefined)
+    ?? document.graph.nodes.find((node) => node.roles.outcome)?.id;
+
+  if (treatments.length === 0 || !outcome) return null;
+  const outcomeId = outcome;
+  covariates = covariates.filter((id) => id !== outcomeId && !treatments.includes(id) && !censoring.includes(id));
+
+  const adjustedNodes = document.graph.nodes.filter((node) => node.roles.adjusted);
+  const standardize = adjustedNodes.length === 0
+    ? true
+    : adjustedNodes.every((node) => normalizeVariableModel(node.variable).adjustment.standardize !== false);
+
+  const outcomeNode = document.graph.nodes.find((node) => node.id === outcomeId);
+  const outcomeScale: "risk" | "mean" = outcomeNode && normalizeVariableModel(outcomeNode.variable).valueType === "binary" ? "risk" : "mean";
+
+  const strategies: [TreatmentStrategy, TreatmentStrategy] = meta.treatmentStrategies.length >= 2 && meta.treatmentStrategies[0] && meta.treatmentStrategies[1]
+    ? [meta.treatmentStrategies[0], meta.treatmentStrategies[1]]
+    : synthesizeBinaryStrategies(treatments);
+
+  return { treatments, covariates, outcome: outcomeId, standardize, censoring, outcomeScale, strategies };
+}
+
+export function analyzeAdjustment(document: GraphDocument, spec: AdjustmentSpec): GMethodsComparison | null {
+  return compareLongitudinalGMethods(document, {
+    treatmentVariables: spec.treatments,
+    timeVaryingCovariates: spec.covariates,
+    outcome: spec.outcome,
+    strategies: spec.strategies,
+    censoringVariables: spec.censoring.length > 0 ? spec.censoring : undefined,
+    outcomeScale: spec.outcomeScale
+  });
 }

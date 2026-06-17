@@ -103,7 +103,7 @@ const WHAT_IF_SHOWCASE_HAZARD_DENOMINATOR_CODE = `dag {
   Frailty [adjusted,label="baseline frailty",pos="-1.8,2.6"]
   Treatment_A [exposure,label="treatment A",pos="0.1,1.3"]
   Death_1 [label="early death",pos="-0.65,0.05"]
-  Alive_1 [selected,label="alive at t1",pos="0.55,-1.15"]
+  Alive_1 [adjusted,label="alive at t1",pos="0.55,-1.15"]
   Death_2 [outcome,label="later death",pos="1.55,-2.45"]
   Frailty -> Treatment_A
   Frailty -> Death_1
@@ -554,7 +554,7 @@ export const EXAMPLES: ExampleModel[] = [
   Frailty [adjusted,label="baseline frailty",pos="-1.8,2.6"]
   Treatment_A [exposure,label="treatment A",pos="0.1,1.3"]
   Death_1 [label="early death",pos="-0.65,0.05"]
-  Alive_1 [selected,label="alive at t1",pos="0.55,-1.15"]
+  Alive_1 [adjusted,label="alive at t1",pos="0.55,-1.15"]
   Death_2 [outcome,label="later death",pos="1.55,-2.45"]
   Frailty -> Treatment_A
   Frailty -> Death_1
