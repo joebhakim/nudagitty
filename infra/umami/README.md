@@ -55,3 +55,5 @@ This checkout has already created the `Nudagitty` website entry in Umami and pop
 The Umami dashboard is at `https://analytics.joeha.kim/websites`; add future sites there and give each site its own website ID while reusing the same tracker host.
 
 The tracker is configured by the app to exclude URL search strings and hashes. Custom events must stay coarse and must not include graph text, compact-link payloads, node labels, edge IDs, or free-form user input.
+
+The app-side event taxonomy, the enum-only privacy contract, and the human/automated/bot/test `client` tagging (per-event prop + session `identify` with `client_reason` / `app_version`) are documented in [`docs/analytics.md`](../../docs/analytics.md); how to validate them is in [`docs/analytics-test-plan.md`](../../docs/analytics-test-plan.md).

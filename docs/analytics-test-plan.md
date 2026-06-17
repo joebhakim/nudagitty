@@ -21,7 +21,8 @@ Run `apps/web/src/analytics.test.ts`. It must assert:
 | every prop value is an enum member / `int` / slug (no free text) | structural-only payloads |
 | `sanitizeAnalyticsProps` drops a label-like string (`"Brought to vet …"`) and `"P(Y \| X, S=1)"` | runtime backstop against leaks |
 | every event carries a `client` ∈ {human, automated, bot, test} | human-vs-automation split |
-| `clientClass()`: webdriver→automated, bot UA→bot, `?nu_client=test`→test (over detection) | correct labeling |
+| `classifyClient()`: webdriver→automated, bot UA→bot, `?nu_client=test`→test (over detection) | correct labeling + `reason` |
+| `identifyClient()` sends session data `{client, client_reason, app_version}` | self-describing sessions |
 | `edit_committed` throttles repeated calls | slider drags don't flood |
 
 Add-an-event regression guard: a new `trackX` helper with an off-schema prop should
@@ -76,6 +77,14 @@ Because Playwright sets `navigator.webdriver`, **every event from a drive is tag
 flips them all to `client: "test"`. This is what keeps harness traffic out of the
 human metrics (in addition to `data-domains` excluding non-prod hosts entirely).
 
+Also stub `window.umami.identify` and assert the **session** payload is
+`{ client, client_reason, app_version }` — e.g. a default drive →
+`{client:"automated", client_reason:"webdriver", app_version:"<sha>"}`, and
+`?nu_client=test` → `client_reason:"override"`. `app_version` should equal
+`git rev-parse --short HEAD` of the build (the vite `__APP_VERSION__` define).
+Note the identify fires both on script load and defensively before the first
+event (idempotent, once per session).
+
 ### The invariant that protects the no-banner promise
 Across **every** scenario: no captured event may carry a string value containing a
 space or sentence punctuation. The drive asserts
@@ -106,6 +115,12 @@ At `https://analytics.joeha.kim/websites` (Nudagitty site):
    if you appended `?nu_client=test`), and that filtering `client = human` is the
    default for usage analysis. (For non-JS scrapers, check **Cloudflare** bot
    analytics on the tunnel hostname — they never reach Umami.)
+   - Open the session → **Properties**: it should show `client`, `client_reason`,
+     and `app_version` (= the deployed commit). Caveat: session properties are
+     **last-write-wins**, so a single session that emits multiple classes (e.g.
+     testing from one IP/UA) shows only the last value — use the **per-event**
+     `client` breakdown for accurate counts. To inspect a session directly, the
+     umami API works: `GET /api/websites/{id}/sessions/{sessionId}/properties`.
 5. Privacy spot-check in the dashboard: open several event property values and
    confirm they're all enums/slugs — **no node names, no graph text, no link payloads**.
 6. Confirm **no cookie is set** (DevTools → Application → Cookies is empty for the
@@ -117,4 +132,5 @@ At `https://analytics.joeha.kim/websites` (Nudagitty site):
 - changing `structuralRoleOf`, `classifyConditioned`, or the operation model
   (role/classification accuracy);
 - touching the output-kind / chart-kind / empty-reason derivations in `App.tsx`;
+- changing `classifyClient` / `identifyClient` (the client tag or session payload);
 - upgrading Umami or rotating `VITE_UMAMI_*` (re-verify the live pipeline + no-cookie).
