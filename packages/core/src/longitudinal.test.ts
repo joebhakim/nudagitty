@@ -165,3 +165,38 @@ describe("longitudinal instrumentation", () => {
     expect(ipw?.arms.every((arm) => (arm.effectiveSampleSize ?? 0) > 10)).toBe(true);
   });
 });
+
+// Regression guard for the censoring/selection-as-cause kludge sweep: an
+// observation/selection mechanism must never have a structural edge into the
+// outcome (it would falsify the IPCW/adjustment identifying assumptions).
+describe("kludge guard: censoring/selection never causes the outcome", () => {
+  const cases = [
+    { id: "what-if-nhefs-mortality-survival", outcome: "Death_10y", censoring: ["Censoring_5y"] },
+    { id: "what-if-censoring-ipcw", outcome: "Y", censoring: ["C1", "C2"] },
+    { id: "what-if-snaft-survival", outcome: "Observed_death", censoring: ["Censoring"] },
+    { id: "target-trial-followup", outcome: "Outcome_90d", censoring: ["Censoring"] }
+  ];
+  for (const probe of cases) {
+    it(`${probe.id}: no censoring -> outcome edge`, () => {
+      const document = exampleDocument(probe.id);
+      if (!document) throw new Error(`missing ${probe.id}`);
+      for (const censoring of probe.censoring) {
+        const edge = document.graph.edges.find((candidate) => candidate.source === censoring && candidate.target === probe.outcome);
+        expect(edge, `${censoring} -> ${probe.outcome} must not exist`).toBeUndefined();
+      }
+    });
+  }
+
+  it("hazard-selection: Alive_1 is the deterministic complement of Death_1, Death_2 is absorbing", () => {
+    const document = exampleDocument("what-if-hazard-selection");
+    if (!document) throw new Error("missing hazard-selection");
+    // The old kludge used a -6.0 logit + a +3.1 Alive_1->Death_2 coefficient.
+    const aliveEdge = document.graph.edges.find((e) => e.source === "Alive_1" && e.target === "Death_2");
+    expect(aliveEdge, "Alive_1 -> Death_2 gating must not exist").toBeUndefined();
+    const cohort = simulateLongitudinalCohort(document);
+    const complementViolations = cohort.rows.filter((row) => Math.abs((1 - (row.Death_1 ?? 0)) - (row.Alive_1 ?? 0)) > 1e-9).length;
+    expect(complementViolations).toBe(0); // Alive_1 == 1 - Death_1 exactly
+    const absorbingViolations = cohort.rows.filter((row) => row.Death_1 === 1 && row.Death_2 !== 1).length;
+    expect(absorbingViolations).toBe(0); // first-interval death => dead by interval 2
+  });
+});

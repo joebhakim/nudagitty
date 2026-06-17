@@ -96,7 +96,6 @@ const WHAT_IF_SHOWCASE_SURVIVAL_CURVES_CODE = `dag {
   Quit_smoking -> Death_5y
   Quit_smoking -> Death_10y
   Weight_gain_2y -> Death_10y
-  Censoring_5y -> Death_10y
   Death_5y -> Death_10y
 }`;
 
@@ -111,8 +110,8 @@ const WHAT_IF_SHOWCASE_HAZARD_DENOMINATOR_CODE = `dag {
   Frailty -> Death_2
   Treatment_A -> Death_1
   Treatment_A -> Death_2
+  Death_1 -> Death_2
   Death_1 -> Alive_1
-  Alive_1 -> Death_2
 }`;
 
 const WHAT_IF_SHOWCASE_G_ESTIMATION_CODE = `dag {
@@ -153,10 +152,8 @@ const WHAT_IF_SHOWCASE_IPCW_CODE = `dag {
   L1 -> C2
   L1 -> Y
   C1 -> A1
-  C1 -> Y
   A1 -> C2
   A1 -> Y
-  C2 -> Y
 }`;
 
 const WHAT_IF_SHOWCASE_SNAFT_CODE = `dag {
@@ -175,7 +172,6 @@ const WHAT_IF_SHOWCASE_SNAFT_CODE = `dag {
   Treatment_start -> Censoring
   Failure_time -> Observed_death
   Visit_schedule -> Censoring
-  Censoring -> Observed_death
 }`;
 
 export const EXAMPLES: ExampleModel[] = [
@@ -461,7 +457,6 @@ export const EXAMPLES: ExampleModel[] = [
   Treatment_start -> Adherence
   Treatment_start -> Outcome_90d
   Adherence -> Outcome_90d
-  Censoring -> Outcome_90d
 }`
   },
   {
@@ -566,8 +561,8 @@ export const EXAMPLES: ExampleModel[] = [
   Frailty -> Death_2
   Treatment_A -> Death_1
   Treatment_A -> Death_2
+  Death_1 -> Death_2
   Death_1 -> Alive_1
-  Alive_1 -> Death_2
 }`
   },
   {
@@ -597,7 +592,6 @@ export const EXAMPLES: ExampleModel[] = [
   Quit_smoking -> Death_5y
   Quit_smoking -> Death_10y
   Weight_gain_2y -> Death_10y
-  Censoring_5y -> Death_10y
   Death_5y -> Death_10y
 }`
   },
@@ -682,10 +676,8 @@ export const EXAMPLES: ExampleModel[] = [
   L1 -> C2
   L1 -> Y
   C1 -> A1
-  C1 -> Y
   A1 -> C2
   A1 -> Y
-  C2 -> Y
 }`
   },
   {
@@ -741,7 +733,6 @@ export const EXAMPLES: ExampleModel[] = [
   Treatment_start -> Censoring
   Failure_time -> Observed_death
   Visit_schedule -> Censoring
-  Censoring -> Observed_death
 }`
   },
   {
@@ -2911,7 +2902,6 @@ function configureTargetTrialFollowup(document: GraphDocument): GraphDocument {
   setLinearCoefficient(document, "Treatment_start", "Adherence", 1.4);
   setLinearCoefficient(document, "Treatment_start", "Outcome_90d", -0.55);
   setLinearCoefficient(document, "Adherence", "Outcome_90d", -0.35);
-  setLinearCoefficient(document, "Censoring", "Outcome_90d", 0.9);
   return document;
 }
 
@@ -3061,15 +3051,19 @@ function configureWhatIfHazardSelection(document: GraphDocument): GraphDocument 
   setNode(document, "Frailty", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
   setLogitNode(document, "Treatment_A", -0.25);
   setLogitNode(document, "Death_1", -2.4);
-  setLogitNode(document, "Alive_1", 3.0);
-  setLogitNode(document, "Death_2", -4.0);
+  // Alive_1 is the deterministic survivor indicator (1 - Death_1), not a leaky logit:
+  // additive combiner + zero noise + a -1 edge gives exactly 1 - Death_1.
+  setNode(document, "Alive_1", { intercept: 1, noise: ZERO_NOISE, combiner: "additive" });
+  setLogitNode(document, "Death_2", -1.6);
   setLinearCoefficient(document, "Frailty", "Treatment_A", 1.05);
   setLinearCoefficient(document, "Frailty", "Death_1", 1.35);
   setLinearCoefficient(document, "Frailty", "Death_2", 1.15);
   setLinearCoefficient(document, "Treatment_A", "Death_1", -0.75);
   setLinearCoefficient(document, "Treatment_A", "Death_2", -0.3);
-  setLinearCoefficient(document, "Death_1", "Alive_1", -6.0);
-  setLinearCoefficient(document, "Alive_1", "Death_2", 3.1);
+  setLinearCoefficient(document, "Death_1", "Alive_1", -1);
+  // Death_2 is cumulative: a first-interval death is necessarily dead by interval 2.
+  // The at-risk gating is the absorbing edge (like NHEFS), not a coefficient on Alive_1.
+  setEdgeMechanism(document, "Death_1", "Death_2", "absorbing", {});
   applyWhatIfMetadata(document, {
     chapter: "Chapters 8 and 17",
     section: "Hazards, survival, and selection among survivors",
@@ -3125,7 +3119,6 @@ function configureWhatIfNhefsMortalitySurvival(document: GraphDocument): GraphDo
   setLinearCoefficient(document, "Quit_smoking", "Death_5y", -0.35);
   setLinearCoefficient(document, "Quit_smoking", "Death_10y", -0.45);
   setLinearCoefficient(document, "Weight_gain_2y", "Death_10y", 0.045);
-  setLinearCoefficient(document, "Censoring_5y", "Death_10y", 0.7);
   setEdgeMechanism(document, "Death_5y", "Death_10y", "absorbing", {});
   applyWhatIfMetadata(document, {
     chapter: "Chapter 17",
@@ -3304,10 +3297,8 @@ function configureWhatIfCensoringIpcw(document: GraphDocument): GraphDocument {
   setLinearCoefficient(document, "L1", "C2", 0.9);
   setLinearCoefficient(document, "L1", "Y", 1.0);
   setLinearCoefficient(document, "C1", "A1", -1.1);
-  setLinearCoefficient(document, "C1", "Y", 0.7);
   setLinearCoefficient(document, "A1", "C2", -0.25);
   setLinearCoefficient(document, "A1", "Y", -0.45);
-  setLinearCoefficient(document, "C2", "Y", 0.8);
   applyWhatIfMetadata(document, {
     chapter: "Chapter 21.5",
     section: "Censoring as a time-varying treatment",
@@ -3431,7 +3422,6 @@ function configureWhatIfSnaftSurvival(document: GraphDocument): GraphDocument {
   setLinearCoefficient(document, "Treatment_start", "Censoring", -0.25);
   setLinearCoefficient(document, "Failure_time", "Observed_death", -0.16);
   setLinearCoefficient(document, "Visit_schedule", "Censoring", -0.55);
-  setLinearCoefficient(document, "Censoring", "Observed_death", 0.75);
   applyWhatIfMetadata(document, {
     chapter: "Chapter 17.6",
     section: "Structural nested accelerated failure time models",
