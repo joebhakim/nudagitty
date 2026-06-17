@@ -119,6 +119,7 @@ interface BinaryProbabilityTable {
   treatment: string;
   value: 0 | 1;
   history: string[];
+  binners: Map<string, CovariateBinner>;
   probabilities: Map<string, number>;
   fallback: number;
 }
@@ -373,29 +374,31 @@ function naiveEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonCon
 }
 
 function stratifiedEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
-  const covariate = config.timeVaryingCovariates[0];
-  if (!covariate) {
-    const missing = emptyArms(left, right);
+  const covariates = config.timeVaryingCovariates;
+  if (covariates.length === 0) {
     return {
       id: "stratified",
       label: "Standardized within L",
       estimate: null,
-      arms: missing,
-      diagnostics: ["No time-varying covariate was supplied."]
+      arms: emptyArms(left, right),
+      diagnostics: ["No adjustment covariate was supplied."]
     };
   }
-  const values = [...new Set(cohort.rows.map((row) => asBinary(row[covariate])))]
-    .filter((value) => value === 0 || value === 1)
-    .sort((a, b) => a - b);
+  // Standardize over the JOINT distribution of all covariates, discretizing
+  // continuous ones into quantile bins (a single composite stratum key per row).
+  const binners = buildBinners(cohort, covariates);
+  const stratumOf = (row: Record<string, number>) => keyFromBinners(row, covariates, binners);
+  const strata = [...new Set(cohort.rows.map(stratumOf))];
   const leftMeans: Array<{ mean: number; weight: number }> = [];
   const rightMeans: Array<{ mean: number; weight: number }> = [];
-  const diagnostics: string[] = [];
-  for (const value of values) {
-    const stratumWeight = weightedShare(cohort, (row) => asBinary(row[covariate]) === value);
-    const leftMean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, left, config.treatmentVariables) && asBinary(row[covariate]) === value && isUncensored(row, config.censoringVariables));
-    const rightMean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, right, config.treatmentVariables) && asBinary(row[covariate]) === value && isUncensored(row, config.censoringVariables));
+  let unsupported = 0;
+  for (const stratum of strata) {
+    const inStratum = (row: Record<string, number>) => stratumOf(row) === stratum;
+    const stratumWeight = weightedShare(cohort, inStratum);
+    const leftMean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, left, config.treatmentVariables) && inStratum(row) && isUncensored(row, config.censoringVariables));
+    const rightMean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, right, config.treatmentVariables) && inStratum(row) && isUncensored(row, config.censoringVariables));
     if (leftMean.mean === null || rightMean.mean === null) {
-      diagnostics.push(`No support for at least one strategy in ${covariate}=${value}.`);
+      unsupported += 1;
       continue;
     }
     leftMeans.push({ mean: leftMean.mean, weight: stratumWeight });
@@ -403,15 +406,17 @@ function stratifiedEstimate(cohort: LongitudinalCohort, config: GMethodsComparis
   }
   const leftMean = weightedAverage(leftMeans);
   const rightMean = weightedAverage(rightMeans);
+  const diagnostics = [`Standardizes the outcome over the joint empirical distribution of ${covariates.join(", ")} (continuous covariates quantile-binned).`];
+  if (unsupported > 0) diagnostics.push(`${unsupported} of ${strata.length} strata dropped for lack of both-arm support.`);
   return {
     id: "stratified",
-    label: `Standardized by ${covariate}`,
+    label: covariates.length === 1 ? `Standardized by ${covariates[0]}` : "Standardized within L",
     estimate: difference(leftMean, rightMean),
     arms: [
       armSummary(left, leftMean, cohort.sampleSize, null),
       armSummary(right, rightMean, cohort.sampleSize, null)
     ],
-    diagnostics: diagnostics.length ? diagnostics : [`Standardizes observed matching histories over the empirical ${covariate} distribution.`]
+    diagnostics
   };
 }
 
@@ -567,12 +572,13 @@ function residualizedTreatmentCoefficient(cohort: LongitudinalCohort, outcome: s
 }
 
 function binaryProbabilityTable(cohort: LongitudinalCohort, treatment: string, value: number, history: string[]): BinaryProbabilityTable {
+  const binners = buildBinners(cohort, history);
   const counts = new Map<string, { numerator: number; denominator: number }>();
   let fallbackNumerator = 0.5;
   let fallbackDenominator = 1;
   const target = asBinary(value);
   for (const row of cohort.rows) {
-    const key = historyKey(row, history);
+    const key = keyFromBinners(row, history, binners);
     const count = counts.get(key) ?? { numerator: 0.5, denominator: 1 };
     count.denominator += 1;
     fallbackDenominator += 1;
@@ -586,18 +592,66 @@ function binaryProbabilityTable(cohort: LongitudinalCohort, treatment: string, v
     treatment,
     value: target,
     history,
+    binners,
     probabilities: new Map([...counts.entries()].map(([key, count]) => [key, count.numerator / count.denominator])),
     fallback: fallbackNumerator / fallbackDenominator
   };
 }
 
 function probabilityFromTable(table: BinaryProbabilityTable, row: Record<string, number>): number {
-  return table.probabilities.get(historyKey(row, table.history)) ?? table.fallback;
+  return table.probabilities.get(keyFromBinners(row, table.history, table.binners)) ?? table.fallback;
 }
 
-function historyKey(row: Record<string, number>, history: string[]): string {
-  if (history.length === 0) return "__all__";
-  return history.map((id) => `${id}:${asBinary(row[id])}`).join("|");
+// --- Covariate discretization ------------------------------------------------
+//
+// Adjustment sets contain CONTINUOUS confounders (Age, baseline risk, …). Keying a
+// history/stratum on raw values gives one stratum per subject (useless), and the
+// old `asBinary(v) = v >= 0.5` collapsed e.g. Age~N(50,10) to a constant (always 1)
+// — so stratification degenerated to the naive estimate and IP weights barely
+// adjusted. Instead: discrete columns (binary / few-valued) key on their value;
+// continuous columns key on quantile bins, so standardization and propensity models
+// actually condition on the confounder.
+type CovariateBinner = (row: Record<string, number>) => string;
+const QUANTILE_BINS = 4;
+
+function buildBinners(cohort: LongitudinalCohort, ids: string[], bins = QUANTILE_BINS): Map<string, CovariateBinner> {
+  const binners = new Map<string, CovariateBinner>();
+  for (const id of ids) {
+    if (binners.has(id)) continue;
+    const values = cohort.rows
+      .map((row) => row[id])
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    const levels = new Set(values.map((value) => Math.round(value * 1e6) / 1e6));
+    if (levels.size <= bins) {
+      // Discrete / few-valued (incl. binary treatments): key on the raw value.
+      binners.set(id, (row) => `${id}=${row[id] ?? 0}`);
+    } else {
+      const edges = quantileEdges(values, bins);
+      binners.set(id, (row) => `${id}~${binIndex(edges, row[id] ?? 0)}`);
+    }
+  }
+  return binners;
+}
+
+function keyFromBinners(row: Record<string, number>, ids: string[], binners: Map<string, CovariateBinner>): string {
+  if (ids.length === 0) return "__all__";
+  return ids.map((id) => (binners.get(id) ?? ((r: Record<string, number>) => `${id}=${r[id] ?? 0}`))(row)).join("|");
+}
+
+function quantileEdges(values: number[], bins: number): number[] {
+  const sorted = [...values].sort((a, b) => a - b);
+  const edges: number[] = [];
+  for (let i = 1; i < bins; i += 1) {
+    const index = Math.min(sorted.length - 1, Math.floor((i / bins) * sorted.length));
+    edges.push(sorted[index] ?? 0);
+  }
+  return edges;
+}
+
+function binIndex(edges: number[], value: number): number {
+  let index = 0;
+  while (index < edges.length && value >= edges[index]!) index += 1;
+  return index;
 }
 
 function strategyTreatmentVariables(strategy: TreatmentStrategy): string[] {
