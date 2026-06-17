@@ -77,7 +77,7 @@ const WHAT_IF_SHOWCASE_DYNAMIC_RULES_CODE = `dag {
 
 const WHAT_IF_SHOWCASE_SURVIVAL_CURVES_CODE = `dag {
   Age [adjusted,pos="-2.55,3.5"]
-  Baseline_health [adjusted,label="baseline health",pos="-0.8,3.5"]
+  Baseline_risk [adjusted,label="baseline mortality risk",pos="-0.8,3.5"]
   Quit_smoking [exposure,label="quit smoking",pos="-1.55,2.05"]
   Weight_gain_2y [label="2-year weight gain",pos="-0.3,0.65"]
   Censoring_5y [selected,label="censoring by 5y",pos="1.25,-0.4"]
@@ -87,11 +87,11 @@ const WHAT_IF_SHOWCASE_SURVIVAL_CURVES_CODE = `dag {
   Age -> Censoring_5y
   Age -> Death_5y
   Age -> Death_10y
-  Baseline_health -> Quit_smoking
-  Baseline_health -> Weight_gain_2y
-  Baseline_health -> Censoring_5y
-  Baseline_health -> Death_5y
-  Baseline_health -> Death_10y
+  Baseline_risk -> Quit_smoking
+  Baseline_risk -> Weight_gain_2y
+  Baseline_risk -> Censoring_5y
+  Baseline_risk -> Death_5y
+  Baseline_risk -> Death_10y
   Quit_smoking -> Weight_gain_2y
   Quit_smoking -> Death_5y
   Quit_smoking -> Death_10y
@@ -573,7 +573,7 @@ export const EXAMPLES: ExampleModel[] = [
     outputModule: "what-if-nhefs-mortality-survival",
     code: `dag {
   Age [adjusted,pos="-2.55,3.5"]
-  Baseline_health [adjusted,label="baseline health",pos="-0.8,3.5"]
+  Baseline_risk [adjusted,label="baseline mortality risk",pos="-0.8,3.5"]
   Quit_smoking [exposure,label="quit smoking",pos="-1.55,2.05"]
   Weight_gain_2y [label="2-year weight gain",pos="-0.3,0.65"]
   Censoring_5y [selected,label="censoring by 5y",pos="1.25,-0.4"]
@@ -583,11 +583,11 @@ export const EXAMPLES: ExampleModel[] = [
   Age -> Censoring_5y
   Age -> Death_5y
   Age -> Death_10y
-  Baseline_health -> Quit_smoking
-  Baseline_health -> Weight_gain_2y
-  Baseline_health -> Censoring_5y
-  Baseline_health -> Death_5y
-  Baseline_health -> Death_10y
+  Baseline_risk -> Quit_smoking
+  Baseline_risk -> Weight_gain_2y
+  Baseline_risk -> Censoring_5y
+  Baseline_risk -> Death_5y
+  Baseline_risk -> Death_10y
   Quit_smoking -> Weight_gain_2y
   Quit_smoking -> Death_5y
   Quit_smoking -> Death_10y
@@ -3093,14 +3093,14 @@ function configureWhatIfHazardSelection(document: GraphDocument): GraphDocument 
 function configureWhatIfNhefsMortalitySurvival(document: GraphDocument): GraphDocument {
   setExampleSampleSize(document, 7000);
   setContinuousVariable(document, "Age", "Baseline age at the start of follow-up.", "years");
-  setContinuousVariable(document, "Baseline_health", "Baseline prognosis and smoking history summary.", "health z-score");
+  setContinuousVariable(document, "Baseline_risk", "Baseline mortality risk: underlying illness and smoking-history burden. Higher means worse prognosis.", "risk z-score");
   setBinaryVariable(document, "Quit_smoking", "Smoking cessation at baseline.", "quit");
   setContinuousVariable(document, "Weight_gain_2y", "Weight change after quitting, measured before later mortality.", "kg");
   setBinaryVariable(document, "Censoring_5y", "Loss to follow-up by the intermediate visit.", "censored");
   setBinaryVariable(document, "Death_5y", "Cumulative death by the intermediate follow-up.", "death");
   setBinaryVariable(document, "Death_10y", "Cumulative death by the later follow-up. Anyone dead by 5 years is necessarily dead by 10 years.", "death");
   setNode(document, "Age", { distribution: { kind: "normal", mean: 50, sd: 10 }, noise: ZERO_NOISE });
-  setNode(document, "Baseline_health", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Baseline_risk", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
   setLogitNode(document, "Quit_smoking", 0.0);
   setNode(document, "Weight_gain_2y", { intercept: 2.2, noise: { kind: "normal", mean: 0, sd: 2.4 } });
   setLogitNode(document, "Censoring_5y", -2.4);
@@ -3110,11 +3110,11 @@ function configureWhatIfNhefsMortalitySurvival(document: GraphDocument): GraphDo
   setLinearCoefficient(document, "Age", "Censoring_5y", 0.025);
   setLinearCoefficient(document, "Age", "Death_5y", 0.035);
   setLinearCoefficient(document, "Age", "Death_10y", 0.032);
-  setLinearCoefficient(document, "Baseline_health", "Quit_smoking", -0.55);
-  setLinearCoefficient(document, "Baseline_health", "Weight_gain_2y", -0.7);
-  setLinearCoefficient(document, "Baseline_health", "Censoring_5y", 0.6);
-  setLinearCoefficient(document, "Baseline_health", "Death_5y", 1.1);
-  setLinearCoefficient(document, "Baseline_health", "Death_10y", 1.0);
+  setLinearCoefficient(document, "Baseline_risk", "Quit_smoking", -0.55);
+  setLinearCoefficient(document, "Baseline_risk", "Weight_gain_2y", -0.7);
+  setLinearCoefficient(document, "Baseline_risk", "Censoring_5y", 0.6);
+  setLinearCoefficient(document, "Baseline_risk", "Death_5y", 1.1);
+  setLinearCoefficient(document, "Baseline_risk", "Death_10y", 1.0);
   setLinearCoefficient(document, "Quit_smoking", "Weight_gain_2y", 4.1);
   setLinearCoefficient(document, "Quit_smoking", "Death_5y", -0.35);
   setLinearCoefficient(document, "Quit_smoking", "Death_10y", -0.45);
@@ -3132,9 +3132,9 @@ function configureWhatIfNhefsMortalitySurvival(document: GraphDocument): GraphDo
       ],
       variables: {
         Age: { series: "age", time: "t0", role: "baseline" },
-        Baseline_health: { series: "health", time: "t0", role: "baseline" },
+        Baseline_risk: { series: "risk", time: "t0", role: "baseline" },
         Quit_smoking: { series: "treatment", time: "t0", role: "treatment" },
-        Weight_gain_2y: { series: "weight", time: "t1", role: "time_varying_confounder" },
+        Weight_gain_2y: { series: "weight", time: "t1", role: "mediator" },
         Censoring_5y: { series: "censoring", time: "t1", role: "censoring" },
         Death_5y: { series: "death", time: "t1", role: "outcome" },
         Death_10y: { series: "death", time: "t2", role: "outcome" }
@@ -3181,7 +3181,7 @@ function configureWhatIfWeightGainGEstimation(document: GraphDocument): GraphDoc
         Smoking_intensity: { series: "smoking", time: "t0", role: "baseline" },
         Socioeconomic: { series: "context", time: "t0", role: "baseline" },
         Quit_smoking: { series: "treatment", time: "t0", role: "treatment" },
-        Diet_change: { series: "behavior", time: "t1", role: "time_varying_confounder" },
+        Diet_change: { series: "behavior", time: "t1", role: "mediator" },
         Weight_gain_8y: { series: "weight", time: "t1", role: "outcome" }
       },
       treatmentStrategies: binaryStrategies("quit", "Quit smoking", "Quit_smoking", "Set Quit_smoking=1.", "continue", "Continue smoking", "Quit_smoking", "Set Quit_smoking=0."),

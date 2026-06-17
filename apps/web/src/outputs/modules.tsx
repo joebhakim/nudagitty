@@ -1417,7 +1417,7 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
     title: "Mortality survival contrast",
     view: "survival",
     treatmentVariables: ["Quit_smoking"],
-    timeVaryingCovariates: ["Age", "Baseline_health"],
+    timeVaryingCovariates: ["Age", "Baseline_risk"],
     outcome: "Death_10y",
     strategyIds: ["quit", "continue"],
     censoringVariables: ["Censoring_5y"],

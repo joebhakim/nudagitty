@@ -120,7 +120,7 @@ describe("longitudinal instrumentation", () => {
 
     const comparison = compareLongitudinalGMethods(document, {
       treatmentVariables: ["Quit_smoking"],
-      timeVaryingCovariates: ["Age", "Baseline_health"],
+      timeVaryingCovariates: ["Age", "Baseline_risk"],
       outcome: "Death_10y",
       strategyIds: ["quit", "continue"],
       censoringVariables: ["Censoring_5y"]
