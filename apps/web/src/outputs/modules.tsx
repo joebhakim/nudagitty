@@ -1,4 +1,4 @@
-import { cohortFromSimulationResult, compareLongitudinalGMethods, estimateSurvivalCurve, normalizeVariableModel, runSimulation } from "@nudagitty/core";
+import { analyzeAdjustment, cohortFromSimulationResult, compareLongitudinalGMethods, deriveAdjustmentSpec, estimateSurvivalCurve, normalizeVariableModel, runSimulation } from "@nudagitty/core";
 import type { GMethodEstimate, GMethodsComparison, SimulatedNodeState, SurvivalCurvePoint } from "@nudagitty/core";
 import type React from "react";
 import {
@@ -1362,17 +1362,15 @@ function fallbackOutput(badge: string, message: string) {
   );
 }
 
+// The analysis spec (treatments, covariates, outcome, censoring, strategies, scale) is
+// now DERIVED from the graph operations via deriveAdjustmentSpec — not configured here.
+// This config only carries presentation/narrative: badge, title, which view, the
+// survival spec to chart, and the conclusion copy.
 type WhatIfOutputConfig = {
   badge: string;
   title: string;
   view?: WhatIfOutputView;
   denominatorsOpen?: boolean;
-  treatmentVariables: string[];
-  timeVaryingCovariates: string[];
-  outcome: string;
-  strategyIds: [string, string];
-  outcomeScale?: WhatIfOutputScale;
-  censoringVariables?: string[];
   survivalSpecId?: string;
   conclusion: (comparison: GMethodsComparison | null, scale: WhatIfOutputScale, unit: string) => string;
 };
@@ -1381,10 +1379,6 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
   "what-if-treatment-feedback": {
     badge: "What If",
     title: "G-method comparison",
-    treatmentVariables: ["A0", "A1"],
-    timeVaryingCovariates: ["L1"],
-    outcome: "Y",
-    strategyIds: ["always-treat", "never-treat"],
     conclusion: (comparison, scale, unit) => {
       const naive = comparison?.estimates.find((estimate) => estimate.id === "naive");
       const stratified = comparison?.estimates.find((estimate) => estimate.id === "stratified");
@@ -1394,10 +1388,6 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
   "what-if-ipw-pseudopopulation": {
     badge: "What If",
     title: "Standardization and IP weighting",
-    treatmentVariables: ["Treatment_A"],
-    timeVaryingCovariates: ["Baseline_C"],
-    outcome: "Outcome_Y",
-    strategyIds: ["treat", "untreat"],
     conclusion: (comparison, scale, unit) => `The weighted pseudo-population targets the same baseline strategy contrast as standardization; the crude observed read (${formatOutcomeDifference(comparison?.estimates.find((estimate) => estimate.id === "naive")?.estimate ?? null, scale, unit)}) is kept as a diagnostic.`,
   },
   "what-if-hazard-selection": {
@@ -1405,10 +1395,6 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
     title: "Survival and survivor selection",
     view: "survival",
     denominatorsOpen: true,
-    treatmentVariables: ["Treatment_A"],
-    timeVaryingCovariates: ["Frailty", "Alive_1"],
-    outcome: "Death_2",
-    strategyIds: ["treat", "untreat"],
     survivalSpecId: "two-interval-survival",
     conclusion: () => "Interval hazards are conditioned on who remains alive. The survival curve keeps the cumulative risk denominator visible so a late hazard read is not mistaken for the target risk contrast.",
   },
@@ -1416,11 +1402,6 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
     badge: "What If",
     title: "Mortality survival contrast",
     view: "survival",
-    treatmentVariables: ["Quit_smoking"],
-    timeVaryingCovariates: ["Age", "Baseline_risk"],
-    outcome: "Death_10y",
-    strategyIds: ["quit", "continue"],
-    censoringVariables: ["Censoring_5y"],
     survivalSpecId: "mortality-survival",
     conclusion: () => "The graph separates baseline cessation, later weight change, death over follow-up, and censoring. Censoring-aware weights are reported with the strategy contrast.",
   },
@@ -1428,54 +1409,30 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
     badge: "What If",
     title: "Weight-gain g-estimation",
     view: "g_estimation",
-    treatmentVariables: ["Quit_smoking"],
-    timeVaryingCovariates: ["Smoking_intensity", "Socioeconomic"],
-    outcome: "Weight_gain_8y",
-    strategyIds: ["quit", "continue"],
-    outcomeScale: "mean",
     conclusion: (comparison, scale, unit) => `The additive g-estimation row is the structural-nested teaching read; naive quitting differences (${formatOutcomeDifference(comparison?.estimates.find((estimate) => estimate.id === "naive")?.estimate ?? null, scale, unit)}) remain an observed-data comparison, and exchangeability is an assumption rather than a test result.`,
   },
   "what-if-hiv-cd4-variants": {
     badge: "What If",
     title: "Dynamic ART variants",
     view: "dynamic",
-    treatmentVariables: ["A0", "A1", "A2"],
-    timeVaryingCovariates: ["CD4_0", "CD4_1", "CD4_2"],
-    outcome: "AIDS_death",
-    strategyIds: ["treat-low-cd4", "never-art"],
     conclusion: () => "Treatment variants are rules over CD4 history, not just an ever-treated label. The g-formula row materializes the dynamic rule before standardizing over histories.",
   },
   "what-if-censoring-ipcw": {
     badge: "What If",
     title: "Treatment and censoring weights",
     view: "ipcw",
-    treatmentVariables: ["A0", "A1"],
-    timeVaryingCovariates: ["Baseline_risk", "L1"],
-    outcome: "Y",
-    strategyIds: ["always-treat", "never-treat"],
-    censoringVariables: ["C1", "C2"],
     conclusion: () => "Censoring is explicit, so the IPW row includes treatment and censoring probabilities. Rows after censoring are not silently treated as ordinary follow-up.",
   },
   "what-if-dynamic-g-formula": {
     badge: "What If",
     title: "Dynamic g-formula",
     view: "dynamic",
-    treatmentVariables: ["A0", "A1", "A2"],
-    timeVaryingCovariates: ["Risk_0", "Risk_1", "Risk_2"],
-    outcome: "Y",
-    strategyIds: ["treat-when-high-risk", "never-treat"],
     conclusion: () => "The dynamic strategy is evaluated as a rule over prior risk history. That makes the plotted contrast a strategy contrast rather than an exposure-category comparison.",
   },
   "what-if-snaft-survival": {
     badge: "What If",
     title: "Structural nested survival time",
     view: "survival_time",
-    treatmentVariables: ["Treatment_start"],
-    timeVaryingCovariates: ["Baseline_risk"],
-    outcome: "Failure_time",
-    strategyIds: ["treat", "untreat"],
-    outcomeScale: "mean",
-    censoringVariables: ["Censoring"],
     survivalSpecId: "observed-death-survival",
     conclusion: () => "The main contrast is on failure time, with observed death and censoring shown as follow-up diagnostics. This keeps the survival-time estimand separate from a simple risk read; rank preservation and exchangeability remain modeling assumptions.",
   }
@@ -1484,17 +1441,14 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
 function computeWhatIfAdvancedOutput(context: OutputContext, moduleId: string): WhatIfAdvancedOutput | null {
   const config = WHAT_IF_OUTPUT_CONFIGS[moduleId];
   if (!config) return null;
-  const outcomeScale = config.outcomeScale ?? "risk";
-  const outcomeNode = context.document.graph.nodes.find((node) => node.id === config.outcome);
+  // Same unified pipeline as every other example: derive the spec from the graph's
+  // operations, then run the shared engine.
+  const spec = deriveAdjustmentSpec(context.document);
+  if (!spec) return null;
+  const outcomeScale: WhatIfOutputScale = spec.outcomeScale;
+  const outcomeNode = context.document.graph.nodes.find((node) => node.id === spec.outcome);
   const outcomeUnit = outcomeNode?.variable.unit ?? "";
-  const comparison = compareLongitudinalGMethods(context.document, {
-    treatmentVariables: config.treatmentVariables,
-    timeVaryingCovariates: config.timeVaryingCovariates,
-    outcome: config.outcome,
-    strategyIds: config.strategyIds,
-    censoringVariables: config.censoringVariables,
-    outcomeScale
-  });
+  const comparison = analyzeAdjustment(context.document, spec);
   const source = context.document.metadata.sources.find((candidate) => candidate.id === "hernan-robins-what-if");
   const survivalSpec = config.survivalSpecId
     ? context.document.metadata.longitudinal.survivalOutputs.find((spec) => spec.id === config.survivalSpecId)
