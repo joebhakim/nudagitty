@@ -80,7 +80,7 @@ export interface GMethodArmSummary {
 }
 
 export interface GMethodEstimate {
-  id: "naive" | "stratified" | "g_formula" | "ipw" | "g_estimation";
+  id: "naive" | "stratified" | "g_formula" | "ipw" | "g_estimation" | "outcome_regression" | "matching" | "aipw";
   label: string;
   estimate: number | null;
   arms: [GMethodArmSummary, GMethodArmSummary];
@@ -336,7 +336,10 @@ export function compareLongitudinalGMethods(document: GraphDocument, config: GMe
     stratifiedEstimate(cohort, config, leftStrategy, rightStrategy),
     gFormulaEstimate(leftStrategy, rightStrategy, strategyEvaluations),
     ipwEstimate(cohort, config, leftStrategy, rightStrategy),
-    gEstimationEstimate(cohort, config, leftStrategy, rightStrategy)
+    gEstimationEstimate(cohort, config, leftStrategy, rightStrategy),
+    outcomeRegressionEstimate(cohort, config, leftStrategy, rightStrategy),
+    matchingEstimate(cohort, config, leftStrategy, rightStrategy),
+    aipwEstimate(cohort, config, leftStrategy, rightStrategy)
   ];
   return {
     treatmentVariables: config.treatmentVariables,
@@ -493,6 +496,244 @@ function gEstimationEstimate(cohort: LongitudinalCohort, config: GMethodsCompari
       armSummary(right, rightMean, cohort.sampleSize, null)
     ],
     diagnostics: [`Sequential residualized additive blip coefficients: ${psiDiagnostic}.`]
+  };
+}
+
+// --- Additional choosable estimators -----------------------------------------
+// Parametric outcome regression, propensity matching, and doubly-robust AIPW.
+// These complement the (nonparametric) standardization / IPW / g-estimation rows;
+// being parametric, outcome regression and AIPW expose functional-form assumptions
+// the binned estimators avoid — a deliberate contrast.
+
+function emptyEstimate(id: GMethodEstimate["id"], label: string, left: TreatmentStrategy, right: TreatmentStrategy, message: string): GMethodEstimate {
+  return { id, label, estimate: null, arms: emptyArms(left, right), diagnostics: [message] };
+}
+
+function dot(a: number[], b: number[]): number {
+  let sum = 0;
+  for (let i = 0; i < a.length; i += 1) sum += (a[i] ?? 0) * (b[i] ?? 0);
+  return sum;
+}
+
+function sigmoidLocal(x: number): number {
+  if (x >= 0) return 1 / (1 + Math.exp(-x));
+  const e = Math.exp(x);
+  return e / (1 + e);
+}
+
+function gaussianSolve(matrix: number[][], rhs: number[]): number[] | null {
+  const n = matrix.length;
+  const m = matrix.map((row, i) => [...row, rhs[i] ?? 0]);
+  for (let col = 0; col < n; col += 1) {
+    let pivot = col;
+    for (let r = col + 1; r < n; r += 1) if (Math.abs(m[r]![col]!) > Math.abs(m[pivot]![col]!)) pivot = r;
+    [m[col], m[pivot]] = [m[pivot]!, m[col]!];
+    const diag = m[col]![col]!;
+    if (Math.abs(diag) < 1e-12) return null;
+    for (let j = col; j <= n; j += 1) m[col]![j]! /= diag;
+    for (let r = 0; r < n; r += 1) {
+      if (r === col) continue;
+      const factor = m[r]![col]!;
+      for (let j = col; j <= n; j += 1) m[r]![j]! -= factor * m[col]![j]!;
+    }
+  }
+  return m.map((row) => row[n]!);
+}
+
+function solveNormalEquations(design: number[][], response: number[], weights: number[], ridge: number): number[] | null {
+  const p = design[0]?.length ?? 0;
+  if (p === 0) return null;
+  const xtwx = Array.from({ length: p }, () => new Array<number>(p).fill(0));
+  const xtwy = new Array<number>(p).fill(0);
+  for (let i = 0; i < design.length; i += 1) {
+    const xi = design[i]!;
+    const wi = weights[i] ?? 1;
+    for (let a = 0; a < p; a += 1) {
+      xtwy[a]! += wi * xi[a]! * (response[i] ?? 0);
+      for (let b = 0; b < p; b += 1) xtwx[a]![b]! += wi * xi[a]! * xi[b]!;
+    }
+  }
+  for (let a = 0; a < p; a += 1) xtwx[a]![a]! += ridge;
+  return gaussianSolve(xtwx, xtwy);
+}
+
+function designRow(row: Record<string, number>, treatments: string[], covariates: string[], assignment: Map<string, number> | null): number[] {
+  const xs = [1];
+  for (const treatment of treatments) xs.push(assignment ? assignment.get(treatment) ?? 0 : asBinary(row[treatment]));
+  for (const covariate of covariates) {
+    const value = row[covariate];
+    xs.push(value !== undefined && Number.isFinite(value) ? value : 0);
+  }
+  return xs;
+}
+
+function strategyAssignmentMap(row: Record<string, number>, strategy: TreatmentStrategy, treatments: string[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const treatment of treatments) map.set(treatment, asBinary(assignedTreatmentValue(row, strategy, treatment)));
+  return map;
+}
+
+// Fit E[Y | treatments, covariates] parametrically (OLS for continuous, IRLS
+// logistic for binary). Returns a predictor (row, treatment-assignment) -> Ŷ.
+function fitOutcomeModel(cohort: LongitudinalCohort, outcome: string, treatments: string[], covariates: string[], binary: boolean): ((row: Record<string, number>, assignment: Map<string, number> | null) => number) | null {
+  const indices = cohort.rows.map((_, i) => i).filter((i) => { const y = cohort.rows[i]![outcome]; return y !== undefined && Number.isFinite(y); });
+  const params = 1 + treatments.length + covariates.length;
+  if (indices.length < params + 2) return null;
+  const design = indices.map((i) => designRow(cohort.rows[i]!, treatments, covariates, null));
+  const response = indices.map((i) => cohort.rows[i]![outcome]!);
+  const baseWeights = indices.map((i) => cohort.weights[i] ?? 1);
+  let beta: number[] | null;
+  if (!binary) {
+    beta = solveNormalEquations(design, response, baseWeights, 1e-6);
+  } else {
+    beta = new Array<number>(params).fill(0);
+    for (let iter = 0; iter < 20; iter += 1) {
+      const working: number[] = [];
+      const irlsWeights: number[] = [];
+      for (let r = 0; r < design.length; r += 1) {
+        const eta = dot(design[r]!, beta);
+        const mu = sigmoidLocal(eta);
+        const variance = Math.max(1e-3, mu * (1 - mu));
+        irlsWeights.push(variance * (baseWeights[r] ?? 1));
+        working.push(eta + ((response[r] ?? 0) - mu) / variance);
+      }
+      const next = solveNormalEquations(design, working, irlsWeights, 1e-6);
+      if (!next || !next.every((value) => Number.isFinite(value))) break;
+      beta = next;
+    }
+  }
+  if (!beta || !beta.every((value) => Number.isFinite(value))) return null;
+  const coefficients = beta;
+  return (row, assignment) => {
+    const linear = dot(designRow(row, treatments, covariates, assignment), coefficients);
+    return binary ? sigmoidLocal(linear) : linear;
+  };
+}
+
+function outcomeRegressionEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
+  const binary = (config.outcomeScale ?? "risk") === "risk";
+  const model = fitOutcomeModel(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary);
+  if (!model) return emptyEstimate("outcome_regression", "Outcome regression", left, right, "Not enough data to fit the parametric outcome model.");
+  const predictMean = (strategy: TreatmentStrategy): number | null => {
+    let sum = 0;
+    let weight = 0;
+    for (let i = 0; i < cohort.rows.length; i += 1) {
+      const row = cohort.rows[i]!;
+      const baseWeight = cohort.weights[i] ?? 1;
+      sum += model(row, strategyAssignmentMap(row, strategy, config.treatmentVariables)) * baseWeight;
+      weight += baseWeight;
+    }
+    return weight > 0 ? sum / weight : null;
+  };
+  const leftMean = predictMean(left);
+  const rightMean = predictMean(right);
+  const multiStep = config.treatmentVariables.length > 1;
+  const diagnostics = [`Fits a ${binary ? "logistic" : "linear"} model of ${config.outcome} on treatment(s) + covariates, then predicts every unit under each strategy. Parametric: a misspecified functional form (e.g. real non-linearity) biases this even where standardization is unbiased.`];
+  if (multiStep) diagnostics.push("Pooled across treatment times — a simplification of the full sequential parametric g-formula.");
+  return {
+    id: "outcome_regression",
+    label: "Outcome regression (parametric g-formula)",
+    estimate: difference(leftMean, rightMean),
+    arms: [armSummary(left, leftMean, cohort.sampleSize, null), armSummary(right, rightMean, cohort.sampleSize, null)],
+    diagnostics
+  };
+}
+
+function aipwEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
+  const binary = (config.outcomeScale ?? "risk") === "risk";
+  const model = fitOutcomeModel(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary);
+  if (!model) return emptyEstimate("aipw", "Doubly-robust (AIPW)", left, right, "Could not fit the outcome model for the augmentation term.");
+  const propensityTables = config.treatmentVariables.map((treatment, index) => ({
+    treatment,
+    table: binaryProbabilityTable(cohort, treatment, 1, treatmentHistory(treatment, config.treatmentVariables.slice(0, index), config.timeVaryingCovariates))
+  }));
+  const armMean = (strategy: TreatmentStrategy): number | null => {
+    let sum = 0;
+    let weight = 0;
+    for (let i = 0; i < cohort.rows.length; i += 1) {
+      const row = cohort.rows[i]!;
+      const baseWeight = cohort.weights[i] ?? 1;
+      const predicted = model(row, strategyAssignmentMap(row, strategy, config.treatmentVariables));
+      let value = predicted;
+      if (matchesStrategy(row, strategy, config.treatmentVariables) && isUncensored(row, config.censoringVariables)) {
+        const outcome = row[config.outcome];
+        if (outcome !== undefined && Number.isFinite(outcome)) {
+          let propensity = 1;
+          for (const spec of propensityTables) {
+            const assigned = asBinary(assignedTreatmentValue(row, strategy, spec.treatment));
+            const probability = probabilityFromTable(spec.table, row);
+            propensity *= assigned === 1 ? probability : 1 - probability;
+          }
+          value += (outcome - predicted) / Math.max(0.02, propensity);
+        }
+      }
+      sum += value * baseWeight;
+      weight += baseWeight;
+    }
+    return weight > 0 ? sum / weight : null;
+  };
+  return {
+    id: "aipw",
+    label: "Doubly-robust (AIPW)",
+    estimate: difference(armMean(left), armMean(right)),
+    arms: [armSummary(left, armMean(left), cohort.sampleSize, null), armSummary(right, armMean(right), cohort.sampleSize, null)],
+    diagnostics: ["Augmented IPW: outcome-model prediction plus an inverse-propensity correction. Consistent if EITHER the outcome model or the propensity model is right (doubly robust)."]
+  };
+}
+
+function matchingEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
+  const covariates = config.timeVaryingCovariates;
+  if (covariates.length === 0 || config.treatmentVariables.length === 0) {
+    return emptyEstimate("matching", "Propensity-score matching", left, right, "Needs a treatment and at least one covariate.");
+  }
+  const tables = config.treatmentVariables.map((treatment) => binaryProbabilityTable(cohort, treatment, 1, covariates));
+  const score = (row: Record<string, number>): number => {
+    let probability = 1;
+    for (let i = 0; i < config.treatmentVariables.length; i += 1) {
+      const assigned = asBinary(assignedTreatmentValue(row, left, config.treatmentVariables[i]!));
+      const p1 = probabilityFromTable(tables[i]!, row);
+      probability *= assigned === 1 ? p1 : 1 - p1;
+    }
+    return probability;
+  };
+  const treated: Array<{ score: number; y: number }> = [];
+  const control: Array<{ score: number; y: number }> = [];
+  for (const row of cohort.rows) {
+    if (!isUncensored(row, config.censoringVariables)) continue;
+    const outcome = row[config.outcome];
+    if (outcome === undefined || !Number.isFinite(outcome)) continue;
+    if (matchesStrategy(row, left, config.treatmentVariables)) treated.push({ score: score(row), y: outcome });
+    else if (matchesStrategy(row, right, config.treatmentVariables)) control.push({ score: score(row), y: outcome });
+  }
+  if (treated.length < 5 || control.length < 5) {
+    return emptyEstimate("matching", "Propensity-score matching", left, right, "Too few units in one arm to match.");
+  }
+  const controlSorted = [...control].sort((a, b) => a.score - b.score);
+  const treatedSorted = [...treated].sort((a, b) => a.score - b.score);
+  const nearest = (sorted: Array<{ score: number; y: number }>, target: number): number => {
+    let lo = 0;
+    let hi = sorted.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sorted[mid]!.score < target) lo = mid + 1; else hi = mid;
+    }
+    let best = sorted[lo]!;
+    if (lo > 0 && Math.abs(sorted[lo - 1]!.score - target) < Math.abs(best.score - target)) best = sorted[lo - 1]!;
+    return best.y;
+  };
+  const att = treated.reduce((acc, unit) => acc + (unit.y - nearest(controlSorted, unit.score)), 0) / treated.length;
+  const atc = control.reduce((acc, unit) => acc + (nearest(treatedSorted, unit.score) - unit.y), 0) / control.length;
+  const estimate = 0.5 * (att + atc);
+  const leftMean = treated.reduce((acc, unit) => acc + unit.y, 0) / treated.length;
+  const rightMean = leftMean - estimate;
+  const diagnostics = ["1:1 nearest-neighbour matching on the (binned) propensity score, averaging ATT and ATC."];
+  if (config.treatmentVariables.length > 1) diagnostics.push("Matches on a composite baseline propensity for the whole regimen — a simplification for multi-step treatments.");
+  return {
+    id: "matching",
+    label: "Propensity-score matching",
+    estimate,
+    arms: [armSummary(left, leftMean, treated.length, null), armSummary(right, rightMean, control.length, null)],
+    diagnostics
   };
 }
 

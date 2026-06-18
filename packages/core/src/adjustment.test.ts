@@ -37,7 +37,7 @@ describe("deriveAdjustmentSpec reproduces the hand-coded what-if configs", () =>
       const comparison = analyzeAdjustment(document, spec);
       expect(comparison).not.toBeNull();
       const ids = comparison!.estimates.map((estimate) => estimate.id);
-      expect(ids).toEqual(["naive", "stratified", "g_formula", "ipw", "g_estimation"]);
+      expect(ids).toEqual(["naive", "stratified", "g_formula", "ipw", "g_estimation", "outcome_regression", "matching", "aipw"]);
     });
   }
 

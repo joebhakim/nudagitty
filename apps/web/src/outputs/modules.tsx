@@ -863,6 +863,18 @@ const METHOD_GLOSSARY: Record<GMethodEstimate["id"], { plain: string; formula: s
   g_estimation: {
     plain: "Backs out the additive per-step treatment effect (the 'blip') by finding the value that makes the treatment-removed outcome independent of treatment given history.",
     formula: "U(ψ) = Y − ψ·A ;  solve  E[ (A − E[A | L]) · U(ψ) ] = 0"
+  },
+  outcome_regression: {
+    plain: "Fits a parametric model of the outcome on treatment and confounders, then predicts everyone under each strategy and averages. Unbiased only if that functional form is right — real non-linearity biases it even where standardization holds.",
+    formula: "Σ_i  m̂(a, L_i) / n,   m̂ = fitted E[ Y | A, L ]"
+  },
+  matching: {
+    plain: "Pairs each treated unit with the nearest untreated unit on the estimated propensity score, then averages the within-pair outcome gap. Approximates a randomized comparison among comparable units.",
+    formula: "1:1 NN on ê(L) = P(A = 1 | L);  mean over matched pairs of  Y_treated − Y_control"
+  },
+  aipw: {
+    plain: "Combines the outcome model with inverse-propensity weighting so it stays correct if EITHER model is right (doubly robust).",
+    formula: "E[ m̂(a, L) + 1(A = a)/ê · (Y − m̂(a, L)) ]"
   }
 };
 

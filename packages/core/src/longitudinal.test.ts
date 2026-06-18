@@ -29,7 +29,7 @@ describe("longitudinal instrumentation", () => {
 
     expect(comparison).not.toBeNull();
     expect(comparison?.cohort.sampleSize).toBeGreaterThan(1000);
-    expect(comparison?.estimates.map((estimate) => estimate.id)).toEqual(["naive", "stratified", "g_formula", "ipw", "g_estimation"]);
+    expect(comparison?.estimates.map((estimate) => estimate.id)).toEqual(["naive", "stratified", "g_formula", "ipw", "g_estimation", "outcome_regression", "matching", "aipw"]);
     const gFormula = comparison?.estimates.find((estimate) => estimate.id === "g_formula");
     const ipw = comparison?.estimates.find((estimate) => estimate.id === "ipw");
     const gEstimation = comparison?.estimates.find((estimate) => estimate.id === "g_estimation");
