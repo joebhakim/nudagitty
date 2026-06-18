@@ -1,6 +1,7 @@
-import { cohortFromSimulationResult, compareLongitudinalGMethods, estimateSurvivalCurve, normalizeVariableModel, runSimulation } from "@nudagitty/core";
+import { analyzeAdjustment, cohortFromSimulationResult, compareLongitudinalGMethods, deriveAdjustmentSpec, estimateSurvivalCurve, normalizeVariableModel, runSimulation } from "@nudagitty/core";
 import type { GMethodEstimate, GMethodsComparison, SimulatedNodeState, SurvivalCurvePoint } from "@nudagitty/core";
 import type React from "react";
+import { useState } from "react";
 import {
   formatPercent,
   formatPercentagePointMagnitude,
@@ -815,37 +816,7 @@ function renderWhatIfAdvancedOutput(output: WhatIfAdvancedOutput) {
         <WhatIfStrategySurvivalCurve summary={output.survival} survivalTime={output.view === "survival_time"} denominatorsOpen={output.denominatorsOpen} />
       )}
       {comparison && output.view === "dynamic" && <WhatIfDynamicSupport comparison={comparison} />}
-      {comparison && (
-        <details className="what-if-method-table-card" open={methodsOpen}>
-          <summary className="module-card-header">
-            <strong>Methods</strong>
-            <span>{formatWeightedCount(comparison.cohort.sampleSize)} simulated rows</span>
-          </summary>
-          <table className="what-if-method-table">
-            <thead>
-              <tr>
-                <th>Method</th>
-                <th>{comparison.strategies[0].label}</th>
-                <th>{comparison.strategies[1].label}</th>
-                <th>Difference</th>
-              </tr>
-            </thead>
-            <tbody>
-              {comparison.estimates.map((estimate) => (
-                <tr key={estimate.id}>
-                  <td>
-                    <strong>{estimate.label}</strong>
-                    <small>{estimate.diagnostics[0] ?? ""}</small>
-                  </td>
-                  <td>{formatOutcomeValue(estimate.arms[0].mean, output.outcomeScale, output.outcomeUnit)}</td>
-                  <td>{formatOutcomeValue(estimate.arms[1].mean, output.outcomeScale, output.outcomeUnit)}</td>
-                  <td className={estimateToneClass(estimate.estimate)}>{formatOutcomeDifference(estimate.estimate, output.outcomeScale, output.outcomeUnit)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
-      )}
+      {comparison && <MethodsComparisonPanel comparison={comparison} outcomeScale={output.outcomeScale} outcomeUnit={output.outcomeUnit} defaultOpen={methodsOpen} />}
       {comparison && (
         <div className="what-if-strategy-grid">
           {comparison.strategies.map((strategy) => (
@@ -869,6 +840,144 @@ function renderWhatIfAdvancedOutput(output: WhatIfAdvancedOutput) {
         </div>
       </details>
     </CompletedOutputShell>
+  );
+}
+
+// Plain-language + formula for each g-method row, so the table isn't just labels.
+const METHOD_GLOSSARY: Record<GMethodEstimate["id"], { plain: string; formula: string }> = {
+  naive: {
+    plain: "Compares the outcome by the treatment people actually took. Confounded by anything that drives both the treatment and the outcome.",
+    formula: "E[ Y | A = a, uncensored ]"
+  },
+  stratified: {
+    plain: "Averages the outcome inside confounder strata, then re-weights those strata to the whole population. Unbiased only if every confounder is in L (and the bins are fine enough).",
+    formula: "Σ_l  E[ Y | A = a, L = l ] · P(L = l)"
+  },
+  g_formula: {
+    plain: "Re-simulates the whole population under each complete strategy from the fitted model. With the true model this is the oracle effect.",
+    formula: "E[ Y | do(A = a) ]   (sequential over time for time-varying A)"
+  },
+  ipw: {
+    plain: "Re-weights each person by the inverse probability of their own treatment (and of staying uncensored), building a pseudo-population where treatment is independent of the measured confounders.",
+    formula: "E[ Y · 1(A = a) / P(A = a | L) ]   (stabilized; × censoring weights for IPCW)"
+  },
+  g_estimation: {
+    plain: "Backs out the additive per-step treatment effect (the 'blip') by finding the value that makes the treatment-removed outcome independent of treatment given history.",
+    formula: "U(ψ) = Y − ψ·A ;  solve  E[ (A − E[A | L]) · U(ψ) ] = 0"
+  },
+  outcome_regression: {
+    plain: "Fits a parametric model of the outcome on treatment and confounders, then predicts everyone under each strategy and averages. Unbiased only if that functional form is right — real non-linearity biases it even where standardization holds.",
+    formula: "Σ_i  m̂(a, L_i) / n,   m̂ = fitted E[ Y | A, L ]"
+  },
+  matching: {
+    plain: "Pairs each treated unit with the nearest untreated unit on the estimated propensity score, then averages the within-pair outcome gap. Approximates a randomized comparison among comparable units.",
+    formula: "1:1 NN on ê(L) = P(A = 1 | L);  mean over matched pairs of  Y_treated − Y_control"
+  },
+  aipw: {
+    plain: "Combines the outcome model with inverse-propensity weighting so it stays correct if EITHER model is right (doubly robust).",
+    formula: "E[ m̂(a, L) + 1(A = a)/ê · (Y − m̂(a, L)) ]"
+  }
+};
+
+// The canonical adjustment readout — the g-method estimator table + the glossary.
+// Used identically for every example (classic or longitudinal) so the same operation
+// always renders the same panel.
+// Default primary method: prefer the doubly-robust / workhorse estimators that are
+// honest without the oracle, before falling back to whatever has a value.
+const PRIMARY_METHOD_PREFERENCE: GMethodEstimate["id"][] = ["aipw", "ipw", "stratified", "outcome_regression", "matching", "g_estimation", "g_formula", "naive"];
+
+export function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean }) {
+  const { comparison, outcomeScale, outcomeUnit } = props;
+  const available = comparison.estimates.filter((estimate) => estimate.estimate !== null);
+  const [primaryId, setPrimaryId] = useState<GMethodEstimate["id"]>(
+    () => PRIMARY_METHOD_PREFERENCE.find((id) => available.some((estimate) => estimate.id === id)) ?? available[0]?.id ?? "naive"
+  );
+  const primary = comparison.estimates.find((estimate) => estimate.id === primaryId && estimate.estimate !== null) ?? available[0] ?? null;
+  return (
+    <>
+      {primary && (
+        <div className="methods-primary">
+          <div className="methods-primary-controls">
+            <label htmlFor="primary-method-select">Primary method</label>
+            <select
+              id="primary-method-select"
+              className="methods-primary-select"
+              value={primary.id}
+              onChange={(event) => setPrimaryId(event.target.value as GMethodEstimate["id"])}
+            >
+              {comparison.estimates.map((estimate) => (
+                <option key={estimate.id} value={estimate.id} disabled={estimate.estimate === null}>
+                  {estimate.label}{estimate.estimate === null ? " — n/a" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="methods-primary-headline">
+            <strong className={estimateToneClass(primary.estimate)}>{formatOutcomeDifference(primary.estimate, outcomeScale, outcomeUnit)}</strong>
+            <span>{comparison.strategies[0].label} vs {comparison.strategies[1].label}</span>
+          </div>
+          <p className="methods-primary-plain">{METHOD_GLOSSARY[primary.id].plain}</p>
+        </div>
+      )}
+      <details className="what-if-method-table-card" open={props.defaultOpen}>
+        <summary className="module-card-header">
+          <strong>Compare all methods</strong>
+          <span>{formatWeightedCount(comparison.cohort.sampleSize)} simulated rows</span>
+        </summary>
+        <table className="what-if-method-table">
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>{comparison.strategies[0].label}</th>
+              <th>{comparison.strategies[1].label}</th>
+              <th>Difference</th>
+            </tr>
+          </thead>
+          <tbody>
+            {comparison.estimates.map((estimate) => (
+              <tr key={estimate.id} className={estimate.id === primary?.id ? "method-row-primary" : undefined}>
+                <td>
+                  <strong>{estimate.label}{estimate.id === primary?.id ? " ◄" : ""}</strong>
+                  <small>{estimate.diagnostics[0] ?? ""}</small>
+                </td>
+                <td>{formatOutcomeValue(estimate.arms[0].mean, outcomeScale, outcomeUnit)}</td>
+                <td>{formatOutcomeValue(estimate.arms[1].mean, outcomeScale, outcomeUnit)}</td>
+                <td className={estimateToneClass(estimate.estimate)}>{formatOutcomeDifference(estimate.estimate, outcomeScale, outcomeUnit)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+      <WhatIfMethodGlossary comparison={comparison} />
+    </>
+  );
+}
+
+function WhatIfMethodGlossary(props: { comparison: GMethodsComparison }) {
+  return (
+    <details className="what-if-method-glossary">
+      <summary>How to read these methods</summary>
+      <dl>
+        {props.comparison.estimates.map((estimate) => {
+          const entry = METHOD_GLOSSARY[estimate.id];
+          if (!entry) return null;
+          return (
+            <div key={estimate.id}>
+              <dt>{estimate.label}</dt>
+              <dd>
+                <p>{entry.plain}</p>
+                <code className="what-if-method-formula">{entry.formula}</code>
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+      <p className="what-if-method-glossary-note">
+        g-formula is the do()-resimulated oracle here. The others estimate the same effect from the observed
+        cohort — they agree with the oracle when the confounders are correctly adjusted, and reveal bias when
+        they don&rsquo;t.
+      </p>
+    </details>
   );
 }
 
@@ -1028,6 +1137,11 @@ function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; su
         <strong>{props.survivalTime ? "Observed-death survival by strategy" : "Survival curves by strategy"}</strong>
         <span>{props.summary.label}</span>
       </div>
+      <p className="what-if-survival-method">
+        Counterfactual survival under each strategy — the g-formula curve: the model is re-simulated with
+        <em> everyone</em> assigned that strategy, not the observed (confounded) sub-group. The natural-course
+        line below is the observed cohort for reference.
+      </p>
       <svg className="what-if-survival-plot" viewBox={`0 0 ${width} ${frame.height}`} role="img" aria-label={`${props.summary.label} survival curves by strategy`}>
         <line className="huh-shift-axis" x1={plot.x} y1={plot.bottom} x2={plot.right} y2={plot.bottom} />
         <line className="huh-shift-axis" x1={plot.x} y1={plot.y} x2={plot.x} y2={plot.bottom} />
@@ -1304,17 +1418,15 @@ function fallbackOutput(badge: string, message: string) {
   );
 }
 
+// The analysis spec (treatments, covariates, outcome, censoring, strategies, scale) is
+// now DERIVED from the graph operations via deriveAdjustmentSpec — not configured here.
+// This config only carries presentation/narrative: badge, title, which view, the
+// survival spec to chart, and the conclusion copy.
 type WhatIfOutputConfig = {
   badge: string;
   title: string;
   view?: WhatIfOutputView;
   denominatorsOpen?: boolean;
-  treatmentVariables: string[];
-  timeVaryingCovariates: string[];
-  outcome: string;
-  strategyIds: [string, string];
-  outcomeScale?: WhatIfOutputScale;
-  censoringVariables?: string[];
   survivalSpecId?: string;
   conclusion: (comparison: GMethodsComparison | null, scale: WhatIfOutputScale, unit: string) => string;
 };
@@ -1323,10 +1435,6 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
   "what-if-treatment-feedback": {
     badge: "What If",
     title: "G-method comparison",
-    treatmentVariables: ["A0", "A1"],
-    timeVaryingCovariates: ["L1"],
-    outcome: "Y",
-    strategyIds: ["always-treat", "never-treat"],
     conclusion: (comparison, scale, unit) => {
       const naive = comparison?.estimates.find((estimate) => estimate.id === "naive");
       const stratified = comparison?.estimates.find((estimate) => estimate.id === "stratified");
@@ -1336,10 +1444,6 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
   "what-if-ipw-pseudopopulation": {
     badge: "What If",
     title: "Standardization and IP weighting",
-    treatmentVariables: ["Treatment_A"],
-    timeVaryingCovariates: ["Baseline_C"],
-    outcome: "Outcome_Y",
-    strategyIds: ["treat", "untreat"],
     conclusion: (comparison, scale, unit) => `The weighted pseudo-population targets the same baseline strategy contrast as standardization; the crude observed read (${formatOutcomeDifference(comparison?.estimates.find((estimate) => estimate.id === "naive")?.estimate ?? null, scale, unit)}) is kept as a diagnostic.`,
   },
   "what-if-hazard-selection": {
@@ -1347,10 +1451,6 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
     title: "Survival and survivor selection",
     view: "survival",
     denominatorsOpen: true,
-    treatmentVariables: ["Treatment_A"],
-    timeVaryingCovariates: ["Frailty", "Alive_1"],
-    outcome: "Death_2",
-    strategyIds: ["treat", "untreat"],
     survivalSpecId: "two-interval-survival",
     conclusion: () => "Interval hazards are conditioned on who remains alive. The survival curve keeps the cumulative risk denominator visible so a late hazard read is not mistaken for the target risk contrast.",
   },
@@ -1358,11 +1458,6 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
     badge: "What If",
     title: "Mortality survival contrast",
     view: "survival",
-    treatmentVariables: ["Quit_smoking"],
-    timeVaryingCovariates: ["Age", "Baseline_health"],
-    outcome: "Death_10y",
-    strategyIds: ["quit", "continue"],
-    censoringVariables: ["Censoring_5y"],
     survivalSpecId: "mortality-survival",
     conclusion: () => "The graph separates baseline cessation, later weight change, death over follow-up, and censoring. Censoring-aware weights are reported with the strategy contrast.",
   },
@@ -1370,54 +1465,30 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
     badge: "What If",
     title: "Weight-gain g-estimation",
     view: "g_estimation",
-    treatmentVariables: ["Quit_smoking"],
-    timeVaryingCovariates: ["Smoking_intensity", "Socioeconomic"],
-    outcome: "Weight_gain_8y",
-    strategyIds: ["quit", "continue"],
-    outcomeScale: "mean",
     conclusion: (comparison, scale, unit) => `The additive g-estimation row is the structural-nested teaching read; naive quitting differences (${formatOutcomeDifference(comparison?.estimates.find((estimate) => estimate.id === "naive")?.estimate ?? null, scale, unit)}) remain an observed-data comparison, and exchangeability is an assumption rather than a test result.`,
   },
   "what-if-hiv-cd4-variants": {
     badge: "What If",
     title: "Dynamic ART variants",
     view: "dynamic",
-    treatmentVariables: ["A0", "A1", "A2"],
-    timeVaryingCovariates: ["CD4_0", "CD4_1", "CD4_2"],
-    outcome: "AIDS_death",
-    strategyIds: ["treat-low-cd4", "never-art"],
     conclusion: () => "Treatment variants are rules over CD4 history, not just an ever-treated label. The g-formula row materializes the dynamic rule before standardizing over histories.",
   },
   "what-if-censoring-ipcw": {
     badge: "What If",
     title: "Treatment and censoring weights",
     view: "ipcw",
-    treatmentVariables: ["A0", "A1"],
-    timeVaryingCovariates: ["Baseline_risk", "L1"],
-    outcome: "Y",
-    strategyIds: ["always-treat", "never-treat"],
-    censoringVariables: ["C1", "C2"],
     conclusion: () => "Censoring is explicit, so the IPW row includes treatment and censoring probabilities. Rows after censoring are not silently treated as ordinary follow-up.",
   },
   "what-if-dynamic-g-formula": {
     badge: "What If",
     title: "Dynamic g-formula",
     view: "dynamic",
-    treatmentVariables: ["A0", "A1", "A2"],
-    timeVaryingCovariates: ["Risk_0", "Risk_1", "Risk_2"],
-    outcome: "Y",
-    strategyIds: ["treat-when-high-risk", "never-treat"],
     conclusion: () => "The dynamic strategy is evaluated as a rule over prior risk history. That makes the plotted contrast a strategy contrast rather than an exposure-category comparison.",
   },
   "what-if-snaft-survival": {
     badge: "What If",
     title: "Structural nested survival time",
     view: "survival_time",
-    treatmentVariables: ["Treatment_start"],
-    timeVaryingCovariates: ["Baseline_risk"],
-    outcome: "Failure_time",
-    strategyIds: ["treat", "untreat"],
-    outcomeScale: "mean",
-    censoringVariables: ["Censoring"],
     survivalSpecId: "observed-death-survival",
     conclusion: () => "The main contrast is on failure time, with observed death and censoring shown as follow-up diagnostics. This keeps the survival-time estimand separate from a simple risk read; rank preservation and exchangeability remain modeling assumptions.",
   }
@@ -1426,17 +1497,14 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
 function computeWhatIfAdvancedOutput(context: OutputContext, moduleId: string): WhatIfAdvancedOutput | null {
   const config = WHAT_IF_OUTPUT_CONFIGS[moduleId];
   if (!config) return null;
-  const outcomeScale = config.outcomeScale ?? "risk";
-  const outcomeNode = context.document.graph.nodes.find((node) => node.id === config.outcome);
+  // Same unified pipeline as every other example: derive the spec from the graph's
+  // operations, then run the shared engine.
+  const spec = deriveAdjustmentSpec(context.document);
+  if (!spec) return null;
+  const outcomeScale: WhatIfOutputScale = spec.outcomeScale;
+  const outcomeNode = context.document.graph.nodes.find((node) => node.id === spec.outcome);
   const outcomeUnit = outcomeNode?.variable.unit ?? "";
-  const comparison = compareLongitudinalGMethods(context.document, {
-    treatmentVariables: config.treatmentVariables,
-    timeVaryingCovariates: config.timeVaryingCovariates,
-    outcome: config.outcome,
-    strategyIds: config.strategyIds,
-    censoringVariables: config.censoringVariables,
-    outcomeScale
-  });
+  const comparison = analyzeAdjustment(context.document, spec);
   const source = context.document.metadata.sources.find((candidate) => candidate.id === "hernan-robins-what-if");
   const survivalSpec = config.survivalSpecId
     ? context.document.metadata.longitudinal.survivalOutputs.find((spec) => spec.id === config.survivalSpecId)

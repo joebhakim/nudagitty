@@ -118,6 +118,7 @@ export type LongitudinalVariableRole =
   | "selection"
   | "competing_event"
   | "latent"
+  | "mediator"
   | "other";
 
 export interface LongitudinalTimePoint {

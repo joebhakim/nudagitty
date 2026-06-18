@@ -477,6 +477,64 @@
   background: #fff;
 }
 
+/* Primary-method selector + headline (choose which estimator leads). */
+.methods-primary {
+  display: grid;
+  gap: 5px;
+  padding: 8px 9px;
+  border: 1px solid #cfe3df;
+  border-radius: 6px;
+  background: #f4faf8;
+}
+.methods-primary-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.methods-primary-controls label {
+  color: #3d464e;
+  font-size: 11px;
+  line-height: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.methods-primary-select {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid #b9d4ce;
+  border-radius: 5px;
+  background: #fff;
+  color: #1f2a30;
+  max-width: 62%;
+}
+.methods-primary-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.methods-primary-headline strong {
+  font-size: 19px;
+  line-height: 22px;
+}
+.methods-primary-headline span {
+  color: #5a6670;
+  font-size: 11px;
+}
+.methods-primary-plain {
+  margin: 0;
+  color: #43505a;
+  font-size: 11.5px;
+  line-height: 16px;
+}
+.what-if-method-table tr.method-row-primary {
+  background: #eaf6f2;
+}
+.what-if-method-table tr.method-row-primary strong {
+  color: #11302a;
+}
+
 .what-if-method-table-card > .module-card-header strong,
 .what-if-support-card > .module-card-header strong {
   color: #3d464e;
@@ -581,6 +639,69 @@
 .what-if-method-table .neutral {
   color: #52616d;
   font-weight: 800;
+}
+
+.what-if-survival-method {
+  margin: 2px 0 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 16px;
+}
+
+.what-if-method-glossary {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.what-if-method-glossary > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.what-if-method-glossary dl {
+  display: grid;
+  gap: 9px;
+  margin: 8px 0 6px;
+}
+
+.what-if-method-glossary dt {
+  color: #3d464e;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.what-if-method-glossary dd {
+  margin: 2px 0 0;
+  display: grid;
+  gap: 4px;
+}
+
+.what-if-method-glossary dd p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 15px;
+}
+
+.what-if-method-formula {
+  display: block;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #f1f5f4;
+  border: 1px solid #e0e9e7;
+  color: #2b3a3a;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 15px;
+  overflow-x: auto;
+}
+
+.what-if-method-glossary-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 15px;
 }
 
 .what-if-strategy-grid {

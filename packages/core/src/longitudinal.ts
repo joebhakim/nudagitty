@@ -1,4 +1,4 @@
-import { normalizeGraphDocumentMetadata } from "./graph";
+import { normalizeGraphDocumentMetadata, normalizeVariableModel } from "./graph";
 import { runIntervenedEmpiricalSimulation, runSimulation } from "./simulation";
 import type {
   GraphDocument,
@@ -80,7 +80,7 @@ export interface GMethodArmSummary {
 }
 
 export interface GMethodEstimate {
-  id: "naive" | "stratified" | "g_formula" | "ipw" | "g_estimation";
+  id: "naive" | "stratified" | "g_formula" | "ipw" | "g_estimation" | "outcome_regression" | "matching" | "aipw";
   label: string;
   estimate: number | null;
   arms: [GMethodArmSummary, GMethodArmSummary];
@@ -119,6 +119,7 @@ interface BinaryProbabilityTable {
   treatment: string;
   value: 0 | 1;
   history: string[];
+  binners: Map<string, CovariateBinner>;
   probabilities: Map<string, number>;
   fallback: number;
 }
@@ -273,7 +274,10 @@ export function buildPersonTimeRows(cohort: LongitudinalCohort, spec: SurvivalOu
       const eventVariable = eventVariables[interval]!;
       const censoringVariable = censoringVariables[interval] ?? null;
       const event = asBinary(row[eventVariable]);
-      const censored = censoringVariable ? asBinary(row[censoringVariable]) : 0;
+      // An event takes precedence over same-interval censoring: a subject who dies
+      // in the interval is an event, not censored (otherwise they'd be double-counted
+      // in both the events and censored tallies).
+      const censored = event === 1 ? 0 : censoringVariable ? asBinary(row[censoringVariable]) : 0;
       const time = spec.timeVariable ? row[spec.timeVariable] ?? interval + 1 : interval + 1;
       rows.push({
         subject,
@@ -332,7 +336,10 @@ export function compareLongitudinalGMethods(document: GraphDocument, config: GMe
     stratifiedEstimate(cohort, config, leftStrategy, rightStrategy),
     gFormulaEstimate(leftStrategy, rightStrategy, strategyEvaluations),
     ipwEstimate(cohort, config, leftStrategy, rightStrategy),
-    gEstimationEstimate(cohort, config, leftStrategy, rightStrategy)
+    gEstimationEstimate(cohort, config, leftStrategy, rightStrategy),
+    outcomeRegressionEstimate(cohort, config, leftStrategy, rightStrategy),
+    matchingEstimate(cohort, config, leftStrategy, rightStrategy),
+    aipwEstimate(cohort, config, leftStrategy, rightStrategy)
   ];
   return {
     treatmentVariables: config.treatmentVariables,
@@ -373,29 +380,31 @@ function naiveEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonCon
 }
 
 function stratifiedEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
-  const covariate = config.timeVaryingCovariates[0];
-  if (!covariate) {
-    const missing = emptyArms(left, right);
+  const covariates = config.timeVaryingCovariates;
+  if (covariates.length === 0) {
     return {
       id: "stratified",
       label: "Standardized within L",
       estimate: null,
-      arms: missing,
-      diagnostics: ["No time-varying covariate was supplied."]
+      arms: emptyArms(left, right),
+      diagnostics: ["No adjustment covariate was supplied."]
     };
   }
-  const values = [...new Set(cohort.rows.map((row) => asBinary(row[covariate])))]
-    .filter((value) => value === 0 || value === 1)
-    .sort((a, b) => a - b);
+  // Standardize over the JOINT distribution of all covariates, discretizing
+  // continuous ones into quantile bins (a single composite stratum key per row).
+  const binners = buildBinners(cohort, covariates);
+  const stratumOf = (row: Record<string, number>) => keyFromBinners(row, covariates, binners);
+  const strata = [...new Set(cohort.rows.map(stratumOf))];
   const leftMeans: Array<{ mean: number; weight: number }> = [];
   const rightMeans: Array<{ mean: number; weight: number }> = [];
-  const diagnostics: string[] = [];
-  for (const value of values) {
-    const stratumWeight = weightedShare(cohort, (row) => asBinary(row[covariate]) === value);
-    const leftMean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, left, config.treatmentVariables) && asBinary(row[covariate]) === value && isUncensored(row, config.censoringVariables));
-    const rightMean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, right, config.treatmentVariables) && asBinary(row[covariate]) === value && isUncensored(row, config.censoringVariables));
+  let unsupported = 0;
+  for (const stratum of strata) {
+    const inStratum = (row: Record<string, number>) => stratumOf(row) === stratum;
+    const stratumWeight = weightedShare(cohort, inStratum);
+    const leftMean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, left, config.treatmentVariables) && inStratum(row) && isUncensored(row, config.censoringVariables));
+    const rightMean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, right, config.treatmentVariables) && inStratum(row) && isUncensored(row, config.censoringVariables));
     if (leftMean.mean === null || rightMean.mean === null) {
-      diagnostics.push(`No support for at least one strategy in ${covariate}=${value}.`);
+      unsupported += 1;
       continue;
     }
     leftMeans.push({ mean: leftMean.mean, weight: stratumWeight });
@@ -403,15 +412,17 @@ function stratifiedEstimate(cohort: LongitudinalCohort, config: GMethodsComparis
   }
   const leftMean = weightedAverage(leftMeans);
   const rightMean = weightedAverage(rightMeans);
+  const diagnostics = [`Standardizes the outcome over the joint empirical distribution of ${covariates.join(", ")} (continuous covariates quantile-binned).`];
+  if (unsupported > 0) diagnostics.push(`${unsupported} of ${strata.length} strata dropped for lack of both-arm support.`);
   return {
     id: "stratified",
-    label: `Standardized by ${covariate}`,
+    label: covariates.length === 1 ? `Standardized by ${covariates[0]}` : "Standardized within L",
     estimate: difference(leftMean, rightMean),
     arms: [
       armSummary(left, leftMean, cohort.sampleSize, null),
       armSummary(right, rightMean, cohort.sampleSize, null)
     ],
-    diagnostics: diagnostics.length ? diagnostics : [`Standardizes observed matching histories over the empirical ${covariate} distribution.`]
+    diagnostics
   };
 }
 
@@ -485,6 +496,244 @@ function gEstimationEstimate(cohort: LongitudinalCohort, config: GMethodsCompari
       armSummary(right, rightMean, cohort.sampleSize, null)
     ],
     diagnostics: [`Sequential residualized additive blip coefficients: ${psiDiagnostic}.`]
+  };
+}
+
+// --- Additional choosable estimators -----------------------------------------
+// Parametric outcome regression, propensity matching, and doubly-robust AIPW.
+// These complement the (nonparametric) standardization / IPW / g-estimation rows;
+// being parametric, outcome regression and AIPW expose functional-form assumptions
+// the binned estimators avoid — a deliberate contrast.
+
+function emptyEstimate(id: GMethodEstimate["id"], label: string, left: TreatmentStrategy, right: TreatmentStrategy, message: string): GMethodEstimate {
+  return { id, label, estimate: null, arms: emptyArms(left, right), diagnostics: [message] };
+}
+
+function dot(a: number[], b: number[]): number {
+  let sum = 0;
+  for (let i = 0; i < a.length; i += 1) sum += (a[i] ?? 0) * (b[i] ?? 0);
+  return sum;
+}
+
+function sigmoidLocal(x: number): number {
+  if (x >= 0) return 1 / (1 + Math.exp(-x));
+  const e = Math.exp(x);
+  return e / (1 + e);
+}
+
+function gaussianSolve(matrix: number[][], rhs: number[]): number[] | null {
+  const n = matrix.length;
+  const m = matrix.map((row, i) => [...row, rhs[i] ?? 0]);
+  for (let col = 0; col < n; col += 1) {
+    let pivot = col;
+    for (let r = col + 1; r < n; r += 1) if (Math.abs(m[r]![col]!) > Math.abs(m[pivot]![col]!)) pivot = r;
+    [m[col], m[pivot]] = [m[pivot]!, m[col]!];
+    const diag = m[col]![col]!;
+    if (Math.abs(diag) < 1e-12) return null;
+    for (let j = col; j <= n; j += 1) m[col]![j]! /= diag;
+    for (let r = 0; r < n; r += 1) {
+      if (r === col) continue;
+      const factor = m[r]![col]!;
+      for (let j = col; j <= n; j += 1) m[r]![j]! -= factor * m[col]![j]!;
+    }
+  }
+  return m.map((row) => row[n]!);
+}
+
+function solveNormalEquations(design: number[][], response: number[], weights: number[], ridge: number): number[] | null {
+  const p = design[0]?.length ?? 0;
+  if (p === 0) return null;
+  const xtwx = Array.from({ length: p }, () => new Array<number>(p).fill(0));
+  const xtwy = new Array<number>(p).fill(0);
+  for (let i = 0; i < design.length; i += 1) {
+    const xi = design[i]!;
+    const wi = weights[i] ?? 1;
+    for (let a = 0; a < p; a += 1) {
+      xtwy[a]! += wi * xi[a]! * (response[i] ?? 0);
+      for (let b = 0; b < p; b += 1) xtwx[a]![b]! += wi * xi[a]! * xi[b]!;
+    }
+  }
+  for (let a = 0; a < p; a += 1) xtwx[a]![a]! += ridge;
+  return gaussianSolve(xtwx, xtwy);
+}
+
+function designRow(row: Record<string, number>, treatments: string[], covariates: string[], assignment: Map<string, number> | null): number[] {
+  const xs = [1];
+  for (const treatment of treatments) xs.push(assignment ? assignment.get(treatment) ?? 0 : asBinary(row[treatment]));
+  for (const covariate of covariates) {
+    const value = row[covariate];
+    xs.push(value !== undefined && Number.isFinite(value) ? value : 0);
+  }
+  return xs;
+}
+
+function strategyAssignmentMap(row: Record<string, number>, strategy: TreatmentStrategy, treatments: string[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const treatment of treatments) map.set(treatment, asBinary(assignedTreatmentValue(row, strategy, treatment)));
+  return map;
+}
+
+// Fit E[Y | treatments, covariates] parametrically (OLS for continuous, IRLS
+// logistic for binary). Returns a predictor (row, treatment-assignment) -> Ŷ.
+function fitOutcomeModel(cohort: LongitudinalCohort, outcome: string, treatments: string[], covariates: string[], binary: boolean): ((row: Record<string, number>, assignment: Map<string, number> | null) => number) | null {
+  const indices = cohort.rows.map((_, i) => i).filter((i) => { const y = cohort.rows[i]![outcome]; return y !== undefined && Number.isFinite(y); });
+  const params = 1 + treatments.length + covariates.length;
+  if (indices.length < params + 2) return null;
+  const design = indices.map((i) => designRow(cohort.rows[i]!, treatments, covariates, null));
+  const response = indices.map((i) => cohort.rows[i]![outcome]!);
+  const baseWeights = indices.map((i) => cohort.weights[i] ?? 1);
+  let beta: number[] | null;
+  if (!binary) {
+    beta = solveNormalEquations(design, response, baseWeights, 1e-6);
+  } else {
+    beta = new Array<number>(params).fill(0);
+    for (let iter = 0; iter < 20; iter += 1) {
+      const working: number[] = [];
+      const irlsWeights: number[] = [];
+      for (let r = 0; r < design.length; r += 1) {
+        const eta = dot(design[r]!, beta);
+        const mu = sigmoidLocal(eta);
+        const variance = Math.max(1e-3, mu * (1 - mu));
+        irlsWeights.push(variance * (baseWeights[r] ?? 1));
+        working.push(eta + ((response[r] ?? 0) - mu) / variance);
+      }
+      const next = solveNormalEquations(design, working, irlsWeights, 1e-6);
+      if (!next || !next.every((value) => Number.isFinite(value))) break;
+      beta = next;
+    }
+  }
+  if (!beta || !beta.every((value) => Number.isFinite(value))) return null;
+  const coefficients = beta;
+  return (row, assignment) => {
+    const linear = dot(designRow(row, treatments, covariates, assignment), coefficients);
+    return binary ? sigmoidLocal(linear) : linear;
+  };
+}
+
+function outcomeRegressionEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
+  const binary = (config.outcomeScale ?? "risk") === "risk";
+  const model = fitOutcomeModel(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary);
+  if (!model) return emptyEstimate("outcome_regression", "Outcome regression", left, right, "Not enough data to fit the parametric outcome model.");
+  const predictMean = (strategy: TreatmentStrategy): number | null => {
+    let sum = 0;
+    let weight = 0;
+    for (let i = 0; i < cohort.rows.length; i += 1) {
+      const row = cohort.rows[i]!;
+      const baseWeight = cohort.weights[i] ?? 1;
+      sum += model(row, strategyAssignmentMap(row, strategy, config.treatmentVariables)) * baseWeight;
+      weight += baseWeight;
+    }
+    return weight > 0 ? sum / weight : null;
+  };
+  const leftMean = predictMean(left);
+  const rightMean = predictMean(right);
+  const multiStep = config.treatmentVariables.length > 1;
+  const diagnostics = [`Fits a ${binary ? "logistic" : "linear"} model of ${config.outcome} on treatment(s) + covariates, then predicts every unit under each strategy. Parametric: a misspecified functional form (e.g. real non-linearity) biases this even where standardization is unbiased.`];
+  if (multiStep) diagnostics.push("Pooled across treatment times — a simplification of the full sequential parametric g-formula.");
+  return {
+    id: "outcome_regression",
+    label: "Outcome regression (parametric g-formula)",
+    estimate: difference(leftMean, rightMean),
+    arms: [armSummary(left, leftMean, cohort.sampleSize, null), armSummary(right, rightMean, cohort.sampleSize, null)],
+    diagnostics
+  };
+}
+
+function aipwEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
+  const binary = (config.outcomeScale ?? "risk") === "risk";
+  const model = fitOutcomeModel(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary);
+  if (!model) return emptyEstimate("aipw", "Doubly-robust (AIPW)", left, right, "Could not fit the outcome model for the augmentation term.");
+  const propensityTables = config.treatmentVariables.map((treatment, index) => ({
+    treatment,
+    table: binaryProbabilityTable(cohort, treatment, 1, treatmentHistory(treatment, config.treatmentVariables.slice(0, index), config.timeVaryingCovariates))
+  }));
+  const armMean = (strategy: TreatmentStrategy): number | null => {
+    let sum = 0;
+    let weight = 0;
+    for (let i = 0; i < cohort.rows.length; i += 1) {
+      const row = cohort.rows[i]!;
+      const baseWeight = cohort.weights[i] ?? 1;
+      const predicted = model(row, strategyAssignmentMap(row, strategy, config.treatmentVariables));
+      let value = predicted;
+      if (matchesStrategy(row, strategy, config.treatmentVariables) && isUncensored(row, config.censoringVariables)) {
+        const outcome = row[config.outcome];
+        if (outcome !== undefined && Number.isFinite(outcome)) {
+          let propensity = 1;
+          for (const spec of propensityTables) {
+            const assigned = asBinary(assignedTreatmentValue(row, strategy, spec.treatment));
+            const probability = probabilityFromTable(spec.table, row);
+            propensity *= assigned === 1 ? probability : 1 - probability;
+          }
+          value += (outcome - predicted) / Math.max(0.02, propensity);
+        }
+      }
+      sum += value * baseWeight;
+      weight += baseWeight;
+    }
+    return weight > 0 ? sum / weight : null;
+  };
+  return {
+    id: "aipw",
+    label: "Doubly-robust (AIPW)",
+    estimate: difference(armMean(left), armMean(right)),
+    arms: [armSummary(left, armMean(left), cohort.sampleSize, null), armSummary(right, armMean(right), cohort.sampleSize, null)],
+    diagnostics: ["Augmented IPW: outcome-model prediction plus an inverse-propensity correction. Consistent if EITHER the outcome model or the propensity model is right (doubly robust)."]
+  };
+}
+
+function matchingEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
+  const covariates = config.timeVaryingCovariates;
+  if (covariates.length === 0 || config.treatmentVariables.length === 0) {
+    return emptyEstimate("matching", "Propensity-score matching", left, right, "Needs a treatment and at least one covariate.");
+  }
+  const tables = config.treatmentVariables.map((treatment) => binaryProbabilityTable(cohort, treatment, 1, covariates));
+  const score = (row: Record<string, number>): number => {
+    let probability = 1;
+    for (let i = 0; i < config.treatmentVariables.length; i += 1) {
+      const assigned = asBinary(assignedTreatmentValue(row, left, config.treatmentVariables[i]!));
+      const p1 = probabilityFromTable(tables[i]!, row);
+      probability *= assigned === 1 ? p1 : 1 - p1;
+    }
+    return probability;
+  };
+  const treated: Array<{ score: number; y: number }> = [];
+  const control: Array<{ score: number; y: number }> = [];
+  for (const row of cohort.rows) {
+    if (!isUncensored(row, config.censoringVariables)) continue;
+    const outcome = row[config.outcome];
+    if (outcome === undefined || !Number.isFinite(outcome)) continue;
+    if (matchesStrategy(row, left, config.treatmentVariables)) treated.push({ score: score(row), y: outcome });
+    else if (matchesStrategy(row, right, config.treatmentVariables)) control.push({ score: score(row), y: outcome });
+  }
+  if (treated.length < 5 || control.length < 5) {
+    return emptyEstimate("matching", "Propensity-score matching", left, right, "Too few units in one arm to match.");
+  }
+  const controlSorted = [...control].sort((a, b) => a.score - b.score);
+  const treatedSorted = [...treated].sort((a, b) => a.score - b.score);
+  const nearest = (sorted: Array<{ score: number; y: number }>, target: number): number => {
+    let lo = 0;
+    let hi = sorted.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sorted[mid]!.score < target) lo = mid + 1; else hi = mid;
+    }
+    let best = sorted[lo]!;
+    if (lo > 0 && Math.abs(sorted[lo - 1]!.score - target) < Math.abs(best.score - target)) best = sorted[lo - 1]!;
+    return best.y;
+  };
+  const att = treated.reduce((acc, unit) => acc + (unit.y - nearest(controlSorted, unit.score)), 0) / treated.length;
+  const atc = control.reduce((acc, unit) => acc + (nearest(treatedSorted, unit.score) - unit.y), 0) / control.length;
+  const estimate = 0.5 * (att + atc);
+  const leftMean = treated.reduce((acc, unit) => acc + unit.y, 0) / treated.length;
+  const rightMean = leftMean - estimate;
+  const diagnostics = ["1:1 nearest-neighbour matching on the (binned) propensity score, averaging ATT and ATC."];
+  if (config.treatmentVariables.length > 1) diagnostics.push("Matches on a composite baseline propensity for the whole regimen — a simplification for multi-step treatments.");
+  return {
+    id: "matching",
+    label: "Propensity-score matching",
+    estimate,
+    arms: [armSummary(left, leftMean, treated.length, null), armSummary(right, rightMean, control.length, null)],
+    diagnostics
   };
 }
 
@@ -567,12 +816,13 @@ function residualizedTreatmentCoefficient(cohort: LongitudinalCohort, outcome: s
 }
 
 function binaryProbabilityTable(cohort: LongitudinalCohort, treatment: string, value: number, history: string[]): BinaryProbabilityTable {
+  const binners = buildBinners(cohort, history);
   const counts = new Map<string, { numerator: number; denominator: number }>();
   let fallbackNumerator = 0.5;
   let fallbackDenominator = 1;
   const target = asBinary(value);
   for (const row of cohort.rows) {
-    const key = historyKey(row, history);
+    const key = keyFromBinners(row, history, binners);
     const count = counts.get(key) ?? { numerator: 0.5, denominator: 1 };
     count.denominator += 1;
     fallbackDenominator += 1;
@@ -586,18 +836,92 @@ function binaryProbabilityTable(cohort: LongitudinalCohort, treatment: string, v
     treatment,
     value: target,
     history,
+    binners,
     probabilities: new Map([...counts.entries()].map(([key, count]) => [key, count.numerator / count.denominator])),
     fallback: fallbackNumerator / fallbackDenominator
   };
 }
 
 function probabilityFromTable(table: BinaryProbabilityTable, row: Record<string, number>): number {
-  return table.probabilities.get(historyKey(row, table.history)) ?? table.fallback;
+  return table.probabilities.get(keyFromBinners(row, table.history, table.binners)) ?? table.fallback;
 }
 
-function historyKey(row: Record<string, number>, history: string[]): string {
-  if (history.length === 0) return "__all__";
-  return history.map((id) => `${id}:${asBinary(row[id])}`).join("|");
+// --- Covariate discretization ------------------------------------------------
+//
+// Adjustment sets contain CONTINUOUS confounders (Age, baseline risk, …). Keying a
+// history/stratum on raw values gives one stratum per subject (useless), and the
+// old `asBinary(v) = v >= 0.5` collapsed e.g. Age~N(50,10) to a constant (always 1)
+// — so stratification degenerated to the naive estimate and IP weights barely
+// adjusted. Instead: discrete columns (binary / few-valued) key on their value;
+// continuous columns key on quantile bins, so standardization and propensity models
+// actually condition on the confounder.
+type CovariateBinner = (row: Record<string, number>) => string;
+// Quantile-bin resolution is adaptive (see continuousBinCount): more bins shrink
+// within-bin residual confounding, but each joint cell needs enough rows to keep
+// both treatment arms supported, so resolution scales with sample size and shrinks
+// with the number of continuous covariates.
+const MIN_QUANTILE_BINS = 2;
+const MAX_QUANTILE_BINS = 10;
+const MIN_PER_STRATUM = 40;
+
+function buildBinners(cohort: LongitudinalCohort, ids: string[]): Map<string, CovariateBinner> {
+  const binners = new Map<string, CovariateBinner>();
+  const valuesById = new Map<string, number[]>();
+  for (const id of ids) {
+    if (valuesById.has(id)) continue;
+    valuesById.set(id, cohort.rows
+      .map((row) => row[id])
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value)));
+  }
+  // How many covariates are actually continuous (the ones we quantile-bin). The joint
+  // strata count is bins^(that many), so pick a per-covariate bin count that keeps each
+  // joint cell populated (~MIN_PER_STRATUM rows) — finer resolution shrinks within-bin
+  // confounding, but too-fine cells lose both-arm support and add noise.
+  const continuousCount = [...valuesById.values()].filter((values) => {
+    const levels = new Set(values.map((value) => Math.round(value * 1e6) / 1e6));
+    return levels.size > MAX_QUANTILE_BINS;
+  }).length;
+  const bins = continuousBinCount(cohort.rows.length, Math.max(1, continuousCount));
+  for (const id of ids) {
+    if (binners.has(id)) continue;
+    const values = valuesById.get(id) ?? [];
+    const levels = new Set(values.map((value) => Math.round(value * 1e6) / 1e6));
+    if (levels.size <= bins) {
+      // Discrete / few-valued (incl. binary treatments): key on the raw value.
+      binners.set(id, (row) => `${id}=${row[id] ?? 0}`);
+    } else {
+      const edges = quantileEdges(values, bins);
+      binners.set(id, (row) => `${id}~${binIndex(edges, row[id] ?? 0)}`);
+    }
+  }
+  return binners;
+}
+
+function continuousBinCount(sampleSize: number, continuousCovariates: number): number {
+  const targetStrata = Math.max(1, sampleSize / MIN_PER_STRATUM);
+  const perCovariate = Math.floor(targetStrata ** (1 / continuousCovariates));
+  return Math.max(MIN_QUANTILE_BINS, Math.min(MAX_QUANTILE_BINS, perCovariate));
+}
+
+function keyFromBinners(row: Record<string, number>, ids: string[], binners: Map<string, CovariateBinner>): string {
+  if (ids.length === 0) return "__all__";
+  return ids.map((id) => (binners.get(id) ?? ((r: Record<string, number>) => `${id}=${r[id] ?? 0}`))(row)).join("|");
+}
+
+function quantileEdges(values: number[], bins: number): number[] {
+  const sorted = [...values].sort((a, b) => a - b);
+  const edges: number[] = [];
+  for (let i = 1; i < bins; i += 1) {
+    const index = Math.min(sorted.length - 1, Math.floor((i / bins) * sorted.length));
+    edges.push(sorted[index] ?? 0);
+  }
+  return edges;
+}
+
+function binIndex(edges: number[], value: number): number {
+  let index = 0;
+  while (index < edges.length && value >= edges[index]!) index += 1;
+  return index;
 }
 
 function strategyTreatmentVariables(strategy: TreatmentStrategy): string[] {
@@ -812,4 +1136,102 @@ function asBinary(value: number | undefined): 0 | 1 {
 
 function roundForDiagnostic(value: number): string {
   return Number.isFinite(value) ? value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "") : "NA";
+}
+
+// --- Unified adjustment analysis ---------------------------------------------
+//
+// Every adjustment-flavoured operation (adjust / condition) on a DAG should map to
+// ONE predictable analysis, regardless of whether the example is "classic" (single
+// binary exposure) or longitudinal. deriveAdjustmentSpec reads the analysis spec
+// from the graph's roles + longitudinal metadata (NOT from hard-coded per-example
+// config), and analyzeAdjustment runs the same g-methods engine for all of them.
+export interface AdjustmentSpec {
+  treatments: string[];
+  covariates: string[];
+  outcome: string;
+  standardize: boolean;
+  censoring: string[];
+  outcomeScale: "risk" | "mean";
+  strategies: [TreatmentStrategy, TreatmentStrategy];
+}
+
+function synthesizeBinaryStrategies(treatments: string[]): [TreatmentStrategy, TreatmentStrategy] {
+  const make = (id: string, label: string, value: number): TreatmentStrategy => ({
+    id,
+    label,
+    description: `Set ${treatments.join(", ")} = ${value}.`,
+    kind: "static",
+    assignments: treatments.map((variable) => ({ variable, value })),
+    rules: []
+  });
+  return [make("all-treated", "Treated", 1), make("none-treated", "Untreated", 0)];
+}
+
+export function deriveAdjustmentSpec(
+  document: GraphDocument,
+  override?: { exposure?: string; outcome?: string }
+): AdjustmentSpec | null {
+  const meta = normalizeGraphDocumentMetadata(document.metadata).longitudinal;
+  const variables = meta.variables;
+  const hasMeta = Object.keys(variables).length > 0;
+  const order = new Map(meta.timePoints.map((point, index) => [point.id, point.order ?? index]));
+  const byTime = (id: string) => {
+    const time = variables[id]?.time;
+    return time && order.has(time) ? order.get(time)! : Number.MAX_SAFE_INTEGER;
+  };
+  const nodeIds = new Set(document.graph.nodes.map((node) => node.id));
+
+  // The adjustment set is exactly the nodes the operation marks as adjusted — uniform
+  // for classic and longitudinal graphs (their covariates are all [adjusted]).
+  let covariates = document.graph.nodes
+    .filter((node) => node.roles.adjusted)
+    .map((node) => node.id)
+    .sort((a, b) => byTime(a) - byTime(b));
+
+  const ofRole = (role: string) => Object.entries(variables)
+    .filter(([id, variable]) => variable.role === role && nodeIds.has(id))
+    .map(([id]) => id)
+    .sort((a, b) => byTime(a) - byTime(b));
+
+  // Treatments: the metadata treatment role captures multi-step regimens (A0,A1,A2);
+  // a classic single-exposure graph falls back to the [exposure] role.
+  let treatments = override?.exposure
+    ? [override.exposure]
+    : hasMeta ? ofRole("treatment") : document.graph.nodes.filter((node) => node.roles.exposure).map((node) => node.id);
+  const censoring = ofRole("censoring");
+  // The estimand declares the outcome explicitly (e.g. SNAFT observes a death
+  // indicator, not the latent failure time); fall back to the role heuristics.
+  let outcome: string | undefined = override?.outcome
+    ?? (meta.estimands[0]?.outcome && nodeIds.has(meta.estimands[0].outcome) ? meta.estimands[0].outcome : undefined)
+    ?? (hasMeta ? ofRole("outcome").sort((a, b) => byTime(b) - byTime(a))[0] : undefined)
+    ?? document.graph.nodes.find((node) => node.roles.outcome)?.id;
+
+  if (treatments.length === 0 || !outcome) return null;
+  const outcomeId = outcome;
+  covariates = covariates.filter((id) => id !== outcomeId && !treatments.includes(id) && !censoring.includes(id));
+
+  const adjustedNodes = document.graph.nodes.filter((node) => node.roles.adjusted);
+  const standardize = adjustedNodes.length === 0
+    ? true
+    : adjustedNodes.every((node) => normalizeVariableModel(node.variable).adjustment.standardize !== false);
+
+  const outcomeNode = document.graph.nodes.find((node) => node.id === outcomeId);
+  const outcomeScale: "risk" | "mean" = outcomeNode && normalizeVariableModel(outcomeNode.variable).valueType === "binary" ? "risk" : "mean";
+
+  const strategies: [TreatmentStrategy, TreatmentStrategy] = meta.treatmentStrategies.length >= 2 && meta.treatmentStrategies[0] && meta.treatmentStrategies[1]
+    ? [meta.treatmentStrategies[0], meta.treatmentStrategies[1]]
+    : synthesizeBinaryStrategies(treatments);
+
+  return { treatments, covariates, outcome: outcomeId, standardize, censoring, outcomeScale, strategies };
+}
+
+export function analyzeAdjustment(document: GraphDocument, spec: AdjustmentSpec): GMethodsComparison | null {
+  return compareLongitudinalGMethods(document, {
+    treatmentVariables: spec.treatments,
+    timeVaryingCovariates: spec.covariates,
+    outcome: spec.outcome,
+    strategies: spec.strategies,
+    censoringVariables: spec.censoring.length > 0 ? spec.censoring : undefined,
+    outcomeScale: spec.outcomeScale
+  });
 }

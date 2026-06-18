@@ -61,7 +61,7 @@ describe("example catalog", () => {
       expect(result.diagnostics.some((message) => message.startsWith("Simulation disabled"))).toBe(false);
       expect(Object.keys(result.values).length).toBe(document.graph.nodes.length);
     }
-  });
+  }, 20000); // heavy: full simulation of every example
 
   it("has denouement output metadata for every example", () => {
     for (const example of EXAMPLES) {

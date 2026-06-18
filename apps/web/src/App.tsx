@@ -41,6 +41,8 @@ import {
   addNode,
   adjusted,
   analyzeGraph,
+  analyzeAdjustment,
+  deriveAdjustmentSpec,
   classifyConditioned,
   structuralRoleOf,
   correlationGraph,
@@ -84,6 +86,7 @@ import type {
   EdgeKind,
   ExampleDenouement,
   EffectKind,
+  GMethodsComparison,
   GraphDocument,
   GraphEdge,
   GraphModel,
@@ -132,7 +135,7 @@ import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
 import { HighlightNames, NodeNamesProvider, SvgAxisName } from "./shared/NodeNames";
 import { stratifyRiskCurves } from "./outputs/stratify";
 import type { StratifiedRiskContrast } from "./outputs/stratify";
-import { basicOutputPunchlineFromResult, computeCompletedOutput } from "./outputs/modules";
+import { MethodsComparisonPanel, basicOutputPunchlineFromResult, computeCompletedOutput } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
 import type { OutputContext } from "./outputs/types";
@@ -809,6 +812,21 @@ export function App() {
     selections: simulation.conditioning.activeConditions
   }), [document.graph, document.simulation.overrides, simulation.conditioning.activeConditions]);
   const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null, activeOutputPair);
+
+  // Classic examples (no what-if module) get the SAME canonical g-method panel as the
+  // longitudinal ones, derived from the current adjust/condition operations + the pair —
+  // so the same operation renders the same output everywhere (Pro and Demo alike).
+  const computeUnifiedAdjustment = useCallback((pair: ScatterPair) => {
+    if (activeExample?.outputModule?.startsWith("what-if-")) return null;
+    const spec = deriveAdjustmentSpec(computationDocument, { exposure: pair.x, outcome: pair.y });
+    if (!spec || spec.covariates.length === 0) return null;
+    const comparison = analyzeAdjustment(computationDocument, spec);
+    if (!comparison) return null;
+    const outcomeNode = computationDocument.graph.nodes.find((node) => node.id === spec.outcome);
+    return { comparison, outcomeScale: spec.outcomeScale, outcomeUnit: outcomeNode?.variable.unit ?? "" };
+  }, [activeExample, computationDocument]);
+  const unifiedAdjustment = useMemo(() => computeUnifiedAdjustment(activeOutputPair), [computeUnifiedAdjustment, activeOutputPair]);
+  const demoUnifiedAdjustment = useMemo(() => computeUnifiedAdjustment(defaultOutputPair), [computeUnifiedAdjustment, defaultOutputPair]);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
   // Granular, privacy-preserving telemetry (see analyticsTelemetry). Every field is
@@ -1454,6 +1472,7 @@ export function App() {
             moduleId={activeExample?.outputModule ?? null}
             computedOutput={completedOutput}
             binaryOutput={demoBinaryAdjustmentOutput}
+            unified={demoUnifiedAdjustment}
             recommendedAdjustmentId={basicRecommendedAdjustmentId}
             onPair={setScatterPair}
             onSelectNode={selectNode}
@@ -1516,6 +1535,7 @@ export function App() {
                     computedOutput={completedOutput}
                     binaryOutput={binaryAdjustmentOutput}
                     continuousOutput={binaryContinuousAdjustmentOutput}
+                    unified={unifiedAdjustment}
                     pending={resultsPending}
                     hideOracle={false}
                   />
@@ -3237,6 +3257,7 @@ function DemoResultPanel(props: {
   moduleId: string | null;
   computedOutput: ComputedCompletedOutput | null;
   binaryOutput: BinaryAdjustmentOutput | null;
+  unified?: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string } | null;
   recommendedAdjustmentId: string | null;
   onPair: (pair: ScatterPair) => void;
   onSelectNode: (id: string) => void;
@@ -3249,6 +3270,7 @@ function DemoResultPanel(props: {
   const adjustedActive = props.graph.nodes.some((node) => node.roles.adjusted);
   const showAdjustmentReveal = adjustedActive && (
     props.computedOutput !== null ||
+    props.unified != null ||
     (props.binaryOutput !== null && shouldRenderBinaryAdjustmentOutput(props.binaryOutput))
   );
 
@@ -3311,6 +3333,7 @@ function DemoResultPanel(props: {
             computedOutput={props.computedOutput}
             binaryOutput={props.binaryOutput}
             continuousOutput={null}
+            unified={props.unified}
             pending={props.pending}
             hideOracle
           />
@@ -4086,9 +4109,13 @@ function AdjustedOutputPanel(props: {
   computedOutput: ComputedCompletedOutput | null;
   binaryOutput: BinaryAdjustmentOutput | null;
   continuousOutput: BinaryContinuousAdjustmentOutput | null;
+  unified?: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string } | null;
   pending?: ResultPendingState;
   hideOracle?: boolean;
 }) {
+  const unifiedPanel = props.unified
+    ? <MethodsComparisonPanel comparison={props.unified.comparison} outcomeScale={props.unified.outcomeScale} outcomeUnit={props.unified.outcomeUnit} defaultOpen />
+    : null;
   const adjustedNodes = props.binaryOutput?.adjustedNodes ?? props.continuousOutput?.adjustedNodes ?? [];
   const binaryOutput = props.binaryOutput;
   const continuousOutput = props.continuousOutput;
@@ -4104,24 +4131,15 @@ function AdjustedOutputPanel(props: {
         {pendingNotice}
         {showcaseGuide && <ShowcaseGuideCard guide={showcaseGuide} />}
         <CompletedOutputPanel moduleId={effectiveModuleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
-        {showGenericAdjustmentCards && binaryOutput && shouldRenderBinaryAdjustmentOutput(binaryOutput) && <BinaryAdjustmentOutputCard output={binaryOutput} />}
-        {showGenericAdjustmentCards && continuousOutput && shouldRenderBinaryContinuousAdjustmentOutput(continuousOutput) && <BinaryContinuousAdjustmentOutputCard output={continuousOutput} />}
+        {showGenericAdjustmentCards && unifiedPanel}
       </div>
     );
   }
-  if (binaryOutput) {
+  if (unifiedPanel) {
     return (
       <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
         {pendingNotice}
-        <BinaryAdjustmentOutputCard output={binaryOutput} />
-      </div>
-    );
-  }
-  if (continuousOutput) {
-    return (
-      <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
-        {pendingNotice}
-        <BinaryContinuousAdjustmentOutputCard output={continuousOutput} />
+        {unifiedPanel}
       </div>
     );
   }
@@ -4156,9 +4174,6 @@ function shouldRenderBinaryAdjustmentOutput(output: BinaryAdjustmentOutput): boo
   return output.stabilizedIpw !== null || output.strata.length > 0;
 }
 
-function shouldRenderBinaryContinuousAdjustmentOutput(output: BinaryContinuousAdjustmentOutput): boolean {
-  return output.adjustedNodes.length > 0 || output.stabilizedIpw !== null || output.strata.length > 0;
-}
 
 function shouldShowAdjustedOutputColumn(document: GraphDocument, simulation: SimulationResult, moduleId: string | null, pair: ScatterPair): boolean {
   if (moduleId) return true;
@@ -4168,336 +4183,6 @@ function shouldShowAdjustedOutputColumn(document: GraphDocument, simulation: Sim
   return isBinaryGraphNode(exposure, simulation.nodeStates[exposure.id]);
 }
 
-function BinaryAdjustmentOutputCard({ output }: { output: BinaryAdjustmentOutput }) {
-  const xLabel = nodeOutputLabel(output.exposure);
-  const yLabel = nodeOutputLabel(output.outcome);
-  const rawContrast = output.rawContrast;
-  const methodBadge = output.stabilizedIpw
-    ? "Stabilized IPW"
-    : output.strata.length > 0
-      ? `${output.strata.length} strata`
-      : "Raw comparison";
-  return (
-    <HighlightNames>
-    <div className="binary-adjustment-output">
-      <div className="module-card-header">
-        <strong>Adjusted estimate</strong>
-        <span className="module-badge active">{methodBadge}</span>
-      </div>
-      {rawContrast.diff !== null && !output.stabilizedIpw && (
-        <div className="raw-effect-callout">
-          <strong>Raw comparison</strong>
-          <span>
-            {binaryShortLabel(yLabel)} difference by {binaryShortLabel(xLabel)} is {formatPercentagePoints(rawContrast.diff)}; {binaryAxisValueLabel(xLabel, 1)} is {rawContrast.yAtX1 === null ? "n/a" : formatPercent(rawContrast.yAtX1)} versus {rawContrast.yAtX0 === null ? "n/a" : formatPercent(rawContrast.yAtX0)} at {binaryAxisValueLabel(xLabel, 0)}.
-          </span>
-        </div>
-      )}
-      {output.stabilizedIpw && <StabilizedIpwCard output={output.stabilizedIpw} />}
-      {output.strata.length > 0 ? (
-        <div className="binary-adjustment-strata">
-          {output.strata.map((stratum) => (
-            <BinaryOutputMatrixCard
-              key={stratum.id}
-              title={stratum.label}
-              subtitle={`weighted n ${formatWeightedCount(stratum.weight)}`}
-              points={stratum.points}
-              cells={stratum.cells}
-              contrast={stratum.contrast}
-              xLabel={xLabel}
-              yLabel={yLabel}
-            />
-          ))}
-        </div>
-      ) : !output.stabilizedIpw ? (
-        <div className="binary-adjustment-empty">
-          <strong>No adjusted strata yet</strong>
-          <p>Mark a binary pre-treatment variable as adjusted, or add bins to a continuous adjusted variable, to reveal one matrix per stratum.</p>
-        </div>
-      ) : null}
-      {output.binnedAdjustedNodes.length > 0 && (
-        <div className="binary-adjustment-note active">
-          <strong>Continuous bins active</strong>
-          <span>
-            {output.binnedAdjustedNodes.map((item) => `${nodeDisplayName(item.node)}: ${item.cutpoints.length + 1}${item.automatic ? " auto quantile" : ""} bins`).join("; ")}.
-          </span>
-        </div>
-      )}
-      {output.unsupportedAdjustedNodes.length > 0 && (
-        <div className="binary-adjustment-note">
-          <strong>Needs a different adjustment display</strong>
-          <span>
-            {output.unsupportedAdjustedNodes.map((node) => nodeDisplayName(node)).join(", ")} {output.unsupportedAdjustedNodes.length === 1 ? "is" : "are"} adjusted but not binary and has no active bins. Add bins, or use matching neighborhoods/model-based standardization later.
-          </span>
-        </div>
-      )}
-      {output.truncated && (
-        <p className="binary-output-summary">Only the first three binary adjusted variables are expanded to avoid an unreadable matrix grid.</p>
-      )}
-    </div>
-    </HighlightNames>
-  );
-}
-
-function BinaryContinuousAdjustmentOutputCard({ output }: { output: BinaryContinuousAdjustmentOutput }) {
-  const xLabel = nodeOutputLabel(output.exposure);
-  const yLabel = nodeOutputLabel(output.outcome);
-  const groupZero = output.rawGroups[0];
-  const groupOne = output.rawGroups[1];
-  // "condition" = stratify and show each stratum, do not standardize/combine; "adjust" = standardize.
-  const isCondition = output.adjustedNodes.some((node) => normalizeVariableModel(node.variable).adjustment.standardize === false);
-  const adjustedLabel = isCondition
-    ? "Within-stratum effects (not combined)"
-    : output.stabilizedIpw
-      ? "Stabilized IPW mean difference"
-      : output.adjustedNodes.length > 0
-        ? "Stratified (standardized) mean difference"
-        : "No adjusted estimate";
-  return (
-    <HighlightNames>
-    <div className="continuous-adjustment-output">
-      <div className="module-card-header">
-        <strong>{isCondition ? "Conditioned estimate" : "Adjusted estimate"}</strong>
-        <span className="module-badge active">{output.adjustedNodes.length} {isCondition ? "conditioned" : "adjusted"}</span>
-      </div>
-      <div className="continuous-adjustment-summary">
-        <div>
-          <span>Raw mean difference</span>
-          <strong>{output.rawGap === null ? "n/a" : formatSignedValue(output.rawGap)}</strong>
-          <small>{binaryAxisValueLabel(xLabel, 1)} vs {binaryAxisValueLabel(xLabel, 0)}</small>
-        </div>
-        <div className={!isCondition && output.adjustedGap !== null ? "fixed" : ""}>
-          <span>{adjustedLabel}</span>
-          <strong>{isCondition ? "per stratum →" : output.adjustedGap === null ? "n/a" : formatSignedValue(output.adjustedGap)}</strong>
-          <small>{output.adjustedNodes.length > 0 ? output.adjustedNodes.map((node) => shortNodeLabel(node)).join(", ") : "mark covariates adjusted"}</small>
-        </div>
-      </div>
-      <div className="continuous-adjustment-raw">
-        <span>{binaryAxisValueLabel(xLabel, 0)} mean {groupZero?.mean === null || groupZero?.mean === undefined ? "n/a" : formatValue(groupZero.mean)}</span>
-        <span>{binaryAxisValueLabel(xLabel, 1)} mean {groupOne?.mean === null || groupOne?.mean === undefined ? "n/a" : formatValue(groupOne.mean)}</span>
-      </div>
-      {output.stabilizedIpw && <ContinuousStabilizedIpwCard output={output.stabilizedIpw} outcome={output.outcome} />}
-      {output.strata.length > 0 ? (
-        <ContinuousAdjustmentStrataPlot output={output} xLabel={xLabel} yLabel={yLabel} />
-      ) : !output.stabilizedIpw && output.adjustedNodes.length > 0 ? (
-        <div className="binary-adjustment-empty">
-          <strong>No adjusted strata yet</strong>
-          <p>The selected adjusted variables do not currently create displayable strata for this binary exposure and continuous outcome.</p>
-        </div>
-      ) : !output.stabilizedIpw ? (
-        <div className="binary-adjustment-empty">
-          <strong>No adjustment yet</strong>
-          <p>Mark a pre-treatment variable as adjusted to compare the raw mean difference with an adjusted estimate.</p>
-        </div>
-      ) : null}
-      {output.binnedAdjustedNodes.some((item) => item.automatic) && (
-        <div className="binary-adjustment-note active">
-          <strong>Auto bins active</strong>
-          <span>
-            {output.binnedAdjustedNodes.filter((item) => item.automatic).map((item) => `${nodeDisplayName(item.node)}: ${item.cutpoints.length + 1} quantile bins`).join("; ")}. Add explicit cutpoints in the adjustment tab to take control.
-          </span>
-        </div>
-      )}
-      {output.binnedAdjustedNodes.some((item) => !item.automatic) && (
-        <div className="binary-adjustment-note active">
-          <strong>Continuous bins active</strong>
-          <span>
-            {output.binnedAdjustedNodes.filter((item) => !item.automatic).map((item) => `${nodeDisplayName(item.node)}: ${item.cutpoints.length + 1} bins`).join("; ")}.
-          </span>
-        </div>
-      )}
-      {output.unsupportedAdjustedNodes.length > 0 && (
-        <div className="binary-adjustment-note">
-          <strong>Needs a different adjustment display</strong>
-          <span>
-            {output.unsupportedAdjustedNodes.map((node) => nodeDisplayName(node)).join(", ")} {output.unsupportedAdjustedNodes.length === 1 ? "is" : "are"} adjusted but not supported by this pairwise display yet.
-          </span>
-        </div>
-      )}
-      {output.truncated && (
-        <p className="binary-output-summary">Only the first three adjusted variables are expanded to avoid an unreadable stratum grid.</p>
-      )}
-    </div>
-    </HighlightNames>
-  );
-}
-
-function ContinuousStabilizedIpwCard({ output }: { output: StabilizedIpwOutput; outcome: GraphNode }) {
-  return (
-    <div className="continuous-ipw-card">
-      <div className="module-card-header">
-        <strong>Stabilized IPW</strong>
-        <span className="module-badge active">logistic propensity</span>
-      </div>
-      <div className="continuous-adjustment-raw">
-        <span>raw mean difference: {output.rawDiff === null ? "n/a" : formatSignedValue(output.rawDiff)}</span>
-        <span>weighted mean difference: {output.weightedDiff === null ? "n/a" : formatSignedValue(output.weightedDiff)}</span>
-      </div>
-      {output.balances[0] && <IpwBalanceVisual balance={output.balances[0]} />}
-      <div className="ipw-diagnostics">
-        <span>ESS {output.effectiveSampleSize === null ? "n/a" : formatValue(output.effectiveSampleSize)}</span>
-        <span>max weight {output.maxWeight === null ? "n/a" : formatValue(output.maxWeight)}</span>
-        <span>clipped {output.clippedCount}</span>
-      </div>
-    </div>
-  );
-}
-
-function ContinuousAdjustmentStrataPlot({ output, xLabel, yLabel }: { output: BinaryContinuousAdjustmentOutput; xLabel: string; yLabel: string }) {
-  const rows = output.strata.filter((stratum) => {
-    const groupZero = stratum.groups[0];
-    const groupOne = stratum.groups[1];
-    return groupZero?.mean !== null && groupZero?.mean !== undefined && groupOne?.mean !== null && groupOne?.mean !== undefined;
-  });
-  if (rows.length === 0) return <p className="muted">No adjusted stratum has both exposure groups represented.</p>;
-  const summaries = rows.map((stratum) => ({ stratum, summaries: continuousOutcomeSummaries(stratum.points, xLabel) }));
-  const yDomain = categoryOutcomeDomain(output.yDomain, summaries.flatMap((entry) => entry.summaries), false);
-  return (
-    <div className="continuous-adjustment-strata">
-      <div className="module-card-header">
-        <strong>Adjusted strata</strong>
-        <span>{binaryShortLabel(yLabel)} points + mean CIs by {binaryShortLabel(xLabel)}</span>
-      </div>
-      <div className="category-outcome-facet-grid" role="list" aria-label={`Adjusted ${yLabel} gaps by stratum`}>
-        {summaries.map(({ stratum, summaries: stratumSummaries }) => {
-          return (
-            <div className="category-outcome-facet" role="listitem" key={stratum.id}>
-              <div className="module-card-header">
-                <strong className="continuous-strata-label">{stratum.displayLabels.join("; ")}</strong>
-                <span className="continuous-strata-gap-text">{stratum.gap === null ? "n/a" : formatSignedValue(stratum.gap)}</span>
-              </div>
-              <CategoryOutcomePlot
-                points={stratum.points}
-                summaries={stratumSummaries}
-                xLabel={xLabel}
-                yLabel={yLabel}
-                yDomain={yDomain}
-                outcomeKind="continuous"
-                compact
-                ariaLabel={`${stratum.label}: ${yLabel} by ${xLabel}`}
-              />
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function StabilizedIpwCard({ output }: { output: StabilizedIpwOutput }) {
-  const xLabel = nodeOutputLabel(output.exposure);
-  const yLabel = output.outcome ? nodeOutputLabel(output.outcome) : "outcome";
-  const adjusted = output.adjustedNodes.map((node) => nodeDisplayName(node)).join(", ");
-  // TODO(simpson-ipw-math): In the calibrated Simpson DGP the true marginal do
-  // contrast is about +7.3 pp. With the current 0.03..0.97 clipping, stabilized
-  // IPW intentionally reports a clipped/overlap-weighted diagnostic estimate, so
-  // this visual should not imply it has recovered the full DGP estimand.
-  return (
-    <div className="stabilized-ipw-card">
-      <div className="module-card-header">
-        <strong>Stabilized IPW</strong>
-        <span className="module-badge active">{output.adjustedNodes.length} covariate{output.adjustedNodes.length === 1 ? "" : "s"}</span>
-      </div>
-      <div className="ipw-before-fixed">
-        <div className="ipw-contrast-row">
-          <span>Raw comparison</span>
-          <strong>{output.rawDiff === null ? "n/a" : formatPercentagePoints(output.rawDiff)}</strong>
-          <small>
-            {binaryShortLabel(yLabel)} at {binaryAxisValueLabel(xLabel, 1)} {output.rawTreated === null ? "n/a" : formatPercent(output.rawTreated)} vs {output.rawUntreated === null ? "n/a" : formatPercent(output.rawUntreated)}
-          </small>
-          <em>Observed rates</em>
-        </div>
-        <div className="ipw-contrast-row fixed">
-          <span>{output.clippedCount > 0 ? "Adjusted comparison: clipped IPW" : "Adjusted comparison: stabilized IPW"}</span>
-          <strong>{output.weightedDiff === null ? "n/a" : formatPercentagePoints(output.weightedDiff)}</strong>
-          <small>
-            {binaryShortLabel(yLabel)} at {binaryAxisValueLabel(xLabel, 1)} {output.weightedTreated === null ? "n/a" : formatPercent(output.weightedTreated)} vs {output.weightedUntreated === null ? "n/a" : formatPercent(output.weightedUntreated)}
-          </small>
-          <em>{output.clippedCount > 0 ? "Clipped overlap estimate" : "Stabilized IPW estimate"}</em>
-        </div>
-      </div>
-      {output.balances[0] && <IpwBalanceVisual balance={output.balances[0]} />}
-      {output.weightedPoints.length > 0 && (
-        <BinaryOutputMatrixCard
-          title="Weighted relation"
-          subtitle={`stabilized IPW; ESS ${output.effectiveSampleSize === null ? "n/a" : formatValue(output.effectiveSampleSize)}`}
-          points={output.weightedPoints}
-          cells={output.weightedCells}
-          contrast={output.weightedContrast}
-          xLabel={xLabel}
-          yLabel={yLabel}
-        />
-      )}
-      <details className="output-details">
-        <summary>Diagnostics</summary>
-        <p className="binary-output-summary">
-          Logistic propensity for {nodeDisplayName(output.exposure)} from {adjusted}. Weights are stabilized by the marginal treatment rate ({formatPercent(output.treatedShare)}) and propensities clipped to 0.03-0.97.
-        </p>
-        <div className="ipw-diagnostics">
-          <span>ESS {output.effectiveSampleSize === null ? "n/a" : formatValue(output.effectiveSampleSize)}</span>
-          <span>max weight {output.maxWeight === null ? "n/a" : formatValue(output.maxWeight)}</span>
-          <span>clipped {output.clippedCount}</span>
-        </div>
-      </details>
-    </div>
-  );
-}
-
-function IpwBalanceVisual({ balance }: { balance: StabilizedIpwBalance }) {
-  const width = 320;
-  const height = 72;
-  const plot = { x: 50, width: 232 };
-  const [min, max] = balance.domain;
-  const scale = (value: number | null) => {
-    if (value === null || !Number.isFinite(value)) return plot.x;
-    return plot.x + ((value - min) / Math.max(max - min, 1e-9)) * plot.width;
-  };
-  return (
-    <div className="ipw-balance-visual">
-      <div className="module-card-header">
-        <strong>{nodeDisplayName(balance.node)} balance</strong>
-        <span>SMD {balance.rawSmd === null ? "n/a" : formatValue(balance.rawSmd)} to {balance.weightedSmd === null ? "n/a" : formatValue(balance.weightedSmd)}</span>
-      </div>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${nodeDisplayName(balance.node)} balance before and after weighting`}>
-        <line className="ipw-balance-axis" x1={plot.x} x2={plot.x + plot.width} y1="22" y2="22" />
-        <line className="ipw-balance-axis" x1={plot.x} x2={plot.x + plot.width} y1="50" y2="50" />
-        <text className="ipw-balance-row-label" x="8" y="26">raw</text>
-        <text className="ipw-balance-row-label" x="8" y="54">weighted</text>
-        <line className="ipw-balance-gap raw" x1={scale(balance.rawUntreatedMean)} x2={scale(balance.rawTreatedMean)} y1="22" y2="22" />
-        <circle className="ipw-balance-dot untreated" cx={scale(balance.rawUntreatedMean)} cy="22" r="5" />
-        <circle className="ipw-balance-dot treated" cx={scale(balance.rawTreatedMean)} cy="22" r="5" />
-        <line className="ipw-balance-gap fixed" x1={scale(balance.weightedUntreatedMean)} x2={scale(balance.weightedTreatedMean)} y1="50" y2="50" />
-        <circle className="ipw-balance-dot untreated" cx={scale(balance.weightedUntreatedMean)} cy="50" r="5" />
-        <circle className="ipw-balance-dot treated" cx={scale(balance.weightedTreatedMean)} cy="50" r="5" />
-      </svg>
-    </div>
-  );
-}
-
-function BinaryOutputMatrixCard(props: {
-  title: string;
-  subtitle: string;
-  points: ScatterPoint[];
-  cells?: BinaryCell[];
-  contrast?: BinaryOutcomeContrastSummary;
-  xLabel: string;
-  yLabel: string;
-}) {
-  const cells = props.cells ?? binaryCells(props.points);
-  const contrast = props.contrast ?? binaryOutcomeContrastFromCells(cells);
-  return (
-    <div className="binary-output-matrix-card">
-      <div className="module-card-header">
-        <strong>{props.title}</strong>
-        <span>{props.subtitle}</span>
-      </div>
-      <BinaryPairView points={props.points} cells={cells} contrast={contrast} xLabel={props.xLabel} yLabel={props.yLabel} effectiveSampleSize={null} />
-      <div className="binary-output-contrast">
-        <span>{binaryShortLabel(props.yLabel)} rate at {binaryAxisValueLabel(props.xLabel, 0)} {contrast.yAtX0 === null ? "n/a" : formatPercent(contrast.yAtX0)}</span>
-        <span>{binaryShortLabel(props.yLabel)} rate at {binaryAxisValueLabel(props.xLabel, 1)} {contrast.yAtX1 === null ? "n/a" : formatPercent(contrast.yAtX1)}</span>
-      </div>
-    </div>
-  );
-}
 
 function computeBinaryAdjustmentOutput(context: OutputContext, derived: SimulationDerivedCache, pair: ScatterPair): BinaryAdjustmentOutput | null {
   const exposure = context.document.graph.nodes.find((node) => node.id === pair.x);

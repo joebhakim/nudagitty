@@ -119,6 +119,7 @@ const LONGITUDINAL_VARIABLE_ROLES: ReadonlySet<LongitudinalVariableRole> = new S
   "selection",
   "competing_event",
   "latent",
+  "mediator",
   "other"
 ]);
 
