@@ -477,6 +477,64 @@
   background: #fff;
 }
 
+/* Primary-method selector + headline (choose which estimator leads). */
+.methods-primary {
+  display: grid;
+  gap: 5px;
+  padding: 8px 9px;
+  border: 1px solid #cfe3df;
+  border-radius: 6px;
+  background: #f4faf8;
+}
+.methods-primary-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.methods-primary-controls label {
+  color: #3d464e;
+  font-size: 11px;
+  line-height: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.methods-primary-select {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid #b9d4ce;
+  border-radius: 5px;
+  background: #fff;
+  color: #1f2a30;
+  max-width: 62%;
+}
+.methods-primary-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.methods-primary-headline strong {
+  font-size: 19px;
+  line-height: 22px;
+}
+.methods-primary-headline span {
+  color: #5a6670;
+  font-size: 11px;
+}
+.methods-primary-plain {
+  margin: 0;
+  color: #43505a;
+  font-size: 11.5px;
+  line-height: 16px;
+}
+.what-if-method-table tr.method-row-primary {
+  background: #eaf6f2;
+}
+.what-if-method-table tr.method-row-primary strong {
+  color: #11302a;
+}
+
 .what-if-method-table-card > .module-card-header strong,
 .what-if-support-card > .module-card-header strong {
   color: #3d464e;

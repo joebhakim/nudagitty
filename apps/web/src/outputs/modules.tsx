@@ -1,6 +1,7 @@
 import { analyzeAdjustment, cohortFromSimulationResult, compareLongitudinalGMethods, deriveAdjustmentSpec, estimateSurvivalCurve, normalizeVariableModel, runSimulation } from "@nudagitty/core";
 import type { GMethodEstimate, GMethodsComparison, SimulatedNodeState, SurvivalCurvePoint } from "@nudagitty/core";
 import type React from "react";
+import { useState } from "react";
 import {
   formatPercent,
   formatPercentagePointMagnitude,
@@ -881,13 +882,46 @@ const METHOD_GLOSSARY: Record<GMethodEstimate["id"], { plain: string; formula: s
 // The canonical adjustment readout — the g-method estimator table + the glossary.
 // Used identically for every example (classic or longitudinal) so the same operation
 // always renders the same panel.
+// Default primary method: prefer the doubly-robust / workhorse estimators that are
+// honest without the oracle, before falling back to whatever has a value.
+const PRIMARY_METHOD_PREFERENCE: GMethodEstimate["id"][] = ["aipw", "ipw", "stratified", "outcome_regression", "matching", "g_estimation", "g_formula", "naive"];
+
 export function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean }) {
   const { comparison, outcomeScale, outcomeUnit } = props;
+  const available = comparison.estimates.filter((estimate) => estimate.estimate !== null);
+  const [primaryId, setPrimaryId] = useState<GMethodEstimate["id"]>(
+    () => PRIMARY_METHOD_PREFERENCE.find((id) => available.some((estimate) => estimate.id === id)) ?? available[0]?.id ?? "naive"
+  );
+  const primary = comparison.estimates.find((estimate) => estimate.id === primaryId && estimate.estimate !== null) ?? available[0] ?? null;
   return (
     <>
+      {primary && (
+        <div className="methods-primary">
+          <div className="methods-primary-controls">
+            <label htmlFor="primary-method-select">Primary method</label>
+            <select
+              id="primary-method-select"
+              className="methods-primary-select"
+              value={primary.id}
+              onChange={(event) => setPrimaryId(event.target.value as GMethodEstimate["id"])}
+            >
+              {comparison.estimates.map((estimate) => (
+                <option key={estimate.id} value={estimate.id} disabled={estimate.estimate === null}>
+                  {estimate.label}{estimate.estimate === null ? " — n/a" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="methods-primary-headline">
+            <strong className={estimateToneClass(primary.estimate)}>{formatOutcomeDifference(primary.estimate, outcomeScale, outcomeUnit)}</strong>
+            <span>{comparison.strategies[0].label} vs {comparison.strategies[1].label}</span>
+          </div>
+          <p className="methods-primary-plain">{METHOD_GLOSSARY[primary.id].plain}</p>
+        </div>
+      )}
       <details className="what-if-method-table-card" open={props.defaultOpen}>
         <summary className="module-card-header">
-          <strong>Methods</strong>
+          <strong>Compare all methods</strong>
           <span>{formatWeightedCount(comparison.cohort.sampleSize)} simulated rows</span>
         </summary>
         <table className="what-if-method-table">
@@ -901,9 +935,9 @@ export function MethodsComparisonPanel(props: { comparison: GMethodsComparison; 
           </thead>
           <tbody>
             {comparison.estimates.map((estimate) => (
-              <tr key={estimate.id}>
+              <tr key={estimate.id} className={estimate.id === primary?.id ? "method-row-primary" : undefined}>
                 <td>
-                  <strong>{estimate.label}</strong>
+                  <strong>{estimate.label}{estimate.id === primary?.id ? " ◄" : ""}</strong>
                   <small>{estimate.diagnostics[0] ?? ""}</small>
                 </td>
                 <td>{formatOutcomeValue(estimate.arms[0].mean, outcomeScale, outcomeUnit)}</td>
