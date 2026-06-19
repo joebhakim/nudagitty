@@ -75,28 +75,45 @@ const WHAT_IF_SHOWCASE_DYNAMIC_RULES_CODE = `dag {
   A2 -> Y
 }`;
 
-const WHAT_IF_SHOWCASE_SURVIVAL_CURVES_CODE = `dag {
-  Age [adjusted,pos="-2.55,3.5"]
-  Baseline_risk [adjusted,label="baseline mortality risk",pos="-0.8,3.5"]
-  Quit_smoking [exposure,label="quit smoking",pos="-1.55,2.05"]
-  Weight_gain_2y [label="2-year weight gain",pos="-0.3,0.65"]
-  Censoring_5y [selected,label="censoring by 5y",pos="1.25,-0.4"]
-  Death_5y [label="death by 5y",pos="-0.45,-0.95"]
-  Death_10y [outcome,label="death by 10y",pos="0.35,-2.35"]
+const NHEFS_MORTALITY_CODE = `dag {
+  Age [adjusted,pos="-2.6,3.6"]
+  Baseline_risk [adjusted,label="baseline mortality risk",pos="-1.0,3.6"]
+  Quit_smoking [exposure,label="quit smoking",pos="-1.9,2.3"]
+  Weight_gain_2y [label="2-year weight gain",pos="0.3,1.5"]
+  Censoring_5y [selected,label="censoring by 5y",pos="1.8,0.1"]
+  Death_2y [label="death by 2y",pos="-1.7,0.7"]
+  Death_4y [label="death by 4y",pos="-1.25,-0.4"]
+  Death_6y [label="death by 6y",pos="-0.75,-1.3"]
+  Death_8y [label="death by 8y",pos="-0.2,-2.1"]
+  Death_10y [outcome,label="death by 10y",pos="0.45,-2.95"]
   Age -> Quit_smoking
   Age -> Censoring_5y
-  Age -> Death_5y
+  Age -> Death_2y
+  Age -> Death_4y
+  Age -> Death_6y
+  Age -> Death_8y
   Age -> Death_10y
   Baseline_risk -> Quit_smoking
   Baseline_risk -> Weight_gain_2y
   Baseline_risk -> Censoring_5y
-  Baseline_risk -> Death_5y
+  Baseline_risk -> Death_2y
+  Baseline_risk -> Death_4y
+  Baseline_risk -> Death_6y
+  Baseline_risk -> Death_8y
   Baseline_risk -> Death_10y
   Quit_smoking -> Weight_gain_2y
-  Quit_smoking -> Death_5y
+  Quit_smoking -> Death_2y
+  Quit_smoking -> Death_4y
+  Quit_smoking -> Death_6y
+  Quit_smoking -> Death_8y
   Quit_smoking -> Death_10y
+  Weight_gain_2y -> Death_6y
+  Weight_gain_2y -> Death_8y
   Weight_gain_2y -> Death_10y
-  Death_5y -> Death_10y
+  Death_2y -> Death_4y
+  Death_4y -> Death_6y
+  Death_6y -> Death_8y
+  Death_8y -> Death_10y
 }`;
 
 const WHAT_IF_SHOWCASE_HAZARD_DENOMINATOR_CODE = `dag {
@@ -473,7 +490,7 @@ export const EXAMPLES: ExampleModel[] = [
     domain: "epidemiology",
     summary: "Smoking-cessation survival readout where quit and continue strategies get their own survival curves, final risk difference, and absorbing death edge.",
     outputModule: "what-if-nhefs-mortality-survival",
-    code: WHAT_IF_SHOWCASE_SURVIVAL_CURVES_CODE
+    code: NHEFS_MORTALITY_CODE
   },
   {
     id: "what-if-showcase-hazard-denominator",
@@ -571,29 +588,7 @@ export const EXAMPLES: ExampleModel[] = [
     domain: "epidemiology",
     summary: "Target-trial survival sketch for smoking cessation, follow-up death indicators, weight change, and censoring.",
     outputModule: "what-if-nhefs-mortality-survival",
-    code: `dag {
-  Age [adjusted,pos="-2.55,3.5"]
-  Baseline_risk [adjusted,label="baseline mortality risk",pos="-0.8,3.5"]
-  Quit_smoking [exposure,label="quit smoking",pos="-1.55,2.05"]
-  Weight_gain_2y [label="2-year weight gain",pos="-0.3,0.65"]
-  Censoring_5y [selected,label="censoring by 5y",pos="1.25,-0.4"]
-  Death_5y [label="death by 5y",pos="-0.45,-0.95"]
-  Death_10y [outcome,label="death by 10y",pos="0.35,-2.35"]
-  Age -> Quit_smoking
-  Age -> Censoring_5y
-  Age -> Death_5y
-  Age -> Death_10y
-  Baseline_risk -> Quit_smoking
-  Baseline_risk -> Weight_gain_2y
-  Baseline_risk -> Censoring_5y
-  Baseline_risk -> Death_5y
-  Baseline_risk -> Death_10y
-  Quit_smoking -> Weight_gain_2y
-  Quit_smoking -> Death_5y
-  Quit_smoking -> Death_10y
-  Weight_gain_2y -> Death_10y
-  Death_5y -> Death_10y
-}`
+    code: NHEFS_MORTALITY_CODE
   },
   {
     id: "what-if-weight-gain-g-estimation",
@@ -3096,56 +3091,64 @@ function configureWhatIfNhefsMortalitySurvival(document: GraphDocument): GraphDo
   setContinuousVariable(document, "Baseline_risk", "Baseline mortality risk: underlying illness and smoking-history burden. Higher means worse prognosis.", "risk z-score");
   setBinaryVariable(document, "Quit_smoking", "Smoking cessation at baseline.", "quit");
   setContinuousVariable(document, "Weight_gain_2y", "Weight change after quitting, measured before later mortality.", "kg");
-  setBinaryVariable(document, "Censoring_5y", "Loss to follow-up by the intermediate visit.", "censored");
-  setBinaryVariable(document, "Death_5y", "Cumulative death by the intermediate follow-up.", "death");
-  setBinaryVariable(document, "Death_10y", "Cumulative death by the later follow-up. Anyone dead by 5 years is necessarily dead by 10 years.", "death");
+  setBinaryVariable(document, "Censoring_5y", "Loss to follow-up around the 5-year visit.", "censored");
+  // Five cumulative-death indicators (death by 2/4/6/8/10 years), absorbing-chained so
+  // once a subject dies they stay dead. Each logit node is the conditional hazard among
+  // survivors of that interval; the absorbing edges carry death forward.
+  const DEATH_INTERVALS: Array<{ id: string; label: string; intercept: number }> = [
+    { id: "Death_2y", label: "Cumulative death by 2 years.", intercept: -3.6 },
+    { id: "Death_4y", label: "Cumulative death by 4 years (anyone dead earlier stays dead).", intercept: -3.4 },
+    { id: "Death_6y", label: "Cumulative death by 6 years.", intercept: -3.2 },
+    { id: "Death_8y", label: "Cumulative death by 8 years.", intercept: -3.05 },
+    { id: "Death_10y", label: "Cumulative death by 10 years.", intercept: -2.95 }
+  ];
+  for (const death of DEATH_INTERVALS) {
+    setBinaryVariable(document, death.id, death.label, "death");
+  }
   setNode(document, "Age", { distribution: { kind: "normal", mean: 50, sd: 10 }, noise: ZERO_NOISE });
   setNode(document, "Baseline_risk", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
   setLogitNode(document, "Quit_smoking", 0.0);
   setNode(document, "Weight_gain_2y", { intercept: 2.2, noise: { kind: "normal", mean: 0, sd: 2.4 } });
-  setLogitNode(document, "Censoring_5y", -2.4);
-  setLogitNode(document, "Death_5y", -3.3);
-  setLogitNode(document, "Death_10y", -2.7);
-  // Quitting is not monotone in age: young smokers rarely quit, cessation peaks in
-  // middle age (health scares), then tapers in the oldest. A linear age slope can't
-  // express that hump. (logit contributions)
+  setLogitNode(document, "Censoring_5y", -2.9);
+  for (const death of DEATH_INTERVALS) {
+    setLogitNode(document, death.id, death.intercept);
+    // Age -> per-interval hazard accelerates (Gompertz-like), scaled for five intervals.
+    setEdgeMechanism(document, "Age", death.id, "piecewise_linear", {
+      points: [
+        { x: 30, y: 0.1 },
+        { x: 50, y: 0.5 },
+        { x: 65, y: 1.35 },
+        { x: 80, y: 2.7 }
+      ]
+    });
+    setLinearCoefficient(document, "Baseline_risk", death.id, 0.7);
+    setLinearCoefficient(document, "Quit_smoking", death.id, -0.3);
+  }
+  // Quitting falls with age non-linearly: younger smokers quit readily, then cessation
+  // tapers and flattens among older, long-established smokers. A straight age slope
+  // would over-state how much the oldest still quit. (logit contributions)
   setEdgeMechanism(document, "Age", "Quit_smoking", "piecewise_linear", {
     points: [
-      { x: 25, y: -0.5 },
-      { x: 45, y: 0.35 },
-      { x: 60, y: 0.1 },
-      { x: 80, y: -0.45 }
+      { x: 25, y: 0.55 },
+      { x: 45, y: 0.15 },
+      { x: 60, y: -0.2 },
+      { x: 80, y: -0.6 }
     ]
   });
   setLinearCoefficient(document, "Age", "Censoring_5y", 0.025);
-  // Age -> mortality accelerates (Gompertz-like), so the logit rises faster at older
-  // ages than a constant per-year slope would.
-  setEdgeMechanism(document, "Age", "Death_5y", "piecewise_linear", {
-    points: [
-      { x: 30, y: 0.6 },
-      { x: 50, y: 1.5 },
-      { x: 65, y: 2.7 },
-      { x: 80, y: 4.4 }
-    ]
-  });
-  setEdgeMechanism(document, "Age", "Death_10y", "piecewise_linear", {
-    points: [
-      { x: 30, y: 0.5 },
-      { x: 50, y: 1.3 },
-      { x: 65, y: 2.5 },
-      { x: 80, y: 4.2 }
-    ]
-  });
-  setLinearCoefficient(document, "Baseline_risk", "Quit_smoking", -0.55);
+  setLinearCoefficient(document, "Baseline_risk", "Quit_smoking", -0.9);
   setLinearCoefficient(document, "Baseline_risk", "Weight_gain_2y", -0.7);
-  setLinearCoefficient(document, "Baseline_risk", "Censoring_5y", 0.6);
-  setLinearCoefficient(document, "Baseline_risk", "Death_5y", 1.1);
-  setLinearCoefficient(document, "Baseline_risk", "Death_10y", 1.0);
+  setLinearCoefficient(document, "Baseline_risk", "Censoring_5y", 0.2);
   setLinearCoefficient(document, "Quit_smoking", "Weight_gain_2y", 4.1);
-  setLinearCoefficient(document, "Quit_smoking", "Death_5y", -0.35);
-  setLinearCoefficient(document, "Quit_smoking", "Death_10y", -0.45);
-  setLinearCoefficient(document, "Weight_gain_2y", "Death_10y", 0.045);
-  setEdgeMechanism(document, "Death_5y", "Death_10y", "absorbing", {});
+  // Mediator: post-quit weight gain modestly raises mortality in the later intervals.
+  setLinearCoefficient(document, "Weight_gain_2y", "Death_6y", 0.02);
+  setLinearCoefficient(document, "Weight_gain_2y", "Death_8y", 0.02);
+  setLinearCoefficient(document, "Weight_gain_2y", "Death_10y", 0.02);
+  // Cumulative absorbing chain: once dead, dead at every later interval.
+  setEdgeMechanism(document, "Death_2y", "Death_4y", "absorbing", {});
+  setEdgeMechanism(document, "Death_4y", "Death_6y", "absorbing", {});
+  setEdgeMechanism(document, "Death_6y", "Death_8y", "absorbing", {});
+  setEdgeMechanism(document, "Death_8y", "Death_10y", "absorbing", {});
   applyWhatIfMetadata(document, {
     chapter: "Chapter 17",
     section: "Survival analysis and target-trial follow-up",
@@ -3153,22 +3156,28 @@ function configureWhatIfNhefsMortalitySurvival(document: GraphDocument): GraphDo
     longitudinal: {
       timePoints: [
         { id: "t0", label: "baseline", order: 0 },
-        { id: "t1", label: "5 years", order: 1 },
-        { id: "t2", label: "10 years", order: 2 }
+        { id: "t1", label: "2 years", order: 1 },
+        { id: "t2", label: "4 years", order: 2 },
+        { id: "t3", label: "6 years", order: 3 },
+        { id: "t4", label: "8 years", order: 4 },
+        { id: "t5", label: "10 years", order: 5 }
       ],
       variables: {
         Age: { series: "age", time: "t0", role: "baseline" },
         Baseline_risk: { series: "risk", time: "t0", role: "baseline" },
         Quit_smoking: { series: "treatment", time: "t0", role: "treatment" },
         Weight_gain_2y: { series: "weight", time: "t1", role: "mediator" },
-        Censoring_5y: { series: "censoring", time: "t1", role: "censoring" },
-        Death_5y: { series: "death", time: "t1", role: "outcome" },
-        Death_10y: { series: "death", time: "t2", role: "outcome" }
+        Censoring_5y: { series: "censoring", time: "t3", role: "censoring" },
+        Death_2y: { series: "death", time: "t1", role: "outcome" },
+        Death_4y: { series: "death", time: "t2", role: "outcome" },
+        Death_6y: { series: "death", time: "t3", role: "outcome" },
+        Death_8y: { series: "death", time: "t4", role: "outcome" },
+        Death_10y: { series: "death", time: "t5", role: "outcome" }
       },
       treatmentStrategies: binaryStrategies("quit", "Quit smoking", "Quit_smoking", "Set smoking cessation to 1 at baseline.", "continue", "Continue smoking", "Quit_smoking", "Set smoking cessation to 0 at baseline."),
       estimands: [riskEstimand("quit-vs-continue-mortality-risk", "quit vs continue mortality risk", "Death_10y", ["quit", "continue"], "10 years")],
-      censoring: [{ id: "censoring-5y", variable: "Censoring_5y", time: "t1", description: "Loss to follow-up before the later death indicator." }],
-      survivalOutputs: [survivalSpec("mortality-survival", "mortality survival", ["Death_5y", "Death_10y"], ["Censoring_5y"])]
+      censoring: [{ id: "censoring-5y", variable: "Censoring_5y", time: "t3", description: "Loss to follow-up around year 5, before the later death indicators." }],
+      survivalOutputs: [survivalSpec("mortality-survival", "mortality survival", ["Death_2y", "Death_4y", "Death_6y", "Death_8y", "Death_10y"], ["", "", "Censoring_5y", "", ""])]
     }
   });
   return document;

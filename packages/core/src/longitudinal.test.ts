@@ -107,9 +107,9 @@ describe("longitudinal instrumentation", () => {
 
     const curve = estimateSurvivalCurve(cohort, spec);
 
-    expect(curve).toHaveLength(2);
-    expect(curve[0]?.atRisk).toBeGreaterThan(curve[1]?.atRisk ?? 0);
-    expect(curve[1]?.risk).toBeGreaterThanOrEqual(curve[0]?.risk ?? 0);
+    expect(curve).toHaveLength(5);
+    expect(curve[0]?.atRisk).toBeGreaterThan(curve.at(-1)?.atRisk ?? 0);
+    expect(curve.at(-1)?.risk ?? 0).toBeGreaterThanOrEqual(curve[0]?.risk ?? 0);
   });
 
   it("computes strategy-specific survival curves for NHEFS mortality", () => {
@@ -130,22 +130,27 @@ describe("longitudinal instrumentation", () => {
     const finalRisks = curves.map((curve) => curve.at(-1)?.risk ?? null);
 
     expect(curves).toHaveLength(2);
-    expect(curves.every((curve) => curve.length === 2)).toBe(true);
+    expect(curves.every((curve) => curve.length === 5)).toBe(true);
     expect(finalRisks[0]).not.toBeNull();
     expect(finalRisks[1]).not.toBeNull();
     expect(finalRisks[0] ?? 1).toBeLessThan(finalRisks[1] ?? 0);
   });
 
-  it("models NHEFS cumulative mortality as an absorbing event", () => {
+  it("models NHEFS cumulative mortality as an absorbing chain over five intervals", () => {
     const document = exampleDocument("what-if-nhefs-mortality-survival");
     if (!document) throw new Error("missing NHEFS survival example");
-    const edge = document.graph.edges.find((candidate) => candidate.source === "Death_5y" && candidate.target === "Death_10y");
-    if (!edge) throw new Error("missing cumulative mortality edge");
+    const deaths = ["Death_2y", "Death_4y", "Death_6y", "Death_8y", "Death_10y"];
+    // every consecutive death indicator is chained with an absorbing edge
+    for (let i = 1; i < deaths.length; i += 1) {
+      const edge = document.graph.edges.find((candidate) => candidate.source === deaths[i - 1] && candidate.target === deaths[i]);
+      if (!edge) throw new Error(`missing absorbing edge ${deaths[i - 1]} -> ${deaths[i]}`);
+      expect(document.simulation.edges[edge.id]?.kind).toBe("absorbing");
+    }
     const cohort = simulateLongitudinalCohort(document);
-
-    expect(document.simulation.edges[edge.id]?.kind).toBe("absorbing");
-    expect(cohort.rows.some((row) => row.Death_5y === 1)).toBe(true);
-    expect(cohort.rows.every((row) => row.Death_5y !== 1 || row.Death_10y === 1)).toBe(true);
+    expect(cohort.rows.some((row) => row.Death_2y === 1)).toBe(true);
+    // cumulative monotonicity: once dead, dead at every later interval
+    const violations = cohort.rows.filter((row) => deaths.some((variable, i) => i > 0 && row[deaths[i - 1]!] === 1 && row[variable] !== 1)).length;
+    expect(violations).toBe(0);
   });
 
   it("reports censoring-aware IPW support when censoring variables are supplied", () => {
