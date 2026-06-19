@@ -58,6 +58,9 @@ export interface SurvivalCurvePoint {
   hazard: number | null;
   survival: number;
   risk: number;
+  // Pointwise 95% survival band (Greenwood's formula), clamped to [0, 1].
+  survivalLo: number;
+  survivalHi: number;
 }
 
 export interface GMethodsComparisonConfig {
@@ -359,6 +362,7 @@ export function estimateSurvivalCurve(cohort: LongitudinalCohort, spec: Survival
   const eventVariables = survivalEventVariables(spec);
   const intervals = [...new Set(rows.map((row) => row.interval))].sort((a, b) => a - b);
   let survival = 1;
+  let greenwood = 0; // running Σ d_i / (n_i (n_i - d_i)) for the Greenwood variance
   const points: SurvivalCurvePoint[] = [];
   for (const interval of intervals) {
     const intervalRows = rows.filter((row) => row.interval === interval);
@@ -367,6 +371,8 @@ export function estimateSurvivalCurve(cohort: LongitudinalCohort, spec: Survival
     const censored = intervalRows.reduce((sum, row) => sum + (row.censored ? row.weight : 0), 0);
     const hazard = atRisk > 0 ? events / atRisk : null;
     if (hazard !== null) survival *= Math.max(0, 1 - hazard);
+    if (atRisk > events && events > 0) greenwood += events / (atRisk * (atRisk - events));
+    const standardError = survival * Math.sqrt(greenwood);
     // Prefer a human time label parsed from the event variable (Death_2y -> "2y").
     const yearMatch = /(\d+)\s*y/i.exec(eventVariables[interval] ?? "");
     points.push({
@@ -377,7 +383,9 @@ export function estimateSurvivalCurve(cohort: LongitudinalCohort, spec: Survival
       censored,
       hazard,
       survival,
-      risk: 1 - survival
+      risk: 1 - survival,
+      survivalLo: Math.max(0, survival - 1.96 * standardError),
+      survivalHi: Math.min(1, survival + 1.96 * standardError)
     });
   }
   return points;

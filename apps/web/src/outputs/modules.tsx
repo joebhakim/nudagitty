@@ -1168,18 +1168,27 @@ function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; su
   const y = frame.yScale;
   const yTicks = [0, 0.5, 1];
   const path = (entry: WhatIfStrategySurvivalSummary) => entry.points.map((point, index) => `${index === 0 ? "M" : "L"} ${x(index)} ${y(point.survival)}`).join(" ");
+  // Greenwood 95% band: upper edge forward, lower edge back, closed.
+  const bandPath = (entry: WhatIfStrategySurvivalSummary) => {
+    const upper = entry.points.map((point, index) => `${index === 0 ? "M" : "L"} ${x(index)} ${y(point.survivalHi)}`).join(" ");
+    const lower = entry.points.map((point, index) => ({ index, point })).reverse().map(({ index, point }) => `L ${x(index)} ${y(point.survivalLo)}`).join(" ");
+    return `${upper} ${lower} Z`;
+  };
   return (
     <div className="what-if-survival-card">
       <div className="module-card-header">
         <strong>{props.survivalTime ? "Observed-death survival by strategy" : "Survival curves by strategy"}</strong>
         <span>{props.methodLabel ?? props.summary.label}</span>
       </div>
-      <p className="what-if-survival-method">{note} The natural-course line below is the observed cohort for reference.</p>
+      <p className="what-if-survival-method">{note} Shaded band: pointwise 95% CI (Greenwood) — tight here because the simulated cohort is large. The natural-course line below is the observed cohort for reference.</p>
       <svg className="what-if-survival-plot" viewBox={`0 0 ${width} ${frame.height}`} role="img" aria-label={`${props.summary.label} survival curves by strategy`}>
         <line className="huh-shift-axis" x1={plot.x} y1={plot.bottom} x2={plot.right} y2={plot.bottom} />
         <line className="huh-shift-axis" x1={plot.x} y1={plot.y} x2={plot.x} y2={plot.bottom} />
         {yTicks.map((tick) => (
           <text key={tick} className="huh-shift-axis-label" x={anchors.ticks.yX} y={y(tick) + 4} style={{ textAnchor: "end" }}>{formatPercent(tick)}</text>
+        ))}
+        {series.map((entry, seriesIndex) => (
+          <path key={`band-${entry.strategyId}`} className={`what-if-survival-band series-${seriesIndex}`} d={bandPath(entry)} />
         ))}
         {series.map((entry, seriesIndex) => (
           <g key={entry.strategyId}>

@@ -771,6 +771,16 @@
   stroke: var(--chart-series-2);
 }
 
+/* Greenwood 95% confidence band (shaded area around each survival line). */
+.what-if-survival-band {
+  stroke: none;
+  fill: var(--accent);
+  opacity: 0.22;
+}
+.what-if-survival-band.series-1 {
+  fill: var(--chart-series-2);
+}
+
 .what-if-survival-dot {
   fill: #ffffff;
   stroke: var(--accent);
