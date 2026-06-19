@@ -208,6 +208,20 @@ export const EXAMPLES: ExampleModel[] = [
 }`
   },
   {
+    id: "flexible-adjustment",
+    title: "How flexible should your adjustment be?",
+    domain: "ml",
+    summary: "A continuous confounder enters the outcome non-linearly. Linear outcome regression stays biased; raising the covariate basis (quadratic, cubic) removes it — bias-variance as one flexibility dial. Nonparametric methods are flexible already.",
+    code: `dag {
+  Risk_score [adjusted,label="risk score",pos="-1.15,1.2"]
+  Treatment [exposure,pos="-0.15,0"]
+  Outcome [outcome,pos="1.15,0"]
+  Risk_score -> Treatment
+  Risk_score -> Outcome
+  Treatment -> Outcome
+}`
+  },
+  {
     id: "simpson-severity",
     title: "Simpson's paradox: treatment by severity",
     domain: "classic",
@@ -2523,6 +2537,7 @@ function configureClassicExample(document: GraphDocument, id: string): GraphDocu
 
 function configurePractitionerExample(document: GraphDocument, id: string): GraphDocument {
   const next = prepareDocument(document, exampleSeed(id));
+  if (id === "flexible-adjustment") return configureFlexibleAdjustment(next);
   if (id === "target-trial-followup") return configureTargetTrialFollowup(next);
   if (id === "what-if-showcase-dynamic-rules") return configureWhatIfDynamicGFormula(next);
   if (id === "what-if-showcase-survival-curves") return configureWhatIfNhefsMortalitySurvival(next);
@@ -2548,6 +2563,25 @@ function configurePractitionerExample(document: GraphDocument, id: string): Grap
   if (id === "chess-intelligence-practice") return configureChessIntelligencePractice(next);
   if (id === "chess-intelligence-practice-simple-flip") return configureChessIntelligenceSimpleFlip(next);
   return next;
+}
+
+function configureFlexibleAdjustment(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 6000);
+  setContinuousVariable(document, "Risk_score", "Continuous baseline risk. It drives both treatment and outcome through its SQUARE — people at either extreme are treated more and fare worse — so the confounding is orthogonal to a straight line in risk.", "risk z-score");
+  setBinaryVariable(document, "Treatment", "Binary treatment, more common at risk extremes.", "treated");
+  setBinaryVariable(document, "Outcome", "Binary outcome.", "event");
+  setNode(document, "Risk_score", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "Treatment", -1.5);
+  setLogitNode(document, "Outcome", -0.6);
+  setLinearCoefficient(document, "Treatment", "Outcome", -0.9);
+  // Both edges enter through Risk_score² (a U-shape: extremes drive treatment AND
+  // outcome). Because the confounder is orthogonal to linear Risk_score, adjusting for
+  // it LINEARLY does essentially nothing — outcome regression stays as biased as the
+  // crude. A quadratic basis recovers the L² term and removes the confounding entirely;
+  // the nonparametric rows (which bin Risk_score) are flexible already.
+  setEdgeMechanism(document, "Risk_score", "Treatment", "quadratic", { beta1: 0, beta2: 1.5 });
+  setEdgeMechanism(document, "Risk_score", "Outcome", "quadratic", { beta1: 0, beta2: 1.4 });
+  return document;
 }
 
 function configureSimpsonSeverity(document: GraphDocument): GraphDocument {

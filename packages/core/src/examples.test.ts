@@ -6,6 +6,7 @@ describe("example catalog", () => {
   it("uses the classic example set and keeps Galton", () => {
     expect(EXAMPLES.map((example) => example.id)).toEqual([
       "tutoring-scores",
+      "flexible-adjustment",
       "simpson-severity",
       "icu-mortality-triage",
       "college-earnings",

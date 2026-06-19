@@ -63,6 +63,11 @@ export interface SurvivalCurvePoint {
   survivalHi: number;
 }
 
+// How a continuous covariate enters the PARAMETRIC estimators (outcome regression,
+// AIPW). Higher degree = a more flexible basis expansion of the confounder, able to
+// absorb non-linear confounding the linear form leaves behind.
+export type CovariateBasis = "linear" | "quadratic" | "cubic";
+
 export interface GMethodsComparisonConfig {
   treatmentVariables: string[];
   timeVaryingCovariates: string[];
@@ -72,6 +77,7 @@ export interface GMethodsComparisonConfig {
   stabilizedWeights?: boolean;
   censoringVariables?: string[];
   outcomeScale?: "risk" | "mean";
+  covariateBasis?: CovariateBasis;
 }
 
 export interface GMethodArmSummary {
@@ -627,12 +633,37 @@ function solveNormalEquations(design: number[][], response: number[], weights: n
   return gaussianSolve(xtwx, xtwy);
 }
 
-function designRow(row: Record<string, number>, treatments: string[], covariates: string[], assignment: Map<string, number> | null): number[] {
+interface CovariateTerm { id: string; continuous: boolean; mean: number; sd: number; degree: number }
+
+// A continuous covariate is standardized and expanded to `degree` polynomial terms
+// (z, z², z³); binary/discrete covariates stay as a single linear term (a square of a
+// 0/1 indicator is itself, so expanding it just adds collinear columns).
+function buildCovariatePlan(cohort: LongitudinalCohort, covariates: string[], basis: CovariateBasis): CovariateTerm[] {
+  const degree = basis === "cubic" ? 3 : basis === "quadratic" ? 2 : 1;
+  return covariates.map((id) => {
+    const values = cohort.rows.map((row) => row[id]).filter((value): value is number => value !== undefined && Number.isFinite(value));
+    const distinct = new Set(values.map((value) => Math.round(value * 1e6))).size;
+    const continuous = distinct > 2;
+    const mean = values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
+    const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(1, values.length - 1);
+    const sd = Math.sqrt(Math.max(1e-9, variance));
+    return { id, continuous, mean, sd, degree: continuous ? degree : 1 };
+  });
+}
+
+function designRow(row: Record<string, number>, treatments: string[], plan: CovariateTerm[], assignment: Map<string, number> | null): number[] {
   const xs = [1];
   for (const treatment of treatments) xs.push(assignment ? assignment.get(treatment) ?? 0 : asBinary(row[treatment]));
-  for (const covariate of covariates) {
-    const value = row[covariate];
-    xs.push(value !== undefined && Number.isFinite(value) ? value : 0);
+  for (const term of plan) {
+    const raw = row[term.id];
+    const value = raw !== undefined && Number.isFinite(raw) ? raw : term.mean;
+    if (term.continuous) {
+      const z = (value - term.mean) / term.sd;
+      let power = 1;
+      for (let d = 1; d <= term.degree; d += 1) { power *= z; xs.push(power); }
+    } else {
+      xs.push(value);
+    }
   }
   return xs;
 }
@@ -645,11 +676,12 @@ function strategyAssignmentMap(row: Record<string, number>, strategy: TreatmentS
 
 // Fit E[Y | treatments, covariates] parametrically (OLS for continuous, IRLS
 // logistic for binary). Returns a predictor (row, treatment-assignment) -> Ŷ.
-function fitOutcomeModel(cohort: LongitudinalCohort, outcome: string, treatments: string[], covariates: string[], binary: boolean): ((row: Record<string, number>, assignment: Map<string, number> | null) => number) | null {
+function fitOutcomeModel(cohort: LongitudinalCohort, outcome: string, treatments: string[], covariates: string[], binary: boolean, basis: CovariateBasis = "linear"): ((row: Record<string, number>, assignment: Map<string, number> | null) => number) | null {
+  const plan = buildCovariatePlan(cohort, covariates, basis);
   const indices = cohort.rows.map((_, i) => i).filter((i) => { const y = cohort.rows[i]![outcome]; return y !== undefined && Number.isFinite(y); });
-  const params = 1 + treatments.length + covariates.length;
+  const params = 1 + treatments.length + plan.reduce((sum, term) => sum + term.degree, 0);
   if (indices.length < params + 2) return null;
-  const design = indices.map((i) => designRow(cohort.rows[i]!, treatments, covariates, null));
+  const design = indices.map((i) => designRow(cohort.rows[i]!, treatments, plan, null));
   const response = indices.map((i) => cohort.rows[i]![outcome]!);
   const baseWeights = indices.map((i) => cohort.weights[i] ?? 1);
   let beta: number[] | null;
@@ -675,14 +707,14 @@ function fitOutcomeModel(cohort: LongitudinalCohort, outcome: string, treatments
   if (!beta || !beta.every((value) => Number.isFinite(value))) return null;
   const coefficients = beta;
   return (row, assignment) => {
-    const linear = dot(designRow(row, treatments, covariates, assignment), coefficients);
+    const linear = dot(designRow(row, treatments, plan, assignment), coefficients);
     return binary ? sigmoidLocal(linear) : linear;
   };
 }
 
 function outcomeRegressionEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
   const binary = (config.outcomeScale ?? "risk") === "risk";
-  const model = fitOutcomeModel(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary);
+  const model = fitOutcomeModel(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary, config.covariateBasis ?? "linear");
   if (!model) return emptyEstimate("outcome_regression", "Outcome regression", left, right, "Not enough data to fit the parametric outcome model.");
   const predictMean = (strategy: TreatmentStrategy): number | null => {
     let sum = 0;
@@ -711,7 +743,7 @@ function outcomeRegressionEstimate(cohort: LongitudinalCohort, config: GMethodsC
 
 function aipwEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
   const binary = (config.outcomeScale ?? "risk") === "risk";
-  const model = fitOutcomeModel(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary);
+  const model = fitOutcomeModel(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary, config.covariateBasis ?? "linear");
   if (!model) return emptyEstimate("aipw", "Doubly-robust (AIPW)", left, right, "Could not fit the outcome model for the augmentation term.");
   const propensityTables = config.treatmentVariables.map((treatment, index) => ({
     treatment,
@@ -1226,6 +1258,7 @@ export interface AdjustmentSpec {
   censoring: string[];
   outcomeScale: "risk" | "mean";
   strategies: [TreatmentStrategy, TreatmentStrategy];
+  covariateBasis?: CovariateBasis;
 }
 
 function synthesizeBinaryStrategies(treatments: string[]): [TreatmentStrategy, TreatmentStrategy] {
@@ -1305,6 +1338,7 @@ export function analyzeAdjustment(document: GraphDocument, spec: AdjustmentSpec)
     outcome: spec.outcome,
     strategies: spec.strategies,
     censoringVariables: spec.censoring.length > 0 ? spec.censoring : undefined,
-    outcomeScale: spec.outcomeScale
+    outcomeScale: spec.outcomeScale,
+    covariateBasis: spec.covariateBasis ?? "linear"
   });
 }
