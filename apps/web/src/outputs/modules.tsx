@@ -807,16 +807,26 @@ function renderHuhOutput(output: HuhCompletedOutput) {
 }
 
 function renderWhatIfAdvancedOutput(output: WhatIfAdvancedOutput) {
+  return <WhatIfAdvancedOutputView output={output} />;
+}
+
+function WhatIfAdvancedOutputView({ output }: { output: WhatIfAdvancedOutput }) {
   const comparison = output.comparison;
   const methodsOpen = output.view === "g_estimation" || output.view === "ipcw";
+  // The primary-method selection is owned here so the metric tile, the survival curve,
+  // and the methods table all reflect the SAME chosen estimator.
+  const [primaryId, setPrimaryId] = useState<GMethodEstimate["id"]>(() => comparison ? defaultPrimaryMethod(comparison) : "naive");
+  const primary = comparison?.estimates.find((estimate) => estimate.id === primaryId && estimate.estimate !== null)
+    ?? comparison?.estimates.find((estimate) => estimate.estimate !== null)
+    ?? null;
   return (
     <CompletedOutputShell badge={output.badge} title={output.title} conclusion={output.conclusion}>
-      <WhatIfMetricGrid output={output} />
+      <WhatIfMetricGrid output={output} primary={primary} />
       {output.survival && (output.view === "survival" || output.view === "survival_time") && (
         <WhatIfStrategySurvivalCurve summary={output.survival} survivalTime={output.view === "survival_time"} denominatorsOpen={output.denominatorsOpen} />
       )}
       {comparison && output.view === "dynamic" && <WhatIfDynamicSupport comparison={comparison} />}
-      {comparison && <MethodsComparisonPanel comparison={comparison} outcomeScale={output.outcomeScale} outcomeUnit={output.outcomeUnit} defaultOpen={methodsOpen} />}
+      {comparison && <MethodsComparisonPanel comparison={comparison} outcomeScale={output.outcomeScale} outcomeUnit={output.outcomeUnit} defaultOpen={methodsOpen} primaryId={primaryId} onPrimaryChange={setPrimaryId} />}
       {comparison && (
         <div className="what-if-strategy-grid">
           {comparison.strategies.map((strategy) => (
@@ -846,8 +856,8 @@ function renderWhatIfAdvancedOutput(output: WhatIfAdvancedOutput) {
 // Plain-language + formula for each g-method row, so the table isn't just labels.
 const METHOD_GLOSSARY: Record<GMethodEstimate["id"], { plain: string; formula: string }> = {
   naive: {
-    plain: "Compares the outcome by the treatment people actually took. Confounded by anything that drives both the treatment and the outcome.",
-    formula: "E[ Y | A = a, uncensored ]"
+    plain: "The raw crude contrast — the outcome by the treatment people actually took. This is exactly the observed-relation plot above; it ignores both confounding and censoring.",
+    formula: "E[ Y | A = a ]"
   },
   stratified: {
     plain: "Averages the outcome inside confounder strata, then re-weights those strata to the whole population. Unbiased only if every confounder is in L (and the bins are fine enough).",
@@ -886,12 +896,19 @@ const METHOD_GLOSSARY: Record<GMethodEstimate["id"], { plain: string; formula: s
 // honest without the oracle, before falling back to whatever has a value.
 const PRIMARY_METHOD_PREFERENCE: GMethodEstimate["id"][] = ["aipw", "ipw", "stratified", "outcome_regression", "matching", "g_estimation", "g_formula", "naive"];
 
-export function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean }) {
+export function defaultPrimaryMethod(comparison: GMethodsComparison): GMethodEstimate["id"] {
+  const available = comparison.estimates.filter((estimate) => estimate.estimate !== null);
+  return PRIMARY_METHOD_PREFERENCE.find((id) => available.some((estimate) => estimate.id === id)) ?? available[0]?.id ?? "naive";
+}
+
+export function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean; primaryId?: GMethodEstimate["id"]; onPrimaryChange?: (id: GMethodEstimate["id"]) => void }) {
   const { comparison, outcomeScale, outcomeUnit } = props;
   const available = comparison.estimates.filter((estimate) => estimate.estimate !== null);
-  const [primaryId, setPrimaryId] = useState<GMethodEstimate["id"]>(
-    () => PRIMARY_METHOD_PREFERENCE.find((id) => available.some((estimate) => estimate.id === id)) ?? available[0]?.id ?? "naive"
-  );
+  // Controlled (parent owns the selection, so the metric tile + curve stay in sync) or
+  // self-managed (classic examples that render the panel standalone).
+  const [internalPrimary, setInternalPrimary] = useState<GMethodEstimate["id"]>(() => defaultPrimaryMethod(comparison));
+  const primaryId = props.primaryId ?? internalPrimary;
+  const setPrimaryId = props.onPrimaryChange ?? setInternalPrimary;
   const primary = comparison.estimates.find((estimate) => estimate.id === primaryId && estimate.estimate !== null) ?? available[0] ?? null;
   return (
     <>
@@ -981,7 +998,7 @@ function WhatIfMethodGlossary(props: { comparison: GMethodsComparison }) {
   );
 }
 
-function WhatIfMetricGrid(props: { output: WhatIfAdvancedOutput }) {
+function WhatIfMetricGrid(props: { output: WhatIfAdvancedOutput; primary?: GMethodEstimate | null }) {
   const comparison = props.output.comparison;
   const gFormula = comparison?.estimates.find((estimate) => estimate.id === "g_formula");
   const ipw = comparison?.estimates.find((estimate) => estimate.id === "ipw");
@@ -990,13 +1007,16 @@ function WhatIfMetricGrid(props: { output: WhatIfAdvancedOutput }) {
   const survival = props.output.survival;
   const support = comparison ? minimumObservedSupport(comparison) : null;
   if (!comparison && !survival) return null;
+  // The headline tile shows the SELECTED primary method's final-interval risk difference,
+  // so it always matches the table row + curve. Falls back to the survival summary.
+  const headline = props.primary?.estimate ?? survival?.riskDifference ?? null;
   if (props.output.view === "survival" && survival) {
     return (
       <div className="completed-metric-grid what-if-metrics">
         <div>
-          <span>Final risk difference</span>
-          <strong>{formatOutcomeDifference(survival.riskDifference, "risk", "")}</strong>
-          <small>{comparison ? `${comparison.strategies[0].label} vs ${comparison.strategies[1].label}` : survival.label}</small>
+          <span>Risk difference</span>
+          <strong className={estimateToneClass(headline)}>{formatOutcomeDifference(headline, "risk", "")}</strong>
+          <small>{props.primary ? `${props.primary.label}` : comparison ? `${comparison.strategies[0].label} vs ${comparison.strategies[1].label}` : survival.label}</small>
         </div>
         <div>
           <span>Final survival difference</span>
@@ -1157,9 +1177,9 @@ function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; su
           </g>
         ))}
         {series[0]?.points.map((point, index) => (
-          <text key={point.interval} className="what-if-survival-label" x={x(index)} y={anchors.ticks.xY}>{index + 1}</text>
+          <text key={point.interval} className="what-if-survival-label" x={x(index)} y={anchors.ticks.xY}>{point.label}</text>
         ))}
-        <text className="what-if-survival-axis-title" x={plot.cx} y={anchors.title.xY} style={{ textAnchor: "middle" }}>follow-up interval</text>
+        <text className="what-if-survival-axis-title" x={plot.cx} y={anchors.title.xY} style={{ textAnchor: "middle" }}>follow-up</text>
         <text className="what-if-survival-axis-title" x={anchors.title.yX} y={plot.cy} style={{ textAnchor: "middle" }} transform={`rotate(-90 ${anchors.title.yX} ${plot.cy})`}>survival</text>
       </svg>
       <div className="what-if-survival-legend">

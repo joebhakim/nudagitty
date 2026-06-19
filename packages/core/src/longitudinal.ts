@@ -297,6 +297,7 @@ export function buildPersonTimeRows(cohort: LongitudinalCohort, spec: SurvivalOu
 
 export function estimateSurvivalCurve(cohort: LongitudinalCohort, spec: SurvivalOutputSpec): SurvivalCurvePoint[] {
   const rows = buildPersonTimeRows(cohort, spec);
+  const eventVariables = survivalEventVariables(spec);
   const intervals = [...new Set(rows.map((row) => row.interval))].sort((a, b) => a - b);
   let survival = 1;
   const points: SurvivalCurvePoint[] = [];
@@ -307,9 +308,11 @@ export function estimateSurvivalCurve(cohort: LongitudinalCohort, spec: Survival
     const censored = intervalRows.reduce((sum, row) => sum + (row.censored ? row.weight : 0), 0);
     const hazard = atRisk > 0 ? events / atRisk : null;
     if (hazard !== null) survival *= Math.max(0, 1 - hazard);
+    // Prefer a human time label parsed from the event variable (Death_2y -> "2y").
+    const yearMatch = /(\d+)\s*y/i.exec(eventVariables[interval] ?? "");
     points.push({
       interval,
-      label: spec.timeScale ? `${spec.timeScale} ${interval + 1}` : `interval ${interval + 1}`,
+      label: yearMatch ? `${yearMatch[1]}y` : spec.timeScale ? `${spec.timeScale} ${interval + 1}` : `interval ${interval + 1}`,
       atRisk,
       events,
       censored,
@@ -738,7 +741,10 @@ function matchingEstimate(cohort: LongitudinalCohort, config: GMethodsComparison
 }
 
 function observedArm(cohort: LongitudinalCohort, strategy: TreatmentStrategy, config: GMethodsComparisonConfig): GMethodArmSummary {
-  const mean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, strategy, config.treatmentVariables) && isUncensored(row, config.censoringVariables));
+  // The naive baseline is the raw crude contrast — it ignores BOTH confounding and
+  // censoring, so it matches the observed-relation scatter exactly. (The advanced rows
+  // are what bring censoring back in via IPCW.)
+  const mean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, strategy, config.treatmentVariables));
   return armSummary(strategy, mean.mean, mean.sampleSize, mean.effectiveSampleSize);
 }
 
