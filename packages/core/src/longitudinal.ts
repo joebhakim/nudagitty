@@ -207,6 +207,65 @@ export function cohortFromSimulationResult(result: SimulationResult): Longitudin
   };
 }
 
+export interface MethodSurvivalCurve {
+  strategyId: string;
+  points: SurvivalCurvePoint[];
+}
+
+// Per-row IPW weight for following `strategy` (stabilized treatment × censoring), 0 for
+// rows whose observed history does not follow it. Mirrors weightedIpwArm's weighting so
+// the IPW survival curve adjusts the same way as the IPW point estimate.
+function strategyIpwRowWeights(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, strategy: TreatmentStrategy): number[] {
+  const treatmentTables = config.treatmentVariables.map((treatment, index) => ({
+    denominatorByValue: {
+      0: binaryProbabilityTable(cohort, treatment, 0, treatmentHistory(treatment, config.treatmentVariables.slice(0, index), config.timeVaryingCovariates)),
+      1: binaryProbabilityTable(cohort, treatment, 1, treatmentHistory(treatment, config.treatmentVariables.slice(0, index), config.timeVaryingCovariates))
+    },
+    numeratorByValue: {
+      0: binaryProbabilityTable(cohort, treatment, 0, config.treatmentVariables.slice(0, index)),
+      1: binaryProbabilityTable(cohort, treatment, 1, config.treatmentVariables.slice(0, index))
+    },
+    treatment
+  }));
+  const censoringTables = (config.censoringVariables ?? []).map((censoring, index) => binaryProbabilityTable(cohort, censoring, 0, [...config.treatmentVariables.slice(0, Math.min(index + 1, config.treatmentVariables.length)), ...config.timeVaryingCovariates]));
+  const weights = new Array<number>(cohort.rows.length).fill(0);
+  for (let i = 0; i < cohort.rows.length; i += 1) {
+    const row = cohort.rows[i]!;
+    if (!matchesStrategy(row, strategy, config.treatmentVariables)) continue;
+    let denominator = 1;
+    let numerator = 1;
+    for (const table of treatmentTables) {
+      const value = asBinary(assignedTreatmentValue(row, strategy, table.treatment));
+      denominator *= probabilityFromTable(table.denominatorByValue[value], row);
+      numerator *= probabilityFromTable(table.numeratorByValue[value], row);
+    }
+    // Censoring weight applies to the uncensored person-time; censored rows still
+    // contribute their pre-censoring intervals (the person-time builder drops them).
+    if (isUncensored(row, config.censoringVariables)) {
+      for (const table of censoringTables) denominator *= probabilityFromTable(table, row);
+    }
+    weights[i] = Math.min(50, Math.max(0, numerator / Math.max(1e-6, denominator))) * (cohort.weights[i] ?? 1);
+  }
+  return weights;
+}
+
+// Survival curves estimated directly from the OBSERVED cohort under different methods:
+// the crude (naive) KM among each strategy's followers, and the IPW/IPCW-weighted KM.
+// The g-formula curve (re-simulation) is produced separately from the strategy results.
+export function observedMethodSurvivalCurves(cohort: LongitudinalCohort, spec: SurvivalOutputSpec, config: GMethodsComparisonConfig, strategies: TreatmentStrategy[]): { naive: MethodSurvivalCurve[]; ipw: MethodSurvivalCurve[] } {
+  const curveWith = (weights: number[]) => estimateSurvivalCurve({ ...cohort, weights }, spec);
+  return {
+    naive: strategies.map((strategy) => ({
+      strategyId: strategy.id,
+      points: curveWith(cohort.rows.map((row, i) => matchesStrategy(row, strategy, config.treatmentVariables) ? (cohort.weights[i] ?? 1) : 0))
+    })),
+    ipw: strategies.map((strategy) => ({
+      strategyId: strategy.id,
+      points: curveWith(strategyIpwRowWeights(cohort, config, strategy))
+    }))
+  };
+}
+
 export function evaluateTreatmentStrategy(document: GraphDocument, strategy: TreatmentStrategy, outcome: string): StrategyEvaluation {
   const treatmentVariables = strategyTreatmentVariables(strategy);
   const treatmentSet = new Set(treatmentVariables);

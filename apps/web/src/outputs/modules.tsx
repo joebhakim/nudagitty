@@ -1,5 +1,5 @@
-import { analyzeAdjustment, cohortFromSimulationResult, compareLongitudinalGMethods, deriveAdjustmentSpec, estimateSurvivalCurve, normalizeVariableModel, runSimulation } from "@nudagitty/core";
-import type { GMethodEstimate, GMethodsComparison, SimulatedNodeState, SurvivalCurvePoint } from "@nudagitty/core";
+import { analyzeAdjustment, cohortFromSimulationResult, compareLongitudinalGMethods, deriveAdjustmentSpec, estimateSurvivalCurve, observedMethodSurvivalCurves, normalizeVariableModel, runSimulation } from "@nudagitty/core";
+import type { AdjustmentSpec, GMethodEstimate, GMethodsComparison, MethodSurvivalCurve, SimulatedNodeState, SurvivalCurvePoint } from "@nudagitty/core";
 import type React from "react";
 import { useState } from "react";
 import {
@@ -171,6 +171,9 @@ type WhatIfSurvivalSummary = {
   natural: WhatIfStrategySurvivalSummary | null;
   riskDifference: number | null;
   survivalDifference: number | null;
+  // Per-method strategy curves (g_formula = re-sim, naive = crude KM, ipw = IPCW KM).
+  // The dropdown picks one; methods without a distinct curve fall back to g_formula.
+  curvesByMethod: Partial<Record<GMethodEstimate["id"], WhatIfStrategySurvivalSummary[]>>;
 };
 
 type WhatIfAdvancedOutput = {
@@ -823,7 +826,7 @@ function WhatIfAdvancedOutputView({ output }: { output: WhatIfAdvancedOutput }) 
     <CompletedOutputShell badge={output.badge} title={output.title} conclusion={output.conclusion}>
       <WhatIfMetricGrid output={output} primary={primary} />
       {output.survival && (output.view === "survival" || output.view === "survival_time") && (
-        <WhatIfStrategySurvivalCurve summary={output.survival} survivalTime={output.view === "survival_time"} denominatorsOpen={output.denominatorsOpen} />
+        <WhatIfStrategySurvivalCurve summary={output.survival} survivalTime={output.view === "survival_time"} denominatorsOpen={output.denominatorsOpen} methodId={primary?.id} methodLabel={primary?.label} />
       )}
       {comparison && output.view === "dynamic" && <WhatIfDynamicSupport comparison={comparison} />}
       {comparison && <MethodsComparisonPanel comparison={comparison} outcomeScale={output.outcomeScale} outcomeUnit={output.outcomeUnit} defaultOpen={methodsOpen} primaryId={primaryId} onPrimaryChange={setPrimaryId} />}
@@ -1140,10 +1143,24 @@ function WhatIfMetricGrid(props: { output: WhatIfAdvancedOutput; primary?: GMeth
   );
 }
 
-function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; survivalTime: boolean; denominatorsOpen: boolean }) {
+const SURVIVAL_CURVE_NOTE: Partial<Record<GMethodEstimate["id"], string>> = {
+  g_formula: "g-formula counterfactual: the model is re-simulated with everyone assigned each strategy, not the observed sub-group.",
+  naive: "Crude Kaplan-Meier among each strategy's observed followers — confounded, and the curves match the naive table row.",
+  ipw: "IPCW-weighted Kaplan-Meier: each follower is re-weighted by the inverse probability of their own treatment and of staying uncensored."
+};
+
+function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; survivalTime: boolean; denominatorsOpen: boolean; methodId?: GMethodEstimate["id"]; methodLabel?: string }) {
   const width = 340;
-  const series = props.summary.strategies.length > 0 ? props.summary.strategies : props.summary.natural ? [props.summary.natural] : [];
+  const methodCurves = props.methodId ? props.summary.curvesByMethod[props.methodId] : undefined;
+  const usingFallback = Boolean(props.methodId) && !methodCurves;
+  const baseSeries = methodCurves ?? props.summary.strategies;
+  const series = baseSeries.length > 0 ? baseSeries : props.summary.natural ? [props.summary.natural] : [];
   if (series.length === 0) return null;
+  const note = (props.methodId && SURVIVAL_CURVE_NOTE[props.methodId])
+    ? SURVIVAL_CURVE_NOTE[props.methodId]!
+    : usingFallback
+      ? `${props.methodLabel ?? "This method"} is a point estimate; the trajectory shown is the g-formula counterfactual.`
+      : SURVIVAL_CURVE_NOTE.g_formula!;
   const pointCount = Math.max(...series.map((entry) => entry.points.length));
   const frame = chartFrame({ width, height: 162, x: { ticks: true, title: true }, y: { ticks: true, title: true }, yDomain: [0, 1], insetX: 12, insetY: 6 });
   const { plot, anchors } = frame;
@@ -1155,13 +1172,9 @@ function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; su
     <div className="what-if-survival-card">
       <div className="module-card-header">
         <strong>{props.survivalTime ? "Observed-death survival by strategy" : "Survival curves by strategy"}</strong>
-        <span>{props.summary.label}</span>
+        <span>{props.methodLabel ?? props.summary.label}</span>
       </div>
-      <p className="what-if-survival-method">
-        Counterfactual survival under each strategy — the g-formula curve: the model is re-simulated with
-        <em> everyone</em> assigned that strategy, not the observed (confounded) sub-group. The natural-course
-        line below is the observed cohort for reference.
-      </p>
+      <p className="what-if-survival-method">{note} The natural-course line below is the observed cohort for reference.</p>
       <svg className="what-if-survival-plot" viewBox={`0 0 ${width} ${frame.height}`} role="img" aria-label={`${props.summary.label} survival curves by strategy`}>
         <line className="huh-shift-axis" x1={plot.x} y1={plot.bottom} x2={plot.right} y2={plot.bottom} />
         <line className="huh-shift-axis" x1={plot.x} y1={plot.y} x2={plot.x} y2={plot.bottom} />
@@ -1529,7 +1542,7 @@ function computeWhatIfAdvancedOutput(context: OutputContext, moduleId: string): 
   const survivalSpec = config.survivalSpecId
     ? context.document.metadata.longitudinal.survivalOutputs.find((spec) => spec.id === config.survivalSpecId)
     : null;
-  const survival = survivalSpec ? summarizeSurvival(context, survivalSpec.id, comparison) : null;
+  const survival = survivalSpec ? summarizeSurvival(context, survivalSpec.id, comparison, spec) : null;
   return {
     badge: config.badge,
     title: config.title,
@@ -1546,7 +1559,22 @@ function computeWhatIfAdvancedOutput(context: OutputContext, moduleId: string): 
   };
 }
 
-function summarizeSurvival(context: OutputContext, specId: string, comparison: GMethodsComparison | null): WhatIfSurvivalSummary | null {
+function survivalSummaryFromPoints(strategyId: string, label: string, points: SurvivalCurvePoint[]): WhatIfStrategySurvivalSummary {
+  const last = points[points.length - 1];
+  return {
+    strategyId,
+    label,
+    points,
+    finalRisk: last?.risk ?? null,
+    finalSurvival: last?.survival ?? null,
+    totalEvents: points.reduce((sum, point) => sum + point.events, 0),
+    totalCensored: points.reduce((sum, point) => sum + point.censored, 0),
+    sampleSize: 0,
+    effectiveSampleSize: null
+  };
+}
+
+function summarizeSurvival(context: OutputContext, specId: string, comparison: GMethodsComparison | null, adjustmentSpec: AdjustmentSpec | null): WhatIfSurvivalSummary | null {
   const spec = context.document.metadata.longitudinal.survivalOutputs.find((candidate) => candidate.id === specId);
   if (!spec) return null;
   const natural = survivalSummaryFromResult("natural-course", "natural course", context.simulation, spec);
@@ -1558,12 +1586,29 @@ function summarizeSurvival(context: OutputContext, specId: string, comparison: G
   if (!natural && strategies.length === 0) return null;
   const left = strategies[0] ?? null;
   const right = strategies[1] ?? null;
+  // g-formula is the re-simulated curve; also compute the crude (naive) and IPCW-weighted
+  // curves from the observed cohort so the dropdown can swap the whole trajectory.
+  const curvesByMethod: WhatIfSurvivalSummary["curvesByMethod"] = { g_formula: strategies };
+  if (comparison && adjustmentSpec) {
+    const labelOf = (id: string) => comparison.strategies.find((strategy) => strategy.id === id)?.label ?? id;
+    const wrap = (curve: MethodSurvivalCurve) => survivalSummaryFromPoints(curve.strategyId, labelOf(curve.strategyId), curve.points);
+    const observed = observedMethodSurvivalCurves(cohortFromSimulationResult(context.simulation), spec, {
+      treatmentVariables: adjustmentSpec.treatments,
+      timeVaryingCovariates: adjustmentSpec.covariates,
+      outcome: adjustmentSpec.outcome,
+      censoringVariables: adjustmentSpec.censoring,
+      strategies: adjustmentSpec.strategies
+    }, adjustmentSpec.strategies);
+    curvesByMethod.naive = observed.naive.map(wrap);
+    curvesByMethod.ipw = observed.ipw.map(wrap);
+  }
   return {
     label: spec.label,
     strategies,
     natural,
     riskDifference: left && right && left.finalRisk !== null && right.finalRisk !== null ? left.finalRisk - right.finalRisk : null,
-    survivalDifference: left && right && left.finalSurvival !== null && right.finalSurvival !== null ? left.finalSurvival - right.finalSurvival : null
+    survivalDifference: left && right && left.finalSurvival !== null && right.finalSurvival !== null ? left.finalSurvival - right.finalSurvival : null,
+    curvesByMethod
   };
 }
 
