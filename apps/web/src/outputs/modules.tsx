@@ -991,6 +991,13 @@ function WhatIfMethodGlossary(props: { comparison: GMethodsComparison }) {
             </div>
           );
         })}
+        <div>
+          <dt>Confidence band (Greenwood)</dt>
+          <dd>
+            <p>The shaded ribbon around a survival curve is a pointwise 95% confidence interval. Greenwood&rsquo;s formula gives the standard error of a Kaplan-Meier survival estimate at each follow-up time, and the band is &plusmn;1.96&middot;SE &mdash; it widens as the at-risk set shrinks, and is tight here because the simulated cohort is large.</p>
+            <code className="what-if-method-formula">Var(S&#770;(t)) = S&#770;(t)&sup2; &middot; &Sigma; d&#7522; / (n&#7522; (n&#7522; &minus; d&#7522;))</code>
+          </dd>
+        </div>
       </dl>
       <p className="what-if-method-glossary-note">
         g-formula is the do()-resimulated oracle here. The others estimate the same effect from the observed

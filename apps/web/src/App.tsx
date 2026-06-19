@@ -792,12 +792,12 @@ export function App() {
   }, [document]);
 
   useEffect(() => startEngagementMilestones(), []);
-  const adjustedFrameTitle = completedOutputActive ? "Model output"
+  const adjustedFrameTitle = completedOutputActive ? "Adjusted estimate"
     : frameOperation === "adjust" ? "Adjusted (standardized) output"
       : frameOperation === "condition" ? "Conditioned (stratified) output"
         : frameOperation === "select" ? "Selected-sample output"
           : "Structural diagnosis";
-  const adjustedFrameDetail = completedOutputActive ? "Specialized readout for this example"
+  const adjustedFrameDetail = completedOutputActive ? "What the methods estimate after adjusting for the confounders"
     : frameOperation === "adjust" ? "Stratify on every level of the adjustment set, then standardize to the population"
       : frameOperation === "condition" ? "Each stratum shown separately — not combined or standardized"
         : frameOperation === "select" ? "Restricted to the selected sub-population; the complement is unobserved"
@@ -1457,7 +1457,7 @@ export function App() {
           tone="output"
           label="Output"
           title="Result"
-          detail="Observed relation and causal comparison"
+          detail="Observed association and adjusted estimate"
           pending={resultPendingActive(resultsPending)}
           action={<button type="button" aria-label="Close results" onClick={() => setBasicResultsOpen(false)}><X size={16} /></button>}
         >
@@ -1491,31 +1491,8 @@ export function App() {
   const renderProOutputsPane = (order: number) => (
     <Panel id="outputs" defaultSize={compactWorkspace ? 28 : presentationActive ? 42 : 28} minSize={compactWorkspace ? 24 : 22} className="workspace-panel outputs-panel" key="outputs">
       <PanelGroup orientation="vertical" className="workspace-output-panel-group">
-        <Panel id="pairwise" defaultSize={showAdjustedOutputColumn ? 47 : 100} minSize={26} className="workspace-panel">
-          <aside className="side-panel module-pane pairwise-column">
-            <ModuleFrame
-              tone="output"
-              label="Output"
-              title="Observed relation"
-              detail="Click the exposure/outcome labels to change the pair"
-              pending={resultPendingActive(pairwisePending)}
-              className="compact-pairwise-frame"
-            >
-              <ScatterplotPanel
-                graph={document.graph}
-                simulation={simulation}
-                derived={simulationDerived}
-                pair={activeOutputPair}
-                pending={pairwisePending}
-                onPair={setScatterPair}
-                onSelectNode={selectNode}
-              />
-            </ModuleFrame>
-          </aside>
-        </Panel>
         {showAdjustedOutputColumn && (
           <>
-            {renderWorkspaceHandle("pairwise-adjusted", true)}
             <Panel id="adjusted" defaultSize={64} minSize={30} className="workspace-panel">
               <aside className="side-panel module-pane adjusted-output-column">
                 <ModuleFrame
@@ -1542,8 +1519,31 @@ export function App() {
                 </ModuleFrame>
               </aside>
             </Panel>
+            {renderWorkspaceHandle("adjusted-pairwise", true)}
           </>
         )}
+        <Panel id="pairwise" defaultSize={showAdjustedOutputColumn ? 36 : 100} minSize={22} className="workspace-panel">
+          <aside className="side-panel module-pane pairwise-column">
+            <ModuleFrame
+              tone="output"
+              label="Output"
+              title="Observed association"
+              detail="The crude, unadjusted comparison — click the exposure/outcome labels to change the pair"
+              pending={resultPendingActive(pairwisePending)}
+              className="compact-pairwise-frame"
+            >
+              <ScatterplotPanel
+                graph={document.graph}
+                simulation={simulation}
+                derived={simulationDerived}
+                pair={activeOutputPair}
+                pending={pairwisePending}
+                onPair={setScatterPair}
+                onSelectNode={selectNode}
+              />
+            </ModuleFrame>
+          </aside>
+        </Panel>
       </PanelGroup>
     </Panel>
   );
