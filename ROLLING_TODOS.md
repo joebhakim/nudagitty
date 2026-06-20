@@ -2,6 +2,51 @@
 
 Keep lightweight follow-ups here when a branch is reviewable but still needs product polish.
 
+## Adjustment-pipeline unification + NHEFS survival arc (2026-06-19)
+
+**State:** local `main` is **8 commits ahead of `origin/main`, UNPUSHED**. Pushing `main` ->
+`origin` auto-deploys via the joesite webhook (deployed checkout is this repo; service
+`joesite-nudagitty.service` on :8502 -> nudag.joeha.kim). Note: the
+`fix-gmethods-continuous-confounders` branch is the PRE-merge state; all recent work landed
+on local main after the earlier no-ff merge (1d49d11).
+
+Shipped this session (committed to local main, not yet pushed):
+- Unified the four ad-hoc "adjust" output paths -> one operation-derived engine + one
+  methods panel + one adaptive-quantile binning, for every example (the 1d49d11 merge).
+- Added matching / parametric outcome-regression / doubly-robust AIPW estimators + a
+  per-analysis primary-method selector (drives a live headline).
+- NHEFS rebuilt: 5 death intervals (2/4/6/8/10y, absorbing chain), recalibrated so all 7
+  adjusted estimators converge on the oracle; method-specific survival curves (naive /
+  IPW / g-formula swap with the dropdown); analytic Greenwood CI bands; naive == observed
+  scatter consistency; modules renamed ("Observed association" / "Adjusted estimate") and
+  reordered (adjusted is now the primary/top panel).
+- Covariate basis expansion (linear / quadratic / cubic) on the parametric estimators +
+  the new "How flexible should your adjustment be?" example + a "Confounder basis" selector.
+- Observed-association card now renders the crude (naive) survival curves for survival
+  examples — same view as the adjusted card, before adjustment.
+
+Outstanding:
+- [ ] **Push local main -> origin** (auto-deploys). Decide when.
+- [ ] **Variable groups, "all types now" (started with the basis kind):** survival
+  observed/adjusted are matched. Remaining: BINARY (a crude two-arm risk contrast shown in
+  both cards: naive arms vs primary-method arms, methods table as adjusted-card detail),
+  CONTINUOUS (arm means), and a COMPACT HEADER pair-picker to replace the retired scatter.
+  Shape: an `outputViewType` switch (survival | binary | continuous | survival_time) + one
+  contrast component reused by both cards.
+- [ ] **Basis selector is classic-only** — the what-if path (NHEFS) wasn't wired for it.
+  Extend `OutputContext.covariateBasis` threading through `WhatIfAdvancedOutputView` if wanted.
+- [ ] **Other variable-group kinds** beyond basis: series / regimen / categorical (most are
+  already implicit in the longitudinal engine — formalize them as `VariableGroup`s).
+- [ ] **Bootstrap CI worker (deferred):** per-estimator TABLE CIs need an off-thread Web
+  Worker (~0.5s/replicate, too slow inline; ~100s even in a worker at B=200; subsampling
+  would wrongly inflate CIs). The survival CURVE already uses analytic Greenwood. Revisit
+  only if the table CIs feel missing.
+- [ ] **Example audit ledger** (`docs/example-audit-ledger.md`): every example is still
+  ❌/❌ (Joe-audited + Claude-skeptical). The skeptical audits were offered, never run.
+- [ ] **birthweight-paradox calibration:** marginal smoking->mortality reads ~null/protective
+  (should be harmful) — pre-existing, logged in the ledger, not chased.
+- [ ] Kill the leftover dev server on port 1337 (started for verification).
+
 ## Basic Mode Polish
 
 - [ ] Tighten the Basic-mode layout after review: spacing, drawer sizing, right-panel density, responsive behavior, and visual hierarchy around the DAG.
@@ -40,12 +85,17 @@ From a codebase sweep (2026-06-12). The recurring risk: output prose and labels 
 
 Highest leverage: a `(operation, exposure, outcome, adjuster, conditioningRoles) -> { narrative, explainer }` helper so renaming a node or recalibrating can never desync the prose, and every example gets an "i" panel for free.
 
+> ⚠ STALE LINE NUMBERS: the `App.tsx`/`modules.tsx` line references in this section predate
+> the 2026-06-19 output-pipeline unification (which deleted the bespoke binary/continuous
+> adjustment cards and moved everything) — re-locate by symbol before acting. Some items may
+> already be resolved by that refactor.
+
 Review for staleness (hand-written, drifts silently):
 
 - [ ] Migrate per-example output narratives off literal node names. `modules.tsx` `visualRead`/`verdict`/`conclusion` for Simpson (~1504), ICU (~1568), College (~1629), Tutoring (~1791), the demo conclusions (~491, ~666), and all 7 "huh" examples (front-door ~1892, birthweight ~1927, obesity ~1962, cats ~2029, policing ~2078, m-bias ~2117, chess ~2256). Interpolated numbers are fine; the embedded variable names and structural claims ("no Exposure -> Outcome path") are the drift risk.
 - [ ] Replace the ICU hardcoded collider warning (`modules.tsx:1569`, the `ICU_admission -> Triage_score <- Severity` string) with the generic `badControlWarning` + `classifyConditioned` path it predates.
 - [ ] Derive the App.tsx ledger notes (`~3568, ~3576-3577, ~3611, ~3618`) — currently name Severity/Academic_need and their estimand semantics by hand.
-- [ ] Showcase guide `App.tsx:3933` hardcodes the Death_5y/Death_10y horizons ("death by 5y carries into death by 10y") — read timepoints from graph/metadata.
+- [x] Showcase guide hardcoded the Death_5y/Death_10y horizons — FIXED 2026-06-19 (NHEFS now has 5 intervals; copy made generic). Still nice-to-have: read timepoints from graph/metadata instead of any prose.
 - [ ] Justify or centralize hardcoded numeric thresholds: weak-support cutoff `n<8 || <8%` (`modules.tsx:1757`), M-bias stratification `quantile(…, 0.7)` (`modules.tsx:2103`), and the cats injury bin `7` passed to `stratifyRiskCurves`.
 - [ ] Add a calibration-snapshot test that fails when copy numbers (e.g. cats "~90% survival", "mean near 5.5") drift from the live simulation, so recalibration surfaces stale prose instead of hiding it.
 

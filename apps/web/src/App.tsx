@@ -4053,7 +4053,7 @@ function showcaseGuideForExample(exampleId: string | null | undefined): Showcase
       target: "Look for two curves and the final risk difference.",
       items: [
         "Each treatment strategy gets its own simulated follow-up curve.",
-        "The absorbing death edge means death by 5y carries into death by 10y."
+        "The absorbing death edges chain the interval death indicators, so death in one interval carries into every later one."
       ]
     };
   }
