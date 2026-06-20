@@ -86,6 +86,7 @@ import type {
   EdgeKind,
   ExampleDenouement,
   EffectKind,
+  CovariateBasis,
   GMethodsComparison,
   GraphDocument,
   GraphEdge,
@@ -756,11 +757,15 @@ export function App() {
     graph: outputGraph,
     simulation: outputSimulation
   }), [document.id, document.metadata, document.schemaVersion, outputGraph, outputSimulation]);
+  // How flexibly continuous confounders enter the parametric estimators (outcome
+  // regression, AIPW). Drives the basis selector on the methods panel.
+  const [covariateBasis, setCovariateBasis] = useState<CovariateBasis>("linear");
   const outputContext = useMemo<OutputContext>(() => ({
     analysis,
     document: computationDocument,
-    simulation
-  }), [analysis, computationDocument, simulation]);
+    simulation,
+    covariateBasis
+  }), [analysis, computationDocument, simulation, covariateBasis]);
   const simulationDerived = useMemo(() => buildSimulationDerivedCache(simulation), [simulation]);
   const selectedNode = selection?.kind === "node" ? findNode(document.graph, selection.id) : undefined;
   const selectedEdge = selection?.kind === "edge" ? findEdge(document.graph, selection.id) : undefined;
@@ -820,11 +825,11 @@ export function App() {
     if (activeExample?.outputModule?.startsWith("what-if-")) return null;
     const spec = deriveAdjustmentSpec(computationDocument, { exposure: pair.x, outcome: pair.y });
     if (!spec || spec.covariates.length === 0) return null;
-    const comparison = analyzeAdjustment(computationDocument, spec);
+    const comparison = analyzeAdjustment(computationDocument, { ...spec, covariateBasis });
     if (!comparison) return null;
     const outcomeNode = computationDocument.graph.nodes.find((node) => node.id === spec.outcome);
     return { comparison, outcomeScale: spec.outcomeScale, outcomeUnit: outcomeNode?.variable.unit ?? "" };
-  }, [activeExample, computationDocument]);
+  }, [activeExample, computationDocument, covariateBasis]);
   const unifiedAdjustment = useMemo(() => computeUnifiedAdjustment(activeOutputPair), [computeUnifiedAdjustment, activeOutputPair]);
   const demoUnifiedAdjustment = useMemo(() => computeUnifiedAdjustment(defaultOutputPair), [computeUnifiedAdjustment, defaultOutputPair]);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
@@ -1513,6 +1518,8 @@ export function App() {
                     binaryOutput={binaryAdjustmentOutput}
                     continuousOutput={binaryContinuousAdjustmentOutput}
                     unified={unifiedAdjustment}
+                    basis={covariateBasis}
+                    onBasisChange={setCovariateBasis}
                     pending={resultsPending}
                     hideOracle={false}
                   />
@@ -4110,11 +4117,13 @@ function AdjustedOutputPanel(props: {
   binaryOutput: BinaryAdjustmentOutput | null;
   continuousOutput: BinaryContinuousAdjustmentOutput | null;
   unified?: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string } | null;
+  basis?: CovariateBasis;
+  onBasisChange?: (basis: CovariateBasis) => void;
   pending?: ResultPendingState;
   hideOracle?: boolean;
 }) {
   const unifiedPanel = props.unified
-    ? <MethodsComparisonPanel comparison={props.unified.comparison} outcomeScale={props.unified.outcomeScale} outcomeUnit={props.unified.outcomeUnit} defaultOpen />
+    ? <MethodsComparisonPanel comparison={props.unified.comparison} outcomeScale={props.unified.outcomeScale} outcomeUnit={props.unified.outcomeUnit} defaultOpen basis={props.basis} onBasisChange={props.onBasisChange} />
     : null;
   const adjustedNodes = props.binaryOutput?.adjustedNodes ?? props.continuousOutput?.adjustedNodes ?? [];
   const binaryOutput = props.binaryOutput;

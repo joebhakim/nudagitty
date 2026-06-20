@@ -1,5 +1,5 @@
 import { analyzeAdjustment, cohortFromSimulationResult, compareLongitudinalGMethods, deriveAdjustmentSpec, estimateSurvivalCurve, observedMethodSurvivalCurves, normalizeVariableModel, runSimulation } from "@nudagitty/core";
-import type { AdjustmentSpec, GMethodEstimate, GMethodsComparison, MethodSurvivalCurve, SimulatedNodeState, SurvivalCurvePoint } from "@nudagitty/core";
+import type { AdjustmentSpec, CovariateBasis, GMethodEstimate, GMethodsComparison, MethodSurvivalCurve, SimulatedNodeState, SurvivalCurvePoint } from "@nudagitty/core";
 import type React from "react";
 import { useState } from "react";
 import {
@@ -904,7 +904,7 @@ export function defaultPrimaryMethod(comparison: GMethodsComparison): GMethodEst
   return PRIMARY_METHOD_PREFERENCE.find((id) => available.some((estimate) => estimate.id === id)) ?? available[0]?.id ?? "naive";
 }
 
-export function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean; primaryId?: GMethodEstimate["id"]; onPrimaryChange?: (id: GMethodEstimate["id"]) => void }) {
+export function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean; primaryId?: GMethodEstimate["id"]; onPrimaryChange?: (id: GMethodEstimate["id"]) => void; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void }) {
   const { comparison, outcomeScale, outcomeUnit } = props;
   const available = comparison.estimates.filter((estimate) => estimate.estimate !== null);
   // Controlled (parent owns the selection, so the metric tile + curve stay in sync) or
@@ -932,6 +932,21 @@ export function MethodsComparisonPanel(props: { comparison: GMethodsComparison; 
               ))}
             </select>
           </div>
+          {props.onBasisChange && (
+            <div className="methods-primary-controls">
+              <label htmlFor="covariate-basis-select" title="How flexibly continuous confounders enter the parametric estimators (outcome regression, AIPW). Higher degree = more flexible.">Confounder basis</label>
+              <select
+                id="covariate-basis-select"
+                className="methods-primary-select"
+                value={props.basis ?? "linear"}
+                onChange={(event) => props.onBasisChange!(event.target.value as CovariateBasis)}
+              >
+                <option value="linear">Linear</option>
+                <option value="quadratic">Quadratic (+ L²)</option>
+                <option value="cubic">Cubic (+ L³)</option>
+              </select>
+            </div>
+          )}
           <div className="methods-primary-headline">
             <strong className={estimateToneClass(primary.estimate)}>{formatOutcomeDifference(primary.estimate, outcomeScale, outcomeUnit)}</strong>
             <span>{comparison.strategies[0].label} vs {comparison.strategies[1].label}</span>
@@ -1548,8 +1563,9 @@ function computeWhatIfAdvancedOutput(context: OutputContext, moduleId: string): 
   if (!config) return null;
   // Same unified pipeline as every other example: derive the spec from the graph's
   // operations, then run the shared engine.
-  const spec = deriveAdjustmentSpec(context.document);
-  if (!spec) return null;
+  const derivedSpec = deriveAdjustmentSpec(context.document);
+  if (!derivedSpec) return null;
+  const spec = { ...derivedSpec, covariateBasis: context.covariateBasis ?? "linear" };
   const outcomeScale: WhatIfOutputScale = spec.outcomeScale;
   const outcomeNode = context.document.graph.nodes.find((node) => node.id === spec.outcome);
   const outcomeUnit = outcomeNode?.variable.unit ?? "";

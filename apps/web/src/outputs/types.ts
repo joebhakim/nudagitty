@@ -1,10 +1,11 @@
-import type { AnalysisReport, GraphDocument, SimulationResult } from "@nudagitty/core";
+import type { AnalysisReport, CovariateBasis, GraphDocument, SimulationResult } from "@nudagitty/core";
 import type { ReactNode } from "react";
 
 export interface OutputContext {
   analysis: AnalysisReport;
   document: GraphDocument;
   simulation: SimulationResult;
+  covariateBasis?: CovariateBasis;
 }
 
 export interface CompletedOutputModule<Result> {
