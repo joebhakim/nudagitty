@@ -136,7 +136,7 @@ import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
 import { HighlightNames, NodeNamesProvider, SvgAxisName } from "./shared/NodeNames";
 import { stratifyRiskCurves } from "./outputs/stratify";
 import type { StratifiedRiskContrast } from "./outputs/stratify";
-import { MethodsComparisonPanel, basicOutputPunchlineFromResult, computeCompletedOutput } from "./outputs/modules";
+import { MethodsComparisonPanel, WhatIfStrategySurvivalCurve, basicOutputPunchlineFromResult, computeCompletedOutput, observedSurvivalView } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
 import type { OutputContext } from "./outputs/types";
@@ -778,6 +778,9 @@ export function App() {
   const highlightedEdges = useMemo(() => computeHighlightedEdges(document.graph, analysis, showCausal, showBiasing), [analysis, document.graph, showBiasing, showCausal]);
   const ancestorIds = useMemo(() => showAncestors ? new Set(analysis.causalPaths.flat()) : new Set<string>(), [analysis.causalPaths, showAncestors]);
   const completedOutput = useMemo(() => computeCompletedOutput(outputContext, activeExample?.outputModule ?? null), [activeExample?.outputModule, outputContext]);
+  // For survival examples the observed-association card shows the crude (naive) survival
+  // curves — the same view as the adjusted estimate, before adjustment.
+  const observedSurvival = useMemo(() => observedSurvivalView(completedOutput), [completedOutput]);
   const activeOutputPair = useMemo(() => reconcileScatterPair(computationDocument.graph, scatterPair), [computationDocument.graph, scatterPair]);
   const defaultOutputPair = useMemo(() => defaultScatterPair(computationDocument.graph), [computationDocument.graph]);
   const binaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived, activeOutputPair), [activeOutputPair, outputContext, simulationDerived]);
@@ -1535,19 +1538,21 @@ export function App() {
               tone="output"
               label="Output"
               title="Observed association"
-              detail="The crude, unadjusted comparison — click the exposure/outcome labels to change the pair"
+              detail="The crude, unadjusted comparison — the same view as the adjusted estimate, before adjustment"
               pending={resultPendingActive(pairwisePending)}
               className="compact-pairwise-frame"
             >
-              <ScatterplotPanel
-                graph={document.graph}
-                simulation={simulation}
-                derived={simulationDerived}
-                pair={activeOutputPair}
-                pending={pairwisePending}
-                onPair={setScatterPair}
-                onSelectNode={selectNode}
-              />
+              {observedSurvival
+                ? <WhatIfStrategySurvivalCurve summary={observedSurvival.summary} survivalTime={observedSurvival.survivalTime} denominatorsOpen={false} methodId="naive" methodLabel="Observed (crude)" />
+                : <ScatterplotPanel
+                    graph={document.graph}
+                    simulation={simulation}
+                    derived={simulationDerived}
+                    pair={activeOutputPair}
+                    pending={pairwisePending}
+                    onPair={setScatterPair}
+                    onSelectNode={selectNode}
+                  />}
             </ModuleFrame>
           </aside>
         </Panel>

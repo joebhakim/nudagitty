@@ -1171,7 +1171,17 @@ const SURVIVAL_CURVE_NOTE: Partial<Record<GMethodEstimate["id"], string>> = {
   ipw: "IPCW-weighted Kaplan-Meier: each follower is re-weighted by the inverse probability of their own treatment and of staying uncensored."
 };
 
-function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; survivalTime: boolean; denominatorsOpen: boolean; methodId?: GMethodEstimate["id"]; methodLabel?: string }) {
+// For a survival what-if example, the data needed to render the OBSERVED (crude/naive)
+// survival curves in the observed-association card — the same component the adjusted card
+// uses, just pinned to the naive method.
+export function observedSurvivalView(completedOutput: ComputedCompletedOutput | null): { summary: WhatIfSurvivalSummary; survivalTime: boolean } | null {
+  if (!completedOutput || !completedOutput.moduleId.startsWith("what-if-")) return null;
+  const result = completedOutput.result as WhatIfAdvancedOutput | null;
+  if (!result || !result.survival || (result.view !== "survival" && result.view !== "survival_time")) return null;
+  return { summary: result.survival, survivalTime: result.view === "survival_time" };
+}
+
+export function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; survivalTime: boolean; denominatorsOpen: boolean; methodId?: GMethodEstimate["id"]; methodLabel?: string }) {
   const width = 340;
   const methodCurves = props.methodId ? props.summary.curvesByMethod[props.methodId] : undefined;
   const usingFallback = Boolean(props.methodId) && !methodCurves;
