@@ -1,7 +1,7 @@
 import { analyzeAdjustment, cohortFromSimulationResult, compareLongitudinalGMethods, deriveAdjustmentSpec, estimateSurvivalCurve, observedMethodSurvivalCurves, normalizeVariableModel, runSimulation } from "@nudagitty/core";
 import type { AdjustmentSpec, CovariateBasis, GMethodEstimate, GMethodsComparison, MethodSurvivalCurve, SimulatedNodeState, SurvivalCurvePoint } from "@nudagitty/core";
 import type React from "react";
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
   formatPercent,
   formatPercentagePointMagnitude,
@@ -904,7 +904,7 @@ export function defaultPrimaryMethod(comparison: GMethodsComparison): GMethodEst
   return PRIMARY_METHOD_PREFERENCE.find((id) => available.some((estimate) => estimate.id === id)) ?? available[0]?.id ?? "naive";
 }
 
-export function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean; primaryId?: GMethodEstimate["id"]; onPrimaryChange?: (id: GMethodEstimate["id"]) => void; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void }) {
+export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean; primaryId?: GMethodEstimate["id"]; onPrimaryChange?: (id: GMethodEstimate["id"]) => void; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void }) {
   const { comparison, outcomeScale, outcomeUnit } = props;
   const available = comparison.estimates.filter((estimate) => estimate.estimate !== null);
   // Controlled (parent owns the selection, so the metric tile + curve stay in sync) or
@@ -986,7 +986,7 @@ export function MethodsComparisonPanel(props: { comparison: GMethodsComparison; 
       <WhatIfMethodGlossary comparison={comparison} />
     </>
   );
-}
+});
 
 function WhatIfMethodGlossary(props: { comparison: GMethodsComparison }) {
   return (
@@ -1181,7 +1181,7 @@ export function observedSurvivalView(completedOutput: ComputedCompletedOutput | 
   return { summary: result.survival, survivalTime: result.view === "survival_time" };
 }
 
-export function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; survivalTime: boolean; denominatorsOpen: boolean; methodId?: GMethodEstimate["id"]; methodLabel?: string }) {
+export const WhatIfStrategySurvivalCurve = memo(function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSummary; survivalTime: boolean; denominatorsOpen: boolean; methodId?: GMethodEstimate["id"]; methodLabel?: string }) {
   const width = 340;
   const methodCurves = props.methodId ? props.summary.curvesByMethod[props.methodId] : undefined;
   const usingFallback = Boolean(props.methodId) && !methodCurves;
@@ -1254,7 +1254,7 @@ export function WhatIfStrategySurvivalCurve(props: { summary: WhatIfSurvivalSumm
       <WhatIfSurvivalDenominators series={series} open={props.denominatorsOpen} />
     </div>
   );
-}
+});
 
 function WhatIfSurvivalDenominators(props: { series: WhatIfStrategySurvivalSummary[]; open: boolean }) {
   const rows = props.series.flatMap((entry) => entry.points.map((point) => ({ entry, point })));
@@ -1543,9 +1543,9 @@ const WHAT_IF_OUTPUT_CONFIGS: Record<string, WhatIfOutputConfig> = {
   },
   "what-if-hiv-cd4-variants": {
     badge: "What If",
-    title: "Dynamic ART variants",
+    title: "Time-varying ART over CD4 history",
     view: "dynamic",
-    conclusion: () => "Treatment variants are rules over CD4 history, not just an ever-treated label. The g-formula row materializes the dynamic rule before standardizing over histories.",
+    conclusion: () => "Low CD4 channels patients into ART, so the crude 'ever-treated' contrast is badly confounded — treatment can look nearly useless. The g-formula re-simulates each strategy over the full CD4 history and recovers the always-vs-never effect, because CD4 is both a confounder for the next dose and a mediator of the last one (so adjusting for it directly is wrong).",
   },
   "what-if-censoring-ipcw": {
     badge: "What If",
