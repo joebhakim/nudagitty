@@ -11,7 +11,7 @@ const CASES: Array<{ id: string; treatments: string[]; covariates: string[]; out
   { id: "what-if-ipw-pseudopopulation", treatments: ["Treatment_A"], covariates: ["Baseline_C"], outcome: "Outcome_Y", censoring: [] },
   { id: "what-if-nhefs-mortality-survival", treatments: ["Quit_smoking"], covariates: ["Age", "Baseline_risk"], outcome: "Death_10y", censoring: ["Censoring_5y"] },
   { id: "what-if-weight-gain-g-estimation", treatments: ["Quit_smoking"], covariates: ["Smoking_intensity", "Socioeconomic"], outcome: "Weight_gain_8y", censoring: [] },
-  { id: "what-if-hiv-cd4-variants", treatments: ["A0", "A1", "A2"], covariates: ["CD4_0", "CD4_1", "CD4_2"], outcome: "AIDS_death", censoring: [] },
+  { id: "what-if-hiv-cd4-variants", treatments: ["A_0", "A_1", "A_2", "A_3", "A_4", "A_5"], covariates: ["CD4_0", "CD4_1", "CD4_2", "CD4_3", "CD4_4", "CD4_5"], outcome: "AIDS_death", censoring: [] },
   { id: "what-if-censoring-ipcw", treatments: ["A0", "A1"], covariates: ["Baseline_risk", "L1"], outcome: "Y", censoring: ["C1", "C2"] },
   // SNAFT targets the survival-TIME contrast (the estimand outcome), not the binary
   // death indicator the old hard-coded config used.

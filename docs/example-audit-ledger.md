@@ -31,12 +31,6 @@ Legend: ❌ not done · 🔶 partial · ✅ done
 | `m-bias-adjustment` | classic | ❌ | ❌ |  |
 | `lords-paradox` | classic | ❌ | ❌ |  |
 | `target-trial-followup` | epidemiology | ❌ | ❌ | censoring→outcome kludge removed (this session) |
-| `what-if-showcase-dynamic-rules` | epidemiology | ❌ | ❌ | duplicate of what-if-dynamic-g-formula (reuses its config/module) |
-| `what-if-showcase-survival-curves` | epidemiology | ❌ | ❌ | duplicate of what-if-nhefs-mortality-survival |
-| `what-if-showcase-hazard-denominator` | epidemiology | ❌ | ❌ | duplicate of what-if-hazard-selection |
-| `what-if-showcase-g-estimation` | epidemiology | ❌ | ❌ | duplicate of what-if-weight-gain-g-estimation |
-| `what-if-showcase-ipcw` | epidemiology | ❌ | ❌ | duplicate of what-if-censoring-ipcw |
-| `what-if-showcase-snaft` | epidemiology | ❌ | ❌ | duplicate of what-if-snaft-survival |
 | `what-if-treatment-feedback` | epidemiology | ❌ | ❌ | clean; IPW recovers oracle (reference for 'sane') |
 | `what-if-ipw-pseudopopulation` | epidemiology | ❌ | ❌ | oracle-gap: adaptive binning improved recovery; residual ~0.025 is finite-sample |
 | `what-if-hazard-selection` | epidemiology | ❌ | ❌ | fake-deterministic survivor gating replaced w/ absorbing + deterministic complement (this session) |

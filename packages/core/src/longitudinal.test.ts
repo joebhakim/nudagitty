@@ -41,12 +41,6 @@ describe("longitudinal instrumentation", () => {
 
   it("validates all advanced What If examples", () => {
     for (const id of [
-      "what-if-showcase-dynamic-rules",
-      "what-if-showcase-survival-curves",
-      "what-if-showcase-hazard-denominator",
-      "what-if-showcase-g-estimation",
-      "what-if-showcase-ipcw",
-      "what-if-showcase-snaft",
       "what-if-ipw-pseudopopulation",
       "what-if-hazard-selection",
       "what-if-nhefs-mortality-survival",

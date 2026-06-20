@@ -50,31 +50,6 @@ type VariablePatch = Partial<Omit<VariableModel, "measurement" | "simulation" | 
 const ZERO_NOISE: NodeDistribution = { kind: "constant", value: 0 };
 const UNIT_NORMAL: NodeDistribution = { kind: "normal", mean: 0, sd: 1 };
 
-const WHAT_IF_SHOWCASE_DYNAMIC_RULES_CODE = `dag {
-  Risk_0 [adjusted,label="risk L0",pos="-1.2,3.8"]
-  A0 [exposure,label="action A0",pos="0.65,2.7"]
-  Risk_1 [adjusted,label="risk L1",pos="-0.8,1.6"]
-  A1 [label="action A1",pos="0.9,0.45"]
-  Risk_2 [adjusted,label="risk L2",pos="-0.5,-0.7"]
-  A2 [label="action A2",pos="0.9,-1.75"]
-  Y [outcome,label="outcome Y",pos="0,-3"]
-  Risk_0 -> A0
-  Risk_0 -> Risk_1
-  Risk_0 -> Y
-  A0 -> Risk_1
-  A0 -> A1
-  A0 -> Y
-  Risk_1 -> A1
-  Risk_1 -> Risk_2
-  Risk_1 -> Y
-  A1 -> Risk_2
-  A1 -> A2
-  A1 -> Y
-  Risk_2 -> A2
-  Risk_2 -> Y
-  A2 -> Y
-}`;
-
 const NHEFS_MORTALITY_CODE = `dag {
   Age [adjusted,pos="-2.6,3.6"]
   Baseline_risk [adjusted,label="baseline mortality risk",pos="-1.0,3.6"]
@@ -116,80 +91,39 @@ const NHEFS_MORTALITY_CODE = `dag {
   Death_8y -> Death_10y
 }`;
 
-const WHAT_IF_SHOWCASE_HAZARD_DENOMINATOR_CODE = `dag {
-  Frailty [adjusted,label="baseline frailty",pos="-1.8,2.6"]
-  Treatment_A [exposure,label="treatment A",pos="0.1,1.3"]
-  Death_1 [label="early death",pos="-0.65,0.05"]
-  Alive_1 [adjusted,label="alive at t1",pos="0.55,-1.15"]
-  Death_2 [outcome,label="later death",pos="1.55,-2.45"]
-  Frailty -> Treatment_A
-  Frailty -> Death_1
-  Frailty -> Death_2
-  Treatment_A -> Death_1
-  Treatment_A -> Death_2
-  Death_1 -> Death_2
-  Death_1 -> Alive_1
-}`;
+// Array-generated longitudinal DAG: `visits` paired CD4-confounder / ART-treatment nodes
+// in two columns down the canvas, plus a terminal AIDS/death node. The classic
+// treatment-confounder-feedback structure (CD4_k -> A_k -> CD4_{k+1} -> A_{k+1} ...),
+// authored from a node array so the visit count is a single knob.
+function buildHivCd4SequenceCode(visits: number): string {
+  const top = 3.6;
+  const step = 1.15;
+  const lines: string[] = ["dag {"];
+  for (let k = 0; k < visits; k += 1) {
+    const y = (top - k * step).toFixed(2);
+    const ay = (top - 0.55 - k * step).toFixed(2);
+    const cd4Tag = "adjusted";
+    const aTag = k === 0 ? "exposure" : "";
+    lines.push(`  CD4_${k} [${cd4Tag},label="low CD4 (t${k})",pos="-1.1,${y}"]`);
+    lines.push(`  A_${k} [${aTag ? aTag + "," : ""}label="ART (t${k})",pos="0.95,${ay}"]`);
+  }
+  const deathY = (top - 0.4 - visits * step).toFixed(2);
+  lines.push(`  AIDS_death [outcome,label="AIDS / death",pos="-0.1,${deathY}"]`);
+  for (let k = 0; k < visits; k += 1) {
+    lines.push(`  CD4_${k} -> A_${k}`);
+    lines.push(`  CD4_${k} -> AIDS_death`);
+    lines.push(`  A_${k} -> AIDS_death`);
+    if (k + 1 < visits) {
+      lines.push(`  CD4_${k} -> CD4_${k + 1}`);
+      lines.push(`  A_${k} -> CD4_${k + 1}`);
+      lines.push(`  A_${k} -> A_${k + 1}`);
+    }
+  }
+  lines.push("}");
+  return lines.join("\n");
+}
 
-const WHAT_IF_SHOWCASE_G_ESTIMATION_CODE = `dag {
-  Smoking_intensity [adjusted,label="baseline cigarettes/day",pos="-2.3,2.6"]
-  Socioeconomic [adjusted,label="socioeconomic baseline",pos="-0.4,2.6"]
-  Quit_smoking [exposure,label="quit smoking",pos="-1.3,1.05"]
-  Diet_change [label="post-quit diet change",pos="0.3,-0.35"]
-  Weight_gain_8y [outcome,label="8-year weight gain",pos="-0.35,-1.9"]
-  Smoking_intensity -> Quit_smoking
-  Smoking_intensity -> Weight_gain_8y
-  Socioeconomic -> Quit_smoking
-  Socioeconomic -> Diet_change
-  Socioeconomic -> Weight_gain_8y
-  Quit_smoking -> Diet_change
-  Quit_smoking -> Weight_gain_8y
-  Diet_change -> Weight_gain_8y
-}`;
-
-const WHAT_IF_SHOWCASE_IPCW_CODE = `dag {
-  Baseline_risk [adjusted,label="baseline risk",pos="-1.8,3.6"]
-  A0 [exposure,label="treatment A0",pos="0,2.5"]
-  L1 [adjusted,label="risk L1",pos="-0.85,1.35"]
-  C1 [selected,label="censored C1",pos="1.1,0.35"]
-  A1 [label="treatment A1",pos="-0.35,-0.65"]
-  C2 [selected,label="censored C2",pos="1.25,-1.5"]
-  Y [outcome,label="outcome Y",pos="-0.15,-2.65"]
-  Baseline_risk -> A0
-  Baseline_risk -> L1
-  Baseline_risk -> C1
-  Baseline_risk -> C2
-  Baseline_risk -> Y
-  A0 -> L1
-  A0 -> C1
-  A0 -> A1
-  A0 -> Y
-  L1 -> C1
-  L1 -> A1
-  L1 -> C2
-  L1 -> Y
-  C1 -> A1
-  A1 -> C2
-  A1 -> Y
-}`;
-
-const WHAT_IF_SHOWCASE_SNAFT_CODE = `dag {
-  Baseline_risk [adjusted,label="baseline risk",pos="-1.7,2.9"]
-  Treatment_start [exposure,label="treatment start",pos="-0.2,1.55"]
-  Failure_time [outcome,label="counterfactual failure time",pos="-0.8,0.1"]
-  Visit_schedule [label="visit schedule",pos="1.15,-0.25"]
-  Censoring [selected,pos="0.95,-1.5"]
-  Observed_death [outcome,label="observed death",pos="-0.1,-2.7"]
-  Baseline_risk -> Treatment_start
-  Baseline_risk -> Failure_time
-  Baseline_risk -> Visit_schedule
-  Baseline_risk -> Censoring
-  Baseline_risk -> Observed_death
-  Treatment_start -> Failure_time
-  Treatment_start -> Censoring
-  Failure_time -> Observed_death
-  Visit_schedule -> Censoring
-}`;
+const HIV_CD4_SEQUENCE_VISITS = 6;
 
 export const EXAMPLES: ExampleModel[] = [
   {
@@ -491,54 +425,6 @@ export const EXAMPLES: ExampleModel[] = [
 }`
   },
   {
-    id: "what-if-showcase-dynamic-rules",
-    title: "Showcase: sequential dynamic g-formula",
-    domain: "epidemiology",
-    summary: "A compact rule-based treatment strategy example: each action is assigned from the current risk history before downstream variables are generated.",
-    outputModule: "what-if-dynamic-g-formula",
-    code: WHAT_IF_SHOWCASE_DYNAMIC_RULES_CODE
-  },
-  {
-    id: "what-if-showcase-survival-curves",
-    title: "Showcase: strategy-specific survival curves",
-    domain: "epidemiology",
-    summary: "Smoking-cessation survival readout where quit and continue strategies get their own survival curves, final risk difference, and absorbing death edge.",
-    outputModule: "what-if-nhefs-mortality-survival",
-    code: NHEFS_MORTALITY_CODE
-  },
-  {
-    id: "what-if-showcase-hazard-denominator",
-    title: "Showcase: survivor denominators",
-    domain: "epidemiology",
-    summary: "Two-interval hazard example that keeps early deaths and later survivor conditioning visible instead of collapsing everything into one endpoint.",
-    outputModule: "what-if-hazard-selection",
-    code: WHAT_IF_SHOWCASE_HAZARD_DENOMINATOR_CODE
-  },
-  {
-    id: "what-if-showcase-g-estimation",
-    title: "Showcase: g-estimation blip coefficients",
-    domain: "epidemiology",
-    summary: "Smoking-cessation weight-gain example focused on the structural-nested mean-model row and its additive g-estimation diagnostics.",
-    outputModule: "what-if-weight-gain-g-estimation",
-    code: WHAT_IF_SHOWCASE_G_ESTIMATION_CODE
-  },
-  {
-    id: "what-if-showcase-ipcw",
-    title: "Showcase: censoring weights (IPCW)",
-    domain: "epidemiology",
-    summary: "Longitudinal treatment example where censoring is explicit and the output foregrounds IPW/IPCW support rather than a naive complete-case read.",
-    outputModule: "what-if-censoring-ipcw",
-    code: WHAT_IF_SHOWCASE_IPCW_CODE
-  },
-  {
-    id: "what-if-showcase-snaft",
-    title: "Showcase: structural nested survival time",
-    domain: "epidemiology",
-    summary: "Failure-time example that separates a mean survival-time contrast from observed-death and censoring diagnostics.",
-    outputModule: "what-if-snaft-survival",
-    code: WHAT_IF_SHOWCASE_SNAFT_CODE
-  },
-  {
     id: "what-if-treatment-feedback",
     title: "What If: treatment-confounder feedback",
     domain: "epidemiology",
@@ -627,35 +513,41 @@ export const EXAMPLES: ExampleModel[] = [
 }`
   },
   {
-    id: "what-if-hiv-cd4-variants",
-    title: "What If: HIV treatment variants over CD4 history",
+    id: "what-if-nhefs-weight-gain",
+    title: "What If: smoking cessation and weight gain (book replica)",
     domain: "epidemiology",
-    summary: "Three-visit HIV treatment example with CD4 feedback and dynamic treatment variants.",
-    outputModule: "what-if-hiv-cd4-variants",
+    summary: "Faithful point-treatment replica of Hernán & Robins' What If, Part II (Ch 12-14): does quitting smoking cause weight gain? Quitters gain ~2.5 kg more in the crude comparison, but they are older and heavier and such people gain less weight regardless, so adjusting for the baseline confounders RAISES the estimate to ~3.5 kg. The canonical IP-weighting / standardization / g-estimation example.",
     code: `dag {
-  CD4_0 [adjusted,label="CD4 at baseline",pos="-1.2,3.8"]
-  A0 [exposure,label="ART A0",pos="0.55,2.7"]
-  CD4_1 [adjusted,label="CD4 at t1",pos="-0.75,1.6"]
-  A1 [label="ART A1",pos="0.8,0.45"]
-  CD4_2 [adjusted,label="CD4 at t2",pos="-0.45,-0.7"]
-  A2 [label="ART A2",pos="0.9,-1.75"]
-  AIDS_death [outcome,label="AIDS/death",pos="0,-3"]
-  CD4_0 -> A0
-  CD4_0 -> CD4_1
-  CD4_0 -> AIDS_death
-  A0 -> CD4_1
-  A0 -> A1
-  A0 -> AIDS_death
-  CD4_1 -> A1
-  CD4_1 -> CD4_2
-  CD4_1 -> AIDS_death
-  A1 -> CD4_2
-  A1 -> A2
-  A1 -> AIDS_death
-  CD4_2 -> A2
-  CD4_2 -> AIDS_death
-  A2 -> AIDS_death
+  Sex [adjusted,label="sex (female)",pos="-3.1,2.7"]
+  Age [adjusted,label="age",pos="-1.85,3.15"]
+  Smoking_intensity [adjusted,label="cigarettes/day",pos="-0.6,3.3"]
+  Years_smoking [adjusted,label="years smoking",pos="0.65,3.15"]
+  Exercise [adjusted,label="exercise",pos="1.9,2.7"]
+  Baseline_weight [adjusted,label="baseline weight",pos="3.05,1.85"]
+  Quit_smoking [exposure,label="quit smoking",pos="-1.75,0.65"]
+  Weight_gain [outcome,label="weight gain",pos="1.5,-1.7"]
+  Sex -> Quit_smoking
+  Sex -> Weight_gain
+  Age -> Quit_smoking
+  Age -> Weight_gain
+  Smoking_intensity -> Quit_smoking
+  Smoking_intensity -> Weight_gain
+  Years_smoking -> Quit_smoking
+  Years_smoking -> Weight_gain
+  Exercise -> Quit_smoking
+  Exercise -> Weight_gain
+  Baseline_weight -> Quit_smoking
+  Baseline_weight -> Weight_gain
+  Quit_smoking -> Weight_gain
 }`
+  },
+  {
+    id: "what-if-hiv-cd4-variants",
+    title: "What If: ART over a long CD4 history",
+    domain: "epidemiology",
+    summary: "Six-visit HIV/ART example with full treatment-confounder feedback: low CD4 prompts treatment, treatment improves later CD4, and CD4 both confounds the next dose and mediates the last one. The textbook case where adjusting for time-varying CD4 is wrong and only g-methods recover the effect of always- vs never-treating.",
+    outputModule: "what-if-hiv-cd4-variants",
+    code: buildHivCd4SequenceCode(HIV_CD4_SEQUENCE_VISITS)
   },
   {
     id: "what-if-censoring-ipcw",
@@ -2539,16 +2431,11 @@ function configurePractitionerExample(document: GraphDocument, id: string): Grap
   const next = prepareDocument(document, exampleSeed(id));
   if (id === "flexible-adjustment") return configureFlexibleAdjustment(next);
   if (id === "target-trial-followup") return configureTargetTrialFollowup(next);
-  if (id === "what-if-showcase-dynamic-rules") return configureWhatIfDynamicGFormula(next);
-  if (id === "what-if-showcase-survival-curves") return configureWhatIfNhefsMortalitySurvival(next);
-  if (id === "what-if-showcase-hazard-denominator") return configureWhatIfHazardSelection(next);
-  if (id === "what-if-showcase-g-estimation") return configureWhatIfWeightGainGEstimation(next);
-  if (id === "what-if-showcase-ipcw") return configureWhatIfCensoringIpcw(next);
-  if (id === "what-if-showcase-snaft") return configureWhatIfSnaftSurvival(next);
   if (id === "what-if-treatment-feedback") return configureWhatIfTreatmentFeedback(next);
   if (id === "what-if-ipw-pseudopopulation") return configureWhatIfIpwPseudopopulation(next);
   if (id === "what-if-hazard-selection") return configureWhatIfHazardSelection(next);
   if (id === "what-if-nhefs-mortality-survival") return configureWhatIfNhefsMortalitySurvival(next);
+  if (id === "what-if-nhefs-weight-gain") return configureWhatIfNhefsWeightGain(next);
   if (id === "what-if-weight-gain-g-estimation") return configureWhatIfWeightGainGEstimation(next);
   if (id === "what-if-hiv-cd4-variants") return configureWhatIfHivCd4Variants(next);
   if (id === "what-if-censoring-ipcw") return configureWhatIfCensoringIpcw(next);
@@ -3119,6 +3006,57 @@ function configureWhatIfHazardSelection(document: GraphDocument): GraphDocument 
   return document;
 }
 
+function configureWhatIfNhefsWeightGain(document: GraphDocument): GraphDocument {
+  // Faithful point-treatment replica of Hernan & Robins "What If" Part II (Ch 12-14):
+  // the average causal effect of smoking cessation on 10-year weight gain. The book's
+  // analytic sample is 1566 smokers aged 25-74; crude difference +2.5 kg; the IP-weighted /
+  // standardized / g-estimation effect is ~3.4-3.5 kg. Adjustment RAISES the estimate
+  // because quitters are older/heavier and such people gain less weight regardless.
+  setExampleSampleSize(document, 4000);
+  // Baseline covariates L (a faithful subset of the book's 9), all measured pre-treatment.
+  setBinaryVariable(document, "Sex", "Baseline sex (1 = female). Quitters were more often men.", "female");
+  setContinuousVariable(document, "Age", "Baseline age. Quitters were ~4 years older, and older people gain less weight regardless of quitting -- the book's headline (surrogate) confounder.", "years");
+  setContinuousVariable(document, "Smoking_intensity", "Baseline cigarettes per day. Quitters smoked fewer.", "cigarettes/day");
+  setContinuousVariable(document, "Years_smoking", "Years of smoking at baseline. Quitters had smoked longer.", "years");
+  setContinuousVariable(document, "Exercise", "Baseline recreational activity (z-score, higher = more active).", "activity z-score");
+  setContinuousVariable(document, "Baseline_weight", "Body weight at the baseline visit. Quitters were slightly heavier.", "kg");
+  setBinaryVariable(document, "Quit_smoking", "Quit smoking between the baseline (1971-75) and follow-up (1982) visits.", "quit");
+  setContinuousVariable(document, "Weight_gain", "Weight change (follow-up minus baseline) in kg.", "kg");
+
+  // Baseline covariate distributions (means/spreads echo Table 12.1).
+  setLogitNode(document, "Sex", 0.0); // ~50% female
+  setNode(document, "Age", { distribution: { kind: "normal", mean: 43.5, sd: 12 }, noise: ZERO_NOISE });
+  setNode(document, "Smoking_intensity", { distribution: { kind: "normal", mean: 20.5, sd: 11 }, noise: ZERO_NOISE });
+  setNode(document, "Years_smoking", { distribution: { kind: "normal", mean: 24.5, sd: 12 }, noise: ZERO_NOISE });
+  setNode(document, "Exercise", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Baseline_weight", { distribution: { kind: "normal", mean: 71, sd: 15 }, noise: ZERO_NOISE });
+
+  // Treatment model: who quits. Signs follow Table 12.1 (older, more male, lighter and
+  // longer-duration smokers, more active, heavier are likelier to have quit). ~26% quit.
+  // Intercept offsets the raw-valued covariate means (logit edges use raw, not centered,
+  // values) so the marginal quit rate lands near the book's ~26% (403/1566).
+  setLogitNode(document, "Quit_smoking", -2.35);
+  setLinearCoefficient(document, "Age", "Quit_smoking", 0.028);
+  setLinearCoefficient(document, "Sex", "Quit_smoking", -0.25);
+  setLinearCoefficient(document, "Smoking_intensity", "Quit_smoking", -0.02);
+  setLinearCoefficient(document, "Years_smoking", "Quit_smoking", 0.008);
+  setLinearCoefficient(document, "Exercise", "Quit_smoking", 0.12);
+  setLinearCoefficient(document, "Baseline_weight", "Quit_smoking", 0.006);
+
+  // Outcome model: weight gain (kg). TRUE causal effect of quitting = +3.5 kg. The
+  // confounder coefficients pull the CRUDE difference down to ~2.5 kg (older/heavier
+  // people quit more and gain less, masking part of the effect). Age is the dominant
+  // channel, matching the book's "age is THE surrogate confounder" framing.
+  setNode(document, "Weight_gain", { intercept: 11.5, noise: { kind: "normal", mean: 0, sd: 7.5 } });
+  setLinearCoefficient(document, "Quit_smoking", "Weight_gain", 3.5);
+  setLinearCoefficient(document, "Age", "Weight_gain", -0.17);
+  setLinearCoefficient(document, "Smoking_intensity", "Weight_gain", 0.08);
+  setLinearCoefficient(document, "Years_smoking", "Weight_gain", -0.03);
+  setLinearCoefficient(document, "Exercise", "Weight_gain", -0.8);
+  setLinearCoefficient(document, "Baseline_weight", "Weight_gain", -0.05);
+  return document;
+}
+
 function configureWhatIfNhefsMortalitySurvival(document: GraphDocument): GraphDocument {
   setExampleSampleSize(document, 7000);
   setContinuousVariable(document, "Age", "Baseline age at the start of follow-up.", "years");
@@ -3271,63 +3209,67 @@ function configureWhatIfWeightGainGEstimation(document: GraphDocument): GraphDoc
 }
 
 function configureWhatIfHivCd4Variants(document: GraphDocument): GraphDocument {
+  // Six-visit HIV/ART time-varying-confounding structure, authored from node arrays so
+  // the visit count is one knob (HIV_CD4_SEQUENCE_VISITS). At each visit: low CD4 prompts
+  // treatment (CD4_k -> A_k), treatment improves the next CD4 (A_k -> CD4_{k+1}) and
+  // persists (A_k -> A_{k+1}), and both act on the endpoint. CD4_{k>=1} is therefore a
+  // confounder for A_k AND a mediator of A_{k-1} -- the textbook trap where adjusting for
+  // it is wrong and only g-methods recover the always-vs-never contrast.
+  const visits = HIV_CD4_SEQUENCE_VISITS;
+  const treatments = Array.from({ length: visits }, (_, k) => `A_${k}`);
+  const confounders = Array.from({ length: visits }, (_, k) => `CD4_${k}`);
   setExampleSampleSize(document, 7000);
-  markExposures(document, ["A0", "A1", "A2"]);
-  setBinaryVariable(document, "CD4_0", "Baseline low-CD4 indicator.", "low CD4");
-  setBinaryVariable(document, "A0", "Antiretroviral treatment at baseline.", "treated");
-  setBinaryVariable(document, "CD4_1", "Low-CD4 indicator at the first follow-up.", "low CD4");
-  setBinaryVariable(document, "A1", "Antiretroviral treatment at the first follow-up.", "treated");
-  setBinaryVariable(document, "CD4_2", "Low-CD4 indicator at the second follow-up.", "low CD4");
-  setBinaryVariable(document, "A2", "Antiretroviral treatment at the second follow-up.", "treated");
+  markExposures(document, treatments);
+
+  for (let k = 0; k < visits; k += 1) {
+    setBinaryVariable(document, `CD4_${k}`, k === 0 ? "Baseline low-CD4 indicator." : `Low-CD4 indicator at visit ${k}.`, "low CD4");
+    setBinaryVariable(document, `A_${k}`, k === 0 ? "Antiretroviral treatment at baseline." : `Antiretroviral treatment at visit ${k}.`, "treated");
+  }
   setBinaryVariable(document, "AIDS_death", "AIDS or death endpoint.", "event");
-  setNode(document, "CD4_0", { distribution: { kind: "bernoulli", p: 0.38 }, noise: ZERO_NOISE });
-  setLogitNode(document, "A0", -0.45);
-  setLogitNode(document, "CD4_1", -0.35);
-  setLogitNode(document, "A1", -0.55);
-  setLogitNode(document, "CD4_2", -0.45);
-  setLogitNode(document, "A2", -0.65);
-  setLogitNode(document, "AIDS_death", -2.5);
-  setLinearCoefficient(document, "CD4_0", "A0", 1.3);
-  setLinearCoefficient(document, "CD4_0", "CD4_1", 1.6);
-  setLinearCoefficient(document, "CD4_0", "AIDS_death", 0.8);
-  setLinearCoefficient(document, "A0", "CD4_1", -0.7);
-  setLinearCoefficient(document, "A0", "A1", 1.1);
-  setLinearCoefficient(document, "A0", "AIDS_death", -0.35);
-  setLinearCoefficient(document, "CD4_1", "A1", 1.35);
-  setLinearCoefficient(document, "CD4_1", "CD4_2", 1.5);
-  setLinearCoefficient(document, "CD4_1", "AIDS_death", 0.95);
-  setLinearCoefficient(document, "A1", "CD4_2", -0.75);
-  setLinearCoefficient(document, "A1", "A2", 1.0);
-  setLinearCoefficient(document, "A1", "AIDS_death", -0.4);
-  setLinearCoefficient(document, "CD4_2", "A2", 1.45);
-  setLinearCoefficient(document, "CD4_2", "AIDS_death", 1.05);
-  setLinearCoefficient(document, "A2", "AIDS_death", -0.5);
+
+  // CD4_0 is an exogenous Bernoulli; every later CD4 and treatment is a logit node.
+  setNode(document, "CD4_0", { distribution: { kind: "bernoulli", p: 0.4 }, noise: ZERO_NOISE });
+  for (let k = 0; k < visits; k += 1) {
+    setLogitNode(document, `A_${k}`, -0.5);
+    if (k >= 1) setLogitNode(document, `CD4_${k}`, -0.4);
+  }
+  setLogitNode(document, "AIDS_death", -2.2);
+
+  for (let k = 0; k < visits; k += 1) {
+    setLinearCoefficient(document, `CD4_${k}`, `A_${k}`, 1.4);        // low CD4 -> treat now
+    setLinearCoefficient(document, `CD4_${k}`, "AIDS_death", 0.45);   // low CD4 harms
+    setLinearCoefficient(document, `A_${k}`, "AIDS_death", -0.3);     // ART protects
+    if (k + 1 < visits) {
+      setLinearCoefficient(document, `CD4_${k}`, `CD4_${k + 1}`, 1.6); // CD4 autocorrelation
+      setLinearCoefficient(document, `A_${k}`, `CD4_${k + 1}`, -1.0);  // ART improves next CD4
+      setLinearCoefficient(document, `A_${k}`, `A_${k + 1}`, 1.0);     // treatment persists
+    }
+  }
+
+  const timePoints: GraphDocumentMetadata["longitudinal"]["timePoints"] = [
+    ...Array.from({ length: visits }, (_, k) => ({ id: `t${k}`, label: k === 0 ? "baseline" : `visit ${k}`, order: k })),
+    { id: `t${visits}`, label: "endpoint", order: visits }
+  ];
+  const variables: GraphDocumentMetadata["longitudinal"]["variables"] = {};
+  for (let k = 0; k < visits; k += 1) {
+    variables[`CD4_${k}`] = { series: "cd4", time: `t${k}`, role: k === 0 ? "baseline" : "time_varying_confounder" };
+    variables[`A_${k}`] = { series: "art", time: `t${k}`, role: "treatment" };
+  }
+  variables["AIDS_death"] = { series: "event", time: `t${visits}`, role: "outcome" };
+
   applyWhatIfMetadata(document, {
     chapter: "Chapter 19",
-    section: "Treatment strategies and treatment variants",
+    section: "Time-varying treatments and treatment-confounder feedback",
     reference: "HIV/CD4 time-varying treatment structure",
     longitudinal: {
-      timePoints: [
-        { id: "t0", label: "baseline", order: 0 },
-        { id: "t1", label: "visit 1", order: 1 },
-        { id: "t2", label: "visit 2", order: 2 },
-        { id: "t3", label: "endpoint", order: 3 }
-      ],
-      variables: {
-        CD4_0: { series: "cd4", time: "t0", role: "baseline" },
-        A0: { series: "art", time: "t0", role: "treatment" },
-        CD4_1: { series: "cd4", time: "t1", role: "time_varying_confounder" },
-        A1: { series: "art", time: "t1", role: "treatment" },
-        CD4_2: { series: "cd4", time: "t2", role: "time_varying_confounder" },
-        A2: { series: "art", time: "t2", role: "treatment" },
-        AIDS_death: { series: "event", time: "t3", role: "outcome" }
-      },
+      timePoints,
+      variables,
       treatmentStrategies: [
-        dynamicLowRiskStrategy("treat-low-cd4", "treat when CD4 is low", ["A0", "A1", "A2"], ["CD4_0", "CD4_1", "CD4_2"], "Start or continue treatment when the current CD4 risk indicator is high."),
-        staticStrategy("never-art", "never ART", "Keep A0=A1=A2=0.", [["A0", 0], ["A1", 0], ["A2", 0]]),
-        staticStrategy("always-art", "always ART", "Keep A0=A1=A2=1.", [["A0", 1], ["A1", 1], ["A2", 1]])
+        staticStrategy("always-art", "always ART", `Treat at every visit (A_0..A_${visits - 1} = 1).`, treatments.map((t) => [t, 1] as [string, number])),
+        staticStrategy("never-art", "never ART", `Treat at no visit (A_0..A_${visits - 1} = 0).`, treatments.map((t) => [t, 0] as [string, number])),
+        dynamicLowRiskStrategy("treat-low-cd4", "treat when CD4 is low", treatments, confounders, "Start or continue treatment whenever the current CD4 indicator is low.")
       ],
-      estimands: [riskEstimand("dynamic-vs-never-aids-death", "dynamic CD4 rule vs never ART", "AIDS_death", ["treat-low-cd4", "never-art"], "endpoint")],
+      estimands: [riskEstimand("always-vs-never-aids-death", "always vs never ART", "AIDS_death", ["always-art", "never-art"], "endpoint")],
       censoring: [],
       survivalOutputs: []
     }

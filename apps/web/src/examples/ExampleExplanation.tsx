@@ -35,6 +35,42 @@ function SimpsonLordComparison() {
   );
 }
 
+function WeightGainBookComparison() {
+  // Book figures are the published Hernán & Robins estimates (NHEFS, n=1566); the
+  // "This example" column is the calibrated simulation's read-out (n=4000 seeded SEM).
+  const rows: Array<[string, string, string]> = [
+    ["Analytic sample", "1566 smokers (aged 25–74), ~26% quit", "n = 4000, ~29% quit"],
+    ["Outcome", "10-year weight change (kg)", "weight change (kg)"],
+    ["Crude difference", "+2.5 kg (95% CI 1.7, 3.4)", "≈ +2.7 kg"],
+    ["IP weighting — Ch 12", "+3.4 kg (95% CI 2.4, 4.5)", "≈ +3.4 kg"],
+    ["Standardization / g-formula — Ch 13", "+3.5 kg (95% CI 2.5, 4.5)", "≈ +3.5 kg"],
+    ["G-estimation — Ch 14", "+3.4 kg (95% CI 2.5, 4.5)", "≈ +3.3 kg"],
+    ["True effect (do-oracle)", "— (unknown in real data)", "+3.5 kg (set in the SEM)"]
+  ];
+  return (
+    <div className="explanation-comparison">
+      <strong>This simulation vs the book (Hernán &amp; Robins, <em>Causal Inference: What If</em>, Part II)</strong>
+      <table>
+        <thead>
+          <tr><th aria-label="quantity" /><th>Book (NHEFS data)</th><th>This example</th></tr>
+        </thead>
+        <tbody>
+          {rows.map(([aspect, book, here]) => (
+            <tr key={aspect}><th scope="row">{aspect}</th><td>{book}</td><td>{here}</td></tr>
+          ))}
+        </tbody>
+      </table>
+      <p>
+        The point of the match is the <em>direction</em>: the crude comparison <strong>understates</strong>
+        the effect, and every adjustment method moves it <em>up</em> toward ~3.4–3.5 kg. (The doubly-robust
+        AIPW, outcome-regression, and propensity-matching rows in the methods table read a little higher,
+        ~3.7–4.0 kg — they are within the book's confidence interval; matching is the least robust here
+        because it pairs on a coarsely-<em>binned</em> propensity score across six covariates.)
+      </p>
+    </div>
+  );
+}
+
 type Explainer = { what: ReactNode; comparison?: ReactNode };
 
 const EXPLAINERS: Record<string, Explainer> = {
@@ -65,6 +101,50 @@ const EXPLAINERS: Record<string, Explainer> = {
       </>
     ),
     comparison: <SimpsonLordComparison />
+  },
+  "what-if-nhefs-weight-gain": {
+    what: (
+      <>
+        <p>
+          <strong>The book's flagship example.</strong> This is a faithful, single-time-point replica
+          of the running example in Hernán &amp; Robins' <em>Causal Inference: What If</em>, Part II
+          (Chapters 12–14): <em>what is the average causal effect of smoking cessation on weight gain?</em>
+          The book uses real NHEFS data on 1566 smokers followed from a 1971–75 baseline to a 1982 visit;
+          treatment <strong>A</strong> is "quit smoking before follow-up" and the outcome <strong>Y</strong>
+          is weight change in kg.
+        </p>
+        <p>
+          <strong>The surprise.</strong> Quitters gained more weight — about <strong>4.5 kg vs 2.0 kg</strong>,
+          a crude difference of <strong>+2.5 kg</strong>. But this <em>understates</em> the causal effect.
+          Quitters were on average ~4 years older and somewhat heavier, and <em>older, heavier people gain
+          less weight regardless of whether they quit</em>. So the confounders push the crude comparison
+          <strong> down</strong>, masking part of the effect. Adjusting for the baseline covariates
+          <strong> raises</strong> the estimate to about <strong>+3.4–3.5 kg</strong> — the opposite of the
+          usual "adjustment shrinks the naive effect" intuition. <strong>Age</strong> is the headline
+          (surrogate) confounder the book singles out.
+        </p>
+        <p>
+          <strong>The structure.</strong> It is the clean confounding triangle: a vector of pre-treatment
+          covariates <strong>L</strong> → treatment <strong>A</strong>, <strong>L</strong> → outcome
+          <strong> Y</strong>, and <strong>A</strong> → <strong>Y</strong>. There is no mediator and no
+          time-varying feedback (that is the multi-year survival example) — this is a pure point treatment,
+          which is exactly why the same number is recovered by IP weighting (Ch 12), standardization /
+          the g-formula (Ch 13), and g-estimation (Ch 14). Here <strong>L</strong> is six measured baseline
+          variables: <em>age, sex, cigarettes per day, years smoking, recreational exercise, and baseline
+          weight</em> (the book uses nine; these carry the confounding). Because there are several
+          continuous covariates, nonparametric stratification is infeasible — which is the book's own
+          motivation for modeling the treatment (IP weighting) or the outcome (standardization).
+        </p>
+        <p>
+          <strong>Reading the panels.</strong> The "Observed association" card shows the crude
+          two-arm contrast (~+2.7 kg). The "Adjusted estimate" card shows the standardized do-contrast
+          (~+3.5 kg) and a method picker so you can step through every estimator and watch them converge
+          on the truth. The confounder-basis selector (linear / quadratic / cubic) is the bias–variance
+          flexibility dial on the parametric estimators.
+        </p>
+      </>
+    ),
+    comparison: <WeightGainBookComparison />
   }
 };
 

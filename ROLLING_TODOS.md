@@ -2,6 +2,23 @@
 
 Keep lightweight follow-ups here when a branch is reviewable but still needs product polish.
 
+## Smoking-example consolidation + array-generated longitudinal example (2026-06-20)
+
+- Removed the 6 `what-if-showcase-*` examples (exact duplicates of the `what-if-*` set):
+  entries, dispatch, 5 orphaned DAG-code consts, the App.tsx `showcaseGuideForExample`
+  branches (re-pointed to the canonical ids), three test lists, and the audit-ledger rows.
+- Added `what-if-nhefs-weight-gain` — faithful Hernán-Robins Ch 12-14 point-treatment replica
+  (qsmk -> weight gain; crude ~+2.7 kg, adjusted ~+3.5 kg) + a detailed "i" infobox with a
+  book-vs-simulation table.
+- Rewrote `what-if-hiv-cd4-variants` as a 6-visit **array-generated** longitudinal DAG
+  (`buildHivCd4SequenceCode(HIV_CD4_SEQUENCE_VISITS)` + loop-driven config). Full
+  treatment-confounder feedback; naive ~-4.6pp (badly confounded) vs g-formula -30.7pp (= oracle
+  always-vs-never). The visit count is a single knob.
+- Follow-up: the binned-PS / time-varying methods (IPW/AIPW/g-est) only partially recover the
+  6-visit effect (-11 to -21pp vs -30.7 oracle) — a real engine limitation (no proper
+  time-varying IP weighting / smooth propensity), not the example. Worth a core pass later.
+
+
 ## Adjustment-pipeline unification + NHEFS survival arc (2026-06-19)
 
 **State:** local `main` is **8 commits ahead of `origin/main`, UNPUSHED**. Pushing `main` ->

@@ -4037,7 +4037,7 @@ type ShowcaseGuide = {
 };
 
 function showcaseGuideForExample(exampleId: string | null | undefined): ShowcaseGuide | null {
-  if (exampleId === "what-if-showcase-dynamic-rules") {
+  if (exampleId === "what-if-dynamic-g-formula") {
     return {
       title: "Sequential dynamic strategy",
       target: "Look for the rule trace and support by visit.",
@@ -4047,7 +4047,7 @@ function showcaseGuideForExample(exampleId: string | null | undefined): Showcase
       ]
     };
   }
-  if (exampleId === "what-if-showcase-survival-curves") {
+  if (exampleId === "what-if-nhefs-mortality-survival") {
     return {
       title: "Strategy survival curves",
       target: "Look for two curves and the final risk difference.",
@@ -4057,7 +4057,7 @@ function showcaseGuideForExample(exampleId: string | null | undefined): Showcase
       ]
     };
   }
-  if (exampleId === "what-if-showcase-hazard-denominator") {
+  if (exampleId === "what-if-hazard-selection") {
     return {
       title: "Survivor denominators",
       target: "Open interval denominators under the curve.",
@@ -4067,7 +4067,7 @@ function showcaseGuideForExample(exampleId: string | null | undefined): Showcase
       ]
     };
   }
-  if (exampleId === "what-if-showcase-g-estimation") {
+  if (exampleId === "what-if-weight-gain-g-estimation") {
     return {
       title: "G-estimation readout",
       target: "Methods is open; inspect additive g-estimation.",
@@ -4077,7 +4077,7 @@ function showcaseGuideForExample(exampleId: string | null | undefined): Showcase
       ]
     };
   }
-  if (exampleId === "what-if-showcase-ipcw") {
+  if (exampleId === "what-if-censoring-ipcw") {
     return {
       title: "Censoring weights",
       target: "Methods is open; inspect IPW/IPCW.",
@@ -4087,7 +4087,7 @@ function showcaseGuideForExample(exampleId: string | null | undefined): Showcase
       ]
     };
   }
-  if (exampleId === "what-if-showcase-snaft") {
+  if (exampleId === "what-if-snaft-survival") {
     return {
       title: "Structural nested survival time",
       target: "Separate failure time from observed death.",
