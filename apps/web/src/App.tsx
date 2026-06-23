@@ -139,6 +139,7 @@ import type { StratifiedRiskContrast } from "./outputs/stratify";
 import { MethodsComparisonPanel, WhatIfStrategySurvivalCurve, basicOutputPunchlineFromResult, computeCompletedOutput, observedSurvivalView } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
+import { DgpInspector } from "./outputs/DgpInspector";
 import type { OutputContext } from "./outputs/types";
 import { DenouementPanel } from "./outputs/DenouementPanel";
 import { ExampleExplanation } from "./examples/ExampleExplanation";
@@ -315,7 +316,6 @@ type AdjustmentStratumCondition =
   | { kind: "binary"; node: GraphNode; value: 0 | 1; state: SimulatedNodeState }
   | { kind: "bin"; node: GraphNode; lower: number; upper: number; index: number; last: boolean; state: SimulatedNodeState };
 type PositivityRow = { lower: number; upper: number; exposed: number; unexposed: number; total: number; warning: string | null };
-type VariableEditorTab = "model" | "interventions" | "selection" | "adjustment";
 type DesignModuleStatus = "usable" | "todo";
 type DragState =
   | { kind: "node"; id: string; offset: Point }
@@ -736,6 +736,7 @@ export function App() {
   const [fullShareStatus, setFullShareStatus] = useState<ShareStatus>("idle");
   const [paperNetworkOpen, setPaperNetworkOpen] = useState(() => hashMatchesPaperNetwork(window.location.hash));
   const [showExplanation, setShowExplanation] = useState(false);
+  const [showDgp, setShowDgp] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
   const analysisSignature = graphAnalysisSignature(document.graph);
@@ -1596,6 +1597,7 @@ export function App() {
             {!presentationActive && <IconButton label="New" onClick={createNewDocument}><FilePlus2 size={18} /></IconButton>}
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
             <IconButton label="Explain this example" pressed={showExplanation} onClick={() => setShowExplanation((open) => { if (!open) trackInfoOverlayOpened("explanation"); return !open; })}><Info size={18} /></IconButton>
+            <IconButton label="Data-generating process" pressed={showDgp} onClick={() => setShowDgp((open) => !open)}><Sigma size={18} /></IconButton>
             <input
               ref={snapshotInputRef}
               type="file"
@@ -1615,7 +1617,7 @@ export function App() {
             <IconButton label="Presentation" active={presentationActive} pressed={presentationActive} onClick={() => setPresentationMode((active) => !active)}><Presentation size={18} /></IconButton>
           </>}
         </div>}
-        {!paperNetworkOpen && <ModeToggle value={workbenchMode} onChange={changeWorkbenchMode} />}
+        {/* Demo/Pro ModeToggle hidden for now — app is pro-only. */}
       </header>
       {showExplanation && (
         <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Example explanation" onClick={() => setShowExplanation(false)}>
@@ -1629,6 +1631,17 @@ export function App() {
               denouement={activeDenouement ?? CUSTOM_DENOUEMENT}
               title={activeExample?.title ?? document.title}
             />
+          </div>
+        </div>
+      )}
+      {showDgp && (
+        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Data-generating process" onClick={() => setShowDgp(false)}>
+          <div className="explanation-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="explanation-modal-header">
+              <strong>Data-generating process — {activeExample?.title ?? document.title}</strong>
+              <button type="button" aria-label="Close data-generating process" onClick={() => setShowDgp(false)}><X size={16} /></button>
+            </div>
+            <DgpInspector document={document} simulation={simulation} />
           </div>
         </div>
       )}
@@ -4880,7 +4893,6 @@ function VariableEditor(props: {
   onSelectionCondition: (nodeId: string, condition: SimulationSelectionCondition | null) => void;
   onSetOperation: (nodeId: string, operation: AnalysisOperation) => void;
 }) {
-  const [tab, setTab] = useState<VariableEditorTab>("model");
   const node = props.node;
   const variable = normalizeVariableModel(node.variable);
   const mechanism = normalizeNodeMechanism(props.document.simulation.nodes[node.id]);
@@ -4908,17 +4920,6 @@ function VariableEditor(props: {
     ? classifyConditioned(props.document.graph, node.id)
     : null;
   const badControl = conditionVerdict ? badControlWarning(node.id, conditionVerdict.classification) : null;
-  const tabForOperation: Record<AnalysisOperation, VariableEditorTab> = {
-    none: "model",
-    intervene: "interventions",
-    select: "selection",
-    condition: "adjustment",
-    adjust: "adjustment"
-  };
-
-  useEffect(() => {
-    setTab("model");
-  }, [node.id]);
 
   return (
     <div className="selection-editor" aria-label={`Variable ${node.id}`}>
@@ -4948,7 +4949,7 @@ function VariableEditor(props: {
                 className={currentOperation === operation ? "active" : ""}
                 aria-pressed={currentOperation === operation}
                 title={OPERATION_BLURBS[operation]}
-                onClick={() => { props.onSetOperation(node.id, operation); setTab(tabForOperation[operation]); }}
+                onClick={() => props.onSetOperation(node.id, operation)}
               >{OPERATION_LABELS[operation]}</button>
             ))}
           </div>
@@ -4960,22 +4961,36 @@ function VariableEditor(props: {
           {badControl && <p className="operation-bad-control">⚠ {badControl}</p>}
         </div>
 
-        <div className="variable-tabs" role="tablist" aria-label="Variable sections">
-          <button type="button" role="tab" aria-selected={tab === "model"} className={tab === "model" ? "active" : ""} onClick={() => setTab("model")}>model</button>
-          <button type="button" role="tab" aria-selected={tab === "interventions"} className={tab === "interventions" ? "active" : ""} onClick={() => setTab("interventions")}>interventions</button>
-          <button type="button" role="tab" aria-selected={tab === "selection"} className={tab === "selection" ? "active" : ""} onClick={() => setTab("selection")}>sample</button>
-          <button type="button" role="tab" aria-selected={tab === "adjustment"} className={tab === "adjustment" ? "active" : ""} onClick={() => setTab("adjustment")}>adjustment</button>
-        </div>
+        {/* Contextual parameters for the chosen analysis operation. The operation selector
+            above is the single control — there is no separate tab strip, and adjusted/selected
+            are no longer free-standing role toggles (they are implied by Adjust/Select). */}
+        {currentOperation === "intervene" && <div className="variable-op-params intervention-tab-panel">
+          <HardDoEditor node={node} document={props.document} simulation={props.simulation} onOverride={props.onOverride} />
+          <PlannedModuleSet />
+        </div>}
 
-        {tab === "model" && <div className="variable-tab-panel" role="tabpanel">
+        {currentOperation === "select" && <div className="variable-op-params selection-tab-panel">
+          <ConditioningEditor node={node} document={props.document} simulation={props.simulation} onSelectionCondition={props.onSelectionCondition} />
+        </div>}
+
+        {(currentOperation === "condition" || currentOperation === "adjust") && <div className="variable-op-params adjustment-tab-panel">
+          <AdjustmentMethodEditor
+            node={node}
+            document={props.document}
+            simulation={props.simulation}
+            derived={props.derived}
+            outputPair={props.outputPair}
+            onVariableChange={props.onVariableChange}
+          />
+        </div>}
+
+        <div className="variable-tab-panel" role="group" aria-label="Model and structure">
           <div className="selection-editor-grid">
             <div className="selection-editor-block">
               <strong>Roles</strong>
               <div className="role-toggle-grid">
                 <RoleToggle label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
                 <RoleToggle label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
-                <RoleToggle label="adjusted" checked={node.roles.adjusted} onChange={() => props.onToggleRole(node.id, "adjusted")} />
-                <RoleToggle label="sample marker" checked={node.roles.selected} onChange={() => props.onToggleRole(node.id, "selected")} />
                 <RoleToggle label="unobserved" checked={node.roles.latent} onChange={() => props.onToggleRole(node.id, "latent")} />
               </div>
             </div>
@@ -5027,27 +5042,7 @@ function VariableEditor(props: {
             <summary>Description</summary>
             <textarea aria-label="description" value={variable.description} rows={3} onChange={(event) => updateVariable({ description: event.target.value })} />
           </details>
-        </div>}
-
-        {tab === "interventions" && <div className="variable-tab-panel intervention-tab-panel" role="tabpanel">
-          <HardDoEditor node={node} document={props.document} simulation={props.simulation} onOverride={props.onOverride} />
-          <PlannedModuleSet />
-        </div>}
-
-        {tab === "selection" && <div className="variable-tab-panel selection-tab-panel" role="tabpanel">
-          <ConditioningEditor node={node} document={props.document} simulation={props.simulation} onSelectionCondition={props.onSelectionCondition} />
-        </div>}
-
-        {tab === "adjustment" && <div className="variable-tab-panel adjustment-tab-panel" role="tabpanel">
-          <AdjustmentMethodEditor
-            node={node}
-            document={props.document}
-            simulation={props.simulation}
-            derived={props.derived}
-            outputPair={props.outputPair}
-            onVariableChange={props.onVariableChange}
-          />
-        </div>}
+        </div>
 
         <div className="model-facts">
           <span>parents {parentIds.join(", ") || "none"}</span>
