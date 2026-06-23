@@ -843,6 +843,47 @@ export const EXAMPLES: ExampleModel[] = [
 }`
   },
   {
+    id: "lalonde-recover-rct",
+    title: "Job training → earnings (recover the RCT)",
+    domain: "dgm",
+    summary: "The famous LaLonde benchmark: replay the REAL observational data (NSW-treated + PSID controls) — treatment and earnings are read straight from the rows, nothing is simulated. The naive gap is wildly biased because the PSID controls look nothing like the trainees; the true effect (+$1,794) is known from the randomized trial. Can adjustment recover it? Open the DGP panel (Σ) for the data source and the overlap.",
+    code: `dag {
+  Row_source [latent,label="LaLonde rows (replay)",pos="0.0,4.4"]
+  Age [adjusted,label="age",pos="-3.3,2.7"]
+  Education [adjusted,label="education",pos="-2.35,3.15"]
+  Black [adjusted,label="black",pos="-1.4,3.35"]
+  Hispanic [adjusted,label="hispanic",pos="-0.45,3.45"]
+  Married [adjusted,label="married",pos="0.5,3.45"]
+  No_degree [adjusted,label="no degree",pos="1.45,3.35"]
+  Earnings_74 [adjusted,label="earnings '74",pos="2.4,3.15"]
+  Earnings_75 [adjusted,label="earnings '75",pos="3.35,2.7"]
+  In_program [exposure,label="in program",pos="-1.75,0.7"]
+  Earnings_78 [outcome,label="earnings '78",pos="1.6,-1.7"]
+  Row_source -> Age
+  Row_source -> Education
+  Row_source -> Black
+  Row_source -> Hispanic
+  Row_source -> Married
+  Row_source -> No_degree
+  Row_source -> Earnings_74
+  Row_source -> Earnings_75
+  Row_source -> In_program
+  Row_source -> Earnings_78
+  Age -> In_program
+  Age -> Earnings_78
+  Education -> In_program
+  Education -> Earnings_78
+  No_degree -> In_program
+  No_degree -> Earnings_78
+  Earnings_74 -> In_program
+  Earnings_74 -> Earnings_78
+  Earnings_75 -> In_program
+  Earnings_75 -> Earnings_78
+  Married -> Earnings_78
+  In_program -> Earnings_78
+}`
+  },
+  {
     id: "what-if-hiv-cd4-variants",
     title: "What If: ART over a long CD4 history",
     domain: "epidemiology",
@@ -2745,6 +2786,7 @@ function configurePractitionerExample(document: GraphDocument, id: string): Grap
   if (id === "lalonde-dgm-plasmode") return configureLalondePlasmode(next);
   if (id === "lalonde-dgm-independent") return configureLalondeIndependent(next);
   if (id === "lalonde-dgm-generative") return configureLalondeGenerative(next);
+  if (id === "lalonde-recover-rct") return configureLalondeReplay(next);
   if (id === "what-if-weight-gain-g-estimation") return configureWhatIfWeightGainGEstimation(next);
   if (id === "what-if-hiv-cd4-variants") return configureWhatIfHivCd4Variants(next);
   if (id === "what-if-censoring-ipcw") return configureWhatIfCensoringIpcw(next);
@@ -3601,6 +3643,38 @@ function configureLalondeIndependent(document: GraphDocument): GraphDocument {
   configureLalondeBase(document);
   addShuffledCovariates(document, "lalonde-obs", LALONDE_DGM_COVS.map((c) => ({ ...c, sourceId: `Src_${c.id}` })));
   return document;
+}
+
+// Track B "recover the RCT": REPLAY the real observational LaLonde rows. Covariates, the real
+// treatment, and the real 1978 earnings are all read from the same row via table_lookup — nothing
+// is simulated, so the do-oracle is degenerate (the truth is the EXTERNAL RCT benchmark of +$1,794
+// carried on lalonde-obs.trueAte). The covariate→treatment/outcome structural edges are kept for
+// the DAG/identification but disabled in simulation (the real joint already encodes them).
+function configureLalondeReplay(document: GraphDocument): GraphDocument {
+  configureLalondeBase(document);
+  setContinuousVariable(document, "Row_source", "Uniform draw over the embedded observational LaLonde rows (shared replay index, unobserved).", "row");
+  addPlasmodeCovariates(document, "Row_source", "lalonde-obs", LALONDE_DGM_COVS);
+  setNode(document, "In_program", { combiner: "additive", intercept: 0, noise: ZERO_NOISE });
+  setNode(document, "Earnings_78", { combiner: "additive", intercept: 0, noise: ZERO_NOISE });
+  setEdgeMechanism(document, "Row_source", "In_program", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "treat") });
+  setEdgeMechanism(document, "Row_source", "Earnings_78", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "re78") });
+  for (const { id } of LALONDE_DGM_COVS) {
+    disableEdge(document, id, "In_program");
+    disableEdge(document, id, "Earnings_78");
+  }
+  // The outcome is the REAL re78; drop the imposed structural treatment effect so nothing is
+  // simulated on top of the replay (the do-oracle is therefore degenerate and is suppressed).
+  disableEdge(document, "In_program", "Earnings_78");
+  return document;
+}
+
+function disableEdge(document: GraphDocument, source: string, target: string) {
+  const edge = document.graph.edges.find((candidate) => candidate.source === source && candidate.target === target);
+  if (!edge) return;
+  const mechanism = document.simulation.edges[edge.id];
+  if (mechanism) {
+    document.simulation.edges[edge.id] = { ...mechanism, enabled: false };
+  }
 }
 
 function configureWhatIfNhefsWeightGainGenerative(document: GraphDocument): GraphDocument {

@@ -37,6 +37,7 @@ describe("example catalog", () => {
       "lalonde-dgm-plasmode",
       "lalonde-dgm-independent",
       "lalonde-dgm-generative",
+      "lalonde-recover-rct",
       "what-if-hiv-cd4-variants",
       "what-if-censoring-ipcw",
       "what-if-dynamic-g-formula",

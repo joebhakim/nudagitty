@@ -1342,3 +1342,69 @@ export function analyzeAdjustment(document: GraphDocument, spec: AdjustmentSpec)
     covariateBasis: spec.covariateBasis ?? "linear"
   });
 }
+
+// Overlap / positivity diagnostic for a point-treatment adjustment: the per-arm distribution of
+// the SAME bin-based propensity score the matching/ipw/aipw estimators use, plus the inverse-
+// probability weight summary. Positivity is the one identification assumption checkable from data;
+// this surfaces it (a control pile near 0 with a tiny effective sample size = the violation that
+// makes propensity-based adjustment fail). Reuses the estimators' own propensity so the diagnostic
+// explains their behaviour rather than a separately-fit model.
+export interface OverlapDiagnostic {
+  treatment: string;
+  treatedPropensities: number[];
+  controlPropensities: number[];
+  controlSampleSize: number;
+  controlEffectiveSampleSize: number;
+  minPropensity: number;
+  maxControlWeight: number;
+  commonSupportShare: number;
+  // Provenance of the numbers: which propensity model the scores/weights/ESS came from. Travels
+  // with the data so the displayed "how" can never drift from the computation. ESS is the Kish
+  // (Σw)²/Σw² over control IP weights w = p/(1−p); the bin-based model regularizes the tails, so
+  // this ESS is a conservative (higher) floor — a sharper model would show worse overlap.
+  propensityModel: string;
+}
+
+export function computeOverlapDiagnostic(document: GraphDocument, config: GMethodsComparisonConfig): OverlapDiagnostic | null {
+  const treatment = config.treatmentVariables[0];
+  if (!treatment || config.timeVaryingCovariates.length === 0 || !config.strategies) return null;
+  const cohort = simulateLongitudinalCohort(document);
+  const [left, right] = config.strategies;
+  const table = binaryProbabilityTable(cohort, treatment, 1, config.timeVaryingCovariates);
+  const treated: number[] = [];
+  const control: number[] = [];
+  for (const row of cohort.rows) {
+    const p = probabilityFromTable(table, row);
+    if (matchesStrategy(row, left, config.treatmentVariables)) treated.push(p);
+    else if (matchesStrategy(row, right, config.treatmentVariables)) control.push(p);
+  }
+  if (treated.length === 0 || control.length === 0) return null;
+  const controlWeights = control.map((p) => p / Math.max(1e-6, 1 - p));
+  const all = [...treated, ...control];
+  const lo = Math.max(Math.min(...treated), Math.min(...control));
+  const hi = Math.min(Math.max(...treated), Math.max(...control));
+  const inSupport = all.filter((p) => p >= lo && p <= hi).length;
+  return {
+    treatment,
+    treatedPropensities: treated,
+    controlPropensities: control,
+    controlSampleSize: control.length,
+    controlEffectiveSampleSize: effectiveSampleSize(controlWeights),
+    minPropensity: Math.min(...all),
+    maxControlWeight: Math.max(...controlWeights),
+    commonSupportShare: inSupport / all.length,
+    propensityModel: `bin-based stratification on ${config.timeVaryingCovariates.length} covariate${config.timeVaryingCovariates.length === 1 ? "" : "s"} (the matching/IPW estimators' own model)`
+  };
+}
+
+export function adjustmentOverlap(document: GraphDocument, spec: AdjustmentSpec): OverlapDiagnostic | null {
+  return computeOverlapDiagnostic(document, {
+    treatmentVariables: spec.treatments,
+    timeVaryingCovariates: spec.covariates,
+    outcome: spec.outcome,
+    strategies: spec.strategies,
+    censoringVariables: spec.censoring.length > 0 ? spec.censoring : undefined,
+    outcomeScale: spec.outcomeScale,
+    covariateBasis: spec.covariateBasis ?? "linear"
+  });
+}
