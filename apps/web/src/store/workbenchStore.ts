@@ -86,7 +86,8 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
   showCausal: true,
   showBiasing: true,
   showAncestors: true,
-  workbenchMode: "basic",
+  // Demo (basic) mode is hidden for now — default to pro; the toggle is not rendered.
+  workbenchMode: "pro",
   basicResultsOpen: true,
   activeExampleId: initialState.activeExampleId,
   modelText: serializeModel(initialDocument),
