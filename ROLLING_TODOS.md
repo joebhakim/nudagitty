@@ -75,10 +75,24 @@ User feedback after the walkthrough + the vision answers. Sequencing is roughly 
    - **Track A (DGM contrast):** LaLonde covariates as the real L, an IMPOSED ~+$1,800 effect; the
      5 DGM variants + positivity, plasmode resampling real LaLonde rows. Replaces smoking as the front.
    - **Track B ("recover the RCT" benchmark):** real `treat`/`re78`, NSW-treated + PSID controls
-     (~2,675 rows), graded against the experimental benchmark (~+$1,794). Naïve observational is wildly
-     biased; IPW/matching/g-formula claw back to the RCT. Needs a new `lalonde-obs` dataset
-     (NSW-treated + `psid_controls`, `trueAte = 1794`) added to `build_datasets.py`; experimental
-     `lalonde` (445) stays the benchmark anchor. Data confirmed available (Dehejia NBER mirror).
+     (2,675 rows), graded against the experimental benchmark (+$1,794). `lalonde-obs` dataset shipped;
+     experimental `lalonde` (445) is the anchor. Replay example `lalonde-recover-rct` built
+     (`configureLalondeReplay`: covariates + real treat + real re78 all `table_lookup`; do-oracle
+     degenerate → truth is external). **Design in `docs/track-b-benchmark-mode.md`; the measured
+     finding in `docs/lalonde-recover-rct.md`.**
+     - **KEY FINDING (measured):** on PSID, **nothing fully recovers**. Propensity methods stay
+       catastrophically biased (naïve −$14.9k, IPW −$14.3k, matching −$5.0k, g-est −$21.7k); only
+       outcome-regression / AIPW get the *sign* right (~+$500), undershooting. The honest lesson is
+       *"adjustment can fail — and overlap is the tell,"* not "methods claw back."
+     - **WHY (the validatable assumption):** severe **positivity violation** — median control
+       propensity **0.0001** vs treated 0.743; **93%** of controls in the lowest PS bin, IPW control
+       **ESS = 43/2490 (1.7%)**, common support retains 49%. The example MUST *show* this (PS-by-arm
+       histogram + IP-weights + ESS — the round-2 positivity module is the centerpiece here).
+     - **Open fork (pending):** (1) PSID cautionary-only, (2) add CPS controls for a recovery
+       contrast, or (3) add a common-support-trimmed estimator for "fails → trim → recovers."
+     - Remaining build: benchmark output panel (anchor truth + graded estimators) + suppress the
+       degenerate do-oracle; truth-resolver abstraction (external / per-row PO / imposed DGP) that
+       also unlocks IHDP (4.02) & Twins (−0.024) benchmark examples; then surface + verify.
 6. **Explanatory titles** for every DGM example (what it *teaches*, not just the DGM name).
 7. **Generative cleanups**: commit the synthetic-data generation script (currently a throwaway →
    `data/nhefs-synthetic.ts` is not reproducible); relabel any "GAN" copy → "learned copula".
