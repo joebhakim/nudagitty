@@ -86,38 +86,65 @@ def build_twins():
          true_ate=(df.y1 - df.y0).mean(), const="TWINS_DATASET")
 
 
+LALONDE_COVS = ["age", "education", "black", "hispanic", "married", "nodegree", "re74", "re75"]
+NBER = "http://www.nber.org/~rdehejia/data/"
+
+
 def build_lalonde():
-    raw = fetch("https://raw.githubusercontent.com/NickCH-K/causaldata/main/Python/causaldata/nsw_mixtape/nsw_mixtape.dta")
-    df = pd.read_stata(io.BytesIO(raw))
-    covs = [c for c in ["age", "educ", "black", "hisp", "marr", "nodegree", "re74", "re75"] if c in df.columns]
-    keep = covs + ["treat", "re78"]
-    sub = df[keep].apply(pd.to_numeric, errors="coerce").dropna()
-    emit("lalonde", "National Supported Work (LaLonde 1986 / Mixtape, via causaldata) — RCT job training", sub,
-         covariates=covs, treatment="treat", outcome="re78", const="LALONDE_DATASET")
+    # Dehejia-Wahba experimental NSW: the randomized job-training trial (the RCT benchmark).
+    df = pd.read_stata(io.BytesIO(fetch(NBER + "nsw_dw.dta")))
+    sub = df[LALONDE_COVS + ["treat", "re78"]].apply(pd.to_numeric, errors="coerce").dropna()
+    ate = sub[sub.treat == 1].re78.mean() - sub[sub.treat == 0].re78.mean()
+    emit("lalonde", "NSW experimental job-training trial (Dehejia-Wahba) — the RCT benchmark", sub,
+         covariates=LALONDE_COVS, treatment="treat", outcome="re78", true_ate=ate, const="LALONDE_DATASET")
+
+
+def build_lalonde_obs():
+    # Observational LaLonde: NSW-treated + a non-experimental PSID comparison group. The naive
+    # contrast is wildly biased (PSID earns far more); methods must recover the experimental ATE.
+    nsw = pd.read_stata(io.BytesIO(fetch(NBER + "nsw_dw.dta")))
+    psid = pd.read_stata(io.BytesIO(fetch(NBER + "psid_controls.dta")))
+    obs = pd.concat([nsw[nsw.treat == 1], psid], ignore_index=True)
+    sub = obs[LALONDE_COVS + ["treat", "re78"]].apply(pd.to_numeric, errors="coerce").dropna()
+    bench = nsw[nsw.treat == 1].re78.mean() - nsw[nsw.treat == 0].re78.mean()  # experimental truth
+    emit("lalonde-obs", "NSW-treated + PSID controls — truth = the experimental benchmark", sub,
+         covariates=LALONDE_COVS, treatment="treat", outcome="re78", true_ate=bench, const="LALONDE_OBS_DATASET")
+
+
+# "Generative" stand-in: a Gaussian copula LEARNED from real rows -> novel synthetic rows
+# (rank->normal, fit correlation, resample, invert via empirical quantiles; preserves marginals
+# incl. zeros/discreteness and approximates the real joint).
+def gaussian_copula_synth(X, m, seed):
+    from scipy.stats import norm
+    rng = np.random.default_rng(seed)
+    n, d = X.shape
+    Z = norm.ppf((np.argsort(np.argsort(X, axis=0), axis=0) + 0.5) / n)
+    L = np.linalg.cholesky(np.corrcoef(Z, rowvar=False) + 1e-6 * np.eye(d))
+    U = norm.cdf((L @ rng.standard_normal((d, m))).T)
+    return np.column_stack([np.sort(X[:, j])[np.clip((U[:, j] * n).astype(int), 0, n - 1)] for j in range(d)])
 
 
 def build_synthetic():
-    # "Generative" stand-in: a Gaussian copula LEARNED from the real NHEFS rows -> novel synthetic
-    # rows (rank->normal, fit correlation, resample, invert via empirical quantiles).
-    from scipy.stats import norm
-    rng = np.random.default_rng(7)
     raw = fetch("https://raw.githubusercontent.com/NickCH-K/causaldata/main/Python/causaldata/nhefs/nhefs.dta")
     df = pd.read_stata(io.BytesIO(raw))
     cols = ["sex", "age", "race", "education", "smokeintensity", "smokeyrs", "active", "exercise", "wt71"]
     X = df[cols].apply(lambda s: pd.to_numeric(s.astype("string"), errors="coerce")).dropna().to_numpy(float)
-    n, d = X.shape
-    Z = norm.ppf((np.argsort(np.argsort(X, axis=0), axis=0) + 0.5) / n)
-    L = np.linalg.cholesky(np.corrcoef(Z, rowvar=False) + 1e-6 * np.eye(d))
-    m = 2000
-    U = norm.cdf((L @ rng.standard_normal((d, m))).T)
-    Xnew = np.column_stack([np.sort(X[:, j])[np.clip((U[:, j] * n).astype(int), 0, n - 1)] for j in range(d)])
     emit("nhefs-synthetic", "Synthetic NHEFS from a learned Gaussian copula (generative stand-in)",
-         pd.DataFrame(Xnew, columns=cols), covariates=cols, const="NHEFS_SYNTHETIC")
+         pd.DataFrame(gaussian_copula_synth(X, 2000, 7), columns=cols), covariates=cols, const="NHEFS_SYNTHETIC")
+
+
+def build_lalonde_synthetic():
+    nsw = pd.read_stata(io.BytesIO(fetch(NBER + "nsw_dw.dta")))
+    psid = pd.read_stata(io.BytesIO(fetch(NBER + "psid_controls.dta")))
+    obs = pd.concat([nsw[nsw.treat == 1], psid], ignore_index=True)
+    X = obs[LALONDE_COVS].apply(pd.to_numeric, errors="coerce").dropna().to_numpy(float)
+    emit("lalonde-synthetic", "Synthetic LaLonde covariates from a learned Gaussian copula (generative stand-in)",
+         pd.DataFrame(gaussian_copula_synth(X, 2500, 13), columns=LALONDE_COVS), covariates=LALONDE_COVS, const="LALONDE_SYNTHETIC")
 
 
 if __name__ == "__main__":
     builders = {"nhefs": build_nhefs, "ihdp": build_ihdp, "twins": build_twins, "lalonde": build_lalonde,
-                "nhefs-synthetic": build_synthetic}
+                "lalonde-obs": build_lalonde_obs, "nhefs-synthetic": build_synthetic, "lalonde-synthetic": build_lalonde_synthetic}
     targets = sys.argv[1:] or list(builders)
     for t in targets:
         print(f"building {t} ...")

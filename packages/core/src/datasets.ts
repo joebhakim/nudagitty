@@ -4,6 +4,8 @@ import { NHEFS_SYNTHETIC } from "./data/nhefs-synthetic";
 import { IHDP_DATASET } from "./data/ihdp";
 import { TWINS_DATASET } from "./data/twins";
 import { LALONDE_DATASET } from "./data/lalonde";
+import { LALONDE_OBS_DATASET } from "./data/lalonde-obs";
+import { LALONDE_SYNTHETIC } from "./data/lalonde-synthetic";
 
 export type { CovariateDataset };
 
@@ -20,7 +22,9 @@ export const DATASETS: Record<string, CovariateDataset> = {
   "nhefs-synthetic": NHEFS_SYNTHETIC,
   ihdp: IHDP_DATASET,
   twins: TWINS_DATASET,
-  lalonde: LALONDE_DATASET
+  lalonde: LALONDE_DATASET,
+  "lalonde-obs": LALONDE_OBS_DATASET,
+  "lalonde-synthetic": LALONDE_SYNTHETIC
 };
 
 export function datasetRows(name: string | undefined): number[][] {
