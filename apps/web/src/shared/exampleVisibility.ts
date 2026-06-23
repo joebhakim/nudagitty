@@ -9,6 +9,11 @@ export const VERIFIED_EXAMPLE_IDS: readonly string[] = [
   // Basic 3-node confounder: crude "treatment hurts" reverses to "treatment helps" (+10pp)
   // once Severity is adjusted. The canonical confounding example, with a single right answer.
   "simpson-severity",
+  // LaLonde job-training DGM contrast (real data; same +$1,800 truth, joint broken→real→learned;
+  // naive bias tracks the joint). Leads the DGM showcase.
+  "lalonde-dgm-independent",
+  "lalonde-dgm-plasmode",
+  "lalonde-dgm-generative",
   // The DGM-toolbox contrast: smoking -> weight gain, same true effect (+3.5 kg), five different
   // confounder joints (independent / confounder-DAG / copula / real plasmode / generative). Open
   // the DGP panel (Σ) on each to see the correlation matrix change while the truth is fixed.
