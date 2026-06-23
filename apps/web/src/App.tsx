@@ -954,7 +954,7 @@ export function App() {
     const completeFallback = () => {
       if (cancelled || settled) return;
       try {
-        complete(runSimulation(simulationGraph, document.simulation));
+        complete(runSimulation(simulationGraph, outputSimulation));
       } catch (error) {
         console.error("simulation worker fallback failed", error);
         if (!cancelled && !settled) {
@@ -974,7 +974,7 @@ export function App() {
         completeFallback();
       };
       worker.onmessageerror = completeFallback;
-      worker.postMessage({ graph: simulationGraph, spec: document.simulation });
+      worker.postMessage({ graph: simulationGraph, spec: outputSimulation });
     } catch (error) {
       console.error("simulation worker start failed", error);
       completeFallback();
@@ -984,7 +984,10 @@ export function App() {
       window.clearTimeout(fallbackTimer);
       worker?.terminate();
     };
-  }, [document.simulation, simulationGraph, simulationSignature]);
+    // Keyed on outputSimulation (the signature-stable snapshot), NOT raw document.simulation:
+    // a position-only move clones document.simulation (new identity, identical content), which
+    // would otherwise re-run this effect — re-simulating on every node drag for nothing.
+  }, [outputSimulation, simulationGraph, simulationSignature]);
 
   useEffect(() => {
     setScatterPair((pair) => reconcileScatterPair(document.graph, pair));
