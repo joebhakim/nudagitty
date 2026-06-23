@@ -36,6 +36,7 @@ Legend: ❌ not done · 🔶 partial · ✅ done
 | `what-if-hazard-selection` | epidemiology | ❌ | ❌ | fake-deterministic survivor gating replaced w/ absorbing + deterministic complement (this session) |
 | `what-if-nhefs-mortality-survival` | epidemiology | ❌ | ❌ | censoring-as-cause kludge removed; Baseline_health→Baseline_risk; Weight_gain_2y→mediator; survival curve relabeled (this session) |
 | `what-if-weight-gain-g-estimation` | epidemiology | ❌ | ❌ | Diet_change mislabel → mediator (this session); estimators agree but DGP has little confounding to demonstrate |
+| `what-if-nhefs-weight-gain` | epidemiology | ❌ | ✅ | synthetic, calibrated to book (NOT a replica) — relabeled honestly; DGP inspector surfaced + fixed Sex root-bernoulli bug + default Sex→Weight coef; crude 2.44, oracle 3.50, methods 2.8–3.4. The "independent confounders" baseline of the dgm-toolbox contrast |
 | `what-if-hiv-cd4-variants` | epidemiology | ❌ | ❌ | structural residual gap in dynamic 3-step contrast — revisit |
 | `what-if-censoring-ipcw` | epidemiology | ❌ | ❌ | two censoring→outcome kludge edges removed (this session) |
 | `what-if-dynamic-g-formula` | epidemiology | ❌ | ❌ |  |

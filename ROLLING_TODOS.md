@@ -2,14 +2,103 @@
 
 Keep lightweight follow-ups here when a branch is reviewable but still needs product polish.
 
+## Data-generating-mechanism (DGM) toolbox — branch `dgm-toolbox` (2026-06-23)
+
+Full design in `docs/data-generating-mechanisms.md` and the approved plan. Goal: make confounder
+*joint dependence* a first-class, visible, inspectable feature (independent / confounder-DAG /
+Gaussian-copula / plasmode / generative), with a paired contrast on smoking→weight-gain + standalone
+showcases.
+
+Shipped (Phase 1):
+- **DGP inspector** (`apps/web/src/outputs/DgpInspector.tsx`, Σ toolbar button): structural
+  equations, empirical correlation heatmap (auto-detected DGM), marginals, link-coefficient table,
+  imposed-truth panel. Honestly labels the "oracle" as our construction.
+- It surfaced + we fixed two latent bugs in `what-if-nhefs-weight-gain`: `Sex` set via
+  `setLogitNode` on a *root* (sampled constant → everyone male, inert) and `Sex→Weight_gain`
+  defaulting to coef 1.0. Recalibrated (crude 2.44, oracle 3.50).
+- **Relabeled** that example: "Smoking cessation → weight gain (independent confounders)" — a
+  *synthetic, calibrated* example, NOT a "book replica"; infobox/summary/comments made honest.
+
+Shipped (Phases 2–5):
+- [x] **Copula** — `copula_marginal` node combiner (NORTA: latent-Gaussian → Φ → marginal⁻¹) +
+  `addCopulaCovariates`; `wg-dgm-copula` (exact marginals, specified correlation, oracle 3.5).
+- [x] **Plasmode** — `table_lookup` edge + real **NHEFS** embedded (`data/nhefs.ts`, 1629 rows) +
+  `datasets.ts` + `addPlasmodeCovariates`; `wg-dgm-plasmode` (real joint, real mixed types).
+- [x] **Confounder-DAG** variant (`wg-dgm-confounder-dag`, edges among confounders) + **generative**
+  stand-in (`wg-dgm-generative`, table_lookup over a learned-copula synthetic dataset `data/nhefs-synthetic.ts`).
+- [x] **Positivity showcase** (`wg-dgm-positivity`) + new `dgm` `EXAMPLE_DOMAINS` entry; all six
+  weight-gain variants surfaced in `VERIFIED_EXAMPLE_IDS` and grouped under "Simulation design / DGMs".
+- [x] Source nodes render via the existing `latent` styling (visible + excluded from adjustment).
+
+Remaining polish:
+- [ ] More standalone showcases (e.g. mediator-among-confounders for the confounder-DAG; a
+  high-dimensional generative case). The positivity showcase is mild — could be dialled sharper.
+- [ ] The copula is a one-factor model; a full target-correlation-matrix (Cholesky) author path
+  would allow arbitrary specified correlations.
+
+## DGM toolbox — round 2 (vision-informed, 2026-06-23)
+
+User feedback after the walkthrough + the vision answers. Sequencing is roughly top-to-bottom.
+
+0. **Canonical dataset library — SHIPPED.** `packages/core/src/data/` now holds five embedded
+   datasets behind one schema (`dataset.ts`: covariates + optional ground-truth), registered in
+   `datasets.ts`, all regenerable via the committed `build_datasets.py`:
+   - `nhefs` (1629×9, epi; covariates only) · `nhefs-synthetic` (2000×9, learned-copula generative)
+   - `ihdp` (747×29, CATE benchmark; true ATE **4.02**, mu0/mu1) · `twins` (2500×13, both potential
+     outcomes; true ATE **−0.024**) · `lalonde` (445×10, NSW job-training RCT).
+   - IHDP & Twins carry **known ground truth** → they enable "estimators vs the ACTUAL effect"
+     benchmark examples (not a DGP we imposed). NHEFS stays the real-data plasmode anchor.
+1. **Relatable running example** (replaces smoking for the contrast): **study-skills Program → Test
+   score**, confounders {prior grades, motivation, income}, true effect **+8 points** (same across
+   all DGMs). Build the independent baseline + reuse the same A|L, Y|A,L for every DGM variant.
+   Plasmode/generative for it use NHEFS (real-data anchor); standalone benchmark examples use
+   IHDP / Twins / LaLonde directly.
+2. **DGM switcher = centerpiece of a guided "DGM" category** (chosen: Both). Collapse the variants
+   into ONE example with an in-place dial (independent / confounder-DAG / copula / plasmode /
+   generative): flip it, watch the correlation matrix + overlap + estimators change, truth fixed.
+   - Engine: a switchable "covariate-source config" on the document; re-derive source node + edges
+     + re-simulate on switch. UI: live update of canvas + DGP panel + output.
+   - Guided category: the switcher example as centerpiece + an explicit built-in step-through
+     (coachmarks / sequenced explainer) — the "tour" baked into the site, not just chat.
+3. **Overlap / positivity output module** (chosen: Both → new module): PS-by-arm histogram +
+   IP-weight distribution + ESS. Reusable across adjustment examples; makes "positivity bites"
+   *shown*, not asserted. Wire into the positivity case + the switcher.
+4. **"Covariate source" node panel** (chosen: explainer + switcher): selecting a latent source node
+   opens a cockpit — DGM type dropdown (the switcher), loadings/dataset, "feeds: …" list, link to
+   the DGP panel. Replaces the meaningless generic node editor for plumbing nodes.
+5. **Register the new mechanisms in the web UI** (fixes the "spline" mislabel): `table_lookup` +
+   `copula_marginal` in `edgeMechanismCanvasLabel` (`App.tsx:2588` — the fallback returns "spline"),
+   `EDGE_MECHANISMS`/`FunctionPicker`/`EdgeTransferPlot`, and `NODE_COMBINERS` + the node editor.
+   Give them real param displays instead of the spline-knot fallback.
+5b. **Switch the DGM showcase running example smoking → LaLonde** (job training → earnings; more
+   intuitive: trainees start worse off, naïve gap looks bad until adjusted). Two complementary tracks:
+   - **Track A (DGM contrast):** LaLonde covariates as the real L, an IMPOSED ~+$1,800 effect; the
+     5 DGM variants + positivity, plasmode resampling real LaLonde rows. Replaces smoking as the front.
+   - **Track B ("recover the RCT" benchmark):** real `treat`/`re78`, NSW-treated + PSID controls
+     (~2,675 rows), graded against the experimental benchmark (~+$1,794). Naïve observational is wildly
+     biased; IPW/matching/g-formula claw back to the RCT. Needs a new `lalonde-obs` dataset
+     (NSW-treated + `psid_controls`, `trueAte = 1794`) added to `build_datasets.py`; experimental
+     `lalonde` (445) stays the benchmark anchor. Data confirmed available (Dehejia NBER mirror).
+6. **Explanatory titles** for every DGM example (what it *teaches*, not just the DGM name).
+7. **Generative cleanups**: commit the synthetic-data generation script (currently a throwaway →
+   `data/nhefs-synthetic.ts` is not reproducible); relabel any "GAN" copy → "learned copula".
+   Real GAN/VAE/**WebGPU** generator stays the deferred ambition.
+
+Deferred (bigger, separate):
+- [ ] **Generative, for real:** in-browser learned-joint generation via a dispatched worker /
+  **WebGPU** (train/run a GAN/VAE/flow client-side). Runtime CART/synthpop is the lighter fallback.
+- [ ] **General data import:** bring-your-own-data — paste/upload CSV → a plasmode covariate source
+  for any dataset.
+
+
 ## Smoking-example consolidation + array-generated longitudinal example (2026-06-20)
 
 - Removed the 6 `what-if-showcase-*` examples (exact duplicates of the `what-if-*` set):
   entries, dispatch, 5 orphaned DAG-code consts, the App.tsx `showcaseGuideForExample`
   branches (re-pointed to the canonical ids), three test lists, and the audit-ledger rows.
-- Added `what-if-nhefs-weight-gain` — faithful Hernán-Robins Ch 12-14 point-treatment replica
-  (qsmk -> weight gain; crude ~+2.7 kg, adjusted ~+3.5 kg) + a detailed "i" infobox with a
-  book-vs-simulation table.
+- Added `what-if-nhefs-weight-gain` (qsmk -> weight gain) + a detailed "i" infobox. NOTE: later
+  (dgm-toolbox branch) relabeled honestly as a *synthetic, calibrated* example (independent
+  confounders), NOT a "replica"; Sex/coefficient bugs fixed; crude ~2.5, adjusted ~3.0-3.5, true +3.5.
 - Rewrote `what-if-hiv-cd4-variants` as a 6-visit **array-generated** longitudinal DAG
   (`buildHivCd4SequenceCode(HIV_CD4_SEQUENCE_VISITS)` + loop-driven config). Full
   treatment-confounder feedback; naive ~-4.6pp (badly confounded) vs g-formula -30.7pp (= oracle

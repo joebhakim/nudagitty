@@ -41,10 +41,10 @@ function WeightGainBookComparison() {
   const rows: Array<[string, string, string]> = [
     ["Analytic sample", "1566 smokers (aged 25–74), ~26% quit", "n = 4000, ~29% quit"],
     ["Outcome", "10-year weight change (kg)", "weight change (kg)"],
-    ["Crude difference", "+2.5 kg (95% CI 1.7, 3.4)", "≈ +2.7 kg"],
-    ["IP weighting — Ch 12", "+3.4 kg (95% CI 2.4, 4.5)", "≈ +3.4 kg"],
+    ["Crude difference", "+2.5 kg (95% CI 1.7, 3.4)", "≈ +2.5 kg"],
+    ["IP weighting — Ch 12", "+3.4 kg (95% CI 2.4, 4.5)", "≈ +3.0 kg"],
     ["Standardization / g-formula — Ch 13", "+3.5 kg (95% CI 2.5, 4.5)", "≈ +3.5 kg"],
-    ["G-estimation — Ch 14", "+3.4 kg (95% CI 2.5, 4.5)", "≈ +3.3 kg"],
+    ["G-estimation — Ch 14", "+3.4 kg (95% CI 2.5, 4.5)", "≈ +2.8 kg"],
     ["True effect (do-oracle)", "— (unknown in real data)", "+3.5 kg (set in the SEM)"]
   ];
   return (
@@ -106,12 +106,14 @@ const EXPLAINERS: Record<string, Explainer> = {
     what: (
       <>
         <p>
-          <strong>The book's flagship example.</strong> This is a faithful, single-time-point replica
-          of the running example in Hernán &amp; Robins' <em>Causal Inference: What If</em>, Part II
-          (Chapters 12–14): <em>what is the average causal effect of smoking cessation on weight gain?</em>
-          The book uses real NHEFS data on 1566 smokers followed from a 1971–75 baseline to a 1982 visit;
-          treatment <strong>A</strong> is "quit smoking before follow-up" and the outcome <strong>Y</strong>
-          is weight change in kg.
+          <strong>A synthetic example, calibrated to the book.</strong> This is <em>not</em> the book's
+          real-data analysis — it is a hand-built simulation whose crude and adjusted numbers we tuned to
+          match the published results of the running example in Hernán &amp; Robins' <em>Causal Inference:
+          What If</em>, Part II (Chapters 12–14): <em>what is the average causal effect of smoking cessation
+          on weight gain?</em> In the book, treatment <strong>A</strong> is "quit smoking before the 1982
+          follow-up" and outcome <strong>Y</strong> is weight change (kg) over ~1566 real smokers. Here those
+          are reproduced by a linear/logit data-generating process — open the <strong>DGP panel (Σ)</strong>
+          to see every equation and the imposed true effect.
         </p>
         <p>
           <strong>The surprise.</strong> Quitters gained more weight — about <strong>4.5 kg vs 2.0 kg</strong>,
@@ -134,10 +136,14 @@ const EXPLAINERS: Record<string, Explainer> = {
           weight</em> (the book uses nine; these carry the confounding). Because there are several
           continuous covariates, nonparametric stratification is infeasible — which is the book's own
           motivation for modeling the treatment (IP weighting) or the outcome (standardization).
+          <strong> One simplification to be honest about:</strong> here the six confounders are drawn
+          <em>independently</em> of one another — a transparent but unrealistic joint (real covariates
+          are correlated). It doesn't bias the estimand, but it makes overlap/positivity artificially
+          easy. The copula and plasmode variants relax this.
         </p>
         <p>
           <strong>Reading the panels.</strong> The "Observed association" card shows the crude
-          two-arm contrast (~+2.7 kg). The "Adjusted estimate" card shows the standardized do-contrast
+          two-arm contrast (~+2.5 kg). The "Adjusted estimate" card shows the standardized do-contrast
           (~+3.5 kg) and a method picker so you can step through every estimator and watch them converge
           on the truth. The confounder-basis selector (linear / quadratic / cubic) is the bias–variance
           flexibility dial on the parametric estimators.
