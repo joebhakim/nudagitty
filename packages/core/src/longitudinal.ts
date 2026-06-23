@@ -1408,3 +1408,18 @@ export function adjustmentOverlap(document: GraphDocument, spec: AdjustmentSpec)
     covariateBasis: spec.covariateBasis ?? "linear"
   });
 }
+
+export type PositivityStatus = "ok" | "warning" | "violated";
+
+// Heuristic verdict on whether positivity/overlap looks satisfied. Positivity fails two distinct
+// ways, so the rule combines both: a common-support GAP (the treated and control PS ranges don't
+// overlap) and WEIGHT CONCENTRATION (a low effective sample size or a single dominating IP weight).
+// Thresholds calibrated against the example set: every clean example sits at ESS ≥ 56%, support
+// ≥ 96%, max weight ≤ 4.3; the designed positivity showcase trips on ESS 44% / max weight 20×; the
+// LaLonde-PSID replay trips hard on support 41% / ESS 7%. (The simulation is seeded, so stable.)
+export function positivityStatus(overlap: OverlapDiagnostic): PositivityStatus {
+  const essFraction = overlap.controlEffectiveSampleSize / Math.max(1, overlap.controlSampleSize);
+  if (overlap.commonSupportShare < 0.6 || essFraction < 0.15) return "violated";
+  if (overlap.commonSupportShare < 0.9 || essFraction < 0.5 || overlap.maxControlWeight > 10) return "warning";
+  return "ok";
+}

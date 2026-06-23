@@ -43,6 +43,8 @@ import {
   adjusted,
   analyzeGraph,
   analyzeAdjustment,
+  adjustmentOverlap,
+  positivityStatus,
   deriveAdjustmentSpec,
   classifyConditioned,
   structuralRoleOf,
@@ -841,6 +843,13 @@ export function App() {
   }, [activeExample, computationDocument, covariateBasis]);
   const unifiedAdjustment = useMemo(() => computeUnifiedAdjustment(activeOutputPair), [computeUnifiedAdjustment, activeOutputPair]);
   const demoUnifiedAdjustment = useMemo(() => computeUnifiedAdjustment(defaultOutputPair), [computeUnifiedAdjustment, defaultOutputPair]);
+  // Overlap/positivity diagnostic, computed once per (signature-stable) computationDocument — so it
+  // does NOT re-run on node drags — and shared by the toolbar badge and the overlap modal.
+  const overlapDiagnostic = useMemo(() => {
+    const spec = deriveAdjustmentSpec(computationDocument);
+    return spec ? adjustmentOverlap(computationDocument, spec) : null;
+  }, [computationDocument]);
+  const positivity = overlapDiagnostic ? positivityStatus(overlapDiagnostic) : "ok";
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
   // Granular, privacy-preserving telemetry (see analyticsTelemetry). Every field is
@@ -1606,7 +1615,7 @@ export function App() {
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
             <IconButton label="Explain this example" pressed={showExplanation} onClick={() => setShowExplanation((open) => { if (!open) trackInfoOverlayOpened("explanation"); return !open; })}><Info size={18} /></IconButton>
             <IconButton label="Data-generating process" pressed={showDgp} onClick={() => setShowDgp((open) => !open)}><Sigma size={18} /></IconButton>
-            <IconButton label="Overlap / positivity" pressed={showOverlap} onClick={() => setShowOverlap((open) => !open)}><Blend size={18} /></IconButton>
+            <IconButton label="Overlap / positivity" pressed={showOverlap} badge={positivity === "ok" ? null : positivity} onClick={() => setShowOverlap((open) => !open)}><Blend size={18} /></IconButton>
             <input
               ref={snapshotInputRef}
               type="file"
@@ -1661,7 +1670,7 @@ export function App() {
               <strong>Overlap / positivity — {activeExample?.title ?? document.title}</strong>
               <button type="button" aria-label="Close overlap diagnostic" onClick={() => setShowOverlap(false)}><X size={16} /></button>
             </div>
-            <OverlapInspector document={document} />
+            <OverlapInspector overlap={overlapDiagnostic} />
           </div>
         </div>
       )}
@@ -5997,8 +6006,8 @@ function PaneHeader({
   );
 }
 
-function IconButton({ label, active, pressed, disabled, onClick, children }: { label: string; active?: boolean; pressed?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" className={active ? "icon-button active" : "icon-button"} title={label} aria-label={label} aria-pressed={pressed} disabled={disabled} onClick={onClick}>{children}<span className="icon-button-label">{label}</span></button>;
+function IconButton({ label, active, pressed, disabled, onClick, children, badge }: { label: string; active?: boolean; pressed?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode; badge?: "warning" | "violated" | null }) {
+  return <button type="button" className={active ? "icon-button active" : "icon-button"} title={badge ? `${label} (positivity ${badge === "violated" ? "likely violated" : "looks weak"})` : label} aria-label={label} aria-pressed={pressed} disabled={disabled} onClick={onClick}>{children}{badge ? <span className={`icon-button-badge ${badge}`} aria-hidden="true">!</span> : null}<span className="icon-button-label">{label}</span></button>;
 }
 
 function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {

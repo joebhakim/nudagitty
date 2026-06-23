@@ -1,6 +1,4 @@
-import { adjustmentOverlap, deriveAdjustmentSpec } from "@nudagitty/core";
-import type { GraphDocument, OverlapDiagnostic } from "@nudagitty/core";
-import { useMemo } from "react";
+import type { OverlapDiagnostic } from "@nudagitty/core";
 
 // Overlap / positivity diagnostic for the current adjustment: the per-arm propensity-score
 // distribution (the estimators' OWN bin-based model), the inverse-probability-weight summary, and
@@ -43,11 +41,8 @@ function OverlapHistogram({ overlap }: { overlap: OverlapDiagnostic }) {
   );
 }
 
-export function OverlapInspector(props: { document: GraphDocument }) {
-  const overlap = useMemo<OverlapDiagnostic | null>(() => {
-    const spec = deriveAdjustmentSpec(props.document);
-    return spec ? adjustmentOverlap(props.document, spec) : null;
-  }, [props.document]);
+export function OverlapInspector(props: { overlap: OverlapDiagnostic | null }) {
+  const { overlap } = props;
 
   if (!overlap) {
     return (

@@ -1,10 +1,31 @@
 .icon-button {
+  position: relative;
   width: auto;
   min-width: 34px;
   height: 34px;
   padding: 0 9px;
   white-space: nowrap;
 }
+
+.icon-button-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  border: 1.5px solid var(--surface, #fff);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 11px;
+  text-align: center;
+  color: #fff;
+  pointer-events: none;
+}
+.icon-button-badge.warning { background: #d97706; }
+.icon-button-badge.violated { background: #dc2626; }
 
 .icon-button-label {
   font-size: 13px;
