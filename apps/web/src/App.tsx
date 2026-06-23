@@ -776,7 +776,9 @@ export function App() {
   const presentationActive = presentationMode && !paperNetworkOpen && !isBasicMode;
   const compactWorkspace = useMediaQuery("(max-width: 1120px)");
   const empiricalDraws = graphEmpiricalDraws(document.graph);
-  const highlightedEdges = useMemo(() => computeHighlightedEdges(document.graph, analysis, showCausal, showBiasing), [analysis, document.graph, showBiasing, showCausal]);
+  // Keyed on analysisGraph (position-stable) not document.graph: edge highlighting is structural,
+  // so a node drag should not re-run the path analysis.
+  const highlightedEdges = useMemo(() => computeHighlightedEdges(analysisGraph, analysis, showCausal, showBiasing), [analysis, analysisGraph, showBiasing, showCausal]);
   const ancestorIds = useMemo(() => showAncestors ? new Set(analysis.causalPaths.flat()) : new Set<string>(), [analysis.causalPaths, showAncestors]);
   const completedOutput = useMemo(() => computeCompletedOutput(outputContext, activeExample?.outputModule ?? null), [activeExample?.outputModule, outputContext]);
   // For survival examples the observed-association card shows the crude (naive) survival

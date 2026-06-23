@@ -21,10 +21,11 @@ export function defaultScatterPair(graph: GraphModel): ScatterPair {
 export function reconcileScatterPair(graph: GraphModel, pair: ScatterPair): ScatterPair {
   const options = scatterPairOptions(graph);
   if (options.exposures.length > 0 && options.outcomes.length > 0) {
-    return {
-      x: options.exposures.includes(pair.x) ? pair.x : options.exposures[0]!,
-      y: options.outcomes.includes(pair.y) ? pair.y : options.outcomes[0]!
-    };
+    const x = options.exposures.includes(pair.x) ? pair.x : options.exposures[0]!;
+    const y = options.outcomes.includes(pair.y) ? pair.y : options.outcomes[0]!;
+    // Preserve referential identity when nothing changed: a new {x,y} object on every call would
+    // churn scatterPair state on each node drag, needlessly re-running the whole estimator suite.
+    return x === pair.x && y === pair.y ? pair : { x, y };
   }
   const ids = new Set(graph.nodes.map((node) => node.id));
   if (ids.has(pair.x) && ids.has(pair.y)) return pair;
