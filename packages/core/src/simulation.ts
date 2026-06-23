@@ -1,6 +1,7 @@
 import { directedParents, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "./graph";
 import { topologicalOrder } from "./analysis";
 import { createSeededRandomSource, sampleDistribution } from "./distributions";
+import { datasetRows } from "./datasets";
 import type {
   EdgeMechanism,
   GraphModel,
@@ -318,9 +319,20 @@ export function edgeContribution(parentValue: number, mechanism: EdgeMechanism):
       return powerLaw(parentValue, mechanism);
     case "monotone_spline":
       return interpolateMonotoneCubic(parentValue, mechanism.points);
+    case "table_lookup":
+      return tableLookup(parentValue, mechanism);
     case "linear":
       return mechanism.coefficient * parentValue;
   }
+}
+
+// Plasmode: read the embedded dataset row selected by the (floored) parent row-index, column
+// dataColumn. Wraps the index into range so any uniform source over [0, rows) lands on a row.
+function tableLookup(parentValue: number, mechanism: EdgeMechanism): number {
+  const rows = datasetRows(mechanism.dataset);
+  if (rows.length === 0) return 0;
+  const index = ((Math.floor(parentValue) % rows.length) + rows.length) % rows.length;
+  return rows[index]?.[mechanism.dataColumn ?? 0] ?? 0;
 }
 
 function interactionContribution(values: Record<string, number>, mechanism: NodeMechanism): number {
@@ -352,6 +364,12 @@ function sampleRootValue(distribution: NodeDistribution, variable: VariableModel
 }
 
 function finalizeNodeValue(value: number, mechanism: NodeMechanism, variable: VariableModel, contributions: StructuralContribution[], leakTerm: number, rng: () => number, forceDraw = false): number {
+  // Gaussian copula: η (= value, built from latent-Gaussian parents + noise) is mapped through
+  // Φ then the node's target marginal — deterministic given η, for both continuous and binary
+  // marginals (so the cross-covariate correlation carried by the shared latent is preserved).
+  if (mechanism.combiner === "copula_marginal") {
+    return inverseMarginalCdf(mechanism.distribution, standardNormalCdf(value));
+  }
   const regularContributions = contributions.filter((contribution) => !contribution.absorbing).map((contribution) => contribution.value);
   if (variable.valueType !== "binary") return applyCombiner(value, mechanism, regularContributions, leakTerm);
   const probability = binaryProbability(value, mechanism, contributions, leakTerm);
@@ -597,6 +615,8 @@ function compileModel(graph: GraphModel, spec: SimulationSpec, order: string[]):
     if (variable.valueType === "distributional") return null;
     const mechanism = normalizeNodeMechanism(spec.nodes[id]);
     if (mechanism.combiner === "noisy_or") return null;
+    // Copula marginal needs the inverse-CDF transform; run the interpreted path for it.
+    if (mechanism.combiner === "copula_marginal") return null;
     const out = index.get(id) ?? 0;
     const binary = variable.valueType === "binary";
     const parents = directedParents(graph, id);
@@ -1099,6 +1119,8 @@ function buildLinearGaussianJoint(graph: GraphModel, spec: SimulationSpec, order
     const node = nodesById.get(id);
     const variable = normalizeVariableModel(node?.variable);
     const mechanism = normalizeNodeMechanism(spec.nodes[id]);
+    // The copula marginal transform is non-linear/non-Gaussian — no analytic joint.
+    if (mechanism.combiner === "copula_marginal") return null;
     const row = covariance[index];
     if (!row) return null;
     const parents = directedParents(graph, id);
@@ -1533,6 +1555,58 @@ function standardNormalPdf(value: number): number {
 
 function standardNormalCdf(value: number): number {
   return 0.5 * (1 + erf(value / Math.SQRT2));
+}
+
+// Inverse standard-normal CDF (probit) — Acklam's rational approximation, |error| < 1.2e-9.
+function probit(p: number): number {
+  const u = Math.min(1 - 1e-12, Math.max(1e-12, p));
+  const a = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.383577518672690e2, -3.066479806614716e1, 2.506628277459239];
+  const b = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
+  const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+  const d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
+  const plow = 0.02425, phigh = 1 - plow;
+  if (u < plow) {
+    const q = Math.sqrt(-2 * Math.log(u));
+    return (((((c[0]! * q + c[1]!) * q + c[2]!) * q + c[3]!) * q + c[4]!) * q + c[5]!) / ((((d[0]! * q + d[1]!) * q + d[2]!) * q + d[3]!) * q + 1);
+  }
+  if (u > phigh) {
+    const q = Math.sqrt(-2 * Math.log(1 - u));
+    return -(((((c[0]! * q + c[1]!) * q + c[2]!) * q + c[3]!) * q + c[4]!) * q + c[5]!) / ((((d[0]! * q + d[1]!) * q + d[2]!) * q + d[3]!) * q + 1);
+  }
+  const q = u - 0.5;
+  const r = q * q;
+  return (((((a[0]! * r + a[1]!) * r + a[2]!) * r + a[3]!) * r + a[4]!) * r + a[5]!) * q / (((((b[0]! * r + b[1]!) * r + b[2]!) * r + b[3]!) * r + b[4]!) * r + 1);
+}
+
+// Map a uniform u = Φ(η) to the node's target marginal (the copula inverse-CDF, F⁻¹). Covers
+// the marginal kinds copula covariates use; others fall back to their mean (a no-op marginal).
+function inverseMarginalCdf(distribution: NodeDistribution, u: number): number {
+  const p = Math.min(1 - 1e-12, Math.max(1e-12, u));
+  switch (distribution.kind) {
+    case "normal": return distribution.mean + distribution.sd * probit(p);
+    case "lognormal": return Math.exp(distribution.meanLog + distribution.sdLog * probit(p));
+    case "uniform": return distribution.min + (distribution.max - distribution.min) * p;
+    case "bernoulli": return p > 1 - distribution.p ? 1 : 0;
+    case "constant": return distribution.value;
+    case "exponential": return -Math.log(1 - p) / Math.max(distribution.rate, Number.EPSILON);
+    case "laplace": {
+      const m = distribution.mean, b = distribution.scale;
+      return p < 0.5 ? m + b * Math.log(2 * p) : m - b * Math.log(2 * (1 - p));
+    }
+    default:
+      // poisson / beta / gamma / student_t: no closed-form quantile here; fall back to the mean.
+      return sampleDistributionMeanFallback(distribution);
+  }
+}
+
+function sampleDistributionMeanFallback(distribution: NodeDistribution): number {
+  switch (distribution.kind) {
+    case "poisson": return distribution.lambda;
+    case "beta": return distribution.alpha / (distribution.alpha + distribution.beta);
+    case "gamma": return distribution.shape * distribution.scale;
+    case "student_t": return distribution.mean;
+    default: return 0;
+  }
 }
 
 function inverseStandardNormalCdf(probability: number): number {

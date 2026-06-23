@@ -264,7 +264,12 @@ export type NodeCombinerKind =
   | "bernoulli_logit"
   | "poisson_log"
   | "gamma_log"
-  | "noisy_or";
+  | "noisy_or"
+  // Gaussian-copula marginal transform: treats the node's linear predictor η (built from
+  // latent-Gaussian source parents + noise, so η ~ N(0,1)) as a copula coordinate and maps it
+  // to the node's target marginal via L = F⁻¹(Φ(η)), where F = the node's `distribution`.
+  // Used to give covariates a specified correlation while hitting exact marginals (NORTA).
+  | "copula_marginal";
 
 export type NodeInteraction =
   | { id: string; kind: "product"; left: string; right: string; coefficient: number }
@@ -289,7 +294,11 @@ export type EdgeMechanismKind =
   | "hill_emax"
   | "log_linear"
   | "power_law"
-  | "monotone_spline";
+  | "monotone_spline"
+  // Plasmode: the parent is a shared row-index source; this edge returns the embedded dataset's
+  // value at dataTable[floor(parent)][dataColumn]. All covariates reading the same row reproduce
+  // the real joint dependence exactly. See `dataset` / `dataColumn` below.
+  | "table_lookup";
 
 export interface PiecewisePoint {
   x: number;
@@ -314,6 +323,9 @@ export interface EdgeMechanism {
   exponent: number;
   offset: number;
   points: PiecewisePoint[];
+  // For kind === "table_lookup": which embedded dataset and which column to read.
+  dataset?: string;
+  dataColumn?: number;
 }
 
 export interface SimulationSpec {

@@ -36,7 +36,8 @@ const NODE_COMBINER_KINDS = new Set([
   "bernoulli_logit",
   "poisson_log",
   "gamma_log",
-  "noisy_or"
+  "noisy_or",
+  "copula_marginal"
 ]);
 
 const EDGE_MECHANISM_KINDS = new Set([
@@ -50,7 +51,8 @@ const EDGE_MECHANISM_KINDS = new Set([
   "hill_emax",
   "log_linear",
   "power_law",
-  "monotone_spline"
+  "monotone_spline",
+  "table_lookup"
 ]);
 
 const DEFAULT_ROLES: NodeRoleFlags = {
@@ -482,7 +484,9 @@ export function normalizeEdgeMechanism(mechanism: Partial<EdgeMechanism> | undef
     ec50: positiveOr(mechanism?.ec50, base.ec50),
     exponent: positiveOr(mechanism?.exponent, base.exponent),
     offset: numberOr(mechanism?.offset, base.offset),
-    points: normalizePiecewisePoints(mechanism?.points, base.points)
+    points: normalizePiecewisePoints(mechanism?.points, base.points),
+    ...(mechanism?.dataset !== undefined ? { dataset: mechanism.dataset } : {}),
+    ...(mechanism?.dataColumn !== undefined ? { dataColumn: mechanism.dataColumn } : {})
   };
 }
 
