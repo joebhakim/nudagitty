@@ -14,6 +14,11 @@ export const VERIFIED_EXAMPLE_IDS: readonly string[] = [
   "lalonde-dgm-independent",
   "lalonde-dgm-plasmode",
   "lalonde-dgm-generative",
+  // Track B "recover the RCT" benchmark replay (real treat/re78; truth = the experimental +$1,794).
+  // PROVISIONAL / under review: the main output still shows the degenerate do-oracle (truth ≈ 0);
+  // the payoff is the Σ panel's Overlap/positivity section. Needs the benchmark grading panel before
+  // it's truly user-ready.
+  "lalonde-recover-rct",
   // The DGM-toolbox contrast: smoking -> weight gain, same true effect (+3.5 kg), five different
   // confounder joints (independent / confounder-DAG / copula / real plasmode / generative). Open
   // the DGP panel (Σ) on each to see the correlation matrix change while the truth is fixed.
