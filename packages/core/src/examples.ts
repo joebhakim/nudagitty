@@ -1,5 +1,6 @@
 import { parseModel } from "./parser";
 import { analyzeGraph } from "./analysis";
+import { datasetColumnIndex, datasetRows } from "./datasets";
 import { defaultEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "./graph";
 import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "./types";
 
@@ -10,7 +11,8 @@ export const EXAMPLE_DOMAINS = [
   { id: "product", label: "Product / experimentation / marketing", description: "A/B tests, incrementality, geolift, uplift, guardrails, and spillovers." },
   { id: "ml", label: "ML / data science", description: "Assumption declaration, graph refutation, discovery hypotheses, and treatment heterogeneity." },
   { id: "operations", label: "Operations / reliability / supply chain", description: "Root-cause analysis, mechanism shifts, and distribution-change attribution." },
-  { id: "social", label: "Social science / education / psychology", description: "Mediation, latent constructs, surveys, attrition, and multilevel designs." }
+  { id: "social", label: "Social science / education / psychology", description: "Mediation, latent constructs, surveys, attrition, and multilevel designs." },
+  { id: "dgm", label: "Simulation design / DGMs", description: "How synthetic data is generated: independent vs correlated (copula), real (plasmode), and learned (generative) joints — same causal truth, different data." }
 ] as const;
 
 export type ExampleDomain = typeof EXAMPLE_DOMAINS[number]["id"];
@@ -514,9 +516,9 @@ export const EXAMPLES: ExampleModel[] = [
   },
   {
     id: "what-if-nhefs-weight-gain",
-    title: "What If: smoking cessation and weight gain (book replica)",
-    domain: "epidemiology",
-    summary: "Faithful point-treatment replica of Hernán & Robins' What If, Part II (Ch 12-14): does quitting smoking cause weight gain? Quitters gain ~2.5 kg more in the crude comparison, but they are older and heavier and such people gain less weight regardless, so adjusting for the baseline confounders RAISES the estimate to ~3.5 kg. The canonical IP-weighting / standardization / g-estimation example.",
+    title: "Smoking cessation → weight gain (independent confounders)",
+    domain: "dgm",
+    summary: "A synthetic example CALIBRATED to reproduce the headline result of Hernán & Robins' What If, Part II (Ch 12-14): quitting smoking → weight gain. Six INDEPENDENT baseline confounders (a transparent but unrealistic joint), a linear/logit DGP, true effect +3.5 kg. Crude ~+2.5 kg; adjusting for the confounders RAISES it toward the truth — the canonical IPW / standardization / g-estimation lesson. Not the book's real-data analysis — open the DGP panel (Σ) to see the exact mechanism.",
     code: `dag {
   Sex [adjusted,label="sex (female)",pos="-3.1,2.7"]
   Age [adjusted,label="age",pos="-1.85,3.15"]
@@ -526,6 +528,181 @@ export const EXAMPLES: ExampleModel[] = [
   Baseline_weight [adjusted,label="baseline weight",pos="3.05,1.85"]
   Quit_smoking [exposure,label="quit smoking",pos="-1.75,0.65"]
   Weight_gain [outcome,label="weight gain",pos="1.5,-1.7"]
+  Sex -> Quit_smoking
+  Sex -> Weight_gain
+  Age -> Quit_smoking
+  Age -> Weight_gain
+  Smoking_intensity -> Quit_smoking
+  Smoking_intensity -> Weight_gain
+  Years_smoking -> Quit_smoking
+  Years_smoking -> Weight_gain
+  Exercise -> Quit_smoking
+  Exercise -> Weight_gain
+  Baseline_weight -> Quit_smoking
+  Baseline_weight -> Weight_gain
+  Quit_smoking -> Weight_gain
+}`
+  },
+  {
+    id: "wg-dgm-copula",
+    title: "Smoking cessation → weight gain (correlated confounders, copula)",
+    domain: "dgm",
+    summary: "The weight-gain example with the SAME treatment/outcome models and true effect (+3.5 kg), but the six confounders are now CORRELATED through a one-factor Gaussian copula (shared latent 'aging/burden'). Realistic joint dependence — open the DGP panel (Σ) to see the correlation matrix light up vs the independent variant, and watch overlap/positivity tighten while the truth is unchanged.",
+    code: `dag {
+  Health_factor [latent,label="latent aging/burden",pos="0.0,4.4"]
+  Sex [adjusted,label="sex (female)",pos="-3.1,2.7"]
+  Age [adjusted,label="age",pos="-1.85,3.15"]
+  Smoking_intensity [adjusted,label="cigarettes/day",pos="-0.6,3.3"]
+  Years_smoking [adjusted,label="years smoking",pos="0.65,3.15"]
+  Exercise [adjusted,label="exercise",pos="1.9,2.7"]
+  Baseline_weight [adjusted,label="baseline weight",pos="3.05,1.85"]
+  Quit_smoking [exposure,label="quit smoking",pos="-1.75,0.65"]
+  Weight_gain [outcome,label="weight gain",pos="1.5,-1.7"]
+  Health_factor -> Sex
+  Health_factor -> Age
+  Health_factor -> Smoking_intensity
+  Health_factor -> Years_smoking
+  Health_factor -> Exercise
+  Health_factor -> Baseline_weight
+  Sex -> Quit_smoking
+  Sex -> Weight_gain
+  Age -> Quit_smoking
+  Age -> Weight_gain
+  Smoking_intensity -> Quit_smoking
+  Smoking_intensity -> Weight_gain
+  Years_smoking -> Quit_smoking
+  Years_smoking -> Weight_gain
+  Exercise -> Quit_smoking
+  Exercise -> Weight_gain
+  Baseline_weight -> Quit_smoking
+  Baseline_weight -> Weight_gain
+  Quit_smoking -> Weight_gain
+}`
+  },
+  {
+    id: "wg-dgm-plasmode",
+    title: "Smoking cessation → weight gain (real NHEFS rows, plasmode)",
+    domain: "dgm",
+    summary: "The weight-gain example with the SAME true effect (+3.5 kg), but the six confounders are RESAMPLED from the real NHEFS public-use rows (true joint dependence + real mixed types). Treatment and outcome are simulated on top. The most faithful variant — open the DGP panel (Σ) to see the data source and the real correlation matrix; the marginals are the actual NHEFS distributions.",
+    code: `dag {
+  Row_source [latent,label="NHEFS rows (resample)",pos="0.0,4.4"]
+  Sex [adjusted,label="sex (female)",pos="-3.1,2.7"]
+  Age [adjusted,label="age",pos="-1.85,3.15"]
+  Smoking_intensity [adjusted,label="cigarettes/day",pos="-0.6,3.3"]
+  Years_smoking [adjusted,label="years smoking",pos="0.65,3.15"]
+  Exercise [adjusted,label="exercise",pos="1.9,2.7"]
+  Baseline_weight [adjusted,label="baseline weight",pos="3.05,1.85"]
+  Quit_smoking [exposure,label="quit smoking",pos="-1.75,0.65"]
+  Weight_gain [outcome,label="weight gain",pos="1.5,-1.7"]
+  Row_source -> Sex
+  Row_source -> Age
+  Row_source -> Smoking_intensity
+  Row_source -> Years_smoking
+  Row_source -> Exercise
+  Row_source -> Baseline_weight
+  Sex -> Quit_smoking
+  Sex -> Weight_gain
+  Age -> Quit_smoking
+  Age -> Weight_gain
+  Smoking_intensity -> Quit_smoking
+  Smoking_intensity -> Weight_gain
+  Years_smoking -> Quit_smoking
+  Years_smoking -> Weight_gain
+  Exercise -> Quit_smoking
+  Exercise -> Weight_gain
+  Baseline_weight -> Quit_smoking
+  Baseline_weight -> Weight_gain
+  Quit_smoking -> Weight_gain
+}`
+  },
+  {
+    id: "wg-dgm-confounder-dag",
+    title: "Smoking cessation → weight gain (confounder DAG)",
+    domain: "dgm",
+    summary: "The weight-gain example where confounder dependence is encoded by explicit edges AMONG the confounders (years-smoking ← age; baseline-weight ← sex). Same true effect (+3.5 kg). The 'invent your own dependence' DGM — open the DGP panel (Σ): the structure is visible in the equations, but it's a hand-built factorization, not learned from data.",
+    code: `dag {
+  Sex [adjusted,label="sex (female)",pos="-3.2,3.0"]
+  Age [adjusted,label="age",pos="-1.5,3.4"]
+  Smoking_intensity [adjusted,label="cigarettes/day",pos="0.2,3.4"]
+  Exercise [adjusted,label="exercise",pos="1.9,3.0"]
+  Baseline_weight [adjusted,label="baseline weight",pos="-3.2,1.4"]
+  Years_smoking [adjusted,label="years smoking",pos="-1.5,1.7"]
+  Quit_smoking [exposure,label="quit smoking",pos="0.6,0.5"]
+  Weight_gain [outcome,label="weight gain",pos="1.8,-1.7"]
+  Age -> Years_smoking
+  Sex -> Baseline_weight
+  Sex -> Quit_smoking
+  Sex -> Weight_gain
+  Age -> Quit_smoking
+  Age -> Weight_gain
+  Smoking_intensity -> Quit_smoking
+  Smoking_intensity -> Weight_gain
+  Years_smoking -> Quit_smoking
+  Years_smoking -> Weight_gain
+  Exercise -> Quit_smoking
+  Exercise -> Weight_gain
+  Baseline_weight -> Quit_smoking
+  Baseline_weight -> Weight_gain
+  Quit_smoking -> Weight_gain
+}`
+  },
+  {
+    id: "wg-dgm-generative",
+    title: "Smoking cessation → weight gain (generative synthetic rows)",
+    domain: "dgm",
+    summary: "The weight-gain example with confounders resampled from a SYNTHETIC dataset generated by a model learned from real NHEFS (a Gaussian copula; novel rows, no real individuals). Same true effect (+3.5 kg). The generative DGM — open the DGP panel (Σ): the joint approximates the real one (correlations are close but not exact), the privacy/augmentation trade-off of learned data.",
+    code: `dag {
+  Row_source [latent,label="synthetic NHEFS (resample)",pos="0.0,4.4"]
+  Sex [adjusted,label="sex (female)",pos="-3.1,2.7"]
+  Age [adjusted,label="age",pos="-1.85,3.15"]
+  Smoking_intensity [adjusted,label="cigarettes/day",pos="-0.6,3.3"]
+  Years_smoking [adjusted,label="years smoking",pos="0.65,3.15"]
+  Exercise [adjusted,label="exercise",pos="1.9,2.7"]
+  Baseline_weight [adjusted,label="baseline weight",pos="3.05,1.85"]
+  Quit_smoking [exposure,label="quit smoking",pos="-1.75,0.65"]
+  Weight_gain [outcome,label="weight gain",pos="1.5,-1.7"]
+  Row_source -> Sex
+  Row_source -> Age
+  Row_source -> Smoking_intensity
+  Row_source -> Years_smoking
+  Row_source -> Exercise
+  Row_source -> Baseline_weight
+  Sex -> Quit_smoking
+  Sex -> Weight_gain
+  Age -> Quit_smoking
+  Age -> Weight_gain
+  Smoking_intensity -> Quit_smoking
+  Smoking_intensity -> Weight_gain
+  Years_smoking -> Quit_smoking
+  Years_smoking -> Weight_gain
+  Exercise -> Quit_smoking
+  Exercise -> Weight_gain
+  Baseline_weight -> Quit_smoking
+  Baseline_weight -> Weight_gain
+  Quit_smoking -> Weight_gain
+}`
+  },
+  {
+    id: "wg-dgm-positivity",
+    title: "Showcase: when positivity bites (strong copula)",
+    domain: "dgm",
+    summary: "A standalone showcase: strong confounder correlation (copula) AND strong confounder→treatment effects push the propensity toward 0/1, so overlap is poor. The IPW / matching estimators get unstable while the re-simulated g-formula still recovers the +3.5 kg truth — the positivity problem the artificially-perfect-overlap independent variant hides.",
+    code: `dag {
+  Health_factor [latent,label="latent factor (strong)",pos="0.0,4.4"]
+  Sex [adjusted,label="sex (female)",pos="-3.1,2.7"]
+  Age [adjusted,label="age",pos="-1.85,3.15"]
+  Smoking_intensity [adjusted,label="cigarettes/day",pos="-0.6,3.3"]
+  Years_smoking [adjusted,label="years smoking",pos="0.65,3.15"]
+  Exercise [adjusted,label="exercise",pos="1.9,2.7"]
+  Baseline_weight [adjusted,label="baseline weight",pos="3.05,1.85"]
+  Quit_smoking [exposure,label="quit smoking",pos="-1.75,0.65"]
+  Weight_gain [outcome,label="weight gain",pos="1.5,-1.7"]
+  Health_factor -> Sex
+  Health_factor -> Age
+  Health_factor -> Smoking_intensity
+  Health_factor -> Years_smoking
+  Health_factor -> Exercise
+  Health_factor -> Baseline_weight
   Sex -> Quit_smoking
   Sex -> Weight_gain
   Age -> Quit_smoking
@@ -2399,7 +2576,7 @@ export function exampleDocument(id: string): GraphDocument | null {
 }
 
 function usesManualExampleLayout(id: string): boolean {
-  return id === "target-trial-followup" || id.startsWith("what-if-");
+  return id === "target-trial-followup" || id.startsWith("what-if-") || id.startsWith("wg-dgm-");
 }
 
 export function initialDocument(): GraphDocument {
@@ -2436,6 +2613,11 @@ function configurePractitionerExample(document: GraphDocument, id: string): Grap
   if (id === "what-if-hazard-selection") return configureWhatIfHazardSelection(next);
   if (id === "what-if-nhefs-mortality-survival") return configureWhatIfNhefsMortalitySurvival(next);
   if (id === "what-if-nhefs-weight-gain") return configureWhatIfNhefsWeightGain(next);
+  if (id === "wg-dgm-copula") return configureWhatIfNhefsWeightGainCopula(next);
+  if (id === "wg-dgm-plasmode") return configureWhatIfNhefsWeightGainPlasmode(next);
+  if (id === "wg-dgm-confounder-dag") return configureWhatIfNhefsWeightGainConfounderDag(next);
+  if (id === "wg-dgm-generative") return configureWhatIfNhefsWeightGainGenerative(next);
+  if (id === "wg-dgm-positivity") return configureWhatIfNhefsWeightGainPositivity(next);
   if (id === "what-if-weight-gain-g-estimation") return configureWhatIfWeightGainGEstimation(next);
   if (id === "what-if-hiv-cd4-variants") return configureWhatIfHivCd4Variants(next);
   if (id === "what-if-censoring-ipcw") return configureWhatIfCensoringIpcw(next);
@@ -3007,13 +3189,14 @@ function configureWhatIfHazardSelection(document: GraphDocument): GraphDocument 
 }
 
 function configureWhatIfNhefsWeightGain(document: GraphDocument): GraphDocument {
-  // Faithful point-treatment replica of Hernan & Robins "What If" Part II (Ch 12-14):
-  // the average causal effect of smoking cessation on 10-year weight gain. The book's
-  // analytic sample is 1566 smokers aged 25-74; crude difference +2.5 kg; the IP-weighted /
-  // standardized / g-estimation effect is ~3.4-3.5 kg. Adjustment RAISES the estimate
-  // because quitters are older/heavier and such people gain less weight regardless.
+  // SYNTHETIC example calibrated to reproduce the headline result of Hernan & Robins
+  // "What If" Part II (Ch 12-14): the average causal effect of smoking cessation on weight
+  // gain. NOT the book's real-data analysis -- it is a hand-built linear/logit DGP whose
+  // crude (~+2.5 kg) and adjusted (~+3.5 kg) numbers we tuned to match the book's published
+  // estimates. The confounders here are mutually INDEPENDENT (a transparent but unrealistic
+  // joint); the copula/plasmode variants relax that. True effect = +3.5 kg.
   setExampleSampleSize(document, 4000);
-  // Baseline covariates L (a faithful subset of the book's 9), all measured pre-treatment.
+  // Baseline covariates L (a subset of the book's 9 confounders), all measured pre-treatment.
   setBinaryVariable(document, "Sex", "Baseline sex (1 = female). Quitters were more often men.", "female");
   setContinuousVariable(document, "Age", "Baseline age. Quitters were ~4 years older, and older people gain less weight regardless of quitting -- the book's headline (surrogate) confounder.", "years");
   setContinuousVariable(document, "Smoking_intensity", "Baseline cigarettes per day. Quitters smoked fewer.", "cigarettes/day");
@@ -3024,7 +3207,9 @@ function configureWhatIfNhefsWeightGain(document: GraphDocument): GraphDocument 
   setContinuousVariable(document, "Weight_gain", "Weight change (follow-up minus baseline) in kg.", "kg");
 
   // Baseline covariate distributions (means/spreads echo Table 12.1).
-  setLogitNode(document, "Sex", 0.0); // ~50% female
+  // Sex is a binary ROOT, so it must carry a Bernoulli *distribution* (a root ignores the
+  // combiner); ~47% female (the book skews slightly male).
+  setNode(document, "Sex", { distribution: { kind: "bernoulli", p: 0.47 }, noise: ZERO_NOISE });
   setNode(document, "Age", { distribution: { kind: "normal", mean: 43.5, sd: 12 }, noise: ZERO_NOISE });
   setNode(document, "Smoking_intensity", { distribution: { kind: "normal", mean: 20.5, sd: 11 }, noise: ZERO_NOISE });
   setNode(document, "Years_smoking", { distribution: { kind: "normal", mean: 24.5, sd: 12 }, noise: ZERO_NOISE });
@@ -3049,10 +3234,214 @@ function configureWhatIfNhefsWeightGain(document: GraphDocument): GraphDocument 
   // channel, matching the book's "age is THE surrogate confounder" framing.
   setNode(document, "Weight_gain", { intercept: 11.5, noise: { kind: "normal", mean: 0, sd: 7.5 } });
   setLinearCoefficient(document, "Quit_smoking", "Weight_gain", 3.5);
-  setLinearCoefficient(document, "Age", "Weight_gain", -0.17);
+  setLinearCoefficient(document, "Sex", "Weight_gain", 0.6);
+  setLinearCoefficient(document, "Age", "Weight_gain", -0.13);
   setLinearCoefficient(document, "Smoking_intensity", "Weight_gain", 0.08);
   setLinearCoefficient(document, "Years_smoking", "Weight_gain", -0.03);
   setLinearCoefficient(document, "Exercise", "Weight_gain", -0.8);
+  setLinearCoefficient(document, "Baseline_weight", "Weight_gain", -0.05);
+  return document;
+}
+
+function configureWhatIfNhefsWeightGainCopula(document: GraphDocument): GraphDocument {
+  // Gaussian-copula variant of the weight-gain example. SAME treatment/outcome models, marginals,
+  // and true effect (+3.5 kg) as the independent variant — but the six confounders are now
+  // CORRELATED through a shared latent factor ("aging/burden": older → smoked longer, weigh more,
+  // exercise less). Identification is unchanged (still adjust for the observed L), so the contrast
+  // isolates what realistic correlation does to overlap/positivity and finite-sample estimators.
+  setExampleSampleSize(document, 4000);
+  setContinuousVariable(document, "Health_factor", "Latent standard-normal factor driving the covariate correlations (unobserved).", "z");
+  setBinaryVariable(document, "Sex", "Baseline sex (1 = female).", "female");
+  setContinuousVariable(document, "Age", "Baseline age.", "years");
+  setContinuousVariable(document, "Smoking_intensity", "Baseline cigarettes per day.", "cigarettes/day");
+  setContinuousVariable(document, "Years_smoking", "Years of smoking at baseline.", "years");
+  setContinuousVariable(document, "Exercise", "Baseline recreational activity (z-score).", "activity z-score");
+  setContinuousVariable(document, "Baseline_weight", "Body weight at the baseline visit.", "kg");
+  setBinaryVariable(document, "Quit_smoking", "Quit smoking between baseline (1971-75) and follow-up (1982).", "quit");
+  setContinuousVariable(document, "Weight_gain", "Weight change (follow-up minus baseline) in kg.", "kg");
+
+  // Correlated covariate block: identical marginals to the independent variant, now sharing one
+  // latent factor. Loadings → realistic correlations (pairwise ≈ loading_i · loading_j): age,
+  // years-smoking and weight load positively together; exercise loads negatively; sex ~ unrelated.
+  addCopulaCovariates(document, "Health_factor", [
+    { id: "Age", marginal: { kind: "normal", mean: 43.5, sd: 12 }, loading: 0.85 },
+    { id: "Years_smoking", marginal: { kind: "normal", mean: 24.5, sd: 12 }, loading: 0.70 },
+    { id: "Baseline_weight", marginal: { kind: "normal", mean: 71, sd: 15 }, loading: 0.50 },
+    { id: "Smoking_intensity", marginal: { kind: "normal", mean: 20.5, sd: 11 }, loading: 0.30 },
+    { id: "Exercise", marginal: { kind: "normal", mean: 0, sd: 1 }, loading: -0.45 },
+    { id: "Sex", marginal: { kind: "bernoulli", p: 0.47 }, loading: 0.10 }
+  ]);
+
+  // Treatment model (identical coefficients to the independent variant). ~26% quit.
+  setLogitNode(document, "Quit_smoking", -2.35);
+  setLinearCoefficient(document, "Age", "Quit_smoking", 0.028);
+  setLinearCoefficient(document, "Sex", "Quit_smoking", -0.25);
+  setLinearCoefficient(document, "Smoking_intensity", "Quit_smoking", -0.02);
+  setLinearCoefficient(document, "Years_smoking", "Quit_smoking", 0.008);
+  setLinearCoefficient(document, "Exercise", "Quit_smoking", 0.12);
+  setLinearCoefficient(document, "Baseline_weight", "Quit_smoking", 0.006);
+
+  // Outcome model (identical coefficients; TRUE effect of quitting = +3.5 kg).
+  setNode(document, "Weight_gain", { intercept: 11.5, noise: { kind: "normal", mean: 0, sd: 7.5 } });
+  setLinearCoefficient(document, "Quit_smoking", "Weight_gain", 3.5);
+  setLinearCoefficient(document, "Sex", "Weight_gain", 0.6);
+  setLinearCoefficient(document, "Age", "Weight_gain", -0.13);
+  setLinearCoefficient(document, "Smoking_intensity", "Weight_gain", 0.08);
+  setLinearCoefficient(document, "Years_smoking", "Weight_gain", -0.03);
+  setLinearCoefficient(document, "Exercise", "Weight_gain", -0.8);
+  setLinearCoefficient(document, "Baseline_weight", "Weight_gain", -0.05);
+  return document;
+}
+
+function configureWhatIfNhefsWeightGainConfounderDag(document: GraphDocument): GraphDocument {
+  // Confounder-DAG variant: dependence is encoded by explicit edges AMONG the confounders
+  // (a sequential factorization) rather than a latent factor or real data. Years-smoking is
+  // caused by Age (older smoked longer); Baseline-weight by Sex (women lighter) but NOT Age
+  // (matching the real near-zero Age-weight correlation). Same treatment/outcome and true
+  // effect (+3.5 kg). The literature's least-favored DGM (you invent the structure) — shown
+  // here for the contrast.
+  setExampleSampleSize(document, 4000);
+  setBinaryVariable(document, "Sex", "Baseline sex (1 = female).", "female");
+  setContinuousVariable(document, "Age", "Baseline age.", "years");
+  setContinuousVariable(document, "Smoking_intensity", "Baseline cigarettes per day.", "cigarettes/day");
+  setContinuousVariable(document, "Years_smoking", "Years of smoking at baseline (caused by age).", "years");
+  setContinuousVariable(document, "Exercise", "Baseline recreational activity (z-score).", "activity z-score");
+  setContinuousVariable(document, "Baseline_weight", "Body weight at the baseline visit (caused by sex).", "kg");
+  setBinaryVariable(document, "Quit_smoking", "Quit smoking between baseline (1971-75) and follow-up (1982).", "quit");
+  setContinuousVariable(document, "Weight_gain", "Weight change (follow-up minus baseline) in kg.", "kg");
+
+  // Roots.
+  setNode(document, "Sex", { distribution: { kind: "bernoulli", p: 0.47 }, noise: ZERO_NOISE });
+  setNode(document, "Age", { distribution: { kind: "normal", mean: 43.5, sd: 12 }, noise: ZERO_NOISE });
+  setNode(document, "Smoking_intensity", { distribution: { kind: "normal", mean: 20.5, sd: 11 }, noise: ZERO_NOISE });
+  setNode(document, "Exercise", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  // Derived confounders: Years = -1.6 + 0.6·Age + noise (corr ~0.6); Weight = 76.6 - 12·Sex + noise.
+  setNode(document, "Years_smoking", { intercept: -1.6, noise: { kind: "normal", mean: 0, sd: 9.6 } });
+  setLinearCoefficient(document, "Age", "Years_smoking", 0.6);
+  setNode(document, "Baseline_weight", { intercept: 76.6, noise: { kind: "normal", mean: 0, sd: 14.5 } });
+  setLinearCoefficient(document, "Sex", "Baseline_weight", -12);
+
+  // Treatment model (same coefficients as the independent variant).
+  setLogitNode(document, "Quit_smoking", -2.35);
+  setLinearCoefficient(document, "Age", "Quit_smoking", 0.028);
+  setLinearCoefficient(document, "Sex", "Quit_smoking", -0.25);
+  setLinearCoefficient(document, "Smoking_intensity", "Quit_smoking", -0.02);
+  setLinearCoefficient(document, "Years_smoking", "Quit_smoking", 0.008);
+  setLinearCoefficient(document, "Exercise", "Quit_smoking", 0.12);
+  setLinearCoefficient(document, "Baseline_weight", "Quit_smoking", 0.006);
+
+  // Outcome model (true effect +3.5 kg).
+  setNode(document, "Weight_gain", { intercept: 11.5, noise: { kind: "normal", mean: 0, sd: 7.5 } });
+  setLinearCoefficient(document, "Quit_smoking", "Weight_gain", 3.5);
+  setLinearCoefficient(document, "Sex", "Weight_gain", 0.6);
+  setLinearCoefficient(document, "Age", "Weight_gain", -0.13);
+  setLinearCoefficient(document, "Smoking_intensity", "Weight_gain", 0.08);
+  setLinearCoefficient(document, "Years_smoking", "Weight_gain", -0.03);
+  setLinearCoefficient(document, "Exercise", "Weight_gain", -0.8);
+  setLinearCoefficient(document, "Baseline_weight", "Weight_gain", -0.05);
+  return document;
+}
+
+function configureWhatIfNhefsWeightGainPositivity(document: GraphDocument): GraphDocument {
+  // Standalone showcase: strong copula correlation + strong confounder->treatment effects push
+  // the propensity toward 0/1 (poor overlap). The weighting/propensity methods (IPW, matching)
+  // get unstable while the re-simulated g-formula holds — the positivity lesson that the
+  // independent variant's artificially-perfect overlap hides. Same true effect (+3.5 kg).
+  setExampleSampleSize(document, 4000);
+  setContinuousVariable(document, "Health_factor", "Latent standard-normal factor driving strong covariate correlations (unobserved).", "z");
+  setBinaryVariable(document, "Sex", "Baseline sex (1 = female).", "female");
+  setContinuousVariable(document, "Age", "Baseline age.", "years");
+  setContinuousVariable(document, "Smoking_intensity", "Baseline cigarettes per day.", "cigarettes/day");
+  setContinuousVariable(document, "Years_smoking", "Years of smoking at baseline.", "years");
+  setContinuousVariable(document, "Exercise", "Baseline recreational activity (z-score).", "activity z-score");
+  setContinuousVariable(document, "Baseline_weight", "Body weight at the baseline visit.", "kg");
+  setBinaryVariable(document, "Quit_smoking", "Quit smoking between baseline and follow-up.", "quit");
+  setContinuousVariable(document, "Weight_gain", "Weight change (follow-up minus baseline) in kg.", "kg");
+
+  // Strong loadings -> near-collinear confounders.
+  addCopulaCovariates(document, "Health_factor", [
+    { id: "Age", marginal: { kind: "normal", mean: 43.5, sd: 12 }, loading: 0.95 },
+    { id: "Years_smoking", marginal: { kind: "normal", mean: 24.5, sd: 12 }, loading: 0.9 },
+    { id: "Baseline_weight", marginal: { kind: "normal", mean: 71, sd: 15 }, loading: 0.85 },
+    { id: "Smoking_intensity", marginal: { kind: "normal", mean: 20.5, sd: 11 }, loading: 0.7 },
+    { id: "Exercise", marginal: { kind: "normal", mean: 0, sd: 1 }, loading: -0.8 },
+    { id: "Sex", marginal: { kind: "bernoulli", p: 0.47 }, loading: 0.2 }
+  ]);
+
+  // STRONG confounder -> treatment effects -> propensity spreads toward 0/1 (positivity bites).
+  setLogitNode(document, "Quit_smoking", -4.3);
+  setLinearCoefficient(document, "Age", "Quit_smoking", 0.11);
+  setLinearCoefficient(document, "Sex", "Quit_smoking", -0.5);
+  setLinearCoefficient(document, "Smoking_intensity", "Quit_smoking", -0.05);
+  setLinearCoefficient(document, "Years_smoking", "Quit_smoking", 0.02);
+  setLinearCoefficient(document, "Exercise", "Quit_smoking", 0.3);
+  setLinearCoefficient(document, "Baseline_weight", "Quit_smoking", 0.02);
+
+  // Outcome model (true effect +3.5 kg).
+  setNode(document, "Weight_gain", { intercept: 11.5, noise: { kind: "normal", mean: 0, sd: 7.5 } });
+  setLinearCoefficient(document, "Quit_smoking", "Weight_gain", 3.5);
+  setLinearCoefficient(document, "Sex", "Weight_gain", 0.6);
+  setLinearCoefficient(document, "Age", "Weight_gain", -0.13);
+  setLinearCoefficient(document, "Smoking_intensity", "Weight_gain", 0.08);
+  setLinearCoefficient(document, "Years_smoking", "Weight_gain", -0.03);
+  setLinearCoefficient(document, "Exercise", "Weight_gain", -0.8);
+  setLinearCoefficient(document, "Baseline_weight", "Weight_gain", -0.05);
+  return document;
+}
+
+function configureWhatIfNhefsWeightGainPlasmode(document: GraphDocument): GraphDocument {
+  return configurePlasmodeWeightGain(document, "nhefs");
+}
+
+function configureWhatIfNhefsWeightGainGenerative(document: GraphDocument): GraphDocument {
+  return configurePlasmodeWeightGain(document, "nhefs-synthetic");
+}
+
+function configurePlasmodeWeightGain(document: GraphDocument, dataset: string): GraphDocument {
+  // PLASMODE variant: the six confounders are RESAMPLED from the real NHEFS rows (true joint
+  // dependence + real mixed types: binary sex, 3-category exercise, continuous age/cigs/years/
+  // weight). Treatment A|L and outcome Y|A,L are simulated on top with a known true effect
+  // (+3.5 kg). The confounder coefficients are recalibrated to the real covariate scales so the
+  // crude (~+2.5 kg) → adjusted (~+3.5 kg) story matches the synthetic variants.
+  setExampleSampleSize(document, 4000);
+  setContinuousVariable(document, "Row_source", "Uniform draw over the embedded NHEFS rows (resampling index, unobserved).", "row");
+  setBinaryVariable(document, "Sex", "Baseline sex (1 = female) — from NHEFS.", "female");
+  setContinuousVariable(document, "Age", "Baseline age — from NHEFS.", "years");
+  setContinuousVariable(document, "Smoking_intensity", "Baseline cigarettes per day — from NHEFS.", "cigarettes/day");
+  setContinuousVariable(document, "Years_smoking", "Years of smoking at baseline — from NHEFS.", "years");
+  setContinuousVariable(document, "Exercise", "Recreational activity (0 much, 1 some, 2 little) — from NHEFS.", "exercise level");
+  setContinuousVariable(document, "Baseline_weight", "Body weight at the baseline visit — from NHEFS.", "kg");
+  setBinaryVariable(document, "Quit_smoking", "Quit smoking between baseline (1971-75) and follow-up (1982).", "quit");
+  setContinuousVariable(document, "Weight_gain", "Weight change (follow-up minus baseline) in kg.", "kg");
+
+  // Resample the six confounders jointly from the dataset's real (or synthetic) rows.
+  addPlasmodeCovariates(document, "Row_source", dataset, [
+    { id: "Sex", column: "sex" },
+    { id: "Age", column: "age" },
+    { id: "Smoking_intensity", column: "smokeintensity" },
+    { id: "Years_smoking", column: "smokeyrs" },
+    { id: "Exercise", column: "exercise" },
+    { id: "Baseline_weight", column: "wt71" }
+  ]);
+
+  // Treatment model (recalibrated for the real covariate scales; ~26% quit). Exercise is now
+  // 0-2 (higher = less active), so its sign flips vs the synthetic z-score version.
+  setLogitNode(document, "Quit_smoking", -2.4);
+  setLinearCoefficient(document, "Age", "Quit_smoking", 0.028);
+  setLinearCoefficient(document, "Sex", "Quit_smoking", -0.25);
+  setLinearCoefficient(document, "Smoking_intensity", "Quit_smoking", -0.02);
+  setLinearCoefficient(document, "Years_smoking", "Quit_smoking", 0.008);
+  setLinearCoefficient(document, "Exercise", "Quit_smoking", -0.12);
+  setLinearCoefficient(document, "Baseline_weight", "Quit_smoking", 0.006);
+
+  // Outcome model (TRUE effect of quitting = +3.5 kg).
+  setNode(document, "Weight_gain", { intercept: 9.0, noise: { kind: "normal", mean: 0, sd: 7.5 } });
+  setLinearCoefficient(document, "Quit_smoking", "Weight_gain", 3.5);
+  setLinearCoefficient(document, "Sex", "Weight_gain", 0.6);
+  setLinearCoefficient(document, "Age", "Weight_gain", -0.13);
+  setLinearCoefficient(document, "Smoking_intensity", "Weight_gain", 0.08);
+  setLinearCoefficient(document, "Years_smoking", "Weight_gain", -0.03);
+  setLinearCoefficient(document, "Exercise", "Weight_gain", 0.8);
   setLinearCoefficient(document, "Baseline_weight", "Weight_gain", -0.05);
   return document;
 }
@@ -4364,6 +4753,50 @@ function setLinearCoefficient(document: GraphDocument, source: string, target: s
   const edge = document.graph.edges.find((candidate) => candidate.source === source && candidate.target === target);
   if (!edge) return;
   document.simulation.edges[edge.id] = { ...defaultEdgeMechanism("linear"), coefficient };
+}
+
+// Generate a block of CORRELATED covariates via a one-factor Gaussian copula (NORTA): a shared
+// latent standard-normal `source` drives each covariate's standard-normal coordinate
+// η = loading·source + residual (Var η = 1), which the `copula_marginal` combiner maps to the
+// covariate's exact marginal as F⁻¹(Φ(η)). Pairwise correlation ≈ loading_i · loading_j, so
+// same-sign loadings on the shared factor make the covariates co-vary while each marginal is hit
+// exactly. The `source` node and one edge source→covariate must exist in the DAG code.
+function addCopulaCovariates(
+  document: GraphDocument,
+  sourceId: string,
+  covariates: Array<{ id: string; marginal: NodeDistribution; loading: number }>
+) {
+  setNode(document, sourceId, { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  for (const { id, marginal, loading } of covariates) {
+    const lambda = Math.max(-0.985, Math.min(0.985, loading));
+    const residualSd = Math.sqrt(Math.max(0, 1 - lambda * lambda));
+    setNode(document, id, {
+      combiner: "copula_marginal",
+      distribution: marginal,
+      intercept: 0,
+      noise: { kind: "normal", mean: 0, sd: residualSd }
+    });
+    setLinearCoefficient(document, sourceId, id, lambda);
+  }
+}
+
+// Plasmode: generate covariates by resampling whole rows from an embedded real dataset. A shared
+// `source` node draws a uniform row index over the dataset; each covariate's `table_lookup` edge
+// reads its column from that same row, so the real joint dependence (and mixed types) is
+// reproduced exactly. The `source` node and one edge source→covariate must exist in the DAG code.
+function addPlasmodeCovariates(
+  document: GraphDocument,
+  sourceId: string,
+  dataset: string,
+  covariates: Array<{ id: string; column: string }>
+) {
+  const rows = datasetRows(dataset);
+  const n = Math.max(1, rows.length);
+  setNode(document, sourceId, { distribution: { kind: "uniform", min: 0, max: n }, noise: ZERO_NOISE });
+  for (const { id, column } of covariates) {
+    setNode(document, id, { combiner: "additive", intercept: 0, noise: ZERO_NOISE });
+    setEdgeMechanism(document, sourceId, id, "table_lookup", { dataset, dataColumn: datasetColumnIndex(dataset, column) });
+  }
 }
 
 function setEdgeMechanism(
