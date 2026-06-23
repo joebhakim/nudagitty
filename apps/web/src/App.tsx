@@ -29,6 +29,7 @@ import {
   RefreshCw,
   Share2,
   Sigma,
+  Blend,
   Trash2,
   Undo2,
   Upload,
@@ -140,6 +141,7 @@ import { MethodsComparisonPanel, WhatIfStrategySurvivalCurve, basicOutputPunchli
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
 import { DgpInspector } from "./outputs/DgpInspector";
+import { OverlapInspector } from "./outputs/OverlapInspector";
 import type { OutputContext } from "./outputs/types";
 import { DenouementPanel } from "./outputs/DenouementPanel";
 import { ExampleExplanation } from "./examples/ExampleExplanation";
@@ -737,6 +739,7 @@ export function App() {
   const [paperNetworkOpen, setPaperNetworkOpen] = useState(() => hashMatchesPaperNetwork(window.location.hash));
   const [showExplanation, setShowExplanation] = useState(false);
   const [showDgp, setShowDgp] = useState(false);
+  const [showOverlap, setShowOverlap] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
   const analysisSignature = graphAnalysisSignature(document.graph);
@@ -1603,6 +1606,7 @@ export function App() {
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
             <IconButton label="Explain this example" pressed={showExplanation} onClick={() => setShowExplanation((open) => { if (!open) trackInfoOverlayOpened("explanation"); return !open; })}><Info size={18} /></IconButton>
             <IconButton label="Data-generating process" pressed={showDgp} onClick={() => setShowDgp((open) => !open)}><Sigma size={18} /></IconButton>
+            <IconButton label="Overlap / positivity" pressed={showOverlap} onClick={() => setShowOverlap((open) => !open)}><Blend size={18} /></IconButton>
             <input
               ref={snapshotInputRef}
               type="file"
@@ -1647,6 +1651,17 @@ export function App() {
               <button type="button" aria-label="Close data-generating process" onClick={() => setShowDgp(false)}><X size={16} /></button>
             </div>
             <DgpInspector document={document} simulation={simulation} />
+          </div>
+        </div>
+      )}
+      {showOverlap && (
+        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Overlap / positivity" onClick={() => setShowOverlap(false)}>
+          <div className="explanation-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="explanation-modal-header">
+              <strong>Overlap / positivity — {activeExample?.title ?? document.title}</strong>
+              <button type="button" aria-label="Close overlap diagnostic" onClick={() => setShowOverlap(false)}><X size={16} /></button>
+            </div>
+            <OverlapInspector document={document} />
           </div>
         </div>
       )}
