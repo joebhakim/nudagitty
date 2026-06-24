@@ -9,6 +9,12 @@ export const VERIFIED_EXAMPLE_IDS: readonly string[] = [
   // Basic 3-node confounder: crude "treatment hurts" reverses to "treatment helps" (+10pp)
   // once Severity is adjusted. The canonical confounding example, with a single right answer.
   "simpson-severity",
+  // PROVISIONAL — high-yield examples exposed on the canary for manual verification before they're
+  // truly blessed: front-door identification (recovers an effect through a mediator despite latent
+  // confounding) and the time-varying-confounding g-methods flagship (only g-methods recover
+  // always-vs-never-treat; adjusting for time-varying CD4 is wrong).
+  "front-door-smoking",
+  "what-if-hiv-cd4-variants",
   // LaLonde job-training DGM contrast (real data; same +$1,800 truth, joint broken→real→learned;
   // naive bias tracks the joint). Leads the DGM showcase.
   "lalonde-dgm-independent",
