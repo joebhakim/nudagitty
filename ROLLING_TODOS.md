@@ -2,6 +2,16 @@
 
 Keep lightweight follow-ups here when a branch is reviewable but still needs product polish.
 
+## Output panel — ground-up redesign (2026-06-24)
+
+Rethink the output from scratch around the five questions people actually ask, graphs-first, with
+progressive disclosure. Replaces the current ~9-module stack (which shows the headline number 3-4×
+under different names, scatters positivity across 3 places, and leads with jargon). Full design +
+old→new mapping + mockup in **`docs/plan-output-redesign.md`**. Five cards: (1) does treatment help?
+(2) do methods uncover the effect? (3) are the methods reliable? (4) how are variables related?
+(5) how does nudagitty know? Prototype on `what-if-hiv-cd4-variants`, then generalize. One new chart
+(Q2 method forest plot); the rest reuse existing panels + the overlap/positivity module.
+
 ## Longitudinal g-methods: ICE vs plug-in + positivity decay (2026-06-24)
 
 New dedicated teaching examples (NOT to be crammed into `what-if-hiv-cd4-variants`). Full design in
