@@ -9,6 +9,7 @@ import {
 } from "../charts/CategoryOutcomePlot";
 import { NodeNamesProvider } from "../shared/NodeNames";
 import { binaryPoints, continuousPoints, riskPoints } from "./fixtures";
+import { OutputBoxesPrototype } from "../outputs/prototype/OutputBoxes";
 
 // Fake nodes so the SvgAxisName chips resolve, like in the real app.
 const FAKE_NODES = [
@@ -99,6 +100,17 @@ export function Gallery() {
           <h1>Chart gallery</h1>
           <p>Every chart × data boundary × container size. Each subplot has a two-letter code (top-left) — reference it directly, e.g. &ldquo;BD clips&rdquo;.</p>
         </header>
+        <section className="g-section">
+          <h2>PROTOTYPE — output redesign (three boxes)</h2>
+          <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap", background: "#eef2f6", padding: 16, borderRadius: 8 }}>
+            {[{ id: "panel 380", w: 380 }, { id: "wide 460", w: 460 }, { id: "mobile 340", w: 340 }].map((s) => (
+              <div key={s.id}>
+                <div className="g-col-head" style={{ marginBottom: 6 }}>{s.id}</div>
+                <div style={{ width: s.w }}><OutputBoxesPrototype /></div>
+              </div>
+            ))}
+          </div>
+        </section>
         {SECTIONS.map((section) => (
           <section className="g-section" key={section.title}>
             <h2>{section.title}</h2>
