@@ -969,17 +969,24 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
             </tr>
           </thead>
           <tbody>
-            {comparison.estimates.map((estimate) => (
-              <tr key={estimate.id} className={estimate.id === primary?.id ? "method-row-primary" : undefined}>
+            {comparison.estimates.map((estimate) => {
+              // g_formula here is the re-simulation of the model we built — the constructed TRUTH
+              // (oracle), not a from-data estimator. Set it apart so it's never read as "the one
+              // estimator that happened to work."
+              const isOracle = estimate.id === "g_formula";
+              const rowClass = [isOracle ? "method-row-oracle" : "", estimate.id === primary?.id ? "method-row-primary" : ""].filter(Boolean).join(" ");
+              return (
+              <tr key={estimate.id} className={rowClass || undefined}>
                 <td>
-                  <strong>{estimate.label}{estimate.id === primary?.id ? " ◄" : ""}</strong>
-                  <small>{estimate.diagnostics[0] ?? ""}</small>
+                  <strong>{isOracle ? "True effect — g-formula (oracle)" : estimate.label}{estimate.id === primary?.id ? " ◄" : ""}</strong>
+                  <small>{isOracle ? "The model we built, re-simulated under each strategy — the target every estimator should recover, NOT a from-data estimate." : (estimate.diagnostics[0] ?? "")}</small>
                 </td>
                 <td>{formatOutcomeValue(estimate.arms[0].mean, outcomeScale, outcomeUnit)}</td>
                 <td>{formatOutcomeValue(estimate.arms[1].mean, outcomeScale, outcomeUnit)}</td>
                 <td className={estimateToneClass(estimate.estimate)}>{formatOutcomeDifference(estimate.estimate, outcomeScale, outcomeUnit)}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </details>

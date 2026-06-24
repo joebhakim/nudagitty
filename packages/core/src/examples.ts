@@ -125,7 +125,7 @@ function buildHivCd4SequenceCode(visits: number): string {
   return lines.join("\n");
 }
 
-const HIV_CD4_SEQUENCE_VISITS = 6;
+const HIV_CD4_SEQUENCE_VISITS = 3;
 
 export const EXAMPLES: ExampleModel[] = [
   {
@@ -885,9 +885,9 @@ export const EXAMPLES: ExampleModel[] = [
   },
   {
     id: "what-if-hiv-cd4-variants",
-    title: "What If: ART over a long CD4 history",
+    title: "What If: ART and CD4 — why adjusting is wrong",
     domain: "epidemiology",
-    summary: "Six-visit HIV/ART example with full treatment-confounder feedback: low CD4 prompts treatment, treatment improves later CD4, and CD4 both confounds the next dose and mediates the last one. The textbook case where adjusting for time-varying CD4 is wrong and only g-methods recover the effect of always- vs never-treating.",
+    summary: "Three-visit HIV/ART treatment-confounder feedback: low CD4 prompts treatment (confounding), and ART works mostly THROUGH later CD4 (mediation), so CD4 is a confounder of the next dose AND a mediator of the last one. The true always-vs-never effect is about -21 pp. Methods that reweight or standardize forward (IPW, the g-formula) recover it; methods that CONDITION on time-varying CD4 (outcome regression, AIPW) over-adjust away the mediated benefit and undershoot to ~-8. The textbook case where adjusting for a time-varying confounder is the wrong move.",
     outputModule: "what-if-hiv-cd4-variants",
     code: buildHivCd4SequenceCode(HIV_CD4_SEQUENCE_VISITS)
   },
@@ -3882,12 +3882,16 @@ function configureWhatIfWeightGainGEstimation(document: GraphDocument): GraphDoc
 }
 
 function configureWhatIfHivCd4Variants(document: GraphDocument): GraphDocument {
-  // Six-visit HIV/ART time-varying-confounding structure, authored from node arrays so
-  // the visit count is one knob (HIV_CD4_SEQUENCE_VISITS). At each visit: low CD4 prompts
-  // treatment (CD4_k -> A_k), treatment improves the next CD4 (A_k -> CD4_{k+1}) and
-  // persists (A_k -> A_{k+1}), and both act on the endpoint. CD4_{k>=1} is therefore a
-  // confounder for A_k AND a mediator of A_{k-1} -- the textbook trap where adjusting for
-  // it is wrong and only g-methods recover the always-vs-never contrast.
+  // HIV/ART time-varying-confounding structure, authored from node arrays so the visit count
+  // is one knob (HIV_CD4_SEQUENCE_VISITS). Kept SHORT (3 visits) on purpose: a static
+  // always/never contrast loses positivity geometrically in the number of visits (0.5^K), so
+  // a short chain keeps both regimes well-supported and isolates the over-adjustment lesson
+  // from the positivity-collapse one (the latter gets its own dedicated example; see
+  // docs/plan-longitudinal-ice-positivity.md). At each visit: low CD4 prompts treatment
+  // (CD4_k -> A_k, confounding), and ART's benefit flows mostly THROUGH the next CD4
+  // (A_k -> CD4_{k+1}, strong; small direct A_k -> death), so CD4_{k>=1} is a confounder for
+  // A_k AND a mediator of A_{k-1}. Conditioning on it (regression/AIPW) over-adjusts away the
+  // mediated benefit; reweighting/standardizing forward (IPW/g-formula) recovers the truth.
   const visits = HIV_CD4_SEQUENCE_VISITS;
   const treatments = Array.from({ length: visits }, (_, k) => `A_${k}`);
   const confounders = Array.from({ length: visits }, (_, k) => `CD4_${k}`);
@@ -3910,11 +3914,11 @@ function configureWhatIfHivCd4Variants(document: GraphDocument): GraphDocument {
 
   for (let k = 0; k < visits; k += 1) {
     setLinearCoefficient(document, `CD4_${k}`, `A_${k}`, 1.4);        // low CD4 -> treat now
-    setLinearCoefficient(document, `CD4_${k}`, "AIDS_death", 0.45);   // low CD4 harms
-    setLinearCoefficient(document, `A_${k}`, "AIDS_death", -0.3);     // ART protects
+    setLinearCoefficient(document, `CD4_${k}`, "AIDS_death", 0.85);   // low CD4 harms (most of the risk)
+    setLinearCoefficient(document, `A_${k}`, "AIDS_death", -0.2);     // small DIRECT ART effect...
     if (k + 1 < visits) {
       setLinearCoefficient(document, `CD4_${k}`, `CD4_${k + 1}`, 1.6); // CD4 autocorrelation
-      setLinearCoefficient(document, `A_${k}`, `CD4_${k + 1}`, -1.0);  // ART improves next CD4
+      setLinearCoefficient(document, `A_${k}`, `CD4_${k + 1}`, -2.1);  // ...most of ART's benefit is MEDIATED through CD4
       setLinearCoefficient(document, `A_${k}`, `A_${k + 1}`, 1.0);     // treatment persists
     }
   }

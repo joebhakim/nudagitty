@@ -534,6 +534,17 @@
 .what-if-method-table tr.method-row-primary strong {
   color: #11302a;
 }
+/* The oracle row (g-formula = the constructed truth) is set apart from from-data estimators. */
+.what-if-method-table tr.method-row-oracle {
+  background: #fff7e6;
+  border-left: 3px solid #d97706;
+}
+.what-if-method-table tr.method-row-oracle strong {
+  color: #92400e;
+}
+.what-if-method-table tr.method-row-oracle small {
+  color: #b4732a;
+}
 
 .what-if-method-table-card > .module-card-header strong,
 .what-if-support-card > .module-card-header strong {
