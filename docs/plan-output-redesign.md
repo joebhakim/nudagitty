@@ -5,6 +5,17 @@ bars/arms plot in `apps/web/src/outputs/prototype/` — keep as a sketch or dele
 it). The redesign is composing and extending the components that already exist, adding the missing
 features — not building new charts.
 
+## When / where (decided)
+
+- **Its own branch**, created **after** the DGM toolbox (`dgm-toolbox`) is wrapped — do NOT tangle
+  this into the DGM-toolbox branch. No code changes until then.
+- **Steps 1–3 are all in scope**, including the per-method prediction/performance viz (step 3) and
+  the `internals` payload it needs.
+- Build it **end-to-end**, then reveal on the local **temp preview server (:4173)** for review (a
+  temporary showcase, like the other canary reviews).
+- Gate: branch only once we agree the DGM toolbox is "done" (current state: feature-complete and
+  deployed to prod; round-2 items in ROLLING_TODOS are deferred, not blockers).
+
 ## The mistake to avoid
 
 The prototypes looked like toy models because they were rebuilt from scratch and threw away the
@@ -59,14 +70,13 @@ hide until expanded.
    predicted-vs-observed, the PS distribution, the weight spread. Add an optional `internals` field
    on `GMethodEstimate`, populated by each estimator.
 
-## The joined-treatment X axis (still open)
+## The joined-treatment X axis (decided: no glyph)
 
-When treatment is a regime (A₀A₁A₂), the X axis isn't a node. Options, to settle before building:
-- **Strategy as the X "exposure"** in `PairVariableSelect` — the contrast's strategies become the
-  two X positions, labeled by the config strategy labels (data, not authored prose).
-- **Structural glyph** under each X position (▣▣▣ / □□□) showing the assignment pattern — generic,
-  degenerates to one cell for a single-node treatment.
-- Lead with the glyph, fall back to the strategy label.
+The structural glyph (▣▣▣/□□□) is dropped — too confusing. The two X positions are just the
+contrast's arms, labeled by whatever the example calls them — the **strategy labels read from the
+estimand's contrast** (config data like "always ART"/"never ART", not prose authored in the output
+renderer). For a single-node treatment it's the node's two value labels. The "this is a 3-visit
+regime" nuance is carried by the box subtitle / the DGP button, not crammed onto the axis.
 
 ## Sequencing
 
