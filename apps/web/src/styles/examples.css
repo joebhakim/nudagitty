@@ -275,7 +275,8 @@
 .overlap-hist { width: 100%; max-width: 360px; height: auto; display: block; }
 .overlap-tick { font-size: 9px; fill: #6b7782; }
 .overlap-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.overlap-tiles > div { display: grid; gap: 1px; padding: 5px 7px; border: 1px solid var(--border, #e2e8ec); border-radius: 5px; background: #fafcfc; }
+.overlap-tiles > div { display: grid; gap: 1px; min-width: 0; padding: 5px 7px; border: 1px solid var(--border, #e2e8ec); border-radius: 5px; background: #fafcfc; }
+.overlap-tiles span, .overlap-tiles small { overflow-wrap: anywhere; }
 .overlap-tiles span { font-size: 10px; color: #6b7782; text-transform: uppercase; letter-spacing: 0.03em; }
 .overlap-tiles strong { font-size: 15px; font-variant-numeric: tabular-nums; color: #2b3640; }
 .overlap-tiles small { font-size: 9.5px; color: #8b95a0; }

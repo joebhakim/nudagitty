@@ -2625,6 +2625,7 @@ function edgeMechanismCanvasLabel(mechanism: EdgeMechanism): { context: string; 
   if (mechanism.kind === "hill_emax") return { context: "Hill / Emax", value: `max ${formatSignedValue(mechanism.maxEffect)}` };
   if (mechanism.kind === "log_linear") return { context: "log-linear", value: `coef ${formatSignedValue(mechanism.coefficient)}` };
   if (mechanism.kind === "power_law") return { context: "power law", value: `pow ${formatValue(mechanism.exponent)}` };
+  if (mechanism.kind === "table_lookup") return { context: "data replay", value: mechanism.dataset ?? "real rows" };
   return { context: "spline", value: `${mechanism.points.length} knots` };
 }
 
