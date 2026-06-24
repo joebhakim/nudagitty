@@ -1,94 +1,101 @@
 # Plan: output panel, rethought from the ground up
 
-Status: design / not started. Replaces the current output composition entirely (the
+Status: design / iterating. Replaces the current output composition entirely (the
 WhatIfAdvancedOutputView stack + the separate "Observed association" frame). Nothing of the current
 structure is assumed kept.
 
 ## Why
 
-The current output for a longitudinal example renders ~9 modules in two frames ("Observed
-association" + "Adjusted estimate"), shows the headline number 3–4 times under different names
-("Sequential g-formula", "True effect (oracle)", the methods headline), scatters support/positivity
-across three places, and leads with jargon ("Sequential g-formula −21.3 pp"). People spend ~0.5s on
-a dense page and bounce. See the "total tree" audit in chat (2026-06-24).
+The current output renders ~9 modules in two frames, shows the headline number 3–4× under different
+names, scatters support/positivity across three places, and leads with jargon ("Sequential
+g-formula −21.3 pp"). People spend ~0.5s on a dense page and bounce. (Total-tree audit in chat,
+2026-06-24.)
 
 ## Principles (from Joe)
 
-1. **Graphs first, details second.** Every section leads with a picture, then one plain sentence,
-   then optional ▸ detail.
-2. **Graph more than the observed** — the oracle (truth) and the user's chosen method belong on the
-   same chart, not buried in a table.
-3. **No jargon headlines.** Lead with "does it help / by how much," not the estimator name.
-4. **Progressive disclosure.** A glance answers the question; everything else hides behind ▸ until
-   the reader knows to care (rule-support-by-visit, weights, formulas…).
-5. **Organize by the questions people actually ask**, not by estimator.
+1. **Graphs first; no prose on the graphs.** The effect graph stands on its own — no
+   plain-language sentence leading it.
+2. **Vertical bars: x = treatment, y = outcome.** Facet by approach when useful, but only a few
+   facets — never a wall of small multiples.
+3. **The effect graph and the methods are ONE linked unit.** A set of rows whose numbers match the
+   graph exactly; selecting/hovering a row highlights its facet (and vice versa). You always know
+   the table and the picture are the same thing.
+4. **Reliability and provenance live in the toolbar buttons we already have**, not as output cards:
+   - **Overlap / positivity** → the existing Blend button (positivity verdict, PS histogram, ESS).
+   - **How nudagitty knows the true answer** → the existing DGP (Σ) button, made richer: the actual
+     structural equations *with the plugged-in coefficients*, plus each method's real fitted numbers.
+5. **Progressive disclosure for mechanics.** Per-method internals (models, variables, prediction
+   viz) hide behind ▸ until asked for.
+6. **"Can you trust the methods" is deferred** — revisit after the effect+methods core lands.
 
-## The five questions = the five sections (priority order)
+## The output panel = one linked unit (effect + methods)
 
-Each is one card: a plain-language question header → a graph → one sentence → ▸ details. Cards get
-progressively quieter (1 loud, 5 a footnote).
+```
+OUTPUT
+├─ Effect graph  — vertical bars, x = treatment (e.g. never / always), y = outcome (% event).
+│     Faceted by approach (a FEW: truth + the selected/representative methods). Generic, no prose.
+│     The "truth" facet carries the oracle's potential outcomes.
+├─ Methods rows  — one row per estimator, numbers matching the graph EXACTLY
+│     (arm outcomes + effect). Selecting a row highlights its facet in the graph; the truth row is
+│     set apart (oracle). This is the link between ① "does it help" and ② "do methods find it".
+└─ Per-method mechanics ▸ (one per row)
+      what model(s) it fits, which variables, and a viz of its predictions/performance
+      (e.g. IPW: P(treat | CD4) logistic → weight distribution; AIPW: outcome model + propensity,
+      predicted-vs-observed; regression: fitted outcome curve). See "core work".
+```
 
-1. **Does the treatment help?** — the headline. Graph: the two potential-outcome levels under the
-   contrasted strategies (e.g. "treat every visit 12%" vs "never 33%"), the gap annotated. One
-   sentence in plain outcome terms ("ART cuts AIDS/death ~21 points"). This is the oracle/truth,
-   stated as outcomes, never as "g-formula −21.3 pp".
-2. **Do the methods uncover that effect?** — graph: a forest/dot plot of every estimator on a
-   "harm ◄ 0 ► help" axis with the TRUTH as a reference line; on-target vs off-target colored. One
-   sentence ("reweighting lands on it; adjusting for CD4 over-adjusts"). ▸ the full method table +
-   glossary.
-3. **Can you trust the methods here?** — reliability/positivity. Graph: the overlap/PS histogram (or
-   a support gauge) + the positivity verdict badge (ok/weak/violated, already built). One sentence.
-   ▸ ESS, rule-support-by-visit, weight distribution.
-4. **How are the variables related?** — the observed/raw relationship. Graph: the scatter / crude
-   contrast, or the DAG with the active path lit. One sentence on the confounding ("sicker patients
-   get treated, so raw data hides the benefit"). ▸ correlations / observed detail.
-5. **How does nudagitty know the truth?** — provenance, deepest ▸. It's a simulation we built (the
-   DGP); the "truth" is the oracle (re-simulation) or, for benchmark replays, an external number.
-   Source, the honest "this is a constructed DGP, not book tables."
+- **Facets, curated.** Default to **truth + the selected method** (2 facets), with the rows letting
+  you swap/pin which method is faceted. Never dump all 8 as small multiples.
+- **Linking.** Rows ↔ facets is brushing: hover a row → its bars light up; the displayed numbers are
+  literally the bar heights, so table and graph can't disagree.
 
-## What graphs (concrete)
+## Toolbar (unchanged in placement, richer in content)
 
-- **Q1 headline chart:** two bars / two dots = outcome under each strategy, gap shaded. Intuitive
-  "if everyone treated vs no one." Carries the oracle.
-- **Q2 method chart:** horizontal effect axis, truth as a vertical line, each method a dot
-  (highlight the user's chosen method); distance from the line = error. Replaces leading with the
-  table. (This is the one new chart to build; the rest reuse existing panels.)
-- **Q3:** reuse the overlap histogram + positivity badge.
-- **Q4:** reuse ScatterplotPanel / the DAG highlight.
+- **Overlap / positivity (Blend button):** stays exactly where it is — the reliability story.
+- **DGP (Σ button):** becomes "how nudagitty knows" — the structural equations WITH plugged-in
+  numbers (already most of the DGP inspector) + surface each method's actual fitted models/numbers.
 
-## Old → new mapping (everything folds or dies)
+## Old → new mapping
 
 | current module | becomes |
 |---|---|
-| "Observed association" frame | Q4 (demoted from a co-equal frame to a quieter card) |
-| shell header + conclusion | Q1 plain sentence |
-| metric tiles (Sequential g-formula / rule support / IPW support) | split: g-formula→Q1, supports→Q3 |
-| "Rule support by visit" table | Q3 ▸ details |
-| methods headline + plain | Q1/Q2 |
-| primary-method + basis dropdowns | a small control on Q2 (or a gear), not a headline element |
-| "Compare all methods" table | Q2 ▸ details |
-| "How to read these methods" glossary | Q2 ▸ (or Q5) |
-| strategy grid | Q1/Q5 ▸ |
-| "Source and diagnostics" | Q5 |
+| "Observed association" frame | a facet/row of the effect graph (the crude/naïve estimate), not a separate box |
+| shell header + conclusion | gone (no prose headline) |
+| metric tiles (g-formula / rule support / IPW support) | g-formula → the truth row; supports → the positivity button |
+| "Rule support by visit" table | positivity button ▸ |
+| methods headline + plain | gone / folded into the rows |
+| primary-method + basis dropdowns | a small control on the rows (highlight = select) |
+| "Compare all methods" table | the linked methods rows (now graph-coupled) |
+| "How to read these methods" glossary | per-method mechanics ▸ |
+| strategy grid | DGP button / a row tooltip |
+| "Source and diagnostics" | DGP button |
+
+## Core work this needs (new)
+
+The estimators currently return only `{estimate, arms, diagnostics}`. The per-method mechanics +
+prediction viz need them to also expose intermediates:
+- the **fitted model spec** (which variables, link, basis) per estimator;
+- **per-unit predictions / propensities / weights** (or a summarized distribution) so we can plot
+  predicted-vs-observed, the PS distribution, the weight spread.
+Scope this as an optional `diagnostics`/`internals` payload on `GMethodEstimate` so the panel can
+visualize without recomputing.
 
 ## Generalization
 
-The five questions are universal across example types (classic / DGM / longitudinal). The only thing
-that varies is the *source of truth* in Q1/Q5: imposed-DGP oracle for simulated examples, external
-benchmark for replays (lalonde-recover-rct), do-contrast otherwise. Build the shell once; per-example
-config supplies the strategies, the truth source, and the confounding one-liner.
+The effect graph (x = treatment, y = outcome, truth facet) and the linked rows are universal across
+example types. The only per-example variation is the *source of truth* (imposed-DGP oracle vs
+external benchmark for replays) and the treatment axis labels (binary arms vs strategies).
 
-## Build approach (proposed)
+## Build approach
 
-- New `OutputView` shell that renders the five `<QuestionCard>`s; drive it from the existing
-  computed output (GMethodsComparison + strategy evaluations + overlap diagnostic) — no new core.
-- One new chart component (Q2 method forest plot); Q1 is a tiny two-bar SVG; Q3/Q4 reuse existing.
-- Prototype on `what-if-hiv-cd4-variants` first (it's the worst offender and now numerically clean),
-  then generalize to classic/DGM examples.
-- Keep it behind the existing output-module dispatch so we can ship per-example.
+- New `OutputView` = effect graph + linked rows; one new small-multiple bar chart with brushing.
+- Reuse the overlap module (positivity button) and DGP inspector (Σ button) as-is.
+- Per-method mechanics + prediction viz is a second phase (needs the core `internals` payload).
+- Prototype on `what-if-hiv-cd4-variants` (now numerically clean), then generalize.
 
 ## Open questions
 
-- One scrolling stack of five cards, or Q1+Q2 always-open and Q3–Q5 collapsed by default?
-- Does Q1 show just the truth, or truth + the user's chosen method side by side?
-- Mobile: the forest plot at 393px — horizontal axis or stacked?
+- Effect graph: always truth + selected method (2 facets), or truth + a fixed small set (naïve /
+  IPW / regression)?
+- Binary outcome → bars are % event; continuous outcome → bars are mean. Same chart, different y.
+- Brushing on mobile (393px): tap-to-select rows, single facet pair shown.
