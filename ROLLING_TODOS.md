@@ -2,6 +2,19 @@
 
 Keep lightweight follow-ups here when a branch is reviewable but still needs product polish.
 
+## Longitudinal g-methods: ICE vs plug-in + positivity decay (2026-06-24)
+
+New dedicated teaching examples (NOT to be crammed into `what-if-hiv-cd4-variants`). Full design in
+**`docs/plan-longitudinal-ice-positivity.md`**. Came out of vetting the HIV example: it conflates
+two separable failure modes (positivity collapse — never-treat support 0.8%/54-of-7000, observed
+11% vs true 36% death; and treatment-confounder-feedback over-adjustment — the stable-but-wrong −20
+plug-in cluster), and its `g_formula` row is the re-simulated oracle, not a from-data estimator.
+Proposed: (1) a minimal feedback example where support is fine so over-adjustment is the only
+failure; (2) a K-slider "vanishing regime" example that makes positivity decay visible; needs a real
+from-data ICE-DR/TMLE estimator + a parametric g-formula fit from data + failure-mode-aware output.
+**Separately**, make `what-if-hiv-cd4-variants` coherent (teach one thing, label the oracle) —
+discussed live, not yet written up.
+
 ## Data-generating-mechanism (DGM) toolbox — branch `dgm-toolbox` (2026-06-23)
 
 Full design in `docs/data-generating-mechanisms.md` and the approved plan. Goal: make confounder
