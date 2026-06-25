@@ -952,24 +952,42 @@ function EffectByArmGraph(props: { comparison: GMethodsComparison; outcomeScale:
     const se = (armSd[group] ?? 0) / Math.sqrt(n);
     return se > 0 ? { lower: mean - 1.96 * se, upper: mean + 1.96 * se } : { lower: null, upper: null };
   };
-  const overlayOf = (estimate: GMethodEstimate | undefined, color: string) => {
-    if (!estimate) return null;
-    return {
-      id: estimate.id, color, emphasis: true,
-      groups: ([0, 1] as const).map((group) => {
-        const arm = estimate.arms[group]!;
-        const { lower, upper } = ciFor(arm.mean, armN(arm), group);
-        return { group, mean: arm.mean ?? 0, lower, upper };
-      })
-    };
+  // One FACET per series (observed / truth / selected) — each a real chart of the same treatment
+  // contrast — instead of overlaying them at the two x-positions (which read as a confusing repeat
+  // of treatment=0/1). Observed carries the swarm; truth/selected show the estimate means + CI. The
+  // labels are shared so the facets line up.
+  const labelFor = (group: 0 | 1) => summaries.find((s) => s.group === group)?.label ?? `${xLabel}=${group}`;
+  // Arms are ordered by STRATEGY (often treated-first), not by treatment value — so map each arm to
+  // the group of its assigned treatment value, or the swarm facet and the estimate facets disagree.
+  const armGroup = (i: 0 | 1): 0 | 1 => {
+    const assignment = comparison.strategies[i]?.assignments.find((a) => a.variable === xLabel);
+    return assignment && assignment.value >= 0.5 ? 1 : 0;
   };
-  const overlays = [
-    overlayOf(find("g_formula"), "var(--chart-series-2)"),
-    props.selectedId !== "g_formula" && props.selectedId !== "naive" ? overlayOf(find(props.selectedId), "var(--causal)") : null
-  ].filter(Boolean) as NonNullable<ReturnType<typeof overlayOf>>[];
+  const estimateSummaries = (estimate: GMethodEstimate) => ([0, 1] as const).map((i) => {
+    const arm = estimate.arms[i]!;
+    const group = armGroup(i);
+    const { lower, upper } = ciFor(arm.mean, armN(arm), group);
+    return { group, tone: (group === 1 ? "treated" : "untreated") as "treated" | "untreated", label: labelFor(group), mean: arm.mean, lower, upper, nEff: arm.effectiveSampleSize, points: [] as ScatterPoint[] };
+  });
+  const oracle = find("g_formula");
+  const selected = props.selectedId !== "naive" ? find(props.selectedId) : null;
   const yDomain = binary ? ([0, 1] as [number, number]) : categoryOutcomeDomain([0, 1], summaries, false);
+  const facets: Array<{ id: string; title: string; color: string; effect: number | null; points: ScatterPoint[]; summaries: typeof summaries }> = [
+    { id: "observed", title: "observed", color: "var(--chart-muted)", effect: naive.estimate, points, summaries },
+    ...(oracle ? [{ id: "truth", title: "truth", color: "var(--chart-series-2)", effect: oracle.estimate, points: [], summaries: estimateSummaries(oracle) }] : []),
+    ...(selected && selected.id !== "g_formula" ? [{ id: "selected", title: selected.label, color: "var(--causal)", effect: selected.estimate, points: [], summaries: estimateSummaries(selected) }] : [])
+  ];
   return (
-    <CategoryOutcomePlot points={points} summaries={summaries} overlays={overlays} xLabel={xLabel} yLabel={comparison.outcome} yDomain={yDomain} outcomeKind={binary ? "binary" : "continuous"} />
+    <div className="effect-facet-row">
+      {facets.map((f) => (
+        <div className="effect-facet" key={f.id}>
+          <div className="effect-facet-head"><strong style={{ color: f.color }}>{f.title}</strong><span>{formatOutcomeDifference(f.effect, props.outcomeScale, "")}</span></div>
+          <div className="effect-facet-body">
+            <CategoryOutcomePlot compact points={f.points} summaries={f.summaries} xLabel={xLabel} yLabel={comparison.outcome} yDomain={yDomain} outcomeKind={binary ? "binary" : "continuous"} />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -991,6 +1009,8 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
   return (
     <>
       {primary && (
+        <details className="output-box" open>
+          <summary><strong>Interpretation</strong><span>what the chosen estimator concludes about the adjusted effect</span></summary>
         <div className="methods-primary">
           <div className="methods-primary-controls">
             <label htmlFor="primary-method-select">Primary method</label>
@@ -1028,11 +1048,12 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
           </div>
           <p className="methods-primary-plain">{METHOD_GLOSSARY[primary.id].plain}</p>
         </div>
+        </details>
       )}
-      <details className="what-if-method-table-card" open={props.defaultOpen}>
+      <details className="output-box what-if-method-table-card" open={props.defaultOpen}>
         <summary className="module-card-header">
           <strong>Compare all methods</strong>
-          <span>{formatWeightedCount(comparison.cohort.sampleSize)} simulated rows</span>
+          <span>every estimator + how it gets there · {formatWeightedCount(comparison.cohort.sampleSize)} rows</span>
         </summary>
         <table className="what-if-method-table">
           <thead>
@@ -1100,15 +1121,17 @@ export function UnifiedAdjustmentReadout(props: { comparison: GMethodsComparison
   const showSelected = primaryId !== "g_formula" && primaryId !== "naive";
   return (
     <>
-      <div className="what-if-effect-graph">
-        <div className="module-card-header"><strong>Effect by treatment</strong><span>each arm's outcome, with 95% CI</span></div>
-        <div className="what-if-effect-legend">
-          <span><i style={{ background: "var(--chart-muted)" }} /> observed</span>
-          <span><i style={{ background: "var(--chart-series-2)" }} /> truth</span>
-          {showSelected && <span><i style={{ background: "var(--causal)" }} /> {primary?.label ?? "selected"}</span>}
+      <details className="output-box" open>
+        <summary><strong>Effect by treatment</strong><span>observed data vs the truth vs the chosen method, by treatment arm</span></summary>
+        <div className="what-if-effect-graph">
+          <div className="what-if-effect-legend">
+            <span><i style={{ background: "var(--chart-muted)" }} /> observed</span>
+            <span><i style={{ background: "var(--chart-series-2)" }} /> truth</span>
+            {showSelected && <span><i style={{ background: "var(--causal)" }} /> {primary?.label ?? "selected"}</span>}
+          </div>
+          <EffectByArmGraph comparison={props.comparison} outcomeScale={props.outcomeScale} selectedId={primaryId} points={props.points} treatmentId={props.treatmentId} />
         </div>
-        <EffectByArmGraph comparison={props.comparison} outcomeScale={props.outcomeScale} selectedId={primaryId} points={props.points} treatmentId={props.treatmentId} />
-      </div>
+      </details>
       <MethodsComparisonPanel comparison={props.comparison} outcomeScale={props.outcomeScale} outcomeUnit={props.outcomeUnit} defaultOpen primaryId={primaryId} onPrimaryChange={setPrimaryId} basis={props.basis} onBasisChange={props.onBasisChange} />
     </>
   );

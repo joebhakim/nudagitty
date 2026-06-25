@@ -545,10 +545,28 @@
 .what-if-method-table tr.method-row-oracle small {
   color: #b4732a;
 }
-/* Effect-by-treatment graph (redesign step 2). */
+/* Collapsible top-level output boxes (redesign): each section its own titled + subtitled box. */
+.output-box { border: 1px solid var(--line, #d7dde2); border-radius: 10px; background: #fff; margin-bottom: 10px; overflow: hidden; }
+.output-box > summary { list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: 10px; padding: 9px 13px; background: #f7faf9; }
+.output-box > summary::-webkit-details-marker { display: none; }
+.output-box > summary::before { content: "▸"; color: var(--accent); font-size: 11px; }
+.output-box[open] > summary::before { content: "▾"; }
+.output-box > summary strong { font-size: 13px; color: #0f172a; }
+.output-box > summary span { font-size: 11.5px; color: #6b7782; }
+.output-box > .what-if-effect-graph,
+.output-box > .methods-primary,
+.output-box > .what-if-method-table { padding: 10px 13px; margin: 0; }
+.output-box.what-if-method-table-card > summary { background: #f7faf9; }
+/* Effect-by-treatment graph (redesign): faceted by series (observed / truth / selected). */
 .what-if-effect-graph { margin-bottom: 14px; }
 .what-if-effect-graph .module-card-header { margin-bottom: 4px; }
-.what-if-effect-graph .category-outcome-plot-wrap { height: 220px; min-height: 220px; }
+.effect-facet-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.effect-facet { flex: 1 1 150px; min-width: 130px; max-width: 220px; }
+.effect-facet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 12px; }
+.effect-facet-head strong { font-weight: 700; }
+.effect-facet-head span { font-variant-numeric: tabular-nums; font-weight: 700; color: #475d63; }
+.effect-facet-body { height: 190px; }
+.effect-facet-body .category-outcome-plot-wrap { height: 190px; min-height: 190px; }
 .what-if-effect-legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 2px 0 4px; font-size: 11px; color: #475d63; }
 .what-if-effect-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 /* Per-method expandable detail rows (the redesign). */
