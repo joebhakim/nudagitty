@@ -139,7 +139,7 @@ import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
 import { HighlightNames, NodeNamesProvider, SvgAxisName } from "./shared/NodeNames";
 import { stratifyRiskCurves } from "./outputs/stratify";
 import type { StratifiedRiskContrast } from "./outputs/stratify";
-import { MethodsComparisonPanel, WhatIfStrategySurvivalCurve, basicOutputPunchlineFromResult, computeCompletedOutput, observedSurvivalView } from "./outputs/modules";
+import { MethodsComparisonPanel, UnifiedAdjustmentReadout, WhatIfStrategySurvivalCurve, basicOutputPunchlineFromResult, computeCompletedOutput, observedSurvivalView } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
 import { DgpInspector } from "./outputs/DgpInspector";
@@ -1212,6 +1212,19 @@ export function App() {
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     }
   }, []);
+
+  // Deep-link: react to #example=<id> changes while the app is already open. loadInitialWorkbenchState
+  // only reads the hash once at startup, so before this, navigating to a new #example=… (same tab,
+  // a shared link, back/forward) did nothing. loadExample no-ops on unknown ids.
+  useEffect(() => {
+    const applyHash = () => {
+      const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const id = params.get(SHARE_EXAMPLE_HASH_KEY);
+      if (id && id !== activeExampleId) loadExample(id);
+    };
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, [activeExampleId, loadExample]);
 
   useEffect(() => {
     if (compactShareStatus === "idle") return undefined;
@@ -4171,7 +4184,7 @@ function AdjustedOutputPanel(props: {
   hideOracle?: boolean;
 }) {
   const unifiedPanel = props.unified
-    ? <MethodsComparisonPanel comparison={props.unified.comparison} outcomeScale={props.unified.outcomeScale} outcomeUnit={props.unified.outcomeUnit} defaultOpen basis={props.basis} onBasisChange={props.onBasisChange} />
+    ? <UnifiedAdjustmentReadout comparison={props.unified.comparison} outcomeScale={props.unified.outcomeScale} outcomeUnit={props.unified.outcomeUnit} basis={props.basis} onBasisChange={props.onBasisChange} />
     : null;
   const adjustedNodes = props.binaryOutput?.adjustedNodes ?? props.continuousOutput?.adjustedNodes ?? [];
   const binaryOutput = props.binaryOutput;

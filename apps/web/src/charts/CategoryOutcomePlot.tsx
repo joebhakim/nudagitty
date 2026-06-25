@@ -172,7 +172,12 @@ export function CategoryOutcomePlot(props: {
               return (
                 <g key={g.group}>
                   {g.lower !== null && g.upper !== null && (
-                    <line x1={x} x2={x} y1={yScale(g.upper)} y2={yScale(g.lower)} stroke={overlay.color} strokeWidth={sw} />
+                    <g stroke={overlay.color} strokeWidth={sw}>
+                      {/* end caps so a narrow CI is still visible (was collapsing to an invisible line) */}
+                      <line x1={x} x2={x} y1={yScale(g.upper)} y2={yScale(g.lower)} />
+                      <line x1={x - 4} x2={x + 4} y1={yScale(g.upper)} y2={yScale(g.upper)} />
+                      <line x1={x - 4} x2={x + 4} y1={yScale(g.lower)} y2={yScale(g.lower)} />
+                    </g>
                   )}
                   <circle cx={x} cy={y} r={overlay.emphasis ? 4 : 3} fill={overlay.color} stroke="#fff" strokeWidth="1" />
                 </g>

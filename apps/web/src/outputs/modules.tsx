@@ -1070,6 +1070,29 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
   );
 });
 
+// Shared readout used by the classic (non-what-if) adjustment output: the effect graph + the
+// methods table, with one selected method linking the two. (The what-if path composes the same
+// pieces inline.) This is how the redesign reaches every adjustment example, not just what-if.
+export function UnifiedAdjustmentReadout(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void }) {
+  const [primaryId, setPrimaryId] = useState<GMethodEstimate["id"]>(() => defaultPrimaryMethod(props.comparison));
+  const primary = props.comparison.estimates.find((e) => e.id === primaryId && e.estimate !== null) ?? null;
+  const showSelected = primaryId !== "g_formula" && primaryId !== "naive";
+  return (
+    <>
+      <div className="what-if-effect-graph">
+        <div className="module-card-header"><strong>Effect by treatment</strong><span>each arm's outcome, with 95% CI</span></div>
+        <div className="what-if-effect-legend">
+          <span><i style={{ background: "var(--chart-muted)" }} /> observed</span>
+          <span><i style={{ background: "var(--chart-series-2)" }} /> truth</span>
+          {showSelected && <span><i style={{ background: "var(--causal)" }} /> {primary?.label ?? "selected"}</span>}
+        </div>
+        <EffectByArmGraph comparison={props.comparison} outcomeScale={props.outcomeScale} selectedId={primaryId} />
+      </div>
+      <MethodsComparisonPanel comparison={props.comparison} outcomeScale={props.outcomeScale} outcomeUnit={props.outcomeUnit} defaultOpen primaryId={primaryId} onPrimaryChange={setPrimaryId} basis={props.basis} onBasisChange={props.onBasisChange} />
+    </>
+  );
+}
+
 function WhatIfMethodGlossary(props: { comparison: GMethodsComparison }) {
   return (
     <details className="what-if-method-glossary">
