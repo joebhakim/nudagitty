@@ -1,7 +1,7 @@
 import { analyzeAdjustment, cohortFromSimulationResult, compareLongitudinalGMethods, deriveAdjustmentSpec, estimateSurvivalCurve, observedMethodSurvivalCurves, normalizeVariableModel, runSimulation } from "@nudagitty/core";
 import type { AdjustmentSpec, CovariateBasis, GMethodEstimate, GMethodsComparison, MethodSurvivalCurve, SimulatedNodeState, SurvivalCurvePoint } from "@nudagitty/core";
 import type React from "react";
-import { memo, useState } from "react";
+import { Fragment, memo, useState } from "react";
 import {
   formatPercent,
   formatPercentagePointMagnitude,
@@ -913,6 +913,9 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
   const primaryId = props.primaryId ?? internalPrimary;
   const setPrimaryId = props.onPrimaryChange ?? setInternalPrimary;
   const primary = comparison.estimates.find((estimate) => estimate.id === primaryId && estimate.estimate !== null) ?? available[0] ?? null;
+  // Per-method expandable detail (the redesign): each row opens to its plain explanation, the
+  // variables it uses, its formula, and a slot for the prediction/performance viz (step 3).
+  const [openId, setOpenId] = useState<GMethodEstimate["id"] | null>(null);
   return (
     <>
       {primary && (
@@ -974,23 +977,44 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
               // (oracle), not a from-data estimator. Set it apart so it's never read as "the one
               // estimator that happened to work."
               const isOracle = estimate.id === "g_formula";
-              const rowClass = [isOracle ? "method-row-oracle" : "", estimate.id === primary?.id ? "method-row-primary" : ""].filter(Boolean).join(" ");
+              const open = openId === estimate.id;
+              const glossary = METHOD_GLOSSARY[estimate.id];
+              const subtitle = isOracle
+                ? "The model we built, re-simulated under each strategy — the target to recover, not a from-data estimate."
+                : (glossary ? `${glossary.plain.split(". ")[0]}.` : (estimate.diagnostics[0] ?? ""));
+              const uses = estimate.id === "naive" ? "nothing — the crude contrast"
+                : comparison.timeVaryingCovariates.length > 0 ? comparison.timeVaryingCovariates.join(", ")
+                : "—";
+              const rowClass = [isOracle ? "method-row-oracle" : "", estimate.id === primary?.id ? "method-row-primary" : "", "what-if-method-row", open ? "is-open" : ""].filter(Boolean).join(" ");
               return (
-              <tr key={estimate.id} className={rowClass || undefined}>
-                <td>
-                  <strong>{isOracle ? "True effect — g-formula (oracle)" : estimate.label}{estimate.id === primary?.id ? " ◄" : ""}</strong>
-                  <small>{isOracle ? "The model we built, re-simulated under each strategy — the target every estimator should recover, NOT a from-data estimate." : (estimate.diagnostics[0] ?? "")}</small>
-                </td>
-                <td>{formatOutcomeValue(estimate.arms[0].mean, outcomeScale, outcomeUnit)}</td>
-                <td>{formatOutcomeValue(estimate.arms[1].mean, outcomeScale, outcomeUnit)}</td>
-                <td className={estimateToneClass(estimate.estimate)}>{formatOutcomeDifference(estimate.estimate, outcomeScale, outcomeUnit)}</td>
-              </tr>
+              <Fragment key={estimate.id}>
+                <tr className={rowClass} onClick={() => setOpenId(open ? null : estimate.id)}>
+                  <td>
+                    <strong>{open ? "▾ " : "▸ "}{isOracle ? "True effect — g-formula (oracle)" : estimate.label}{estimate.id === primary?.id ? " ◄" : ""}</strong>
+                    <small>{subtitle}</small>
+                  </td>
+                  <td>{formatOutcomeValue(estimate.arms[0].mean, outcomeScale, outcomeUnit)}</td>
+                  <td>{formatOutcomeValue(estimate.arms[1].mean, outcomeScale, outcomeUnit)}</td>
+                  <td className={estimateToneClass(estimate.estimate)}>{formatOutcomeDifference(estimate.estimate, outcomeScale, outcomeUnit)}</td>
+                </tr>
+                {open && glossary && (
+                  <tr className="what-if-method-detail">
+                    <td colSpan={4}>
+                      <p>{glossary.plain}</p>
+                      <dl>
+                        <div><dt>uses</dt><dd>{uses}</dd></div>
+                        <div><dt>formula</dt><dd><code>{glossary.formula}</code></dd></div>
+                      </dl>
+                      <p className="what-if-method-detail-pending">Prediction / performance view — coming with the estimator internals.</p>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
               );
             })}
           </tbody>
         </table>
       </details>
-      <WhatIfMethodGlossary comparison={comparison} />
     </>
   );
 });

@@ -545,6 +545,19 @@
 .what-if-method-table tr.method-row-oracle small {
   color: #b4732a;
 }
+/* Per-method expandable detail rows (the redesign). */
+.what-if-method-table tr.what-if-method-row { cursor: pointer; }
+.what-if-method-table tr.what-if-method-row:hover { background: #f3f8f7; }
+.what-if-method-table tr.what-if-method-row.is-open { background: #eef5f3; }
+.what-if-method-table tr.what-if-method-row.is-open strong { color: var(--accent); }
+.what-if-method-detail td { padding: 4px 12px 12px; background: #f8fbfa; border-top: none; }
+.what-if-method-detail p { margin: 0 0 8px; color: #475d63; font-size: 12px; line-height: 1.5; }
+.what-if-method-detail dl { display: grid; gap: 4px; margin: 0; }
+.what-if-method-detail dl > div { display: grid; grid-template-columns: 56px 1fr; gap: 10px; align-items: baseline; }
+.what-if-method-detail dt { color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; }
+.what-if-method-detail dd { margin: 0; font-size: 12px; }
+.what-if-method-detail code { font-size: 11.5px; color: #2b3640; }
+.what-if-method-detail-pending { font-style: italic; color: #94a3b8; font-size: 11px; margin: 8px 0 0 !important; }
 
 .what-if-method-table-card > .module-card-header strong,
 .what-if-support-card > .module-card-header strong {
