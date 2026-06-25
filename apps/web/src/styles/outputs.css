@@ -545,6 +545,12 @@
 .what-if-method-table tr.method-row-oracle small {
   color: #b4732a;
 }
+/* Effect-by-treatment graph (redesign step 2). */
+.what-if-effect-graph { margin-bottom: 14px; }
+.what-if-effect-graph .module-card-header { margin-bottom: 4px; }
+.what-if-effect-graph .category-outcome-plot-wrap { height: 220px; min-height: 220px; }
+.what-if-effect-legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 2px 0 4px; font-size: 11px; color: #475d63; }
+.what-if-effect-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
 /* Per-method expandable detail rows (the redesign). */
 .what-if-method-table tr.what-if-method-row { cursor: pointer; }
 .what-if-method-table tr.what-if-method-row:hover { background: #f3f8f7; }

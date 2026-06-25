@@ -14,6 +14,7 @@ import { empiricalSampleWeight, formatAdjustmentSet, weightedBinaryShare, weight
 import { badControlWarning, describeEstimand } from "./estimand";
 import { HighlightNames, NodeText } from "../shared/NodeNames";
 import { chartFrame } from "../charts/chartFrame";
+import { CategoryOutcomePlot, wilsonInterval } from "../charts/CategoryOutcomePlot";
 import { stratifyRiskCurves } from "./stratify";
 import type { CompletedOutputModule, CompletedOutputRenderOptions, OutputContext } from "./types";
 
@@ -824,6 +825,17 @@ function WhatIfAdvancedOutputView({ output }: { output: WhatIfAdvancedOutput }) 
     ?? null;
   return (
     <CompletedOutputShell badge={output.badge} title={output.title} conclusion={output.conclusion}>
+      {comparison && (
+        <div className="what-if-effect-graph">
+          <div className="module-card-header"><strong>Effect by treatment</strong><span>each arm's outcome, with 95% CI</span></div>
+          <div className="what-if-effect-legend">
+            <span><i style={{ background: "var(--chart-muted)" }} /> observed</span>
+            <span><i style={{ background: "var(--chart-series-2)" }} /> truth</span>
+            {primaryId !== "g_formula" && primaryId !== "naive" && <span><i style={{ background: "var(--causal)" }} /> {primary?.label ?? "selected"}</span>}
+          </div>
+          <EffectByArmGraph comparison={comparison} outcomeScale={output.outcomeScale} selectedId={primaryId} />
+        </div>
+      )}
       <WhatIfMetricGrid output={output} primary={primary} />
       {output.survival && (output.view === "survival" || output.view === "survival_time") && (
         <WhatIfStrategySurvivalCurve summary={output.survival} survivalTime={output.view === "survival_time"} denominatorsOpen={output.denominatorsOpen} methodId={primary?.id} methodLabel={primary?.label} />
@@ -902,6 +914,45 @@ const PRIMARY_METHOD_PREFERENCE: GMethodEstimate["id"][] = ["aipw", "ipw", "stra
 export function defaultPrimaryMethod(comparison: GMethodsComparison): GMethodEstimate["id"] {
   const available = comparison.estimates.filter((estimate) => estimate.estimate !== null);
   return PRIMARY_METHOD_PREFERENCE.find((id) => available.some((estimate) => estimate.id === id)) ?? available[0]?.id ?? "naive";
+}
+
+// The effect graph (redesign step 2): the REAL CategoryOutcomePlot, fed the observed (naïve) arms
+// as its base summaries, with the oracle (truth) and the selected method overlaid as point+CI
+// series — observed + every method's estimate in one chart, slope = the effect.
+function EffectByArmGraph(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; selectedId: GMethodEstimate["id"] }) {
+  const { comparison } = props;
+  const binary = (props.outcomeScale ?? "risk") === "risk";
+  const find = (id: GMethodEstimate["id"]) => comparison.estimates.find((e) => e.id === id);
+  const naive = find("naive");
+  if (!naive) return null;
+  const ciFor = (mean: number | null, n: number | null): { lower: number | null; upper: number | null } => {
+    if (mean === null || !binary || !n || n <= 0) return { lower: null, upper: null };
+    return wilsonInterval(mean, n);
+  };
+  const armN = (arm: { effectiveSampleSize: number | null; sampleSize: number }) => arm.effectiveSampleSize ?? arm.sampleSize;
+  const summaries = ([0, 1] as const).map((group) => {
+    const arm = naive.arms[group]!;
+    const { lower, upper } = ciFor(arm.mean, armN(arm));
+    return { group, tone: (group === 0 ? "treated" : "untreated") as "treated" | "untreated", label: comparison.strategies[group]!.label, mean: arm.mean, lower, upper, nEff: arm.effectiveSampleSize, points: [] };
+  });
+  const overlayOf = (estimate: GMethodEstimate | undefined, color: string) => {
+    if (!estimate) return null;
+    return {
+      id: estimate.id, color, emphasis: true,
+      groups: ([0, 1] as const).map((group) => {
+        const arm = estimate.arms[group]!;
+        const { lower, upper } = ciFor(arm.mean, armN(arm));
+        return { group, mean: arm.mean ?? 0, lower, upper };
+      })
+    };
+  };
+  const overlays = [
+    overlayOf(find("g_formula"), "var(--chart-series-2)"),
+    props.selectedId !== "g_formula" && props.selectedId !== "naive" ? overlayOf(find(props.selectedId), "var(--causal)") : null
+  ].filter(Boolean) as NonNullable<ReturnType<typeof overlayOf>>[];
+  return (
+    <CategoryOutcomePlot points={[]} summaries={summaries} overlays={overlays} xLabel="treatment regime" yLabel={comparison.outcome} yDomain={[0, 1]} outcomeKind={binary ? "binary" : "continuous"} />
+  );
 }
 
 export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean; primaryId?: GMethodEstimate["id"]; onPrimaryChange?: (id: GMethodEstimate["id"]) => void; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void }) {

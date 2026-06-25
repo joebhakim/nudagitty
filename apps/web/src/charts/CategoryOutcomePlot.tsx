@@ -50,6 +50,10 @@ export function CategoryOutcomePlot(props: {
   outcomeKind: CategoryOutcomeKind;
   compact?: boolean;
   ariaLabel?: string;
+  // Method estimates overlaid beside the observed summary — each a point + CI per group, connected
+  // across groups (slope = the effect), dodged so they don't collide. Drives the redesign's
+  // "observed + every method's estimate" effect graph without changing the chart's grammar.
+  overlays?: Array<{ id: string; color: string; emphasis?: boolean; groups: Array<{ group: 0 | 1; mean: number; lower: number | null; upper: number | null }> }>;
 }) {
   const { ref: wrapRef, size } = useElementSize({ width: props.compact ? 300 : 360, height: props.compact ? 200 : 210 });
   const width = size.width;
@@ -67,6 +71,11 @@ export function CategoryOutcomePlot(props: {
     if (summary.upper !== null) domainValues.push(summary.upper);
   }
   if (!isBinary) for (const point of props.points) if (Number.isFinite(point.y)) domainValues.push(point.y);
+  for (const overlay of props.overlays ?? []) for (const g of overlay.groups) {
+    domainValues.push(g.mean);
+    if (g.lower !== null) domainValues.push(g.lower);
+    if (g.upper !== null) domainValues.push(g.upper);
+  }
   const dataMin = domainValues.length ? Math.min(...domainValues) : 0;
   const dataMax = domainValues.length ? Math.max(...domainValues) : 1;
   const [yMin, yMax] = paddedDomain(dataMin, dataMax, {
@@ -145,6 +154,30 @@ export function CategoryOutcomePlot(props: {
               </>
             )}
             <text className="category-outcome-group-label" x={x} y={anchors.ticks.xY}>{categoryOutcomeGroupTickLabel(summary.label, summary.group, Boolean(props.compact))}</text>
+          </g>
+        );
+      })}
+      {(props.overlays ?? []).map((overlay, k) => {
+        const n = (props.overlays ?? []).length;
+        const off = ((k - (n - 1) / 2) * (props.compact ? 9 : 11)) + (props.compact ? 13 : 16); // dodge to one side of the observed center
+        const at = (g: { group: 0 | 1; mean: number }) => ({ x: groupX(g.group) + off, y: yScale(g.mean) });
+        const sw = overlay.emphasis ? 2 : 1.2;
+        return (
+          <g className="category-outcome-overlay" key={overlay.id}>
+            {overlay.groups.length === 2 && (
+              <line x1={at(overlay.groups[0]!).x} y1={at(overlay.groups[0]!).y} x2={at(overlay.groups[1]!).x} y2={at(overlay.groups[1]!).y} stroke={overlay.color} strokeWidth={sw} opacity={0.55} />
+            )}
+            {overlay.groups.map((g) => {
+              const { x, y } = at(g);
+              return (
+                <g key={g.group}>
+                  {g.lower !== null && g.upper !== null && (
+                    <line x1={x} x2={x} y1={yScale(g.upper)} y2={yScale(g.lower)} stroke={overlay.color} strokeWidth={sw} />
+                  )}
+                  <circle cx={x} cy={y} r={overlay.emphasis ? 4 : 3} fill={overlay.color} stroke="#fff" strokeWidth="1" />
+                </g>
+              );
+            })}
           </g>
         );
       })}
@@ -251,7 +284,7 @@ function binaryOutcomeSummary(points: ScatterPoint[], group: 0 | 1, label: strin
 }
 
 // Wilson score interval for a weighted binary proportion at effective sample size nEff.
-function wilsonInterval(mean: number, nEff: number): { lower: number; upper: number } {
+export function wilsonInterval(mean: number, nEff: number): { lower: number; upper: number } {
   const z = 1.96;
   const denominator = 1 + (z * z) / nEff;
   const center = (mean + (z * z) / (2 * nEff)) / denominator;
