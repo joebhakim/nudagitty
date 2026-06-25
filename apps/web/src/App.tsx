@@ -839,8 +839,11 @@ export function App() {
     const comparison = analyzeAdjustment(computationDocument, { ...spec, covariateBasis });
     if (!comparison) return null;
     const outcomeNode = computationDocument.graph.nodes.find((node) => node.id === spec.outcome);
-    return { comparison, outcomeScale: spec.outcomeScale, outcomeUnit: outcomeNode?.variable.unit ?? "" };
-  }, [activeExample, computationDocument, covariateBasis]);
+    // Observed individual outcome-by-treatment points (the swarm + the observed mean/CI) for the
+    // effect graph; treatment node id is kept so the graph can style the X axis like other charts.
+    const observed = pairDerivedSummary(simulationDerived, spec.treatments[0] ?? pair.x, spec.outcome);
+    return { comparison, outcomeScale: spec.outcomeScale, outcomeUnit: outcomeNode?.variable.unit ?? "", points: observed.points, treatmentId: spec.treatments[0] ?? pair.x };
+  }, [activeExample, computationDocument, covariateBasis, simulationDerived]);
   const unifiedAdjustment = useMemo(() => computeUnifiedAdjustment(activeOutputPair), [computeUnifiedAdjustment, activeOutputPair]);
   const demoUnifiedAdjustment = useMemo(() => computeUnifiedAdjustment(defaultOutputPair), [computeUnifiedAdjustment, defaultOutputPair]);
   // Overlap/positivity diagnostic, computed once per (signature-stable) computationDocument — so it
@@ -3325,7 +3328,7 @@ function DemoResultPanel(props: {
   moduleId: string | null;
   computedOutput: ComputedCompletedOutput | null;
   binaryOutput: BinaryAdjustmentOutput | null;
-  unified?: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string } | null;
+  unified?: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; points?: ScatterPoint[]; treatmentId?: string } | null;
   recommendedAdjustmentId: string | null;
   onPair: (pair: ScatterPair) => void;
   onSelectNode: (id: string) => void;
@@ -4177,14 +4180,14 @@ function AdjustedOutputPanel(props: {
   computedOutput: ComputedCompletedOutput | null;
   binaryOutput: BinaryAdjustmentOutput | null;
   continuousOutput: BinaryContinuousAdjustmentOutput | null;
-  unified?: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string } | null;
+  unified?: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; points?: ScatterPoint[]; treatmentId?: string } | null;
   basis?: CovariateBasis;
   onBasisChange?: (basis: CovariateBasis) => void;
   pending?: ResultPendingState;
   hideOracle?: boolean;
 }) {
   const unifiedPanel = props.unified
-    ? <UnifiedAdjustmentReadout comparison={props.unified.comparison} outcomeScale={props.unified.outcomeScale} outcomeUnit={props.unified.outcomeUnit} basis={props.basis} onBasisChange={props.onBasisChange} />
+    ? <UnifiedAdjustmentReadout comparison={props.unified.comparison} outcomeScale={props.unified.outcomeScale} outcomeUnit={props.unified.outcomeUnit} points={props.unified.points} treatmentId={props.unified.treatmentId} basis={props.basis} onBasisChange={props.onBasisChange} />
     : null;
   const adjustedNodes = props.binaryOutput?.adjustedNodes ?? props.continuousOutput?.adjustedNodes ?? [];
   const binaryOutput = props.binaryOutput;

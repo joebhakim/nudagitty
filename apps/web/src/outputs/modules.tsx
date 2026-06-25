@@ -14,7 +14,8 @@ import { empiricalSampleWeight, formatAdjustmentSet, weightedBinaryShare, weight
 import { badControlWarning, describeEstimand } from "./estimand";
 import { HighlightNames, NodeText } from "../shared/NodeNames";
 import { chartFrame } from "../charts/chartFrame";
-import { CategoryOutcomePlot, wilsonInterval } from "../charts/CategoryOutcomePlot";
+import { CategoryOutcomePlot, binaryOutcomeSummaries, categoryOutcomeDomain, continuousOutcomeSummaries, wilsonInterval } from "../charts/CategoryOutcomePlot";
+import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
 import { stratifyRiskCurves } from "./stratify";
 import type { CompletedOutputModule, CompletedOutputRenderOptions, OutputContext } from "./types";
 
@@ -919,29 +920,45 @@ export function defaultPrimaryMethod(comparison: GMethodsComparison): GMethodEst
 // The effect graph (redesign step 2): the REAL CategoryOutcomePlot, fed the observed (naïve) arms
 // as its base summaries, with the oracle (truth) and the selected method overlaid as point+CI
 // series — observed + every method's estimate in one chart, slope = the effect.
-function EffectByArmGraph(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; selectedId: GMethodEstimate["id"] }) {
+function EffectByArmGraph(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; selectedId: GMethodEstimate["id"]; points?: ScatterPoint[]; treatmentId?: string }) {
   const { comparison } = props;
   const binary = (props.outcomeScale ?? "risk") === "risk";
   const find = (id: GMethodEstimate["id"]) => comparison.estimates.find((e) => e.id === id);
   const naive = find("naive");
   if (!naive) return null;
-  const ciFor = (mean: number | null, n: number | null): { lower: number | null; upper: number | null } => {
-    if (mean === null || !binary || !n || n <= 0) return { lower: null, upper: null };
-    return wilsonInterval(mean, n);
-  };
+  const points = props.points ?? [];
+  const xLabel = props.treatmentId ?? comparison.treatmentVariables[0] ?? "treatment";
+  // Base series = the observed individual points (continuous → swarm w/ alpha; binary → proportion),
+  // via the same summary builders the scatter view uses (so the node-styled group labels match).
   const armN = (arm: { effectiveSampleSize: number | null; sampleSize: number }) => arm.effectiveSampleSize ?? arm.sampleSize;
-  const summaries = ([0, 1] as const).map((group) => {
-    const arm = naive.arms[group]!;
-    const { lower, upper } = ciFor(arm.mean, armN(arm));
-    return { group, tone: (group === 0 ? "treated" : "untreated") as "treated" | "untreated", label: comparison.strategies[group]!.label, mean: arm.mean, lower, upper, nEff: arm.effectiveSampleSize, points: [] };
+  const summaries = points.length > 0
+    ? (binary ? binaryOutcomeSummaries(points, xLabel) : continuousOutcomeSummaries(points, xLabel))
+    : ([0, 1] as const).map((group) => {
+        const arm = naive.arms[group]!;
+        const ci = binary && arm.mean !== null ? wilsonInterval(arm.mean, armN(arm)) : { lower: null, upper: null };
+        return { group, tone: (group === 0 ? "treated" : "untreated") as "treated" | "untreated", label: comparison.strategies[group]!.label, mean: arm.mean, lower: ci.lower, upper: ci.upper, nEff: arm.effectiveSampleSize, points: [] };
+      });
+  // Within-arm outcome SD (from the observed points) → approximate CI for the method overlays on the
+  // continuous scale (the arm summaries don't carry an SD); Wilson on the binary scale.
+  const armSd = ([0, 1] as const).map((g) => {
+    const ys = points.filter((p) => Math.round(p.x) === g).map((p) => p.y);
+    if (ys.length < 2) return 0;
+    const m = ys.reduce((a, b) => a + b, 0) / ys.length;
+    return Math.sqrt(ys.reduce((a, b) => a + (b - m) ** 2, 0) / (ys.length - 1));
   });
+  const ciFor = (mean: number | null, n: number | null, group: 0 | 1): { lower: number | null; upper: number | null } => {
+    if (mean === null || !n || n <= 0) return { lower: null, upper: null };
+    if (binary) return wilsonInterval(mean, n);
+    const se = (armSd[group] ?? 0) / Math.sqrt(n);
+    return se > 0 ? { lower: mean - 1.96 * se, upper: mean + 1.96 * se } : { lower: null, upper: null };
+  };
   const overlayOf = (estimate: GMethodEstimate | undefined, color: string) => {
     if (!estimate) return null;
     return {
       id: estimate.id, color, emphasis: true,
       groups: ([0, 1] as const).map((group) => {
         const arm = estimate.arms[group]!;
-        const { lower, upper } = ciFor(arm.mean, armN(arm));
+        const { lower, upper } = ciFor(arm.mean, armN(arm), group);
         return { group, mean: arm.mean ?? 0, lower, upper };
       })
     };
@@ -950,13 +967,17 @@ function EffectByArmGraph(props: { comparison: GMethodsComparison; outcomeScale:
     overlayOf(find("g_formula"), "var(--chart-series-2)"),
     props.selectedId !== "g_formula" && props.selectedId !== "naive" ? overlayOf(find(props.selectedId), "var(--causal)") : null
   ].filter(Boolean) as NonNullable<ReturnType<typeof overlayOf>>[];
+  const yDomain = binary ? ([0, 1] as [number, number]) : categoryOutcomeDomain([0, 1], summaries, false);
   return (
-    <CategoryOutcomePlot points={[]} summaries={summaries} overlays={overlays} xLabel="treatment regime" yLabel={comparison.outcome} yDomain={[0, 1]} outcomeKind={binary ? "binary" : "continuous"} />
+    <CategoryOutcomePlot points={points} summaries={summaries} overlays={overlays} xLabel={xLabel} yLabel={comparison.outcome} yDomain={yDomain} outcomeKind={binary ? "binary" : "continuous"} />
   );
 }
 
 export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean; primaryId?: GMethodEstimate["id"]; onPrimaryChange?: (id: GMethodEstimate["id"]) => void; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void }) {
   const { comparison, outcomeScale, outcomeUnit } = props;
+  // Units go in the column headers, not redundantly in every cell (risk shows % inline, so no
+  // suffix there).
+  const unitSuffix = outcomeScale === "mean" && outcomeUnit ? ` (${outcomeUnit})` : "";
   const available = comparison.estimates.filter((estimate) => estimate.estimate !== null);
   // Controlled (parent owns the selection, so the metric tile + curve stay in sync) or
   // self-managed (classic examples that render the panel standalone).
@@ -1017,9 +1038,9 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
           <thead>
             <tr>
               <th>Method</th>
-              <th>{comparison.strategies[0].label}</th>
-              <th>{comparison.strategies[1].label}</th>
-              <th>Difference</th>
+              <th>{comparison.strategies[0].label}{unitSuffix}</th>
+              <th>{comparison.strategies[1].label}{unitSuffix}</th>
+              <th>Difference{unitSuffix}</th>
             </tr>
           </thead>
           <tbody>
@@ -1044,9 +1065,9 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
                     <strong>{open ? "▾ " : "▸ "}{isOracle ? "True effect — g-formula (oracle)" : estimate.label}{estimate.id === primary?.id ? " ◄" : ""}</strong>
                     <small>{subtitle}</small>
                   </td>
-                  <td>{formatOutcomeValue(estimate.arms[0].mean, outcomeScale, outcomeUnit)}</td>
-                  <td>{formatOutcomeValue(estimate.arms[1].mean, outcomeScale, outcomeUnit)}</td>
-                  <td className={estimateToneClass(estimate.estimate)}>{formatOutcomeDifference(estimate.estimate, outcomeScale, outcomeUnit)}</td>
+                  <td>{formatOutcomeValue(estimate.arms[0].mean, outcomeScale, "")}</td>
+                  <td>{formatOutcomeValue(estimate.arms[1].mean, outcomeScale, "")}</td>
+                  <td className={estimateToneClass(estimate.estimate)}>{formatOutcomeDifference(estimate.estimate, outcomeScale, "")}</td>
                 </tr>
                 {open && glossary && (
                   <tr className="what-if-method-detail">
@@ -1073,7 +1094,7 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
 // Shared readout used by the classic (non-what-if) adjustment output: the effect graph + the
 // methods table, with one selected method linking the two. (The what-if path composes the same
 // pieces inline.) This is how the redesign reaches every adjustment example, not just what-if.
-export function UnifiedAdjustmentReadout(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void }) {
+export function UnifiedAdjustmentReadout(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; points?: ScatterPoint[]; treatmentId?: string; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void }) {
   const [primaryId, setPrimaryId] = useState<GMethodEstimate["id"]>(() => defaultPrimaryMethod(props.comparison));
   const primary = props.comparison.estimates.find((e) => e.id === primaryId && e.estimate !== null) ?? null;
   const showSelected = primaryId !== "g_formula" && primaryId !== "naive";
@@ -1086,7 +1107,7 @@ export function UnifiedAdjustmentReadout(props: { comparison: GMethodsComparison
           <span><i style={{ background: "var(--chart-series-2)" }} /> truth</span>
           {showSelected && <span><i style={{ background: "var(--causal)" }} /> {primary?.label ?? "selected"}</span>}
         </div>
-        <EffectByArmGraph comparison={props.comparison} outcomeScale={props.outcomeScale} selectedId={primaryId} />
+        <EffectByArmGraph comparison={props.comparison} outcomeScale={props.outcomeScale} selectedId={primaryId} points={props.points} treatmentId={props.treatmentId} />
       </div>
       <MethodsComparisonPanel comparison={props.comparison} outcomeScale={props.outcomeScale} outcomeUnit={props.outcomeUnit} defaultOpen primaryId={primaryId} onPrimaryChange={setPrimaryId} basis={props.basis} onBasisChange={props.onBasisChange} />
     </>
