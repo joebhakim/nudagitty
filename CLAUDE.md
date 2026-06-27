@@ -69,3 +69,17 @@ expansion to enumerate related files compactly. Examples:
 - `/home/joe/skunks/nudagitty/apps/web/screenshots/verify/namestyle-{gallery,card-0,card-1}.png`
 - `/home/joe/skunks/nudagitty/apps/web/screenshots/verify/edge-{editor,axes}.png`
 - one card per candidate: `…/verify/namestyle-card-{0..3}.png`
+
+
+## Deploy & canary (read before building)
+
+`nudag.joeha.kim` (prod) is served by `joesite-nudagitty.service` running `vite preview`
+over **`apps/web/dist` in `/home/joe/skunks/nudagitty`**, read live from disk. So
+**building a non-`main` branch inside the prod checkout publishes it to prod** the moment
+`npm run build` overwrites `dist`. Do NOT build feature branches in `/home/joe/skunks/nudagitty`.
+
+In-progress work lives in a separate worktree, `/home/joe/skunks/nudagitty-canary`
+(branch `output-redesign`), served at `canary-nudag.joeha.kim` (port 8506). Build and review
+there. Push `output-redesign` → the webhook deploys the canary; prod is untouched. Full deploy
++ tunnel details: `/home/joe/skunks/joeha.kim/ops/joesite-status/README.md` ("Canary /
+Preview Environments").
