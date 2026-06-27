@@ -43,6 +43,6 @@ export default defineConfig({
     strictPort: false
   },
   preview: {
-    allowedHosts: ["nudag.joeha.kim", "gallery.nudag.joeha.kim"]
+    allowedHosts: ["nudag.joeha.kim", "gallery.nudag.joeha.kim", "canary-nudag.joeha.kim"]
   }
 });
