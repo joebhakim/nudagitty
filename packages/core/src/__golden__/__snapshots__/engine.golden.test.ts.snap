@@ -1,0 +1,1893 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`engine golden > berkson-hospital — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Disease_A=1)−do(0) on Disease_B": 0,
+  },
+  "nodes": {
+    "Disease_A": {
+      "mean": 0.171875,
+      "sd": 0.377272,
+    },
+    "Disease_B": {
+      "mean": 0.1125,
+      "sd": 0.315981,
+    },
+    "Hospitalized": {
+      "mean": 0.13125,
+      "sd": 0.337674,
+    },
+  },
+}
+`;
+
+exports[`engine golden > birthweight-paradox — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Smoking=1)−do(0) on Infant_mortality": 0.04375,
+  },
+  "nodes": {
+    "Birthweight": {
+      "mean": 2299.180985,
+      "sd": 189.593423,
+    },
+    "Frailty": {
+      "mean": 1.840793,
+      "sd": 0.671254,
+    },
+    "Infant_mortality": {
+      "mean": 0.63357,
+      "sd": 0.481829,
+    },
+    "Smoking": {
+      "mean": 0.453652,
+      "sd": 0.497847,
+    },
+  },
+}
+`;
+
+exports[`engine golden > case-control-selection — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Exposure=1)−do(0) on Disease": 0.10625,
+  },
+  "nodes": {
+    "Disease": {
+      "mean": 0.1875,
+      "sd": 0.390312,
+    },
+    "Exposure": {
+      "mean": 0.390625,
+      "sd": 0.48789,
+    },
+    "Risk_factor": {
+      "mean": -0.009308,
+      "sd": 1.02307,
+    },
+    "Sampled": {
+      "mean": 0.159375,
+      "sd": 0.366025,
+    },
+  },
+}
+`;
+
+exports[`engine golden > cats-highrise-syndrome — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Fall_height↑)−do(↓) on Survival": -0.276583,
+  },
+  "nodes": {
+    "Brought_to_vet": {
+      "mean": 1,
+      "sd": 0,
+    },
+    "Fall_height": {
+      "mean": 5.054128,
+      "sd": 3.490406,
+    },
+    "Injury_severity": {
+      "mean": 0.32201,
+      "sd": 0.560193,
+    },
+    "Survival": {
+      "mean": 0.89675,
+      "sd": 0.304285,
+    },
+  },
+}
+`;
+
+exports[`engine golden > causal-ml-refutation — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment=1)−do(0) on Outcome": 0.8,
+  },
+  "nodes": {
+    "Effect_modifier": {
+      "mean": 0.042612,
+      "sd": 0.971713,
+    },
+    "Latent_need": {
+      "mean": 0.035919,
+      "sd": 1.037256,
+    },
+    "Model_score": {
+      "mean": 0.284593,
+      "sd": 0.779532,
+    },
+    "Observed_context": {
+      "mean": -0.004432,
+      "sd": 1.030933,
+    },
+    "Outcome": {
+      "mean": 0.404744,
+      "sd": 1.942301,
+    },
+    "Proxy_signal": {
+      "mean": -0.025998,
+      "sd": 1.327836,
+    },
+    "Treatment": {
+      "mean": 0.475,
+      "sd": 0.499375,
+    },
+  },
+}
+`;
+
+exports[`engine golden > chess-intelligence-practice — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Intelligence↑)−do(↓) on Chess_Elo": 152.963436,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 11.220587,
+      "sd": 1.064976,
+    },
+    "Chess_Elo": {
+      "mean": 1751.350123,
+      "sd": 87.247502,
+    },
+    "Elite_sample": {
+      "mean": 1,
+      "sd": 0,
+    },
+    "Experience_years": {
+      "mean": 5.40646,
+      "sd": 1.30351,
+    },
+    "Gender": {
+      "mean": 0.840625,
+      "sd": 0.366025,
+    },
+    "Intelligence": {
+      "mean": 125.611534,
+      "sd": 13.673595,
+    },
+    "Practice_hours": {
+      "mean": 2602.987484,
+      "sd": 590.73679,
+    },
+  },
+}
+`;
+
+exports[`engine golden > chess-intelligence-practice-simple-flip — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Intelligence↑)−do(↓) on Chess_Elo": 229.010722,
+  },
+  "nodes": {
+    "Chess_Elo": {
+      "mean": 1935.314827,
+      "sd": 203.167322,
+    },
+    "Elite_sample": {
+      "mean": 1,
+      "sd": 0,
+    },
+    "Intelligence": {
+      "mean": 138.670408,
+      "sd": 10.312073,
+    },
+    "Practice_hours": {
+      "mean": 2.795419,
+      "sd": 0.399908,
+    },
+  },
+}
+`;
+
+exports[`engine golden > college-earnings — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(College=1)−do(0) on Earnings": 8,
+  },
+  "nodes": {
+    "College": {
+      "mean": 0.39375,
+      "sd": 0.488581,
+    },
+    "Earnings": {
+      "mean": 47.785003,
+      "sd": 15.513744,
+    },
+    "Family_log_income": {
+      "mean": -0.058163,
+      "sd": 0.946289,
+    },
+  },
+}
+`;
+
+exports[`engine golden > continuous-dose-response — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Dose↑)−do(↓) on Recovery": 3.703097,
+  },
+  "nodes": {
+    "Dose": {
+      "mean": 4.939812,
+      "sd": 1.790626,
+    },
+    "Recovery": {
+      "mean": 4.035271,
+      "sd": 2.642612,
+    },
+    "Severity": {
+      "mean": -0.032935,
+      "sd": 1.006903,
+    },
+  },
+}
+`;
+
+exports[`engine golden > education-mediation — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Program=1)−do(0) on Test_score": 6.1,
+  },
+  "nodes": {
+    "Attrition": {
+      "mean": 0.009375,
+      "sd": 0.09637,
+    },
+    "Classroom_context": {
+      "mean": 0.06564,
+      "sd": 1.066908,
+    },
+    "Engagement": {
+      "mean": 0.416753,
+      "sd": 1.061306,
+    },
+    "Family_background": {
+      "mean": 0.006585,
+      "sd": 1.053546,
+    },
+    "Latent_ability": {
+      "mean": 0.031973,
+      "sd": 1.022279,
+    },
+    "Program": {
+      "mean": 0.41875,
+      "sd": 0.493354,
+    },
+    "Survey_response": {
+      "mean": 0.019,
+      "sd": 1.096782,
+    },
+    "Test_score": {
+      "mean": 73.189165,
+      "sd": 14.4215,
+    },
+  },
+}
+`;
+
+exports[`engine golden > effect-modification-crossover — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment=1)−do(0) on Outcome": -0.00964,
+  },
+  "nodes": {
+    "Outcome": {
+      "mean": 0.005039,
+      "sd": 0.910073,
+    },
+    "Regime": {
+      "mean": 0.5015,
+      "sd": 0.499998,
+    },
+    "Treatment": {
+      "mean": 0.5175,
+      "sd": 0.499694,
+    },
+  },
+}
+`;
+
+exports[`engine golden > effect-modification-ordinal — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment=1)−do(0) on Outcome": 0.697397,
+  },
+  "nodes": {
+    "Outcome": {
+      "mean": 0.355143,
+      "sd": 0.720127,
+    },
+    "Regime": {
+      "mean": 0.501167,
+      "sd": 0.499999,
+    },
+    "Treatment": {
+      "mean": 0.5055,
+      "sd": 0.49997,
+    },
+  },
+}
+`;
+
+exports[`engine golden > epistasis-coat-color — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(B_locus=1)−do(0) on Coat_darkness": 0.505463,
+  },
+  "nodes": {
+    "B_locus": {
+      "mean": 0.4965,
+      "sd": 0.499988,
+    },
+    "Coat_darkness": {
+      "mean": 0.750634,
+      "sd": 0.912521,
+    },
+    "E_locus": {
+      "mean": 0.502667,
+      "sd": 0.499993,
+    },
+  },
+}
+`;
+
+exports[`engine golden > flexible-adjustment — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment=1)−do(0) on Outcome": -0.169,
+  },
+  "nodes": {
+    "Outcome": {
+      "mean": 0.519,
+      "sd": 0.499639,
+    },
+    "Risk_score": {
+      "mean": 0.015723,
+      "sd": 0.987999,
+    },
+    "Treatment": {
+      "mean": 0.432833,
+      "sd": 0.495468,
+    },
+  },
+}
+`;
+
+exports[`engine golden > front-door-smoking — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Smoking=1)−do(0) on Cancer": 0.21875,
+  },
+  "nodes": {
+    "Cancer": {
+      "mean": 0.225,
+      "sd": 0.417582,
+    },
+    "Genetic_risk": {
+      "mean": -0.051926,
+      "sd": 0.975592,
+    },
+    "Smoking": {
+      "mean": 0.403125,
+      "sd": 0.490525,
+    },
+    "Tar": {
+      "mean": 0.640481,
+      "sd": 0.802608,
+    },
+  },
+}
+`;
+
+exports[`engine golden > galton-regression — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {},
+  "nodes": {
+    "E_father": {
+      "mean": 0.007105,
+      "sd": 1.031407,
+    },
+    "E_son": {
+      "mean": -0.047131,
+      "sd": 0.937001,
+    },
+    "Father_height": {
+      "mean": 69.087645,
+      "sd": 2.799728,
+    },
+    "G_shared": {
+      "mean": 0.033798,
+      "sd": 1.059057,
+    },
+    "G_son_other": {
+      "mean": 0.065677,
+      "sd": 0.998393,
+    },
+    "Son_height": {
+      "mean": 69.023534,
+      "sd": 2.752163,
+    },
+  },
+}
+`;
+
+exports[`engine golden > icu-mortality-triage — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(ICU_admission=1)−do(0) on Death": -0.071875,
+  },
+  "nodes": {
+    "Death": {
+      "mean": 0.090625,
+      "sd": 0.287075,
+    },
+    "ICU_admission": {
+      "mean": 0.421875,
+      "sd": 0.493859,
+    },
+    "Severity": {
+      "mean": -0.00649,
+      "sd": 1.011908,
+    },
+    "Triage_score": {
+      "mean": 0.501688,
+      "sd": 1.553608,
+    },
+  },
+}
+`;
+
+exports[`engine golden > incrementality-uplift — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Campaign_exposure=1)−do(0) on Conversion": 0.153125,
+    "do(Campaign_exposure=1)−do(0) on Guardrail_latency": 18,
+  },
+  "nodes": {
+    "Campaign_exposure": {
+      "mean": 0.25625,
+      "sd": 0.436561,
+    },
+    "Conversion": {
+      "mean": 0.396875,
+      "sd": 0.48925,
+    },
+    "Feature_use": {
+      "mean": 0.44375,
+      "sd": 0.496826,
+    },
+    "Geo_market": {
+      "mean": 0.021555,
+      "sd": 0.960841,
+    },
+    "Guardrail_latency": {
+      "mean": 183.187193,
+      "sd": 22.512288,
+    },
+    "Network_spillover": {
+      "mean": 0.050061,
+      "sd": 0.68624,
+    },
+    "Random_holdout": {
+      "mean": 0.5125,
+      "sd": 0.499844,
+    },
+    "Uplift_segment": {
+      "mean": 0.03949,
+      "sd": 1.036883,
+    },
+    "User_intent": {
+      "mean": -0.03136,
+      "sd": 1.012056,
+    },
+  },
+}
+`;
+
+exports[`engine golden > instrumental-encouragement — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment=1)−do(0) on Outcome": 1.1,
+  },
+  "nodes": {
+    "Encouragement": {
+      "mean": 0.53125,
+      "sd": 0.499022,
+    },
+    "Outcome": {
+      "mean": 0.67621,
+      "sd": 1.301605,
+    },
+    "Treatment": {
+      "mean": 0.59375,
+      "sd": 0.491132,
+    },
+    "Unobserved_health": {
+      "mean": -0.019766,
+      "sd": 0.989754,
+    },
+  },
+}
+`;
+
+exports[`engine golden > john-snow-cholera — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Contamination=1)−do(0) on Cholera_death": 0.298375,
+  },
+  "nodes": {
+    "Cholera_death": {
+      "mean": 0.188625,
+      "sd": 0.39121,
+    },
+    "Company": {
+      "mean": 0.49925,
+      "sd": 0.499999,
+    },
+    "Contamination": {
+      "mean": 0.40625,
+      "sd": 0.491132,
+    },
+    "Sanitation": {
+      "mean": 0.005476,
+      "sd": 0.993133,
+    },
+  },
+}
+`;
+
+exports[`engine golden > lalonde-dgm-generative — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(In_program=1)−do(0) on Earnings_78": 1800,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 34.20425,
+      "sd": 10.507047,
+    },
+    "Black": {
+      "mean": 0.2765,
+      "sd": 0.447267,
+    },
+    "Earnings_74": {
+      "mean": 18219.644845,
+      "sd": 13748.238039,
+    },
+    "Earnings_75": {
+      "mean": 17899.933124,
+      "sd": 13926.525982,
+    },
+    "Earnings_78": {
+      "mean": 23514.835985,
+      "sd": 12776.037765,
+    },
+    "Education": {
+      "mean": 12.16425,
+      "sd": 3.108339,
+    },
+    "Hispanic": {
+      "mean": 0.0335,
+      "sd": 0.179938,
+    },
+    "In_program": {
+      "mean": 0.27025,
+      "sd": 0.444089,
+    },
+    "Married": {
+      "mean": 0.81025,
+      "sd": 0.392103,
+    },
+    "No_degree": {
+      "mean": 0.3145,
+      "sd": 0.464316,
+    },
+    "Row_source": {
+      "mean": 1258.532428,
+      "sd": 731.500265,
+    },
+  },
+}
+`;
+
+exports[`engine golden > lalonde-dgm-independent — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(In_program=1)−do(0) on Earnings_78": 1800,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 34.14225,
+      "sd": 10.585344,
+    },
+    "Black": {
+      "mean": 0.3055,
+      "sd": 0.460619,
+    },
+    "Earnings_74": {
+      "mean": 18380.732966,
+      "sd": 13591.195305,
+    },
+    "Earnings_75": {
+      "mean": 18059.168039,
+      "sd": 13871.107364,
+    },
+    "Earnings_78": {
+      "mean": 23772.973147,
+      "sd": 10128.280827,
+    },
+    "Education": {
+      "mean": 11.96125,
+      "sd": 3.009526,
+    },
+    "Hispanic": {
+      "mean": 0.03075,
+      "sd": 0.17264,
+    },
+    "In_program": {
+      "mean": 0.26175,
+      "sd": 0.439587,
+    },
+    "Married": {
+      "mean": 0.8195,
+      "sd": 0.384603,
+    },
+    "No_degree": {
+      "mean": 0.32975,
+      "sd": 0.470122,
+    },
+    "Src_Age": {
+      "mean": 1343.329193,
+      "sd": 762.550811,
+    },
+    "Src_Black": {
+      "mean": 1329.877407,
+      "sd": 769.215012,
+    },
+    "Src_Earnings_74": {
+      "mean": 1338.726179,
+      "sd": 766.484579,
+    },
+    "Src_Earnings_75": {
+      "mean": 1351.149004,
+      "sd": 775.694175,
+    },
+    "Src_Education": {
+      "mean": 1338.95797,
+      "sd": 777.47332,
+    },
+    "Src_Hispanic": {
+      "mean": 1323.253716,
+      "sd": 773.722962,
+    },
+    "Src_Married": {
+      "mean": 1353.205599,
+      "sd": 769.121739,
+    },
+    "Src_No_degree": {
+      "mean": 1323.42941,
+      "sd": 774.968101,
+    },
+  },
+}
+`;
+
+exports[`engine golden > lalonde-dgm-plasmode — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(In_program=1)−do(0) on Earnings_78": 1800,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 34.2995,
+      "sd": 10.50951,
+    },
+    "Black": {
+      "mean": 0.285,
+      "sd": 0.451414,
+    },
+    "Earnings_74": {
+      "mean": 18596.930231,
+      "sd": 13779.193082,
+    },
+    "Earnings_75": {
+      "mean": 18336.428657,
+      "sd": 14276.04242,
+    },
+    "Earnings_78": {
+      "mean": 23811.44146,
+      "sd": 13203.602226,
+    },
+    "Education": {
+      "mean": 12.048,
+      "sd": 3.003198,
+    },
+    "Hispanic": {
+      "mean": 0.03275,
+      "sd": 0.177982,
+    },
+    "In_program": {
+      "mean": 0.27725,
+      "sd": 0.447641,
+    },
+    "Married": {
+      "mean": 0.82125,
+      "sd": 0.383143,
+    },
+    "No_degree": {
+      "mean": 0.3285,
+      "sd": 0.469668,
+    },
+    "Row_source": {
+      "mean": 1350.87384,
+      "sd": 766.222552,
+    },
+  },
+}
+`;
+
+exports[`engine golden > lalonde-recover-rct — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(In_program=1)−do(0) on Earnings_78": 0,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 34.08325,
+      "sd": 10.454942,
+    },
+    "Black": {
+      "mean": 0.2825,
+      "sd": 0.450215,
+    },
+    "Earnings_74": {
+      "mean": 17928.740593,
+      "sd": 13622.43849,
+    },
+    "Earnings_75": {
+      "mean": 17352.779492,
+      "sd": 13604.921346,
+    },
+    "Earnings_78": {
+      "mean": 20231.780497,
+      "sd": 15800.960436,
+    },
+    "Education": {
+      "mean": 12.063,
+      "sd": 2.97826,
+    },
+    "Hispanic": {
+      "mean": 0.034,
+      "sd": 0.181229,
+    },
+    "In_program": {
+      "mean": 0.06275,
+      "sd": 0.242513,
+    },
+    "Married": {
+      "mean": 0.823,
+      "sd": 0.381669,
+    },
+    "No_degree": {
+      "mean": 0.31375,
+      "sd": 0.464016,
+    },
+    "Row_source": {
+      "mean": 1309.125131,
+      "sd": 769.98016,
+    },
+  },
+}
+`;
+
+exports[`engine golden > lords-paradox — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Teaching_method=1)−do(0) on Posttest": 3,
+  },
+  "nodes": {
+    "Posttest": {
+      "mean": 70.778521,
+      "sd": 7.636229,
+    },
+    "Pretest": {
+      "mean": 69.164719,
+      "sd": 10.104007,
+    },
+    "Teaching_method": {
+      "mean": 0.4875,
+      "sd": 0.499844,
+    },
+  },
+}
+`;
+
+exports[`engine golden > m-bias-adjustment — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Exposure=1)−do(0) on Outcome": 0,
+  },
+  "nodes": {
+    "Cause_of_exposure": {
+      "mean": -0.004392,
+      "sd": 1.01776,
+    },
+    "Cause_of_outcome": {
+      "mean": 0.016687,
+      "sd": 1.002428,
+    },
+    "Collider_score": {
+      "mean": 0.010739,
+      "sd": 1.504519,
+    },
+    "Exposure": {
+      "mean": 0.4744,
+      "sd": 0.499344,
+    },
+    "Outcome": {
+      "mean": 0.015331,
+      "sd": 1.416031,
+    },
+  },
+}
+`;
+
+exports[`engine golden > measurement-error-latent — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Education↑)−do(↓) on Earnings": 12.541005,
+  },
+  "nodes": {
+    "Earnings": {
+      "mean": 99.087905,
+      "sd": 12.659312,
+    },
+    "Education": {
+      "mean": 12.062646,
+      "sd": 1.208699,
+    },
+    "Family_background": {
+      "mean": 0.101431,
+      "sd": 1.009834,
+    },
+    "Test_score": {
+      "mean": 100.414747,
+      "sd": 12.763008,
+    },
+    "True_ability": {
+      "mean": 0.053534,
+      "sd": 0.903116,
+    },
+  },
+}
+`;
+
+exports[`engine golden > mediation-direct-total — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment=1)−do(0) on Outcome": 2.06,
+  },
+  "nodes": {
+    "Biomarker": {
+      "mean": 0.617511,
+      "sd": 0.915193,
+    },
+    "Outcome": {
+      "mean": 1.112212,
+      "sd": 1.620889,
+    },
+    "Treatment": {
+      "mean": 0.553125,
+      "sd": 0.49717,
+    },
+  },
+}
+`;
+
+exports[`engine golden > moderated-mediation — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment=1)−do(0) on Outcome": -0.01671,
+  },
+  "nodes": {
+    "Behavior": {
+      "mean": 0.521,
+      "sd": 0.499559,
+    },
+    "Outcome": {
+      "mean": -0.005071,
+      "sd": 0.912687,
+    },
+    "Regime": {
+      "mean": 0.504667,
+      "sd": 0.499978,
+    },
+    "Treatment": {
+      "mean": 0.510833,
+      "sd": 0.499883,
+    },
+  },
+}
+`;
+
+exports[`engine golden > obesity-paradox — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Obesity=1)−do(0) on Mortality": 0.0875,
+  },
+  "nodes": {
+    "Chronic_disease": {
+      "mean": 1,
+      "sd": 0,
+    },
+    "Frailty": {
+      "mean": 0.685828,
+      "sd": 0.81199,
+    },
+    "Mortality": {
+      "mean": 0.403125,
+      "sd": 0.490525,
+    },
+    "Obesity": {
+      "mean": 0.578125,
+      "sd": 0.493859,
+    },
+  },
+}
+`;
+
+exports[`engine golden > ops-root-cause — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Deployment=1)−do(0) on Service_latency": 23.2,
+  },
+  "nodes": {
+    "Cache_hit_rate": {
+      "mean": 0.65562,
+      "sd": 0.126985,
+    },
+    "Deployment": {
+      "mean": 0.375,
+      "sd": 0.484123,
+    },
+    "Incident_alert": {
+      "mean": 0.540625,
+      "sd": 0.498347,
+    },
+    "Queue_depth": {
+      "mean": 30.240378,
+      "sd": 13.267779,
+    },
+    "Service_latency": {
+      "mean": 144.30089,
+      "sd": 29.764366,
+    },
+    "Traffic_mix": {
+      "mean": 0.004261,
+      "sd": 0.977767,
+    },
+    "Upstream_latency": {
+      "mean": 80.454346,
+      "sd": 12.703546,
+    },
+  },
+}
+`;
+
+exports[`engine golden > ota-gene-program-traits — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(CRISPRi_knockdown=1)−do(0) on IRF_trait": -0.71634,
+    "do(CRISPRi_knockdown=1)−do(0) on MCH_trait": -1.333928,
+    "do(CRISPRi_knockdown=1)−do(0) on RDW_trait": -0.430245,
+  },
+  "nodes": {
+    "Autophagy_program": {
+      "mean": 0.30407,
+      "sd": 0.689465,
+    },
+    "CRISPRi_knockdown": {
+      "mean": 0.516333,
+      "sd": 0.499733,
+    },
+    "Concordant_gene_map": {
+      "mean": -1.512708,
+      "sd": 3.422319,
+    },
+    "Erythroid_cell_state": {
+      "mean": -0.434401,
+      "sd": 1.292441,
+    },
+    "G2M_cell_cycle_program": {
+      "mean": -0.442071,
+      "sd": 1.005658,
+    },
+    "GWAS_trait_signal": {
+      "mean": -0.449788,
+      "sd": 1.446555,
+    },
+    "GWAS_variants": {
+      "mean": 0.007091,
+      "sd": 1.012928,
+    },
+    "Gene_constraint_Shet": {
+      "mean": 0.013503,
+      "sd": 1.013322,
+    },
+    "Heme_synthesis_program": {
+      "mean": -0.588779,
+      "sd": 1.253822,
+    },
+    "IRF_trait": {
+      "mean": -0.42656,
+      "sd": 1.209944,
+    },
+    "K562_context": {
+      "mean": 0.005233,
+      "sd": 1.02291,
+    },
+    "LoF_burden_gamma": {
+      "mean": -0.519055,
+      "sd": 1.463433,
+    },
+    "MCH_trait": {
+      "mean": -0.780029,
+      "sd": 1.976607,
+    },
+    "Mitochondrial_program": {
+      "mean": -0.498616,
+      "sd": 1.282892,
+    },
+    "Natural_LoF": {
+      "mean": 0.076333,
+      "sd": 0.265531,
+    },
+    "Other_cell_cycle_programs": {
+      "mean": -0.329584,
+      "sd": 0.890597,
+    },
+    "Permutation_CV_fit": {
+      "mean": -1.313534,
+      "sd": 2.996142,
+    },
+    "Perturb_seq_beta": {
+      "mean": -1.035943,
+      "sd": 1.852164,
+    },
+    "Program_burden_effect": {
+      "mean": -0.921515,
+      "sd": 2.34253,
+    },
+    "Program_gene_content": {
+      "mean": -0.824235,
+      "sd": 1.981752,
+    },
+    "RDW_trait": {
+      "mean": -0.23621,
+      "sd": 0.986178,
+    },
+    "Regulator_activity": {
+      "mean": -0.679315,
+      "sd": 0.929081,
+    },
+    "Regulator_burden_correlation": {
+      "mean": -1.104131,
+      "sd": 2.231426,
+    },
+    "Stepwise_program_model": {
+      "mean": -1.58441,
+      "sd": 3.521407,
+    },
+    "Trans_eQTL_validation": {
+      "mean": -0.625487,
+      "sd": 1.619707,
+    },
+  },
+}
+`;
+
+exports[`engine golden > policing-encounters — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Group_A=1)−do(0) on Use_of_force": 0.04375,
+  },
+  "nodes": {
+    "Group_A": {
+      "mean": 0.753125,
+      "sd": 0.431193,
+    },
+    "Incident_risk": {
+      "mean": 0.652006,
+      "sd": 0.893604,
+    },
+    "Police_contact": {
+      "mean": 1,
+      "sd": 0,
+    },
+    "Use_of_force": {
+      "mean": 0.278125,
+      "sd": 0.448075,
+    },
+  },
+}
+`;
+
+exports[`engine golden > policy-event-study — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Policy_adoption=1)−do(0) on Post_outcome": -0.6,
+  },
+  "nodes": {
+    "Donor_pool_quality": {
+      "mean": 0.702173,
+      "sd": 0.247279,
+    },
+    "Placebo_pre_outcome": {
+      "mean": 0.069305,
+      "sd": 0.872308,
+    },
+    "Policy_adoption": {
+      "mean": 0.465625,
+      "sd": 0.498817,
+    },
+    "Political_pressure": {
+      "mean": 0.08635,
+      "sd": 1.02116,
+    },
+    "Post_outcome": {
+      "mean": -0.289573,
+      "sd": 1.580134,
+    },
+    "Pre_trend": {
+      "mean": 0.049195,
+      "sd": 0.694721,
+    },
+    "Region_baseline": {
+      "mean": 0.085108,
+      "sd": 0.953248,
+    },
+  },
+}
+`;
+
+exports[`engine golden > positivity-correlated-confounders — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment=1)−do(0) on Outcome": 1,
+  },
+  "nodes": {
+    "Confounder_A": {
+      "mean": 0.009107,
+      "sd": 1.011126,
+    },
+    "Confounder_B": {
+      "mean": 0.012548,
+      "sd": 1.014532,
+    },
+    "Outcome": {
+      "mean": 0.511565,
+      "sd": 2.567796,
+    },
+    "Shared": {
+      "mean": 0.005617,
+      "sd": 1.010342,
+    },
+    "Treatment": {
+      "mean": 0.49575,
+      "sd": 0.499982,
+    },
+  },
+}
+`;
+
+exports[`engine golden > restaurant-collider — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Food_quality↑)−do(↓) on Service_quality": 0,
+  },
+  "nodes": {
+    "Food_quality": {
+      "mean": 0.804971,
+      "sd": 0.812129,
+    },
+    "Service_quality": {
+      "mean": 0.810083,
+      "sd": 0.824716,
+    },
+    "Worth_visiting": {
+      "mean": 1,
+      "sd": 0,
+    },
+  },
+}
+`;
+
+exports[`engine golden > simpson-severity — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment=1)−do(0) on Recovery": 0.090625,
+  },
+  "nodes": {
+    "Recovery": {
+      "mean": 0.53125,
+      "sd": 0.499022,
+    },
+    "Severity": {
+      "mean": 0.134905,
+      "sd": 1.004412,
+    },
+    "Treatment": {
+      "mean": 0.521875,
+      "sd": 0.499521,
+    },
+  },
+}
+`;
+
+exports[`engine golden > target-trial-followup — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment_start=1)−do(0) on Outcome_90d": -0.084375,
+  },
+  "nodes": {
+    "Adherence": {
+      "mean": 0.78125,
+      "sd": 0.413399,
+    },
+    "Baseline_severity": {
+      "mean": 0.004095,
+      "sd": 1.032982,
+    },
+    "Censoring": {
+      "mean": 0.15,
+      "sd": 0.357071,
+    },
+    "Eligibility": {
+      "mean": 0.821875,
+      "sd": 0.382618,
+    },
+    "Negative_control": {
+      "mean": 0.125,
+      "sd": 0.330719,
+    },
+    "Outcome_90d": {
+      "mean": 0.190625,
+      "sd": 0.392794,
+    },
+    "Treatment_start": {
+      "mean": 0.534375,
+      "sd": 0.498817,
+    },
+  },
+}
+`;
+
+exports[`engine golden > tutoring-scores — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Tutoring=1)−do(0) on Test_score": 7,
+  },
+  "nodes": {
+    "Academic_need": {
+      "mean": 0.2875,
+      "sd": 0.452597,
+    },
+    "Test_score": {
+      "mean": 66.8144,
+      "sd": 21.597891,
+    },
+    "Tutoring": {
+      "mean": 0.4,
+      "sd": 0.489898,
+    },
+  },
+}
+`;
+
+exports[`engine golden > wg-dgm-confounder-dag — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Quit_smoking=1)−do(0) on Weight_gain": 3.5,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 43.541492,
+      "sd": 12.081942,
+    },
+    "Baseline_weight": {
+      "mean": 71.120486,
+      "sd": 15.582285,
+    },
+    "Exercise": {
+      "mean": -0.002365,
+      "sd": 0.987999,
+    },
+    "Quit_smoking": {
+      "mean": 0.27725,
+      "sd": 0.447641,
+    },
+    "Sex": {
+      "mean": 0.46725,
+      "sd": 0.498926,
+    },
+    "Smoking_intensity": {
+      "mean": 20.713862,
+      "sd": 11.165594,
+    },
+    "Weight_gain": {
+      "mean": 4.778479,
+      "sd": 7.943707,
+    },
+    "Years_smoking": {
+      "mean": 24.392086,
+      "sd": 12.165916,
+    },
+  },
+}
+`;
+
+exports[`engine golden > wg-dgm-copula — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Quit_smoking=1)−do(0) on Weight_gain": 3.5,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 43.433718,
+      "sd": 12.088961,
+    },
+    "Baseline_weight": {
+      "mean": 70.947766,
+      "sd": 14.883389,
+    },
+    "Exercise": {
+      "mean": 0.015539,
+      "sd": 0.991366,
+    },
+    "Health_factor": {
+      "mean": -0.001208,
+      "sd": 0.995377,
+    },
+    "Quit_smoking": {
+      "mean": 0.26775,
+      "sd": 0.442787,
+    },
+    "Sex": {
+      "mean": 0.4645,
+      "sd": 0.498738,
+    },
+    "Smoking_intensity": {
+      "mean": 20.479205,
+      "sd": 11.053957,
+    },
+    "Weight_gain": {
+      "mean": 4.28567,
+      "sd": 7.800699,
+    },
+    "Years_smoking": {
+      "mean": 24.617822,
+      "sd": 11.998342,
+    },
+  },
+}
+`;
+
+exports[`engine golden > wg-dgm-generative — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Quit_smoking=1)−do(0) on Weight_gain": 3.5,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 43.89425,
+      "sd": 12.112641,
+    },
+    "Baseline_weight": {
+      "mean": 71.7211,
+      "sd": 15.640839,
+    },
+    "Exercise": {
+      "mean": 1.1835,
+      "sd": 0.730977,
+    },
+    "Quit_smoking": {
+      "mean": 0.23675,
+      "sd": 0.425088,
+    },
+    "Row_source": {
+      "mean": 1005.781768,
+      "sd": 578.439498,
+    },
+    "Sex": {
+      "mean": 0.489,
+      "sd": 0.499879,
+    },
+    "Smoking_intensity": {
+      "mean": 21.06275,
+      "sd": 12.197349,
+    },
+    "Weight_gain": {
+      "mean": 2.738177,
+      "sd": 7.822819,
+    },
+    "Years_smoking": {
+      "mean": 24.84875,
+      "sd": 12.106212,
+    },
+  },
+}
+`;
+
+exports[`engine golden > wg-dgm-plasmode — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Quit_smoking=1)−do(0) on Weight_gain": 3.5,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 43.9175,
+      "sd": 12.249375,
+    },
+    "Baseline_weight": {
+      "mean": 71.03421,
+      "sd": 15.603846,
+    },
+    "Exercise": {
+      "mean": 1.208,
+      "sd": 0.730914,
+    },
+    "Quit_smoking": {
+      "mean": 0.24925,
+      "sd": 0.432579,
+    },
+    "Row_source": {
+      "mean": 813.738673,
+      "sd": 472.554545,
+    },
+    "Sex": {
+      "mean": 0.506,
+      "sd": 0.499964,
+    },
+    "Smoking_intensity": {
+      "mean": 20.60275,
+      "sd": 11.953951,
+    },
+    "Weight_gain": {
+      "mean": 2.587869,
+      "sd": 7.786836,
+    },
+    "Years_smoking": {
+      "mean": 24.98275,
+      "sd": 12.340095,
+    },
+  },
+}
+`;
+
+exports[`engine golden > wg-dgm-positivity — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Quit_smoking=1)−do(0) on Weight_gain": 3.5,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 43.43893,
+      "sd": 12.023175,
+    },
+    "Baseline_weight": {
+      "mean": 71.054122,
+      "sd": 14.919784,
+    },
+    "Exercise": {
+      "mean": 0.000834,
+      "sd": 1.015813,
+    },
+    "Health_factor": {
+      "mean": -0.004587,
+      "sd": 1.00779,
+    },
+    "Quit_smoking": {
+      "mean": 0.71575,
+      "sd": 0.451056,
+    },
+    "Sex": {
+      "mean": 0.4705,
+      "sd": 0.499129,
+    },
+    "Smoking_intensity": {
+      "mean": 20.386535,
+      "sd": 11.169589,
+    },
+    "Weight_gain": {
+      "mean": 5.828385,
+      "sd": 7.650208,
+    },
+    "Years_smoking": {
+      "mean": 24.437633,
+      "sd": 11.978226,
+    },
+  },
+}
+`;
+
+exports[`engine golden > what-if-censoring-ipcw — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(A0=1)−do(0) on Y": -0.042857,
+    "do(A1=1)−do(0) on Y": -0.059714,
+  },
+  "nodes": {
+    "A0": {
+      "mean": 0.452,
+      "sd": 0.497691,
+    },
+    "A1": {
+      "mean": 0.629286,
+      "sd": 0.482996,
+    },
+    "Baseline_risk": {
+      "mean": -0.011746,
+      "sd": 0.998633,
+    },
+    "C1": {
+      "mean": 0.149286,
+      "sd": 0.35637,
+    },
+    "C2": {
+      "mean": 0.153143,
+      "sd": 0.360125,
+    },
+    "L1": {
+      "mean": 0.55,
+      "sd": 0.497494,
+    },
+    "Y": {
+      "mean": 0.163714,
+      "sd": 0.370016,
+    },
+  },
+}
+`;
+
+exports[`engine golden > what-if-dynamic-g-formula — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(A0=1)−do(0) on Y": -0.032571,
+    "do(A1=1)−do(0) on Y": -0.053571,
+    "do(A2=1)−do(0) on Y": -0.065714,
+  },
+  "nodes": {
+    "A0": {
+      "mean": 0.514429,
+      "sd": 0.499792,
+    },
+    "A1": {
+      "mean": 0.662,
+      "sd": 0.473029,
+    },
+    "A2": {
+      "mean": 0.712429,
+      "sd": 0.45263,
+    },
+    "Risk_0": {
+      "mean": 0.423286,
+      "sd": 0.49408,
+    },
+    "Risk_1": {
+      "mean": 0.630286,
+      "sd": 0.482727,
+    },
+    "Risk_2": {
+      "mean": 0.671571,
+      "sd": 0.469642,
+    },
+    "Y": {
+      "mean": 0.200286,
+      "sd": 0.400214,
+    },
+  },
+}
+`;
+
+exports[`engine golden > what-if-hazard-selection — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment_A=1)−do(0) on Death_2": -0.072667,
+  },
+  "nodes": {
+    "Alive_1": {
+      "mean": 0.895833,
+      "sd": 0.305477,
+    },
+    "Death_1": {
+      "mean": 0.104167,
+      "sd": 0.305477,
+    },
+    "Death_2": {
+      "mean": 0.263667,
+      "sd": 0.440621,
+    },
+    "Frailty": {
+      "mean": 0.023876,
+      "sd": 0.987286,
+    },
+    "Treatment_A": {
+      "mean": 0.463,
+      "sd": 0.498629,
+    },
+  },
+}
+`;
+
+exports[`engine golden > what-if-hiv-cd4-variants — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(A_0=1)−do(0) on AIDS_death": -0.096857,
+    "do(A_1=1)−do(0) on AIDS_death": -0.082286,
+    "do(A_2=1)−do(0) on AIDS_death": -0.025571,
+  },
+  "nodes": {
+    "AIDS_death": {
+      "mean": 0.188286,
+      "sd": 0.39094,
+    },
+    "A_0": {
+      "mean": 0.507857,
+      "sd": 0.499938,
+    },
+    "A_1": {
+      "mean": 0.608857,
+      "sd": 0.488006,
+    },
+    "A_2": {
+      "mean": 0.610429,
+      "sd": 0.487653,
+    },
+    "CD4_0": {
+      "mean": 0.396143,
+      "sd": 0.489095,
+    },
+    "CD4_1": {
+      "mean": 0.330714,
+      "sd": 0.47047,
+    },
+    "CD4_2": {
+      "mean": 0.290286,
+      "sd": 0.453894,
+    },
+  },
+}
+`;
+
+exports[`engine golden > what-if-ipw-pseudopopulation — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment_A=1)−do(0) on Outcome_Y": -0.0704,
+  },
+  "nodes": {
+    "Baseline_C": {
+      "mean": -0.025094,
+      "sd": 1.008721,
+    },
+    "Outcome_Y": {
+      "mean": 0.1344,
+      "sd": 0.341082,
+    },
+    "Treatment_A": {
+      "mean": 0.4682,
+      "sd": 0.498988,
+    },
+  },
+}
+`;
+
+exports[`engine golden > what-if-nhefs-mortality-survival — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Quit_smoking=1)−do(0) on Death_10y": -0.054714,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 49.992825,
+      "sd": 10.106525,
+    },
+    "Baseline_risk": {
+      "mean": -0.003208,
+      "sd": 1.004252,
+    },
+    "Censoring_5y": {
+      "mean": 0.169857,
+      "sd": 0.375507,
+    },
+    "Death_10y": {
+      "mean": 0.338286,
+      "sd": 0.473126,
+    },
+    "Death_2y": {
+      "mean": 0.063,
+      "sd": 0.242963,
+    },
+    "Death_4y": {
+      "mean": 0.129714,
+      "sd": 0.335989,
+    },
+    "Death_6y": {
+      "mean": 0.196714,
+      "sd": 0.397514,
+    },
+    "Death_8y": {
+      "mean": 0.272714,
+      "sd": 0.445355,
+    },
+    "Quit_smoking": {
+      "mean": 0.506714,
+      "sd": 0.499955,
+    },
+    "Weight_gain_2y": {
+      "mean": 4.298216,
+      "sd": 3.432198,
+    },
+  },
+}
+`;
+
+exports[`engine golden > what-if-nhefs-weight-gain — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Quit_smoking=1)−do(0) on Weight_gain": 3.5,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 43.309018,
+      "sd": 11.812019,
+    },
+    "Baseline_weight": {
+      "mean": 71.181717,
+      "sd": 15.301304,
+    },
+    "Exercise": {
+      "mean": 0.005113,
+      "sd": 1.00558,
+    },
+    "Quit_smoking": {
+      "mean": 0.27025,
+      "sd": 0.444089,
+    },
+    "Sex": {
+      "mean": 0.46475,
+      "sd": 0.498756,
+    },
+    "Smoking_intensity": {
+      "mean": 20.495475,
+      "sd": 10.80815,
+    },
+    "Weight_gain": {
+      "mean": 4.456278,
+      "sd": 7.815621,
+    },
+    "Years_smoking": {
+      "mean": 24.567992,
+      "sd": 11.89615,
+    },
+  },
+}
+`;
+
+exports[`engine golden > what-if-snaft-survival — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment_start=1)−do(0) on Failure_time": 3.8,
+    "do(Treatment_start=1)−do(0) on Observed_death": -0.000667,
+  },
+  "nodes": {
+    "Baseline_risk": {
+      "mean": -0.014152,
+      "sd": 1.000061,
+    },
+    "Censoring": {
+      "mean": 0.022,
+      "sd": 0.146683,
+    },
+    "Failure_time": {
+      "mean": 25.855682,
+      "sd": 5.460365,
+    },
+    "Observed_death": {
+      "mean": 0.001167,
+      "sd": 0.034137,
+    },
+    "Treatment_start": {
+      "mean": 0.4705,
+      "sd": 0.499129,
+    },
+    "Visit_schedule": {
+      "mean": 2.995744,
+      "sd": 0.907788,
+    },
+  },
+}
+`;
+
+exports[`engine golden > what-if-treatment-feedback — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(A0=1)−do(0) on Y": -0.0436,
+    "do(A1=1)−do(0) on Y": -0.0682,
+  },
+  "nodes": {
+    "A0": {
+      "mean": 0.4872,
+      "sd": 0.499836,
+    },
+    "A1": {
+      "mean": 0.69,
+      "sd": 0.462493,
+    },
+    "Baseline_risk": {
+      "mean": -0.004977,
+      "sd": 0.995658,
+    },
+    "L1": {
+      "mean": 0.5556,
+      "sd": 0.496899,
+    },
+    "Y": {
+      "mean": 0.1574,
+      "sd": 0.364177,
+    },
+  },
+}
+`;
+
+exports[`engine golden > what-if-weight-gain-g-estimation — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Quit_smoking=1)−do(0) on Weight_gain_8y": 4.9525,
+  },
+  "nodes": {
+    "Diet_change": {
+      "mean": 0.313225,
+      "sd": 0.916994,
+    },
+    "Quit_smoking": {
+      "mean": 0.483667,
+      "sd": 0.499733,
+    },
+    "Smoking_intensity": {
+      "mean": 0.014971,
+      "sd": 0.993379,
+    },
+    "Socioeconomic": {
+      "mean": 0.003172,
+      "sd": 1.000751,
+    },
+    "Weight_gain_8y": {
+      "mean": 3.78722,
+      "sd": 3.363201,
+    },
+  },
+}
+`;
