@@ -60,7 +60,8 @@ const DEFAULT_ROLES: NodeRoleFlags = {
   outcome: false,
   adjusted: false,
   selected: false,
-  latent: false
+  latent: false,
+  instrument: false
 };
 
 const VARIABLE_VALUE_TYPES: ReadonlySet<VariableValueType> = new Set([
@@ -206,6 +207,7 @@ export function defaultNodeDistribution(kind: NodeDistribution["kind"] = "consta
   if (kind === "student_t") return { kind, mean: 0, scale: 1, df: 5 };
   if (kind === "gamma") return { kind, shape: 2, scale: 1 };
   if (kind === "exponential") return { kind, rate: 1 };
+  if (kind === "categorical") return { kind, weights: [1, 1, 1] };
   return { kind: "constant", value: 0 };
 }
 
@@ -549,6 +551,12 @@ export function normalizeNodeDistribution(distribution: Partial<NodeDistribution
   if (kind === "student_t") return { kind, mean: numberOr(raw.mean, 0), scale: positiveOr(raw.scale, 1), df: positiveOr(raw.df, 5) };
   if (kind === "gamma") return { kind, shape: positiveOr(raw.shape, 2), scale: positiveOr(raw.scale, 1) };
   if (kind === "exponential") return { kind, rate: positiveOr(raw.rate, 1) };
+  if (kind === "categorical") {
+    const weights = Array.isArray(raw.weights) && raw.weights.length > 0
+      ? raw.weights.map((w) => positiveOr(w, 0))
+      : [1, 1, 1];
+    return { kind, weights: weights.some((w) => w > 0) ? weights : [1, 1, 1] };
+  }
   return { kind: "constant", value: numberOr(raw.value, 0) };
 }
 
@@ -792,6 +800,10 @@ export function selected(graph: GraphModel): string[] {
 
 export function latent(graph: GraphModel): string[] {
   return roleIds(graph, "latent");
+}
+
+export function instruments(graph: GraphModel): string[] {
+  return roleIds(graph, "instrument");
 }
 
 export function directedParents(graph: GraphModel, nodeId: string): string[] {

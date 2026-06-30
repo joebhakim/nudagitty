@@ -1,4 +1,4 @@
-import { normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, topologicalOrder } from "@nudagitty/core";
+import { copulaCorrelation, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, topologicalOrder } from "@nudagitty/core";
 import type {
   EdgeMechanism,
   GraphDocument,
@@ -29,6 +29,7 @@ function distLabel(d: NodeDistribution): string {
     case "student_t": return `Student-t(${formatValue(d.mean)}, ${formatValue(d.scale)}, df ${formatValue(d.df)})`;
     case "gamma": return `Gamma(${formatValue(d.shape)}, ${formatValue(d.scale)})`;
     case "exponential": return `Exponential(${formatValue(d.rate)})`;
+    case "categorical": return `Categorical(${d.weights.length} levels)`;
   }
 }
 
@@ -102,7 +103,8 @@ function corrColor(r: number): string {
   return r >= 0 ? `rgba(200, 60, 50, ${a.toFixed(2)})` : `rgba(50, 90, 200, ${a.toFixed(2)})`;
 }
 
-export function DgpInspector(props: { document: GraphDocument; simulation: SimulationResult }) {
+export function DgpInspector(props: { document: GraphDocument; simulation: SimulationResult; onCorrelationChange?: (rho: number) => void }) {
+  const copulaRho = copulaCorrelation(props.document);
   const { document, simulation } = props;
   const graph = document.graph;
   const order = topologicalOrder(graph) ?? graph.nodes.map((node) => node.id);
@@ -182,6 +184,25 @@ export function DgpInspector(props: { document: GraphDocument; simulation: Simul
           ))}
         </div>
       </section>
+
+      {copulaRho !== null && props.onCorrelationChange && (
+        <section className="dgp-copula-control">
+          <h4>Copula correlation — tune it</h4>
+          <p>Each confounder loads on a shared latent factor; the slider sets the pairwise correlation (loading = √ρ, with the residual sd kept at √(1−ρ) so the marginals stay fixed). Watch overlap/positivity tighten as it climbs.</p>
+          <label>
+            <span>ρ = {formatValue(copulaRho)}</span>
+            <input
+              type="range"
+              min="0"
+              max="0.95"
+              step="0.01"
+              value={copulaRho}
+              aria-label="Copula correlation"
+              onChange={(event) => props.onCorrelationChange!(parseFloat(event.target.value))}
+            />
+          </label>
+        </section>
+      )}
 
       {corrNodes.length >= 2 && (
         <section>

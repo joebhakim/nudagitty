@@ -162,7 +162,8 @@ function parseOldSyntax(statement: string, graph: GraphModel): GraphModel | null
       outcome: roleToken.includes("O"),
       adjusted: roleToken.includes("A") || roleToken === "1",
       selected: roleToken.includes("S"),
-      latent: roleToken.includes("U")
+      latent: roleToken.includes("U"),
+      instrument: roleToken.includes("I")
     };
     const [xRaw, yRaw] = maybePosition.slice(1).split(",");
     const point = { x: Number(xRaw) * 100, y: -Number(yRaw) * 100 };
@@ -254,6 +255,7 @@ function attrsToNode(attrs: string[]): Partial<GraphNode> & { roles: NodeRoleFla
     if (key === "adjusted") rolePatch.adjusted = true;
     if (key === "selected") rolePatch.selected = true;
     if (key === "latent" || key === "unobserved") rolePatch.latent = true;
+    if (key === "instrument") rolePatch.instrument = true;
     if (key === "label" && value) patch.label = value;
     if (key === "pos") {
       const point = parsePoint(value, true);
@@ -267,7 +269,8 @@ function attrsToNode(attrs: string[]): Partial<GraphNode> & { roles: NodeRoleFla
       outcome: rolePatch.outcome ?? false,
       adjusted: rolePatch.adjusted ?? false,
       selected: rolePatch.selected ?? false,
-      latent: rolePatch.latent ?? false
+      latent: rolePatch.latent ?? false,
+      instrument: rolePatch.instrument ?? false
     }
   };
 }

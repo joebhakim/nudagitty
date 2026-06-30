@@ -764,6 +764,11 @@
   color: var(--accent);
 }
 
+.role-toggle.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .tactile-number-field {
   display: grid;
   gap: 5px;
@@ -1078,3 +1083,20 @@
 }
 
 .points-editor { display: grid; gap: 6px; }
+
+/* Node-editor restructure: roles as a horizontal toggle row; collapsible .output-box sections. */
+.role-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.role-toggle-row > * { flex: 0 0 auto; }
+
+.editor-section { margin: 8px 0 0; }
+.editor-section > summary { list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: 8px; padding: 8px 11px; background: #f7faf9; }
+.editor-section > summary::-webkit-details-marker { display: none; }
+.editor-section > summary::before { content: "▸"; color: var(--accent); font-size: 11px; }
+.editor-section[open] > summary::before { content: "▾"; }
+.editor-section > summary strong { font-size: 12.5px; color: #0f172a; }
+.editor-section > summary span { font-size: 11px; color: #6b7782; }
+.editor-section-body { display: grid; gap: 8px; padding: 9px 11px; }

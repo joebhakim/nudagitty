@@ -140,7 +140,9 @@
 
 @media (max-width: 700px) {
   body {
-    overflow-x: hidden;
+    /* `overflow-x: hidden` forces overflow-y to compute to `auto` (CSS overflow spec), turning body
+       into a scroll container that traps the page scroll on phones. `clip` bounds x without that. */
+    overflow-x: clip;
   }
 
   .topbar {
@@ -245,7 +247,11 @@
   }
 
   .workspace {
-    overflow-x: hidden;
+    /* `overflow-x: hidden` here would force overflow-y to compute to `auto` (per the CSS overflow
+       spec), turning the workspace into a ~full-height nested scroll container that swallows touch
+       gestures instead of letting the document scroll. `clip` clips horizontal overflow WITHOUT
+       creating a scroll container, so the page scrolls as one. */
+    overflow-x: clip;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
   }

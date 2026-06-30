@@ -50,6 +50,14 @@ export function CategoryOutcomePlot(props: {
   outcomeKind: CategoryOutcomeKind;
   compact?: boolean;
   ariaLabel?: string;
+  // Use `yDomain` as the authoritative axis instead of auto-fitting to the data (the small-multiples
+  // shared-scale case). Points outside the domain are not drawn — so a few heavy-tailed values (e.g.
+  // an AIPW unit with a tiny propensity) can't blow up the scale and squash the rest.
+  clampToDomain?: boolean;
+  // Color the whole chart by one series color (points, CI, mean) instead of by treatment arm. Used by
+  // the small-multiples effect facets, where each facet's IDENTITY (observed / truth / method) is the
+  // color and the two arms are told apart by x-position — so the legend's series colors mean something.
+  seriesColor?: string;
   // Method estimates overlaid beside the observed summary — each a point + CI per group, connected
   // across groups (slope = the effect), dodged so they don't collide. Drives the redesign's
   // "observed + every method's estimate" effect graph without changing the chart's grammar.
@@ -78,11 +86,19 @@ export function CategoryOutcomePlot(props: {
   }
   const dataMin = domainValues.length ? Math.min(...domainValues) : 0;
   const dataMax = domainValues.length ? Math.max(...domainValues) : 1;
-  const [yMin, yMax] = paddedDomain(dataMin, dataMax, {
-    pad: 0.1,
-    clampMin: isBinary ? 0 : undefined,
-    clampMax: isBinary ? 1 : undefined
-  });
+  // Binary swarm: when individual 0/1 points are supplied, show them — jittered into bands with alpha —
+  // on the full [0,1] axis (so the density IS the proportion), rather than only a cropped proportion+CI.
+  // Without points (e.g. estimate-only facets), keep the cropped rate band for a tight comparison.
+  const binarySwarm = isBinary && props.summaries.some((summary) => summary.points.length > 0);
+  const [yMin, yMax] = binarySwarm
+    ? [0, 1]
+    : props.clampToDomain
+      ? props.yDomain
+      : paddedDomain(dataMin, dataMax, {
+          pad: 0.1,
+          clampMin: isBinary ? 0 : undefined,
+          clampMax: isBinary ? 1 : undefined
+        });
 
   // Below ~132px there isn't room for the x-axis title band; drop it (the group
   // labels still identify the axis) and thin the y-ticks so nothing overlaps or
@@ -93,6 +109,9 @@ export function CategoryOutcomePlot(props: {
     height,
     y: { ticks: true, title: true },
     x: shortChart ? { ticks: true } : { ticks: true, title: true },
+    // Binary swarm is a dual-axis chart: the left axis is the proportion ESTIMATE (0–100%, the marker +
+    // CI), the right axis is the EMPIRICAL outcome (0/1, where the individual points live).
+    right: binarySwarm ? { ticks: true, title: true } : undefined,
     yDomain: [yMin, yMax],
     insetY: shortChart ? 7 : 12
   });
@@ -120,36 +139,55 @@ export function CategoryOutcomePlot(props: {
           <text className="category-outcome-axis-label" x={anchors.ticks.yX} y={yScale(tick) + 4}>{formatOutcome(tick)}</text>
         </g>
       ))}
+      {binarySwarm && (
+        <g className="category-outcome-right-axis" aria-hidden="true">
+          <line className="category-outcome-axis" x1={plot.right} x2={plot.right} y1={plot.y} y2={plot.bottom} />
+          {[0, 1].map((level) => (
+            <g key={level}>
+              <line className="category-outcome-axis" x1={plot.right} x2={plot.right + 3} y1={yScale(level)} y2={yScale(level)} />
+              <text className="category-outcome-axis-label-right" x={anchors.ticks.yXRight} y={yScale(level) + 4}>{level}</text>
+            </g>
+          ))}
+          <SvgAxisName className="category-outcome-axis-title y" label="outcome (0/1)" x={anchors.title.yXRight} y={plot.cy} transform={`rotate(-90 ${anchors.title.yXRight} ${plot.cy})`} maxChars={props.compact ? 16 : 22} />
+        </g>
+      )}
       {!shortChart && <SvgAxisName className="category-outcome-axis-title x" label={props.xLabel} x={plot.cx} y={anchors.title.xY} maxChars={props.compact ? 22 : 28} />}
-      <SvgAxisName className="category-outcome-axis-title y" label={props.yLabel} x={anchors.title.yX} y={plot.cy} transform={`rotate(-90 ${anchors.title.yX} ${plot.cy})`} maxChars={props.compact ? 16 : 22} />
+      <SvgAxisName className="category-outcome-axis-title y" label={binarySwarm ? "rate (%)" : props.yLabel} x={anchors.title.yX} y={plot.cy} transform={`rotate(-90 ${anchors.title.yX} ${plot.cy})`} maxChars={props.compact ? 16 : 22} />
       {props.summaries.map((summary) => {
         const x = groupX(summary.group);
         return (
           <g className={`category-outcome-group ${summary.tone}`} key={summary.group}>
             <line className="category-outcome-category-guide" x1={x} x2={x} y1={plot.y} y2={plot.bottom} />
-            {!isBinary && summary.points.map((point) => {
+            {(!isBinary || binarySwarm) && summary.points.filter((point) => binarySwarm || (point.y >= yMin && point.y <= yMax)).map((point) => {
               const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
+              // Binary: jitter each 0/1 into a band so the column reads as a density swarm, not a line.
+              const cy = binarySwarm
+                ? yScale(clamp(point.y + deterministicCategoryOutcomeJitter(point.index, summary.group, 17) * 0.07, 0, 1))
+                : yScale(point.y);
               return (
                 <circle
                   className={`category-outcome-observation ${summary.tone}`}
                   cx={pointX(point, summary.group)}
-                  cy={yScale(point.y)}
-                  r={1.5 + normalizedWeight * 1.4}
+                  cy={cy}
+                  r={1.5 + normalizedWeight * 1.2}
                   key={`${summary.group}-${point.index}`}
-                  style={{ opacity: 0.05 + normalizedWeight * 0.1 }}
+                  style={{ opacity: 0.28 + normalizedWeight * 0.14, fill: props.seriesColor }}
                 />
               );
             })}
-            {summary.lower !== null && summary.upper !== null && (
-              <g className={`category-outcome-ci ${summary.tone}`}>
-                <line x1={x} x2={x} y1={yScale(summary.upper)} y2={yScale(summary.lower)} />
-                <line x1={x - 9} x2={x + 9} y1={yScale(summary.upper)} y2={yScale(summary.upper)} />
-                <line x1={x - 9} x2={x + 9} y1={yScale(summary.lower)} y2={yScale(summary.lower)} />
-              </g>
-            )}
+            {summary.lower !== null && summary.upper !== null && (() => {
+              const ciStyle = props.seriesColor ? { stroke: props.seriesColor } : undefined;
+              return (
+                <g className={`category-outcome-ci ${summary.tone}`}>
+                  <line x1={x} x2={x} y1={yScale(summary.upper)} y2={yScale(summary.lower)} style={ciStyle} />
+                  <line x1={x - 9} x2={x + 9} y1={yScale(summary.upper)} y2={yScale(summary.upper)} style={ciStyle} />
+                  <line x1={x - 9} x2={x + 9} y1={yScale(summary.lower)} y2={yScale(summary.lower)} style={ciStyle} />
+                </g>
+              );
+            })()}
             {summary.mean !== null && (
               <>
-                <circle className={`category-outcome-summary-point ${summary.tone}`} cx={x} cy={yScale(summary.mean)} r={5.2} />
+                <circle className={`category-outcome-summary-point ${summary.tone}`} cx={x} cy={yScale(summary.mean)} r={5.2} style={props.seriesColor ? { fill: props.seriesColor } : undefined} />
                 <text className="category-outcome-summary-value" x={x} y={Math.max(plot.y + 11, yScale(summary.mean) - 9)}>{formatOutcome(summary.mean)}</text>
               </>
             )}

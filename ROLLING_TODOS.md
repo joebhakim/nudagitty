@@ -2,6 +2,17 @@
 
 Keep lightweight follow-ups here when a branch is reviewable but still needs product polish.
 
+## Term disambiguation section (2026-06-29)
+
+A comprehensive section teaching the conflated vocabulary — roles (confounder / mediator / moderator /
+collider / instrument) AND cross-field/author terminology — built on the node-on-edge moderation
+primitive. Full design in **`docs/plan-term-disambiguation.md`**. DONE: the term registry
+(`apps/web/src/shared/disambiguation.ts`), per-example reference cards
+(`apps/web/src/outputs/DisambiguationCard.tsx`, wired into `AdjustedOutputPanel`), the moderation
+examples + `effect-modification` moderator-CATE output. REMAINING: Phase A standalone glossary map
+(roles grid + interaction strip + pitfalls, toolbar overlay, deep-links to examples); Phase B full-sweep
+examples (gather existing role examples into the `disambiguation` domain + author `mediated-moderation`).
+
 ## Output panel — ground-up redesign (2026-06-24)
 
 Rethink the output from scratch around the five questions people actually ask, graphs-first, with

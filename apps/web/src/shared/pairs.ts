@@ -14,7 +14,16 @@ export function defaultScatterPair(graph: GraphModel): ScatterPair {
   const exposure = graph.nodes.find((node) => node.roles.exposure)?.id;
   const outcome = graph.nodes.find((node) => node.roles.outcome)?.id;
   if (exposure && outcome) return { x: exposure, y: outcome };
-  if (ids.includes("Father_height") && ids.includes("Son_height")) return { x: "Father_height", y: "Son_height" };
+  // No exposure/outcome marked (a user-built graph, galton, the collider examples): GUESS a sensible
+  // cause→effect pair from the DAG — a root (no incoming arrow) to a sink (no outgoing arrow) — instead
+  // of arbitrarily plotting the first two nodes. The user can still switch axes from the dropdowns.
+  const directed = graph.edges.filter((edge) => edge.kind === "directed" || edge.kind === "partialDirected");
+  const hasIncoming = new Set(directed.map((edge) => edge.target));
+  const hasOutgoing = new Set(directed.map((edge) => edge.source));
+  const root = ids.find((id) => hasOutgoing.has(id) && !hasIncoming.has(id));
+  const sink = ids.find((id) => hasIncoming.has(id) && !hasOutgoing.has(id));
+  if (root && sink && root !== sink) return { x: root, y: sink };
+  if (directed[0]) return { x: directed[0].source, y: directed[0].target };
   return { x: ids[0] ?? "", y: ids[1] ?? ids[0] ?? "" };
 }
 

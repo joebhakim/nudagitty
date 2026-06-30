@@ -9,6 +9,24 @@ export const VERIFIED_EXAMPLE_IDS: readonly string[] = [
   // Basic 3-node confounder: crude "treatment hurts" reverses to "treatment helps" (+10pp)
   // once Severity is adjusted. The canonical confounding example, with a single right answer.
   "simpson-severity",
+  // Collider hook (restaurant food vs service): independent in the population, a manufactured
+  // negative correlation among the "worth visiting" sample. The launch-anchor demo — toggle the
+  // selection and the round blob collapses into a downward tradeoff band.
+  "restaurant-collider",
+  "positivity-correlated-confounders",
+  "continuous-dose-response",
+  // Term disambiguation: the node-on-edge moderation primitive. Regime modulates an edge (dashed
+  // violet arrow); the moderator-CATE output facets the effect by regime. Crossover (sign flips) vs
+  // ordinal (same sign) vs moderated mediation (the gate sits on the mediator→outcome edge).
+  "effect-modification-crossover",
+  "effect-modification-ordinal",
+  "moderated-mediation",
+  // John Snow's cholera study — the canonical instrument (IV/2SLS recovers the water effect despite
+  // unmeasured sanitation/poverty confounding).
+  "john-snow-cholera",
+  // Epistasis (Labrador coat colour) — gene–gene interaction: the extension locus masks the pigment
+  // locus, so B's effect on the coat is only present when E is functional.
+  "epistasis-coat-color",
   // PROVISIONAL — high-yield examples exposed on the canary for manual verification before they're
   // truly blessed: front-door identification (recovers an effect through a mediator despite latent
   // confounding) and the time-varying-confounding g-methods flagship (only g-methods recover

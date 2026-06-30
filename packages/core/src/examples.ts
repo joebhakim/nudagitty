@@ -2,7 +2,7 @@ import { parseModel } from "./parser";
 import { analyzeGraph } from "./analysis";
 import { datasetColumnIndex, datasetRows } from "./datasets";
 import { defaultEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "./graph";
-import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "./types";
+import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeInteraction, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "./types";
 
 export const EXAMPLE_DOMAINS = [
   { id: "classic", label: "Classic DAG patterns", description: "Compact examples for teaching and fast bias checks." },
@@ -12,7 +12,9 @@ export const EXAMPLE_DOMAINS = [
   { id: "ml", label: "ML / data science", description: "Assumption declaration, graph refutation, discovery hypotheses, and treatment heterogeneity." },
   { id: "operations", label: "Operations / reliability / supply chain", description: "Root-cause analysis, mechanism shifts, and distribution-change attribution." },
   { id: "social", label: "Social science / education / psychology", description: "Mediation, latent constructs, surveys, attrition, and multilevel designs." },
-  { id: "dgm", label: "Simulation design / DGMs", description: "How synthetic data is generated: independent vs correlated (copula), real (plasmode), and learned (generative) joints — same causal truth, different data." }
+  { id: "dgm", label: "Simulation design / DGMs", description: "How synthetic data is generated: independent vs correlated (copula), real (plasmode), and learned (generative) joints — same causal truth, different data." },
+  { id: "disambiguation", label: "Term disambiguation", description: "Telling apart the things people conflate: moderation (a node acting on an edge), mediation (a chain through a variable), and interaction — ordinal vs disordinal (crossover)." },
+  { id: "genetics", label: "Genetics", description: "The causal structure of genetic data: gene–gene interaction (epistasis), genotype as instrument (Mendelian randomization), and confounding by ancestry." }
 ] as const;
 
 export type ExampleDomain = typeof EXAMPLE_DOMAINS[number]["id"];
@@ -173,6 +175,78 @@ export const EXAMPLES: ExampleModel[] = [
 }`
   },
   {
+    id: "effect-modification-crossover",
+    title: "Effect modification: a crossover (disordinal) interaction",
+    domain: "disambiguation",
+    summary: "A moderator that flips the sign of the treatment effect — helps in one regime, hurts in the other. The regime acts upon the treatment→outcome edge (not the nodes).",
+    outputModule: "effect-modification",
+    code: `dag {
+  Regime [pos="0.5,-1.15"]
+  Treatment [exposure,pos="-0.15,0"]
+  Outcome [outcome,pos="1.15,0"]
+  Treatment -> Outcome
+}`
+  },
+  {
+    id: "effect-modification-ordinal",
+    title: "Effect modification: an ordinal interaction (same sign, different size)",
+    domain: "disambiguation",
+    summary: "The contrast to the crossover: the regime changes how MUCH treatment helps, but not the sign. Still moderation — but the marginal effect is not misleading about direction.",
+    outputModule: "effect-modification",
+    code: `dag {
+  Regime [pos="0.5,-1.15"]
+  Treatment [exposure,pos="-0.15,0"]
+  Outcome [outcome,pos="1.15,0"]
+  Treatment -> Outcome
+}`
+  },
+  {
+    id: "moderated-mediation",
+    title: "Moderated mediation: a moderator on the mediator's edge",
+    domain: "disambiguation",
+    summary: "Treatment moves a single behavior (the mediator); the regime decides whether more of that behavior helps or hurts — so the regime acts on the mediator→outcome edge, not the treatment→outcome edge. The cleanest generator of a crossover.",
+    outputModule: "effect-modification",
+    code: `dag {
+  Regime [pos="0.75,-1.15"]
+  Treatment [exposure,pos="-0.6,0"]
+  Behavior [pos="0.5,0"]
+  Outcome [outcome,pos="1.6,0"]
+  Treatment -> Behavior
+  Behavior -> Outcome
+}`
+  },
+  {
+    id: "john-snow-cholera",
+    title: "John Snow's cholera study: the first instrument",
+    domain: "econometrics",
+    summary: "London, 1854: the water company (as-if random) instruments contaminated water for cholera.",
+    outputModule: "instrument",
+    code: `dag {
+  Company [instrument,label="water company",pos="-1.5,-0.15"]
+  Sanitation [latent,label="sanitation/poverty",pos="0.6,-1.25"]
+  Contamination [exposure,label="contaminated water",pos="-0.2,0"]
+  Cholera_death [outcome,label="cholera death",pos="1.5,0"]
+  Company -> Contamination
+  Sanitation -> Contamination
+  Sanitation -> Cholera_death
+  Contamination -> Cholera_death
+}`
+  },
+  {
+    id: "epistasis-coat-color",
+    title: "Epistasis: one gene masks another (Labrador coat colour)",
+    domain: "genetics",
+    summary: "The pigment (B) locus only colours the coat when the extension (E) locus is functional — ee dogs are yellow regardless of B. Gene–gene interaction: E moderates B's effect.",
+    outputModule: "effect-modification",
+    code: `dag {
+  E_locus [label="MC1R (extension)",pos="0.5,-1.25"]
+  B_locus [exposure,label="TYRP1 (pigment B)",pos="-0.2,0"]
+  Coat_darkness [outcome,label="coat darkness",pos="1.2,0"]
+  B_locus -> Coat_darkness
+  E_locus -> Coat_darkness
+}`
+  },
+  {
     id: "icu-mortality-triage",
     title: "Does the ICU make patients die?",
     domain: "classic",
@@ -236,6 +310,53 @@ export const EXAMPLES: ExampleModel[] = [
 }`
   },
   {
+    id: "restaurant-collider",
+    title: "Collider: great food, bad service",
+    domain: "classic",
+    summary: "Food and service are independent across all restaurants — yet among the places worth visiting they trade off. The correlation is manufactured by selection, not by any real tradeoff.",
+    code: `dag {
+  Food_quality [exposure,label="food quality",pos="-1.7,0"]
+  Service_quality [outcome,label="service quality",pos="1.7,0"]
+  Worth_visiting [selected,label="worth visiting",pos="0,1.3"]
+  Food_quality -> Worth_visiting
+  Service_quality -> Worth_visiting
+}`
+  },
+  {
+    id: "positivity-correlated-confounders",
+    title: "Positivity: two strongly correlated confounders",
+    domain: "classic",
+    summary: "One treatment, one outcome, and two confounders that are almost the same variable (correlation ≈ 0.9 via a shared driver). Adjusting still identifies the +1 effect, but the near-collinear confounders push treatment probabilities toward 0/1, so overlap collapses and IPW/matching get shaky — open Σ (DGP) / Overlap to watch it. The confounder correlation is tunable.",
+    code: `dag {
+  Shared [latent,label="shared driver",pos="-0.5,-2.4"]
+  Confounder_A [adjusted,label="confounder A",pos="-1.6,-1.1"]
+  Confounder_B [adjusted,label="confounder B",pos="0.6,-1.1"]
+  Treatment [exposure,label="treatment",pos="-1.0,0.2"]
+  Outcome [outcome,label="outcome",pos="1.4,1.3"]
+  Shared -> Confounder_A
+  Shared -> Confounder_B
+  Confounder_A -> Treatment
+  Confounder_A -> Outcome
+  Confounder_B -> Treatment
+  Confounder_B -> Outcome
+  Treatment -> Outcome
+}`
+  },
+  {
+    id: "continuous-dose-response",
+    title: "Continuous treatment: a confounded dose–response",
+    domain: "classic",
+    summary: "A CONTINUOUS treatment (drug dose), not a 0/1 switch. Sicker patients get more dose and recover worse, so the crude dose–recovery slope looks negative (\"more drug, worse outcome\") — but do(dose) actually helps. Plot recovery by dose; adjusting for severity, or intervening, flips the slope positive. The continuous analogue of Simpson's.",
+    code: `dag {
+  Severity [adjusted,label="baseline severity",pos="-0.5,-1.5"]
+  Dose [exposure,label="drug dose (mg)",pos="-1.3,0.0"]
+  Recovery [outcome,label="recovery score",pos="1.3,0.8"]
+  Severity -> Dose
+  Severity -> Recovery
+  Dose -> Recovery
+}`
+  },
+  {
     id: "birthweight-paradox",
     title: "Birthweight paradox",
     domain: "classic",
@@ -292,10 +413,11 @@ export const EXAMPLES: ExampleModel[] = [
     id: "instrumental-encouragement",
     title: "Instrumental variable: encouragement design",
     domain: "classic",
-    summary: "Encouragement design with latent health confounding treatment uptake and outcome.",
+    summary: "Randomized encouragement (as-if random) instruments treatment uptake, which latent health confounds with the outcome — 2SLS recovers the effect adjustment can't.",
+    outputModule: "instrument",
     code: `dag {
-  Encouragement [exposure,pos="-2,0"]
-  Treatment [pos="0,0"]
+  Encouragement [instrument,pos="-2,0"]
+  Treatment [exposure,pos="0,0"]
   Outcome [outcome,pos="2,0"]
   Unobserved_health [latent,label="unobserved health",pos="0,1.25"]
   Encouragement -> Treatment
@@ -2756,6 +2878,9 @@ function configureClassicExample(document: GraphDocument, id: string): GraphDocu
   if (id === "tutoring-scores") return configureTutoringScores(next);
   if (id === "front-door-smoking") return configureFrontDoorSmoking(next);
   if (id === "berkson-hospital") return configureBerksonHospital(next);
+  if (id === "restaurant-collider") return configureRestaurantCollider(next);
+  if (id === "positivity-correlated-confounders") return configurePositivityCorrelatedConfounders(next);
+  if (id === "continuous-dose-response") return configureContinuousDoseResponse(next);
   if (id === "birthweight-paradox") return configureBirthweightParadox(next);
   if (id === "obesity-paradox") return configureObesityParadox(next);
   if (id === "cats-highrise-syndrome") return configureCatsHighriseSyndrome(next);
@@ -2771,6 +2896,11 @@ function configureClassicExample(document: GraphDocument, id: string): GraphDocu
 
 function configurePractitionerExample(document: GraphDocument, id: string): GraphDocument {
   const next = prepareDocument(document, exampleSeed(id));
+  if (id === "effect-modification-crossover") return configureEffectModificationCrossover(next);
+  if (id === "effect-modification-ordinal") return configureEffectModificationOrdinal(next);
+  if (id === "moderated-mediation") return configureModeratedMediation(next);
+  if (id === "john-snow-cholera") return configureJohnSnowCholera(next);
+  if (id === "epistasis-coat-color") return configureEpistasisCoatColor(next);
   if (id === "flexible-adjustment") return configureFlexibleAdjustment(next);
   if (id === "target-trial-followup") return configureTargetTrialFollowup(next);
   if (id === "what-if-treatment-feedback") return configureWhatIfTreatmentFeedback(next);
@@ -2837,6 +2967,99 @@ function configureSimpsonSeverity(document: GraphDocument): GraphDocument {
   setLinearCoefficient(document, "Severity", "Treatment", 2.8);
   setLinearCoefficient(document, "Severity", "Recovery", -3.0);
   setLinearCoefficient(document, "Treatment", "Recovery", 0.65);
+  return document;
+}
+
+// Pure effect modification: Treatment is randomized (no confounding), and Regime — a root with no
+// structural edge of its own — only MODULATES Treatment's effect on Outcome. The baseline edge gives
+// +1 when Regime=0; the smooth gate subtracts 2 when Regime=1, so the effect crosses to -1. The
+// canvas shows this as Regime's dashed arrow landing on the Treatment→Outcome edge.
+function configureEffectModificationCrossover(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 6000);
+  setBinaryVariable(document, "Regime", "The moderator: a context that flips the sign of the treatment effect. Treatment helps when Regime=0 and hurts when Regime=1.", "regime");
+  setBinaryVariable(document, "Treatment", "Randomized treatment — no confounding here, so any subgroup difference is genuine effect modification.", "treated");
+  setContinuousVariable(document, "Outcome", "Outcome whose response to treatment reverses across the regime — a disordinal (crossover) interaction.", "outcome score");
+  setNode(document, "Regime", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Treatment", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Outcome", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.6 } });
+  setLinearCoefficient(document, "Treatment", "Outcome", 1.0);
+  setSmoothGate(document, "Outcome", "Treatment", "Regime", -2.0, 0.5, 8);
+  return document;
+}
+
+// Ordinal counterpart: same structure as the crossover, but the gate only DAMPENS the effect (−0.6)
+// rather than overpowering it (−2.0), so Regime=1's effect is +0.4 — still positive. Same sign, smaller
+// size: moderation without a crossover, where the marginal effect is not misleading about direction.
+function configureEffectModificationOrdinal(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 6000);
+  setBinaryVariable(document, "Regime", "The moderator: it changes how much treatment helps, but not the sign. Treatment helps in both regimes (more when Regime=0).", "regime");
+  setBinaryVariable(document, "Treatment", "Randomized treatment — no confounding, so the subgroup differences are genuine effect modification.", "treated");
+  setContinuousVariable(document, "Outcome", "Outcome whose response to treatment shrinks (but never reverses) across the regime — an ordinal interaction.", "outcome score");
+  setNode(document, "Regime", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Treatment", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Outcome", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.6 } });
+  setLinearCoefficient(document, "Treatment", "Outcome", 1.0);
+  setSmoothGate(document, "Outcome", "Treatment", "Regime", -0.6, 0.5, 8);
+  return document;
+}
+
+// Second-stage moderated mediation: Treatment moves a single binary Behavior (the mediator), and the
+// Regime gates the Behavior→Outcome edge — so the INDIRECT effect crosses sign by regime while the
+// mediator path itself is fixed. The moderator acts on the mediator's edge, not treatment's.
+function configureModeratedMediation(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 6000);
+  setBinaryVariable(document, "Regime", "The moderator: it decides whether more of the behavior helps or hurts — it gates the behavior→outcome edge.", "regime");
+  setBinaryVariable(document, "Treatment", "Randomized treatment that pushes the behavior.", "treated");
+  setBinaryVariable(document, "Behavior", "The single mediating behavior the treatment changes. Whether it helps depends on the regime.", "adheres");
+  setContinuousVariable(document, "Outcome", "Outcome reached only through the behavior; its response to the behavior flips across the regime.", "outcome score");
+  setNode(document, "Regime", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Treatment", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setLogitNode(document, "Behavior", -1.0);
+  setNode(document, "Outcome", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.6 } });
+  setLinearCoefficient(document, "Treatment", "Behavior", 2.2);
+  setLinearCoefficient(document, "Behavior", "Outcome", 1.0);
+  setSmoothGate(document, "Outcome", "Behavior", "Regime", -2.0, 0.5, 8);
+  return document;
+}
+
+// John Snow's 1854 cholera study as an instrument. Company (Z) is as-if random (intermingled pipes), so
+// it instruments Contamination (A) for Cholera (Y). Sanitation/poverty (U, latent) confounds A↔Y — it
+// raises both contaminated-water exposure and cholera risk by other routes — so the naive Contamination→
+// Cholera contrast is biased UP, while the company-instrument recovers the effect of the water itself.
+function configureJohnSnowCholera(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 8000);
+  setBinaryVariable(document, "Company", "Water company supplying the house. As-if random: the two companies' pipes were intermingled street by street, decided years earlier by landlords. Lambeth (0) drew clean water upstream; Southwark & Vauxhall (1) drew sewage-tainted water downstream.", "S&V supplier");
+  setContinuousVariable(document, "Sanitation", "Unmeasured neighbourhood sanitation / poverty. Worse sanitation means BOTH more contaminated water AND higher cholera risk by other routes — the confounding the instrument defeats.", "sanitation z-score", ["latent"]);
+  setBinaryVariable(document, "Contamination", "Whether the household actually drank cholera-contaminated water — mostly set by the company, but not entirely (private wells, other sources).", "contaminated water");
+  setBinaryVariable(document, "Cholera_death", "Death from cholera.", "cholera death");
+  setNode(document, "Company", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Sanitation", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "Contamination", -2.8); // low baseline so Lambeth (clean) households are rarely exposed
+  setLogitNode(document, "Cholera_death", -4.0);  // low baseline cholera (rare absolute rates, like the real 0.4–3%)
+  setLinearCoefficient(document, "Company", "Contamination", 4.0);       // strong first stage (S&V → contaminated)
+  setLinearCoefficient(document, "Sanitation", "Contamination", 1.1);    // poorer → more contaminated (confounding)
+  setLinearCoefficient(document, "Contamination", "Cholera_death", 3.1); // contaminated water → cholera (the true effect)
+  setLinearCoefficient(document, "Sanitation", "Cholera_death", 1.45);   // poorer → cholera by other routes (confounding)
+  return document;
+}
+
+// Recessive epistasis (Labrador coat colour). The extension locus E is EPISTATIC to the pigment locus B:
+// ee blocks all pigment (yellow) regardless of B, so B's effect on colour is MASKED unless E is
+// functional. Modelled as E gating B's effect on the trait — a gene–gene interaction. B has no effect on
+// its own (the B→trait edge is 0); the smooth gate switches it on only when E is functional.
+function configureEpistasisCoatColor(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 6000);
+  setBinaryVariable(document, "E_locus", "MC1R, the extension locus — the receptor that switches pigment cells to dark (eumelanin). ee (0) = non-functional → only yellow pigment, masking the B locus; E_ (1) = functional → dark pigment allowed. The epistatic (masking) gene.", "MC1R functional");
+  setBinaryVariable(document, "B_locus", "TYRP1, the B locus — black (B=1) vs brown/chocolate (B=0) eumelanin. Only visible when MC1R is functional. The hypostatic (masked) gene.", "B (black) allele");
+  setContinuousVariable(document, "Coat_darkness", "Coat darkness. Yellow (low) when ee; chocolate (medium) or black (high) when MC1R is functional.", "darkness");
+  setNode(document, "E_locus", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "B_locus", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Coat_darkness", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.4 } });
+  setLinearCoefficient(document, "E_locus", "Coat_darkness", 1.0);  // MC1R functional → dark pigment (yellow → chocolate baseline)
+  setLinearCoefficient(document, "B_locus", "Coat_darkness", 1.0);  // TYRP1: black (B) is +1 darker than chocolate (b)
+  // MC1R MASKS TYRP1: when MC1R is non-functional (ee) the gate removes TYRP1's effect entirely (yellow).
+  // Negative coefficient + negative steepness ⇒ the gate is active (subtracts the full +1) only when E=0.
+  setSmoothGate(document, "Coat_darkness", "B_locus", "E_locus", -1.0, 0.5, -8);
   return document;
 }
 
@@ -2908,6 +3131,71 @@ function configureBerksonHospital(document: GraphDocument): GraphDocument {
   setLogitNode(document, "Hospitalized", -3.2);
   setLinearCoefficient(document, "Disease_A", "Hospitalized", 2.8);
   setLinearCoefficient(document, "Disease_B", "Hospitalized", 2.8);
+  return document;
+}
+
+function configureRestaurantCollider(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 5000);
+  setContinuousVariable(document, "Food_quality", "How good the food is. Independent of service across the full population of restaurants.", "food (z)");
+  setContinuousVariable(document, "Service_quality", "How good the service is. Independent of food across the full population of restaurants.", "service (z)");
+  setBinaryVariable(document, "Worth_visiting", "Selection: a restaurant survives / makes your shortlist only if it is good enough overall — a common effect of food AND service. Conditioning on this is what manufactures the tradeoff.", "worth visiting");
+  setNode(document, "Food_quality", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Service_quality", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  // Sharp selection on (food + service): only the upper-right frontier survives, so among the
+  // visited restaurants food and service are forced into a tradeoff (~ -0.5) though they are
+  // independent in the full population.
+  setLogitNode(document, "Worth_visiting", -3.2);
+  setLinearCoefficient(document, "Food_quality", "Worth_visiting", 3.4);
+  setLinearCoefficient(document, "Service_quality", "Worth_visiting", 3.4);
+  // Condition the analysis sample on the survivors (worth visiting = 1): this is what turns the
+  // independent (round) cloud into a downward tradeoff band.
+  setSelection(document, "Worth_visiting", { operator: "at_least", value: 1, sampling: "rejection" });
+  return document;
+}
+
+// Gentle positivity demo: two near-collinear confounders (corr ≈ 0.9 via a shared latent driver,
+// Gaussian copula) that both strongly drive treatment. Adjusting still identifies the +1 effect, but
+// the correlation pushes propensities toward 0/1 → overlap collapses and IPW/matching wobble. The
+// copula correlation is tunable from the source→confounder loadings (corr ≈ loading²).
+function configurePositivityCorrelatedConfounders(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 4000);
+  setContinuousVariable(document, "Shared", "Latent standard-normal driver that the two confounders share — its loading sets their correlation.", "z", ["latent"]);
+  setContinuousVariable(document, "Confounder_A", "Confounder A — drives both treatment and outcome.", "z");
+  setContinuousVariable(document, "Confounder_B", "Confounder B — drives both; almost the same variable as A.", "z");
+  setBinaryVariable(document, "Treatment", "Binary treatment, assigned far more often when A and B are high.", "treated");
+  setContinuousVariable(document, "Outcome", "Continuous outcome.", "outcome");
+  // Strong copula correlation: loading 0.95 on each ⇒ corr(A,B) ≈ 0.95² ≈ 0.90.
+  addCopulaCovariates(document, "Shared", [
+    { id: "Confounder_A", marginal: UNIT_NORMAL, loading: 0.95 },
+    { id: "Confounder_B", marginal: UNIT_NORMAL, loading: 0.95 }
+  ]);
+  // Treatment strongly driven by the confounders → extreme propensities (poor overlap).
+  setLogitNode(document, "Treatment", 0);
+  setLinearCoefficient(document, "Confounder_A", "Treatment", 1.6);
+  setLinearCoefficient(document, "Confounder_B", "Treatment", 1.6);
+  // Outcome: a clean +1 treatment effect plus confounding through A and B.
+  setNode(document, "Outcome", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setLinearCoefficient(document, "Treatment", "Outcome", 1.0);
+  setLinearCoefficient(document, "Confounder_A", "Outcome", 1.0);
+  setLinearCoefficient(document, "Confounder_B", "Outcome", 1.0);
+  return document;
+}
+
+// Continuous-treatment example: a CONTINUOUS dose (not a 0/1 switch). Severity confounds: sicker
+// patients get more dose AND recover worse, so the crude dose→recovery slope is negative even though
+// do(dose) helps (+0.8 per mg). Intervening on / adjusting for severity flips it positive — the
+// continuous analogue of Simpson's. (The engine supports do() on continuous nodes via overrides.)
+function configureContinuousDoseResponse(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 4000);
+  setContinuousVariable(document, "Severity", "Baseline illness severity. Sicker patients are given more drug and also recover worse — the confounding.", "severity z-score");
+  setContinuousVariable(document, "Dose", "Continuous drug dose actually administered.", "mg");
+  setContinuousVariable(document, "Recovery", "Recovery score at follow-up.", "score");
+  setNode(document, "Severity", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Dose", { intercept: 5, noise: { kind: "normal", mean: 0, sd: 0.8 } });
+  setNode(document, "Recovery", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setLinearCoefficient(document, "Severity", "Dose", 1.6);     // sicker → more dose
+  setLinearCoefficient(document, "Severity", "Recovery", -3.6); // sicker → much worse recovery (confounding)
+  setLinearCoefficient(document, "Dose", "Recovery", 0.8);      // the TRUE causal effect: dose helps
   return document;
 }
 
@@ -4624,7 +4912,8 @@ const EXAMPLE_ROLE_ORDER: Record<keyof GraphNode["roles"], number> = {
   adjusted: 1,
   exposure: 2,
   outcome: 3,
-  selected: 4
+  selected: 4,
+  instrument: 5
 };
 
 function layoutExampleDocument(document: GraphDocument): GraphDocument {
@@ -5035,6 +5324,17 @@ function setNode(document: GraphDocument, id: string, mechanism: Partial<NodeMec
 
 function setLogitNode(document: GraphDocument, id: string, intercept: number) {
   setNode(document, id, { intercept, noise: ZERO_NOISE, combiner: "bernoulli_logit" });
+}
+
+// Add a smooth-gated interaction to a node: `gate` modulates the effect of `source` on `target`
+// (the term added to target's equation is coefficient · source · sigmoid(steepness·(gate − threshold))).
+// This is the "a node acts upon an edge" / moderator-effect-modifier primitive, and it is what the
+// canvas renders as an arrow from `gate` onto the `source → target` edge. Merges onto any existing
+// node mechanism so it can follow setLinearCoefficient/setLogitNode for the same target.
+function setSmoothGate(document: GraphDocument, target: string, source: string, gate: string, coefficient: number, threshold = 0.5, steepness = 6) {
+  const current = normalizeNodeMechanism(document.simulation.nodes[target] ?? {});
+  const interaction: NodeInteraction = { id: `gate-${source}-${gate}-${target}`, kind: "smooth_gated", source, gate, coefficient, threshold, steepness };
+  document.simulation.nodes[target] = { ...current, interactions: [...current.interactions.filter((existing) => existing.id !== interaction.id), interaction] };
 }
 
 function setLinearCoefficient(document: GraphDocument, source: string, target: string, coefficient: number) {

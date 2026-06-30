@@ -1,7 +1,7 @@
-import { analyzeAdjustment, cohortFromSimulationResult, compareLongitudinalGMethods, deriveAdjustmentSpec, estimateSurvivalCurve, observedMethodSurvivalCurves, normalizeVariableModel, runSimulation } from "@nudagitty/core";
-import type { AdjustmentSpec, CovariateBasis, GMethodEstimate, GMethodsComparison, MethodSurvivalCurve, SimulatedNodeState, SurvivalCurvePoint } from "@nudagitty/core";
+import { analyzeAdjustment, cohortFromSimulationResult, compareLongitudinalGMethods, deriveAdjustmentSpec, estimateInstrument, estimateSurvivalCurve, observedMethodSurvivalCurves, normalizeVariableModel, runSimulation } from "@nudagitty/core";
+import type { AdjustmentSpec, CovariateBasis, GMethodEstimate, GMethodsComparison, IvEstimate, MethodSurvivalCurve, SimulatedNodeState, SurvivalCurvePoint } from "@nudagitty/core";
 import type React from "react";
-import { Fragment, memo, useState } from "react";
+import { Children, Fragment, memo, useState } from "react";
 import {
   formatPercent,
   formatPercentagePointMagnitude,
@@ -14,7 +14,9 @@ import { empiricalSampleWeight, formatAdjustmentSet, weightedBinaryShare, weight
 import { badControlWarning, describeEstimand } from "./estimand";
 import { HighlightNames, NodeText } from "../shared/NodeNames";
 import { chartFrame } from "../charts/chartFrame";
-import { CategoryOutcomePlot, binaryOutcomeSummaries, categoryOutcomeDomain, continuousOutcomeSummaries, wilsonInterval } from "../charts/CategoryOutcomePlot";
+import { MARGINAL_COLOR, SERIES_COLORS, subgroupColor } from "../charts/chartColors";
+import { CategoryOutcomePlot, binaryOutcomeSummaries, continuousOutcomeSummaries, wilsonInterval } from "../charts/CategoryOutcomePlot";
+import type { CategoryOutcomeSummary } from "../charts/CategoryOutcomePlot";
 import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
 import { stratifyRiskCurves } from "./stratify";
 import type { CompletedOutputModule, CompletedOutputRenderOptions, OutputContext } from "./types";
@@ -150,6 +152,10 @@ type HuhCompletedOutput = {
   metrics: HuhMetric[];
   bullets: Array<{ label: string; text: string }>;
   shift?: HuhShift;
+  // When true, each bullet renders as its own collapsible .output-box (used by the structural
+  // diagnosis so Estimand / Structure / Recommendation match the other adjusted-output cards)
+  // instead of a single narrative bullet list.
+  bulletsAsBoxes?: boolean;
 };
 
 type WhatIfOutputScale = "risk" | "mean";
@@ -217,6 +223,20 @@ export type ComputedCompletedOutput = {
 };
 
 export const completedOutputModules: CompletedOutputModule<unknown>[] = [
+  {
+    id: "effect-modification",
+    label: "moderator",
+    compute: computeModeratorEffectOutput,
+    render: (result) => renderModeratorEffectOutput(result as ModeratorEffectOutput),
+    fallback: fallbackOutput("needs a moderator", "This output needs a smooth-gated moderator on the outcome.")
+  },
+  {
+    id: "instrument",
+    label: "instrument",
+    compute: computeInstrumentOutput,
+    render: (result) => renderInstrumentOutput(result as InstrumentOutput),
+    fallback: fallbackOutput("needs an instrument", "This output needs an instrument, an exposure, and an outcome role assigned in the graph.")
+  },
   {
     id: "simpson-severity",
     label: "Simpson ready",
@@ -802,12 +822,39 @@ function renderHuhOutput(output: HuhCompletedOutput) {
           ))}
         </div>
       )}
-      <ul className="completed-output-list">
-        {output.bullets.map((bullet) => (
-          <li key={bullet.label}><strong>{bullet.label}:</strong> {bullet.text}</li>
-        ))}
-      </ul>
+      {output.bulletsAsBoxes
+        ? output.bullets.map((bullet) => (
+            <details className="output-box" key={bullet.label} open>
+              <summary><strong>{bullet.label}</strong></summary>
+              <div className="completed-output-body"><p>{bullet.text}</p></div>
+            </details>
+          ))
+        : (
+          <ul className="completed-output-list">
+            {output.bullets.map((bullet) => (
+              <li key={bullet.label}><strong>{bullet.label}:</strong> {bullet.text}</li>
+            ))}
+          </ul>
+        )}
     </CompletedOutputShell>
+  );
+}
+
+// The Estimand + Structure cards from the generic structural diagnosis, rendered ALONGSIDE a dedicated
+// module's output so every adjustment/selection example surfaces its target estimand (not just the
+// generic-fallback ones). Reuses computeStructuralDiagnosis so the wording stays in one place.
+export function AuxEstimandStructure({ diagnosis }: { diagnosis: HuhCompletedOutput | null }) {
+  const cards = (diagnosis?.bullets ?? []).filter((bullet) => bullet.label === "Estimand" || bullet.label === "Structure");
+  if (cards.length === 0) return null;
+  return (
+    <HighlightNames>
+      {cards.map((bullet) => (
+        <details className="output-box" key={bullet.label} open>
+          <summary><strong>{bullet.label}</strong></summary>
+          <div className="completed-output-body"><p className="completed-conclusion">{bullet.text}</p></div>
+        </details>
+      ))}
+    </HighlightNames>
   );
 }
 
@@ -827,15 +874,12 @@ function WhatIfAdvancedOutputView({ output }: { output: WhatIfAdvancedOutput }) 
   return (
     <CompletedOutputShell badge={output.badge} title={output.title} conclusion={output.conclusion}>
       {comparison && (
-        <div className="what-if-effect-graph">
-          <div className="module-card-header"><strong>Effect by treatment</strong><span>each arm's outcome, with 95% CI</span></div>
-          <div className="what-if-effect-legend">
-            <span><i style={{ background: "var(--chart-muted)" }} /> observed</span>
-            <span><i style={{ background: "var(--chart-series-2)" }} /> truth</span>
-            {primaryId !== "g_formula" && primaryId !== "naive" && <span><i style={{ background: "var(--causal)" }} /> {primary?.label ?? "selected"}</span>}
+        <details className="output-box" open>
+          <summary><strong>Observed vs re-simulated</strong><span>the crude data and the re-simulated oracle, by arm</span></summary>
+          <div className="what-if-effect-graph">
+            <EffectByArmGraph comparison={comparison} outcomeScale={output.outcomeScale} selectedId={primaryId} show={["observed", "truth"]} />
           </div>
-          <EffectByArmGraph comparison={comparison} outcomeScale={output.outcomeScale} selectedId={primaryId} />
-        </div>
+        </details>
       )}
       <WhatIfMetricGrid output={output} primary={primary} />
       {output.survival && (output.view === "survival" || output.view === "survival_time") && (
@@ -920,7 +964,28 @@ export function defaultPrimaryMethod(comparison: GMethodsComparison): GMethodEst
 // The effect graph (redesign step 2): the REAL CategoryOutcomePlot, fed the observed (naïve) arms
 // as its base summaries, with the oracle (truth) and the selected method overlaid as point+CI
 // series — observed + every method's estimate in one chart, slope = the effect.
-function EffectByArmGraph(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; selectedId: GMethodEstimate["id"]; points?: ScatterPoint[]; treatmentId?: string }) {
+// A y-scale shared across small-multiple facets so they're directly comparable. Continuous: span the
+// summary means/CIs plus the central bulk of the points (1st–99th percentile), so a heavy tail in one
+// facet can't blow up the common scale. Binary: a shared rate band cropped to where the proportions/CIs
+// live, clamped to [0,1]. Pair with the chart's `clampToDomain` so it honours this instead of auto-fitting.
+function sharedFacetYDomain(facets: Array<{ points: ScatterPoint[]; summaries: CategoryOutcomeSummary[] }>, binary: boolean): [number, number] {
+  const finite = (vs: Array<number | null>) => vs.filter((v): v is number => v !== null && Number.isFinite(v));
+  const rates = finite(facets.flatMap((f) => f.summaries.flatMap((s) => [s.mean, s.lower, s.upper])));
+  if (binary) {
+    if (!rates.length) return [0, 1];
+    const lo = Math.min(...rates), hi = Math.max(...rates);
+    const pad = Math.max((hi - lo) * 0.14, 0.01);
+    return [Math.max(0, lo - pad), Math.min(1, hi + pad)];
+  }
+  const allPointYs = facets.flatMap((f) => f.points.map((p) => p.y)).filter(Number.isFinite).sort((a, b) => a - b);
+  const pctl = (q: number): number | null => allPointYs.length ? allPointYs[Math.min(allPointYs.length - 1, Math.max(0, Math.round(q * (allPointYs.length - 1))))]! : null;
+  const lo = Math.min(...(rates.length ? rates : [0]), pctl(0.01) ?? 0);
+  const hi = Math.max(...(rates.length ? rates : [1]), pctl(0.99) ?? 1);
+  const pad = Math.max((hi - lo) * 0.08, 1e-6);
+  return [lo - pad, hi + pad];
+}
+
+function EffectByArmGraph(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; selectedId: GMethodEstimate["id"]; points?: ScatterPoint[]; treatmentId?: string; show?: Array<"observed" | "truth" | "selected"> }) {
   const { comparison } = props;
   const binary = (props.outcomeScale ?? "risk") === "risk";
   const find = (id: GMethodEstimate["id"]) => comparison.estimates.find((e) => e.id === id);
@@ -971,19 +1036,49 @@ function EffectByArmGraph(props: { comparison: GMethodsComparison; outcomeScale:
   });
   const oracle = find("g_formula");
   const selected = props.selectedId !== "naive" ? find(props.selectedId) : null;
-  const yDomain = binary ? ([0, 1] as [number, number]) : categoryOutcomeDomain([0, 1], summaries, false);
-  const facets: Array<{ id: string; title: string; color: string; effect: number | null; points: ScatterPoint[]; summaries: typeof summaries }> = [
-    { id: "observed", title: "observed", color: "var(--chart-muted)", effect: naive.estimate, points, summaries },
-    ...(oracle ? [{ id: "truth", title: "truth", color: "var(--chart-series-2)", effect: oracle.estimate, points: [], summaries: estimateSummaries(oracle) }] : []),
-    ...(selected && selected.id !== "g_formula" ? [{ id: "selected", title: selected.label, color: "var(--causal)", effect: selected.estimate, points: [], summaries: estimateSummaries(selected) }] : [])
-  ];
+  // The method's per-unit cloud — re-simulated counterfactuals for the oracle, parametric
+  // predictions for outcome-regression/AIPW, reweighted observations for IPW — placed under the
+  // treatment group its arm assigns, so the truth/selected facets show individuals too (not just a
+  // summary). Continuous only; the binary view shows proportions, where a swarm isn't drawn.
+  const armScatter = (estimate: GMethodEstimate): ScatterPoint[] => {
+    const out: ScatterPoint[] = [];
+    let idx = 0;
+    ([0, 1] as const).forEach((i) => {
+      const group = armGroup(i);
+      for (const p of estimate.arms[i]?.points ?? []) {
+        if (!Number.isFinite(p.y)) continue;
+        out.push({ x: group, y: p.y, weight: Number.isFinite(p.weight) && p.weight > 0 ? p.weight : 1, index: idx++ });
+      }
+    });
+    return out;
+  };
+  type Facet = { id: string; title: string; color: string; effect: number | null; points: ScatterPoint[]; summaries: CategoryOutcomeSummary[] };
+  const facetFor = (id: string, title: string, color: string, estimate: GMethodEstimate): Facet => {
+    if (!binary) {
+      const pts = armScatter(estimate);
+      // Derive the swarm + mean + CI from the method's own points, so all three are mutually
+      // consistent and the facet shares the labelling the observed facet uses.
+      if (pts.length > 0) return { id, title, color, effect: estimate.estimate, points: pts, summaries: continuousOutcomeSummaries(pts, xLabel) };
+    }
+    return { id, title, color, effect: estimate.estimate, points: [], summaries: estimateSummaries(estimate) };
+  };
+  const facets: Facet[] = [
+    { id: "observed", title: "observed", color: SERIES_COLORS.observed, effect: naive.estimate, points, summaries },
+    ...(oracle ? [facetFor("truth", "re-simulated oracle", SERIES_COLORS.truth, oracle)] : []),
+    ...(selected && selected.id !== "g_formula" && selected.id !== "naive" ? [facetFor("selected", selected.label, SERIES_COLORS.chosen, selected)] : [])
+  ].filter((facet) => !props.show || props.show.includes(facet.id as "observed" | "truth" | "selected"));
+  if (facets.length === 0) return null;
+  // Shared y-scale across facets so the charts are directly comparable (a -21pp drop must look bigger
+  // than a -8pp one).
+  const yDomain = sharedFacetYDomain(facets, binary);
   return (
     <div className="effect-facet-row">
       {facets.map((f) => (
         <div className="effect-facet" key={f.id}>
           <div className="effect-facet-head"><strong style={{ color: f.color }}>{f.title}</strong><span>{formatOutcomeDifference(f.effect, props.outcomeScale, "")}</span></div>
+          <div className="effect-facet-formula"><code>{f.id === "observed" ? "E[Y | X]" : "E[Y | do(X)]"}</code></div>
           <div className="effect-facet-body">
-            <CategoryOutcomePlot compact points={f.points} summaries={f.summaries} xLabel={xLabel} yLabel={comparison.outcome} yDomain={yDomain} outcomeKind={binary ? "binary" : "continuous"} />
+            <CategoryOutcomePlot compact points={f.points} summaries={f.summaries} xLabel={xLabel} yLabel={comparison.outcome} yDomain={yDomain} clampToDomain seriesColor={f.color} outcomeKind={binary ? "binary" : "continuous"} />
           </div>
         </div>
       ))}
@@ -991,7 +1086,7 @@ function EffectByArmGraph(props: { comparison: GMethodsComparison; outcomeScale:
   );
 }
 
-export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean; primaryId?: GMethodEstimate["id"]; onPrimaryChange?: (id: GMethodEstimate["id"]) => void; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void }) {
+export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean; primaryId?: GMethodEstimate["id"]; onPrimaryChange?: (id: GMethodEstimate["id"]) => void; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void; points?: ScatterPoint[]; treatmentId?: string }) {
   const { comparison, outcomeScale, outcomeUnit } = props;
   // Units go in the column headers, not redundantly in every cell (risk shows % inline, so no
   // suffix there).
@@ -1006,11 +1101,18 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
   // Per-method expandable detail (the redesign): each row opens to its plain explanation, the
   // variables it uses, its formula, and a slot for the prediction/performance viz (step 3).
   const [openId, setOpenId] = useState<GMethodEstimate["id"] | null>(null);
+  // The chosen method's own graph belongs in this panel — but only when it's a from-data estimator;
+  // when the chosen method IS the naive/oracle, that graph already lives in the observed/re-simulated panel.
+  const showChosenGraph = primary !== null && primary.id !== "naive" && primary.id !== "g_formula";
   return (
-    <>
+    <details className="output-box adjustment-methods-panel" open>
+      <summary><strong>Adjustment methods</strong><span>the chosen estimator's adjusted effect, and how every method gets there</span></summary>
+      {showChosenGraph && (
+        <div className="what-if-effect-graph">
+          <EffectByArmGraph comparison={comparison} outcomeScale={outcomeScale} selectedId={primary!.id} points={props.points} treatmentId={props.treatmentId} show={["selected"]} />
+        </div>
+      )}
       {primary && (
-        <details className="output-box" open>
-          <summary><strong>Interpretation</strong><span>what the chosen estimator concludes about the adjusted effect</span></summary>
         <div className="methods-primary">
           <div className="methods-primary-controls">
             <label htmlFor="primary-method-select">Primary method</label>
@@ -1027,31 +1129,15 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
               ))}
             </select>
           </div>
-          {props.onBasisChange && (
-            <div className="methods-primary-controls">
-              <label htmlFor="covariate-basis-select" title="How flexibly continuous confounders enter the parametric estimators (outcome regression, AIPW). Higher degree = more flexible.">Confounder basis</label>
-              <select
-                id="covariate-basis-select"
-                className="methods-primary-select"
-                value={props.basis ?? "linear"}
-                onChange={(event) => props.onBasisChange!(event.target.value as CovariateBasis)}
-              >
-                <option value="linear">Linear</option>
-                <option value="quadratic">Quadratic (+ L²)</option>
-                <option value="cubic">Cubic (+ L³)</option>
-              </select>
-            </div>
-          )}
           <div className="methods-primary-headline">
             <strong className={estimateToneClass(primary.estimate)}>{formatOutcomeDifference(primary.estimate, outcomeScale, outcomeUnit)}</strong>
             <span>{comparison.strategies[0].label} vs {comparison.strategies[1].label}</span>
           </div>
           <p className="methods-primary-plain">{METHOD_GLOSSARY[primary.id].plain}</p>
         </div>
-        </details>
       )}
-      <details className="output-box what-if-method-table-card" open={props.defaultOpen}>
-        <summary className="module-card-header">
+      <details className="output-box what-if-method-table-card nested-method-table" open={props.defaultOpen}>
+        <summary>
           <strong>Compare all methods</strong>
           <span>every estimator + how it gets there · {formatWeightedCount(comparison.cohort.sampleSize)} rows</span>
         </summary>
@@ -1072,9 +1158,9 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
               const isOracle = estimate.id === "g_formula";
               const open = openId === estimate.id;
               const glossary = METHOD_GLOSSARY[estimate.id];
-              const subtitle = isOracle
-                ? "The model we built, re-simulated under each strategy — the target to recover, not a from-data estimate."
-                : (glossary ? `${glossary.plain.split(". ")[0]}.` : (estimate.diagnostics[0] ?? ""));
+              // Default subtitle is the estimand FORMULA; the prose explanation lives in the row's
+              // expansion below (open the row to read it).
+              const formula = glossary?.formula ?? null;
               const uses = estimate.id === "naive" ? "nothing — the crude contrast"
                 : comparison.timeVaryingCovariates.length > 0 ? comparison.timeVaryingCovariates.join(", ")
                 : "—";
@@ -1084,7 +1170,7 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
                 <tr className={rowClass} onClick={() => setOpenId(open ? null : estimate.id)}>
                   <td>
                     <strong>{open ? "▾ " : "▸ "}{isOracle ? "True effect — g-formula (oracle)" : estimate.label}{estimate.id === primary?.id ? " ◄" : ""}</strong>
-                    <small>{subtitle}</small>
+                    <small className="method-row-formula">{formula ? <code>{formula}</code> : (estimate.diagnostics[0] ?? "")}</small>
                   </td>
                   <td>{formatOutcomeValue(estimate.arms[0].mean, outcomeScale, "")}</td>
                   <td>{formatOutcomeValue(estimate.arms[1].mean, outcomeScale, "")}</td>
@@ -1108,7 +1194,22 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
           </tbody>
         </table>
       </details>
-    </>
+      {props.onBasisChange && (
+        <div className="methods-estimator-settings">
+          <label htmlFor="covariate-basis-select" title="How flexibly continuous confounders enter the parametric estimators (outcome regression, AIPW). Higher degree = more flexible.">Estimator setting — confounder basis</label>
+          <select
+            id="covariate-basis-select"
+            className="methods-primary-select"
+            value={props.basis ?? "linear"}
+            onChange={(event) => props.onBasisChange!(event.target.value as CovariateBasis)}
+          >
+            <option value="linear">Linear</option>
+            <option value="quadratic">Quadratic (+ L²)</option>
+            <option value="cubic">Cubic (+ L³)</option>
+          </select>
+        </div>
+      )}
+    </details>
   );
 });
 
@@ -1117,22 +1218,15 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
 // pieces inline.) This is how the redesign reaches every adjustment example, not just what-if.
 export function UnifiedAdjustmentReadout(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; points?: ScatterPoint[]; treatmentId?: string; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void }) {
   const [primaryId, setPrimaryId] = useState<GMethodEstimate["id"]>(() => defaultPrimaryMethod(props.comparison));
-  const primary = props.comparison.estimates.find((e) => e.id === primaryId && e.estimate !== null) ?? null;
-  const showSelected = primaryId !== "g_formula" && primaryId !== "naive";
   return (
     <>
       <details className="output-box" open>
-        <summary><strong>Effect by treatment</strong><span>observed data vs the truth vs the chosen method, by treatment arm</span></summary>
+        <summary><strong>Observed vs re-simulated</strong><span>the crude data and the re-simulated oracle, by treatment arm</span></summary>
         <div className="what-if-effect-graph">
-          <div className="what-if-effect-legend">
-            <span><i style={{ background: "var(--chart-muted)" }} /> observed</span>
-            <span><i style={{ background: "var(--chart-series-2)" }} /> truth</span>
-            {showSelected && <span><i style={{ background: "var(--causal)" }} /> {primary?.label ?? "selected"}</span>}
-          </div>
-          <EffectByArmGraph comparison={props.comparison} outcomeScale={props.outcomeScale} selectedId={primaryId} points={props.points} treatmentId={props.treatmentId} />
+          <EffectByArmGraph comparison={props.comparison} outcomeScale={props.outcomeScale} selectedId={primaryId} points={props.points} treatmentId={props.treatmentId} show={["observed", "truth"]} />
         </div>
       </details>
-      <MethodsComparisonPanel comparison={props.comparison} outcomeScale={props.outcomeScale} outcomeUnit={props.outcomeUnit} defaultOpen primaryId={primaryId} onPrimaryChange={setPrimaryId} basis={props.basis} onBasisChange={props.onBasisChange} />
+      <MethodsComparisonPanel comparison={props.comparison} outcomeScale={props.outcomeScale} outcomeUnit={props.outcomeUnit} defaultOpen primaryId={primaryId} onPrimaryChange={setPrimaryId} basis={props.basis} onBasisChange={props.onBasisChange} points={props.points} treatmentId={props.treatmentId} />
     </>
   );
 }
@@ -1609,21 +1703,222 @@ function deterministicBinnedJitter(index: number, binIndex: number, arm: 0 | 1):
 }
 
 function CompletedOutputShell(props: { badge: string; conclusion: string; title?: string; children: React.ReactNode }) {
+  // The primary visual (the first child — e.g. the "Effect by treatment" graph, or the metric grid)
+  // leads; the "Interpretation" prose is its own box using the same .output-box primitive as every
+  // other card, so the green wrapper is gone and the boxes read as siblings.
+  const [lead, ...rest] = Children.toArray(props.children);
+  // One wrapper auto-chips every node name in the conclusion, visual reads, backdoor lines, etc.
   return (
-    <details className="completed-output-card" open>
-      <summary className="module-card-header completed-output-summary">
-        <strong>{props.title ?? "Interpretation"}</strong>
-        <span className="module-badge active">{props.badge}</span>
-      </summary>
-      {/* One wrapper auto-chips every node name in the conclusion, visual reads,
-          backdoor lines, metric labels and bullets below. */}
-      <HighlightNames>
-        <div className="completed-output-body">
-          <p className="completed-conclusion">{props.conclusion}</p>
-          {props.children}
+    <HighlightNames>
+      <div className="completed-output">
+        {lead}
+        <details className="output-box completed-interpretation" open>
+          <summary>
+            <strong>{props.title ?? "Interpretation"}</strong>
+            <span className="module-badge active">{props.badge}</span>
+          </summary>
+          <div className="completed-output-body">
+            <p className="completed-conclusion">{props.conclusion}</p>
+          </div>
+        </details>
+        {rest}
+      </div>
+    </HighlightNames>
+  );
+}
+
+// --- Effect modification / moderator-CATE output -----------------------------------------------
+// Faces the treatment→outcome effect by a MODERATOR (the gate of a smooth_gated interaction): one
+// facet per moderator level, plus a leading marginal facet. A disordinal (crossover) interaction
+// shows as opposite-signed subgroup facets whose average — the marginal — hides them.
+
+type ModeratorFacet = { id: string; title: string; color: string; effect: number | null; points: ScatterPoint[]; summaries: CategoryOutcomeSummary[] };
+type ModeratorEffectOutput = {
+  treatmentLabel: string;
+  moderatorLabel: string;
+  outcomeLabel: string;
+  outcomeUnit: string;
+  binary: boolean;
+  facets: ModeratorFacet[];
+  marginalEffect: number | null;
+  crossover: boolean;
+  ordinal: boolean;
+};
+
+function computeModeratorEffectOutput(context: OutputContext): ModeratorEffectOutput | null {
+  const { document, simulation } = context;
+  // The moderator is the `gate` of a smooth_gated interaction; it lives on the outcome (target) node.
+  let spec: { outcomeId: string; treatmentId: string; moderatorId: string } | null = null;
+  for (const [outcomeId, mechanism] of Object.entries(document.simulation.nodes)) {
+    const gated = (mechanism?.interactions ?? []).find((interaction) => interaction.kind === "smooth_gated");
+    if (gated && gated.kind === "smooth_gated") { spec = { outcomeId, treatmentId: gated.source, moderatorId: gated.gate }; break; }
+  }
+  if (!spec) return null;
+  const tState = simulation.nodeStates[spec.treatmentId];
+  const yState = simulation.nodeStates[spec.outcomeId];
+  const mState = simulation.nodeStates[spec.moderatorId];
+  if (!tState || !yState || !mState) return null;
+  const tSamples = tState.empirical.samples, ySamples = yState.empirical.samples, mSamples = mState.empirical.samples;
+  const tWeights = tState.empirical.weights, yWeights = yState.empirical.weights;
+  const count = Math.min(tSamples.length, ySamples.length, mSamples.length);
+  type Row = { x: number; y: number; weight: number; index: number; mod: number };
+  const rows: Row[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const x = tSamples[index], y = ySamples[index], mod = mSamples[index];
+    if (x === undefined || y === undefined || mod === undefined || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(mod)) continue;
+    rows.push({ x, y, weight: Math.max(0, tWeights[index] ?? yWeights[index] ?? 1), index, mod });
+  }
+  if (rows.length === 0) return null;
+  const binary = rows.every((row) => row.y === 0 || row.y === 1);
+  const labelOf = (id: string) => document.graph.nodes.find((node) => node.id === id)?.label ?? id;
+  const treatmentLabel = labelOf(spec.treatmentId);
+  const moderatorLabel = labelOf(spec.moderatorId);
+  const outcomeLabel = labelOf(spec.outcomeId);
+  const outcomeUnit = document.graph.nodes.find((node) => node.id === spec.outcomeId)?.variable.unit ?? "";
+  const toPoints = (subset: Row[]): ScatterPoint[] => subset.map((row) => ({ x: row.x, y: row.y, weight: row.weight, index: row.index }));
+  const summariesOf = (points: ScatterPoint[]) => binary ? binaryOutcomeSummaries(points, treatmentLabel) : continuousOutcomeSummaries(points, treatmentLabel);
+  const effectOf = (summaries: CategoryOutcomeSummary[]): number | null => {
+    const treated = summaries.find((summary) => summary.group === 1)?.mean ?? null;
+    const untreated = summaries.find((summary) => summary.group === 0)?.mean ?? null;
+    return treated === null || untreated === null ? null : treated - untreated;
+  };
+  const allPoints = toPoints(rows);
+  const allSummaries = summariesOf(allPoints);
+  const facets: ModeratorFacet[] = [
+    { id: "marginal", title: "all (marginal)", color: MARGINAL_COLOR, effect: effectOf(allSummaries), points: allPoints, summaries: allSummaries }
+  ];
+  for (const level of [0, 1] as const) {
+    const subset = rows.filter((row) => Math.round(row.mod) === level);
+    if (subset.length === 0) continue;
+    const points = toPoints(subset);
+    const summaries = summariesOf(points);
+    // Subgroup axis: ordered violet ramp, distinct from the method colors (gray/ochre/blue).
+    facets.push({ id: `mod-${level}`, title: `${moderatorLabel}=${level}`, color: subgroupColor(level, 2), effect: effectOf(summaries), points, summaries });
+  }
+  const levelEffects = facets.filter((facet) => facet.id.startsWith("mod-")).map((facet) => facet.effect);
+  const bothLevels = levelEffects.length >= 2 && levelEffects.every((effect) => effect !== null && Number.isFinite(effect));
+  const crossover = bothLevels && Math.sign(levelEffects[0]!) !== Math.sign(levelEffects[1]!) && levelEffects.some((effect) => Math.abs(effect!) > 1e-6);
+  // Ordinal = same sign, but the magnitudes differ enough to be real moderation (not just noise).
+  const maxMagnitude = Math.max(...levelEffects.map((effect) => Math.abs(effect ?? 0)), 1e-9);
+  const ordinal = bothLevels && !crossover && Math.abs(levelEffects[0]! - levelEffects[1]!) > 0.15 * maxMagnitude;
+  return { treatmentLabel, moderatorLabel, outcomeLabel, outcomeUnit, binary, facets, marginalEffect: effectOf(allSummaries), crossover, ordinal };
+}
+
+function renderModeratorEffectOutput(result: ModeratorEffectOutput): React.ReactNode {
+  const scale: WhatIfOutputScale = result.binary ? "risk" : "mean";
+  const yDomain = sharedFacetYDomain(result.facets, result.binary);
+  return (
+    <details className="output-box moderator-effect-output" open>
+      <summary><strong>Effect by {result.moderatorLabel}</strong><span>per subgroup vs marginal</span></summary>
+      <div className="what-if-effect-graph">
+        <div className="effect-facet-row">
+          {result.facets.map((facet) => (
+            <div className="effect-facet" key={facet.id}>
+              <div className="effect-facet-head"><strong style={{ color: facet.color }}>{facet.title}</strong><span>{formatOutcomeDifference(facet.effect, scale, result.binary ? "" : result.outcomeUnit)}</span></div>
+              <div className="effect-facet-body">
+                <CategoryOutcomePlot compact points={facet.points} summaries={facet.summaries} xLabel={result.treatmentLabel} yLabel={result.outcomeLabel} yDomain={yDomain} clampToDomain seriesColor={facet.color} outcomeKind={result.binary ? "binary" : "continuous"} />
+              </div>
+            </div>
+          ))}
         </div>
-      </HighlightNames>
+      </div>
     </details>
+  );
+}
+
+// --- Instrument / IV output ---------------------------------------------------------------------
+// Tells the IV story in three moves: the famous reduced-form comparison (outcome by instrument), the
+// first stage (treatment by instrument), and the verdict (naive vs IV/2SLS vs oracle truth). Reads the
+// instrument from the node role; the estimator lives in core.
+type InstrumentOutput = {
+  instrumentLabel: string;
+  treatmentLabel: string;
+  outcomeLabel: string;
+  binaryOutcome: boolean;
+  binaryTreatment: boolean;
+  reducedFormSummaries: CategoryOutcomeSummary[];
+  firstStageSummaries: CategoryOutcomeSummary[];
+  reducedFormPoints: ScatterPoint[];
+  firstStagePoints: ScatterPoint[];
+  reducedFormDomain: [number, number];
+  firstStageDomain: [number, number];
+  iv: IvEstimate;
+  oracle: number | null;
+};
+
+function computeInstrumentOutput(context: OutputContext): InstrumentOutput | null {
+  const { document, simulation } = context;
+  const instrument = document.graph.nodes.find((node) => node.roles.instrument)?.id;
+  const treatment = document.graph.nodes.find((node) => node.roles.exposure)?.id;
+  const outcome = document.graph.nodes.find((node) => node.roles.outcome)?.id;
+  if (!instrument || !treatment || !outcome) return null;
+  const cohort = cohortFromSimulationResult(simulation);
+  const iv = estimateInstrument(cohort.rows, cohort.weights, { instrument, treatment, outcome });
+  if (!iv) return null;
+  const labelOf = (id: string) => document.graph.nodes.find((node) => node.id === id)?.label ?? id;
+  const instrumentLabel = labelOf(instrument);
+  const pointsBy = (yId: string): ScatterPoint[] => cohort.rows
+    .map((row, i) => ({ x: row[instrument]!, y: row[yId]!, weight: cohort.weights[i] ?? 1, index: i }))
+    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  const reducedFormPoints = pointsBy(outcome);
+  const firstStagePoints = pointsBy(treatment);
+  const binaryOutcome = reducedFormPoints.every((p) => p.y === 0 || p.y === 1);
+  const binaryTreatment = firstStagePoints.every((p) => p.y === 0 || p.y === 1);
+  const reducedFormSummaries = binaryOutcome ? binaryOutcomeSummaries(reducedFormPoints, instrumentLabel) : continuousOutcomeSummaries(reducedFormPoints, instrumentLabel);
+  const firstStageSummaries = binaryTreatment ? binaryOutcomeSummaries(firstStagePoints, instrumentLabel) : continuousOutcomeSummaries(firstStagePoints, instrumentLabel);
+  // Oracle truth: the g-formula re-simulates under do(treatment), so it recovers the real effect even
+  // though the confounder is latent.
+  let oracle: number | null = null;
+  const spec = deriveAdjustmentSpec(document, { exposure: treatment, outcome });
+  if (spec) oracle = analyzeAdjustment(document, spec)?.estimates.find((e) => e.id === "g_formula")?.estimate ?? null;
+  return {
+    instrumentLabel,
+    treatmentLabel: labelOf(treatment),
+    outcomeLabel: labelOf(outcome),
+    binaryOutcome,
+    binaryTreatment,
+    reducedFormSummaries,
+    firstStageSummaries,
+    reducedFormPoints,
+    firstStagePoints,
+    reducedFormDomain: sharedFacetYDomain([{ points: reducedFormPoints, summaries: reducedFormSummaries }], binaryOutcome),
+    firstStageDomain: sharedFacetYDomain([{ points: firstStagePoints, summaries: firstStageSummaries }], binaryTreatment),
+    iv,
+    oracle
+  };
+}
+
+function renderInstrumentOutput(result: InstrumentOutput): React.ReactNode {
+  const { iv } = result;
+  const rd = (value: number | null) => formatOutcomeDifference(value, result.binaryOutcome ? "risk" : "mean", "");
+  return (
+    <>
+      <details className="output-box" open>
+        <summary><strong>By {result.instrumentLabel}</strong><span>reduced form &amp; first stage</span></summary>
+        <div className="instrument-grid">
+          <div className="instrument-chart">
+            <div className="instrument-chart-title">{result.outcomeLabel}</div>
+            <CategoryOutcomePlot compact points={result.reducedFormPoints} summaries={result.reducedFormSummaries} xLabel={result.instrumentLabel} yLabel={result.outcomeLabel} yDomain={result.reducedFormDomain} clampToDomain outcomeKind={result.binaryOutcome ? "binary" : "continuous"} />
+            <p className="instrument-readout">reduced form = {rd(iv.reducedForm)}</p>
+          </div>
+          <div className="instrument-chart">
+            <div className="instrument-chart-title">{result.treatmentLabel}</div>
+            <CategoryOutcomePlot compact points={result.firstStagePoints} summaries={result.firstStageSummaries} xLabel={result.instrumentLabel} yLabel={result.treatmentLabel} yDomain={result.firstStageDomain} clampToDomain outcomeKind={result.binaryTreatment ? "binary" : "continuous"} />
+            <p className="instrument-readout">first stage = {formatOutcomeDifference(iv.firstStage, result.binaryTreatment ? "risk" : "mean", "")}</p>
+          </div>
+        </div>
+      </details>
+
+      <details className="output-box" open>
+        <summary><strong>Naive · IV · truth</strong></summary>
+        <div className="instrument-verdict">
+          <div className="instrument-verdict-row biased"><span>Naive</span><strong>{rd(iv.naive)}</strong></div>
+          <div className="instrument-verdict-row iv"><span>IV — 2SLS = Wald</span><strong>{rd(iv.wald)}</strong><i>{rd(iv.reducedForm)} ÷ {formatOutcomeDifference(iv.firstStage, result.binaryTreatment ? "risk" : "mean", "")}</i></div>
+          {result.oracle !== null && <div className="instrument-verdict-row truth"><span>Truth (oracle)</span><strong>{rd(result.oracle)}</strong></div>}
+        </div>
+        {iv.weakInstrument && <p className="instrument-note warn">Weak instrument: first stage ≈ 0.</p>}
+      </details>
+    </>
   );
 }
 
@@ -2557,7 +2852,9 @@ export function computeStructuralDiagnosis(context: OutputContext): HuhCompleted
     }
   }
 
-  if (metrics.length === 0) return null;
+  // Continuous-exposure selection examples (chess, restaurant collider) have no binary contrast
+  // metrics, but a conditioning operation still has a well-defined estimand + structure worth showing.
+  if (metrics.length === 0 && analysis.conditioningRoles.length === 0) return null;
 
   const primaryRole = analysis.conditioningRoles[0];
   const primaryNode = primaryRole ? document.graph.nodes.find((node) => node.id === primaryRole.node) : undefined;
@@ -2593,6 +2890,7 @@ export function computeStructuralDiagnosis(context: OutputContext): HuhCompleted
     badge: colliders.length > 0 ? "bad control" : hasGainScore ? "estimand split" : adjusters.length > 0 ? "confounding" : "identified",
     conclusion,
     metrics,
+    bulletsAsBoxes: true,
     bullets: [
       { label: "Estimand", text: `${estimand.formal} — ${estimand.plain}` },
       { label: "Structure", text: analysis.conditioningRoles.length > 0 ? analysis.conditioningRoles.map((role) => `${role.node}: ${role.classification}`).join("; ") : "no variables conditioned" },

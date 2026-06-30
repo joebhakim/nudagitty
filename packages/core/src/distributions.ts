@@ -52,7 +52,24 @@ export function createDistributionSampler(distribution: NodeDistribution, source
       return laplaceSampler(distribution.mean, distribution.scale, source);
     case "student_t":
       return studentTSampler(distribution.mean, distribution.scale, distribution.df, source);
+    case "categorical":
+      return categoricalSampler(distribution.weights, source);
   }
+}
+
+// Draws a level index 0..k-1 with probability ∝ weights (non-negative; renormalized).
+function categoricalSampler(weights: number[], source: RandomSource): DistributionSampler {
+  const clean = (weights.length > 0 ? weights : [1]).map((w) => Math.max(0, Number.isFinite(w) ? w : 0));
+  const total = clean.reduce((sum, w) => sum + w, 0) || 1;
+  const cumulative: number[] = [];
+  let acc = 0;
+  for (const w of clean) { acc += w / total; cumulative.push(acc); }
+  const uniform = randomUniform.source(source)(0, 1);
+  return () => {
+    const u = uniform();
+    for (let i = 0; i < cumulative.length; i += 1) if (u <= cumulative[i]!) return i;
+    return cumulative.length - 1;
+  };
 }
 
 function laplaceSampler(mean: number, scale: number, source: RandomSource): DistributionSampler {

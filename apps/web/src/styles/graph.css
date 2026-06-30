@@ -246,6 +246,61 @@
   pointer-events: none;
 }
 
+/* Moderation arrows: a node (gate) acting upon an edge. Dashed violet to read as distinct from the
+   solid causal/bias edges, with a small open junction sitting on the modulated edge. */
+.modulation-arrow-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.modulation-line {
+  fill: none;
+  stroke: var(--moderator);
+  stroke-width: 1.8px;
+  stroke-dasharray: 5 3;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.modulation-arrow-head {
+  fill: var(--moderator);
+  stroke: none;
+  opacity: 0.9;
+}
+
+.modulation-junction {
+  fill: #fff;
+  stroke: var(--moderator);
+  stroke-width: 2px;
+  stroke-dasharray: 2.4 2;
+}
+
+/* Blunt ⊣ inhibition cap — the "this gate suppresses the edge" (masks / flips / dampens) signal. */
+.modulation-cap-bar {
+  fill: none;
+  stroke: var(--moderator);
+  stroke-width: 3.2px;
+  stroke-linecap: round;
+}
+
+.modulation-label {
+  fill: var(--moderator);
+  font-size: 10.5px;
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3.2px;
+  stroke-linejoin: round;
+}
+
 .edge.disabled {
   opacity: 0.32;
 }
@@ -411,27 +466,42 @@
   pointer-events: none;
 }
 
-.node circle {
+/* The base node shape — a circle, square (outcome) or pentagon (intervention). */
+.node .node-base {
   fill: #fff;
   stroke: #3e4a53;
   stroke-width: 2px;
 }
 
-.node.ancestor circle {
+.node.ancestor .node-base {
   fill: #eef7f3;
 }
 
-.node.changed circle {
+.node.changed .node-base {
   filter: drop-shadow(0 0 5px rgba(35, 113, 111, 0.35));
 }
 
-.node.latent circle {
+/* Instrument role: a distinct dashed ring (an instrument identifies the effect, it isn't the cause of
+   interest). */
+/* Instrument: a SOLID, heavier blue ring (it's observed — distinct from the dashed latent ring). */
+.node.instrument .node-base {
+  stroke: var(--causal);
+  stroke-width: 3.2px;
+  fill: #eaf2fb;
+}
+
+/* Advisory "this could be an IV!" flag on a structurally-likely instrument (never auto-assigned). */
+.instrument-candidate-flag { cursor: help; }
+.instrument-candidate-flag rect { fill: var(--causal); opacity: 0.92; }
+.instrument-candidate-flag text { fill: #fff; font-size: 9px; font-weight: 800; text-anchor: middle; letter-spacing: 0.02em; }
+
+.node.latent .node-base {
   stroke-dasharray: 4 3;
   fill: #f5f3f0;
 }
 
-.node.selected circle,
-.node.edge-source circle {
+.node.selected .node-base,
+.node.edge-source .node-base {
   stroke: var(--accent);
   stroke-width: 3px;
 }
@@ -447,6 +517,11 @@
   stroke: #7048a8;
   stroke-width: 2px;
 }
+
+/* Intervention (pentagon) and outcome (square) read by SHAPE, not colour; a hover title on each
+   base shape names the role. */
+.node.exposure .node-base,
+.node.outcome .node-base { cursor: help; }
 
 .node-label {
   paint-order: stroke;
@@ -471,13 +546,14 @@
 
 .flow-graph-legend {
   position: absolute;
-  top: 96px;
-  right: 12px;
+  top: 12px;
+  left: 12px;
+  right: auto;
   z-index: 2;
   display: grid;
   grid-template-columns: 1fr;
   gap: 7px;
-  width: 168px;
+  width: 196px;
   padding: 10px 12px 11px;
   border: 1px solid rgba(214, 221, 226, 0.95);
   border-radius: 7px;
@@ -511,6 +587,21 @@
   border-radius: 999px;
   background: #fff;
 }
+
+/* Shape, not colour: intervention = pentagon, outcome = square (mirrors the canvas nodes). */
+.flow-graph-legend-node.exposure {
+  border: none;
+  background: #8f99a1;
+  border-radius: 0;
+  clip-path: polygon(50% 0, 100% 38%, 82% 100%, 18% 100%, 0 38%);
+}
+.flow-graph-legend-node.outcome {
+  background: #fff;
+  border-color: #3e4a53;
+  border-radius: 2px;
+}
+.flow-graph-legend-node.latent { background: #f5f3f0; border-style: dashed; }
+.flow-graph-legend-node.instrument { background: #eaf2fb; border-color: var(--causal); border-width: 3px; }
 
 .flow-graph-legend-node.adjusted::after {
   content: "";

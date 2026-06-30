@@ -560,11 +560,71 @@
 /* Effect-by-treatment graph (redesign): faceted by series (observed / truth / selected). */
 .what-if-effect-graph { margin-bottom: 14px; }
 .what-if-effect-graph .module-card-header { margin-bottom: 4px; }
-.effect-facet-row { display: flex; flex-wrap: wrap; gap: 10px; }
-.effect-facet { flex: 1 1 150px; min-width: 130px; max-width: 220px; }
+.effect-facet-row { display: flex; flex-wrap: wrap; gap: 14px; }
+.moderator-effect-note { margin: 10px 2px 2px; font-size: 12px; line-height: 1.5; color: #475d63; }
+.moderator-effect-note strong { color: var(--moderator); }
+
+/* Instrument / IV output */
+.instrument-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.instrument-chart { display: grid; gap: 4px; }
+.instrument-chart-title { font-size: 11px; font-weight: 700; color: #3d464e; }
+.instrument-chart .category-outcome-plot-wrap { height: 170px; min-height: 170px; }
+.instrument-readout { margin: 0; font-size: 11px; color: #6b7782; font-variant-numeric: tabular-nums; }
+.instrument-note { margin: 9px 2px 2px; font-size: 11.5px; line-height: 1.5; color: #475d63; }
+.instrument-note.warn { color: var(--danger); font-weight: 600; }
+.instrument-verdict { display: grid; gap: 6px; }
+.instrument-verdict-row { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 10px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line, #d7dde2); background: #fff; }
+.instrument-verdict-row span { font-size: 12px; color: #2b3640; }
+.instrument-verdict-row strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+.instrument-verdict-row i { grid-column: 1 / -1; font-style: normal; font-size: 10.5px; color: #8a97a2; }
+.instrument-verdict-row.biased { border-left: 3px solid var(--bias); }
+.instrument-verdict-row.biased strong { color: var(--bias); }
+.instrument-verdict-row.iv { border-left: 3px solid var(--causal); background: #f3f8fc; }
+.instrument-verdict-row.iv strong { color: var(--causal); }
+.instrument-verdict-row.truth { border-left: 3px solid var(--chart-series-2); }
+.instrument-verdict-row.truth strong { color: var(--chart-series-2); }
+
+/* Term-disambiguation reference card */
+.disambiguation-card > summary .disambiguation-structure { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; color: var(--moderator); }
+.disambiguation-card-body { padding: 11px 13px; display: grid; gap: 9px; }
+.disambiguation-oneliner { margin: 0; font-size: 12.5px; line-height: 1.5; color: #2b3640; }
+.disambiguation-row { display: grid; grid-template-columns: 86px 1fr; gap: 8px; align-items: start; }
+.disambiguation-row-label { font-size: 9.5px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: #94a3b8; padding-top: 3px; }
+.disambiguation-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.disambiguation-chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 2px 8px; border-radius: 11px; background: #f1f5f6; border: 1px solid var(--line, #d7dde2); font-size: 11.5px; color: #2b3640; }
+.disambiguation-chip i { font-style: normal; font-size: 9.5px; color: #8a97a2; }
+.disambiguation-distinct { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 4px; }
+.disambiguation-distinct li { font-size: 11.5px; line-height: 1.45; color: #475d63; }
+.disambiguation-distinct strong { color: #2b3640; }
+.disambiguation-note { margin: 2px 0 0; font-size: 11.5px; line-height: 1.45; color: #475d63; border-left: 2px solid var(--moderator); padding-left: 8px; }
+.disambiguation-anchors { display: flex; flex-wrap: wrap; gap: 5px; padding-top: 2px; border-top: 1px solid var(--line, #eef2f4); margin-top: 2px; }
+.disambiguation-anchor { font-size: 10.5px; color: #6b7782; }
+.disambiguation-anchor i { font-style: normal; color: #94a3b8; }
+.disambiguation-anchor:not(:last-child)::after { content: "·"; margin-left: 5px; color: #c2ccd2; }
+
+/* Standalone glossary map (toolbar overlay) */
+.disambiguation-map-modal { max-width: 980px; width: min(96vw, 980px); }
+.disambiguation-map { padding: 4px 2px 8px; display: grid; gap: 18px; }
+.disambiguation-map-intro { margin: 0; font-size: 13px; line-height: 1.55; color: #475d63; max-width: 70ch; }
+.disambiguation-map-section > h3 { margin: 0 0 9px; font-size: 11px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #6b7782; }
+.disambiguation-map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.disambiguation-map-term { border: 1px solid var(--line, #d7dde2); border-radius: 9px; background: #fff; padding: 11px 12px; display: grid; gap: 7px; align-content: start; }
+.disambiguation-map-term-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.disambiguation-map-term-head strong { font-size: 13px; color: #0f172a; }
+.disambiguation-map-term .disambiguation-oneliner { font-size: 11.5px; }
+.disambiguation-map-term-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 5px; border-top: 1px solid #eef2f4; }
+.disambiguation-open { flex: 0 0 auto; min-height: 0; padding: 2px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 700; cursor: pointer; }
+.disambiguation-open:hover { background: var(--accent); color: #fff; }
+.disambiguation-map-pitfalls { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.disambiguation-pitfall { border-left: 2px solid var(--moderator); padding: 2px 0 2px 10px; display: grid; gap: 4px; }
+.disambiguation-pitfall strong { font-size: 12px; color: #2b3640; }
+.disambiguation-pitfall p { margin: 0; font-size: 11.5px; line-height: 1.45; color: #475d63; }
+.effect-facet { flex: 1 1 150px; min-width: 130px; max-width: 220px; border: 1px solid var(--line, #d7dde2); border-radius: 9px; background: #fcfdfd; padding: 9px 10px; }
 .effect-facet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 12px; }
 .effect-facet-head strong { font-weight: 700; }
 .effect-facet-head span { font-variant-numeric: tabular-nums; font-weight: 700; color: #475d63; }
+.effect-facet-formula { margin: 1px 0 4px; font-size: 10.5px; color: #7a838d; }
+.effect-facet-formula code { font-family: var(--font-mono, ui-monospace, monospace); }
 .effect-facet-body { height: 190px; }
 .effect-facet-body .category-outcome-plot-wrap { height: 190px; min-height: 190px; }
 .what-if-effect-legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 2px 0 4px; font-size: 11px; color: #475d63; }
@@ -605,30 +665,9 @@
   line-height: 14px;
 }
 
-.what-if-method-table-card > summary {
-  cursor: pointer;
-  list-style: none;
-}
-
-.what-if-method-table-card > summary::-webkit-details-marker {
-  display: none;
-}
-
-.what-if-method-table-card > summary::after {
-  content: "+";
-  color: var(--accent);
-  font-weight: 800;
-}
-
-.what-if-method-table-card[open] > summary::after {
-  content: "-";
-}
-
-.what-if-method-table-card > .module-card-header span {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 14px;
-}
+/* The method-table card uses the standard .output-box > summary chrome (▸/▾ marker, Title-case
+   heading) so it reads as a sibling of "Effect by treatment" / "Interpretation", not a differently
+   styled card. */
 
 .what-if-method-table {
   width: 100%;
@@ -1510,3 +1549,27 @@
   }
 }
 
+
+/* "Adjustment methods" panel: the chosen-method graph + toggle + nested method table + basis row. */
+.adjustment-methods-panel > .nested-method-table {
+  border: 0;
+  border-top: 1px solid var(--line, #d7dde2);
+  border-radius: 0;
+  margin: 0;
+}
+.adjustment-methods-panel > .nested-method-table > summary { background: #fbfcfc; }
+
+.methods-estimator-settings {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 13px;
+  border-top: 1px solid var(--line, #d7dde2);
+  background: #fbfcfc;
+  font-size: 11.5px;
+  color: #6b7782;
+}
+.methods-estimator-settings label { font-weight: 700; }
+
+/* Per-method estimand formula shown by default in the compare-all rows (prose moves to expansion). */
+.method-row-formula code { font-family: var(--font-mono, ui-monospace, monospace); color: #6b7681; }

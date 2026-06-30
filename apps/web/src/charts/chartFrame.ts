@@ -26,6 +26,8 @@ export interface ChartFrameSpec {
   x?: ChartAxisSpec;
   /** Left (vertical) axis. */
   y?: ChartAxisSpec;
+  /** Right (vertical) axis — e.g. a second y-axis in different units (a dual-axis chart). */
+  right?: ChartAxisSpec;
   xDomain?: [number, number];
   yDomain?: [number, number];
   /** Inset the scale range from the plot edges (px) so extreme values breathe. */
@@ -37,6 +39,7 @@ export interface ChartFrameSpec {
 
 // The only tunable constants live here, once, instead of scattered per chart.
 const TICK_COLUMN = 30; // width reserved for left tick labels
+const RIGHT_TICK_COLUMN = 16; // width reserved for right tick labels (narrow, e.g. 0/1)
 const TICK_ROW = 14; // height reserved for bottom tick labels
 const TITLE_BAND = 16; // height/width reserved for an axis title
 
@@ -55,10 +58,10 @@ export interface ChartFrame {
     cy: number;
   };
   anchors: {
-    /** Baseline y for bottom tick labels; x for left tick labels (anchor end). */
-    ticks: { xY: number; yX: number };
-    /** Baseline y for the bottom axis title; x for the rotated left axis title. */
-    title: { xY: number; yX: number };
+    /** Baseline y for bottom tick labels; x for left tick labels (anchor end); x for right (anchor start). */
+    ticks: { xY: number; yX: number; yXRight: number };
+    /** Baseline y for the bottom axis title; x for the rotated left / right axis titles. */
+    title: { xY: number; yX: number; yXRight: number };
   };
   /** Map a domain value to an x pixel inside the plot. */
   xScale: (value: number) => number;
@@ -112,11 +115,12 @@ export function chartFrame(spec: ChartFrameSpec): ChartFrame {
   const pad = spec.pad ?? 10;
   const x = spec.x ?? {};
   const y = spec.y ?? {};
+  const rightAxis = spec.right ?? {};
 
   const left = y.size ?? pad + (y.ticks ? TICK_COLUMN : 0) + (y.title ? TITLE_BAND : 0);
   const bottom = x.size ?? pad + (x.ticks ? TICK_ROW : 0) + (x.title ? TITLE_BAND : 0);
   const top = pad;
-  const right = pad;
+  const right = rightAxis.size ?? pad + (rightAxis.ticks ? RIGHT_TICK_COLUMN : 0) + (rightAxis.title ? TITLE_BAND : 0);
   const margin = { top, right, bottom, left };
 
   const plotWidth = Math.max(0, spec.width - left - right);
@@ -151,8 +155,8 @@ export function chartFrame(spec: ChartFrameSpec): ChartFrame {
     margin,
     plot,
     anchors: {
-      ticks: { xY: plot.bottom + 13, yX: plot.x - 6 },
-      title: { xY: plot.bottom + (x.ticks ? TICK_ROW : 0) + 12, yX: pad - 1 }
+      ticks: { xY: plot.bottom + 13, yX: plot.x - 6, yXRight: plot.right + 6 },
+      title: { xY: plot.bottom + (x.ticks ? TICK_ROW : 0) + 12, yX: pad - 1, yXRight: spec.width - pad + 1 }
     },
     xScale,
     yScale

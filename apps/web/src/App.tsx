@@ -30,6 +30,7 @@ import {
   Share2,
   Sigma,
   Blend,
+  BookOpen,
   Trash2,
   Undo2,
   Upload,
@@ -40,6 +41,7 @@ import {
   EXAMPLES,
   addEdge,
   addNode,
+  setCopulaCorrelation,
   adjusted,
   analyzeGraph,
   analyzeAdjustment,
@@ -47,8 +49,10 @@ import {
   positivityStatus,
   deriveAdjustmentSpec,
   classifyConditioned,
+  candidateInstruments,
   structuralRoleOf,
   correlationGraph,
+  computeDoseResponseCurves,
   createNewNodeId,
   createNode,
   defaultEdgeMechanism,
@@ -84,6 +88,7 @@ import {
 import type {
   AnalysisOperation,
   AnalysisReport,
+  DoseResponseCurves,
   EdgeMechanism,
   EdgeMechanismKind,
   EdgeKind,
@@ -103,6 +108,7 @@ import type {
   Point,
   SimulationResult,
   SimulationInferenceMode,
+  SimulationSpec,
   SimulationSelectionCondition,
   SimulatedAnalyticDistribution,
   SimulatedNodeState,
@@ -139,9 +145,12 @@ import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
 import { HighlightNames, NodeNamesProvider, SvgAxisName } from "./shared/NodeNames";
 import { stratifyRiskCurves } from "./outputs/stratify";
 import type { StratifiedRiskContrast } from "./outputs/stratify";
-import { MethodsComparisonPanel, UnifiedAdjustmentReadout, WhatIfStrategySurvivalCurve, basicOutputPunchlineFromResult, computeCompletedOutput, observedSurvivalView } from "./outputs/modules";
+import { AuxEstimandStructure, MethodsComparisonPanel, UnifiedAdjustmentReadout, WhatIfStrategySurvivalCurve, basicOutputPunchlineFromResult, computeCompletedOutput, computeStructuralDiagnosis, observedSurvivalView } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
+import { DisambiguationCard } from "./outputs/DisambiguationCard";
+import { DisambiguationMap } from "./outputs/DisambiguationMap";
+import { disambiguationTermForExample } from "./shared/disambiguation";
 import { DgpInspector } from "./outputs/DgpInspector";
 import { OverlapInspector } from "./outputs/OverlapInspector";
 import type { OutputContext } from "./outputs/types";
@@ -338,6 +347,7 @@ type FlowGraphNodeData = Record<string, unknown> & {
   value?: number;
   state?: SimulatedNodeState;
   summary?: NodeDistributionSummary;
+  candidateInstrument: boolean;
   onNodeClick: (id: string) => void;
 };
 type FlowGraphEdgeData = Record<string, unknown> & {
@@ -385,7 +395,7 @@ function graphViewportSignature(graph: GraphModel): string {
 
 function graphAnalysisSignature(graph: GraphModel): string {
   const nodes = graph.nodes
-    .map((node) => `${node.id}:${Number(node.roles.exposure)}${Number(node.roles.outcome)}${Number(node.roles.adjusted)}${Number(node.roles.selected)}${Number(node.roles.latent)}`)
+    .map((node) => `${node.id}:${Number(node.roles.exposure)}${Number(node.roles.outcome)}${Number(node.roles.adjusted)}${Number(node.roles.selected)}${Number(node.roles.latent)}${Number(node.roles.instrument)}`)
     .join("|");
   const edges = graph.edges.map((edge) => `${edge.id}:${edge.source}:${edge.kind}:${edge.target}`).join("|");
   return `${graph.kind}::${nodes}::${edges}`;
@@ -401,7 +411,7 @@ function graphSimulationSignature(graph: GraphModel): string {
 
 function graphOutputSignature(graph: GraphModel): string {
   const nodes = graph.nodes
-    .map((node) => `${node.id}:${node.label}:${Number(node.roles.exposure)}${Number(node.roles.outcome)}${Number(node.roles.adjusted)}${Number(node.roles.selected)}${Number(node.roles.latent)}:${JSON.stringify(normalizeVariableModel(node.variable))}`)
+    .map((node) => `${node.id}:${node.label}:${Number(node.roles.exposure)}${Number(node.roles.outcome)}${Number(node.roles.adjusted)}${Number(node.roles.selected)}${Number(node.roles.latent)}${Number(node.roles.instrument)}:${JSON.stringify(normalizeVariableModel(node.variable))}`)
     .join("|");
   const edges = graph.edges.map((edge) => `${edge.id}:${edge.source}:${edge.kind}:${edge.target}`).join("|");
   return `${graph.kind}::${nodes}::${edges}`;
@@ -741,6 +751,7 @@ export function App() {
   const [paperNetworkOpen, setPaperNetworkOpen] = useState(() => hashMatchesPaperNetwork(window.location.hash));
   const [showExplanation, setShowExplanation] = useState(false);
   const [showDgp, setShowDgp] = useState(false);
+  const [showGlossary, setShowGlossary] = useState(false);
   const [showOverlap, setShowOverlap] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
   const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
@@ -785,7 +796,34 @@ export function App() {
   // so a node drag should not re-run the path analysis.
   const highlightedEdges = useMemo(() => computeHighlightedEdges(analysisGraph, analysis, showCausal, showBiasing), [analysis, analysisGraph, showBiasing, showCausal]);
   const ancestorIds = useMemo(() => showAncestors ? new Set(analysis.causalPaths.flat()) : new Set<string>(), [analysis.causalPaths, showAncestors]);
+  // Moderator / effect-modifier links: each smooth-gated interaction is a node (the gate) acting upon
+  // the source→target edge. Surfaced to the canvas so it can draw the gate→edge modulation arrow.
+  const modulations = useMemo<ModulationLink[]>(() => {
+    const out: ModulationLink[] = [];
+    for (const [targetId, mechanism] of Object.entries(document.simulation.nodes)) {
+      for (const interaction of mechanism?.interactions ?? []) {
+        if (interaction.kind === "smooth_gated") {
+          out.push({ id: interaction.id, gateId: interaction.gate, sourceId: interaction.source, targetId, sign: Math.sign(interaction.coefficient), coefficient: interaction.coefficient });
+        }
+      }
+    }
+    return out;
+  }, [document.simulation.nodes]);
   const completedOutput = useMemo(() => computeCompletedOutput(outputContext, activeExample?.outputModule ?? null), [activeExample?.outputModule, outputContext]);
+  // The generic structural diagnosis, computed for EVERY example so its Estimand/Structure cards can be
+  // shown alongside a dedicated module too (consistency: the target estimand shouldn't depend on whether
+  // the example happens to have a bespoke output module).
+  const structuralAux = useMemo(() => computeStructuralDiagnosis(outputContext), [outputContext]);
+  // Only surface the auto-estimand alongside a dedicated module when it's TRUSTWORTHY: a descriptive
+  // selection/stratification estimand is always fine, but a "backdoor-standardized" estimand is only
+  // valid when the adjustment actually identifies the effect — otherwise (front-door's mediator, M-bias's
+  // collider) it would assert a wrong target, so we suppress it there rather than mislead.
+  const auxEstimandTrustworthy = useMemo(() => {
+    const primary = outputContext.analysis.conditioningRoles[0];
+    if (!primary) return false;
+    if (primary.operation !== "adjust") return true;
+    return outputContext.analysis.totalEffect.valid;
+  }, [outputContext]);
   // For survival examples the observed-association card shows the crude (naive) survival
   // curves — the same view as the adjusted estimate, before adjustment.
   const observedSurvival = useMemo(() => observedSurvivalView(completedOutput), [completedOutput]);
@@ -808,8 +846,8 @@ export function App() {
   }, [document]);
 
   useEffect(() => startEngagementMilestones(), []);
-  const adjustedFrameTitle = completedOutputActive ? "Adjusted estimate"
-    : frameOperation === "adjust" ? "Adjusted (standardized) output"
+  const adjustedFrameTitle = completedOutputActive ? "Effect estimate"
+    : frameOperation === "adjust" ? "Effect estimate"
       : frameOperation === "condition" ? "Conditioned (stratified) output"
         : frameOperation === "select" ? "Selected-sample output"
           : "Structural diagnosis";
@@ -828,6 +866,12 @@ export function App() {
     selections: simulation.conditioning.activeConditions
   }), [document.graph, document.simulation.overrides, simulation.conditioning.activeConditions]);
   const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null, activeOutputPair);
+  // Keep the raw scatter visible for continuous exposures (the cloud IS the teaching view, e.g. the
+  // collider examples) even when the adjusted column also shows its estimand/structure; hide it only
+  // for binary adjustment, where it would just duplicate the adjusted estimate.
+  const exposureNodeForLayout = computationDocument.graph.nodes.find((node) => node.id === activeOutputPair.x);
+  const exposureBinaryForLayout = exposureNodeForLayout ? normalizeVariableModel(exposureNodeForLayout.variable).valueType === "binary" : true;
+  const showPairwiseScatter = !showAdjustedOutputColumn || !exposureBinaryForLayout;
 
   // Classic examples (no what-if module) get the SAME canonical g-method panel as the
   // longitudinal ones, derived from the current adjust/condition operations + the pair —
@@ -835,7 +879,16 @@ export function App() {
   const computeUnifiedAdjustment = useCallback((pair: ScatterPair) => {
     if (activeExample?.outputModule?.startsWith("what-if-")) return null;
     const spec = deriveAdjustmentSpec(computationDocument, { exposure: pair.x, outcome: pair.y });
-    if (!spec || spec.covariates.length === 0) return null;
+    // Show the observed/re-simulated effect graph for ANY exposure→outcome pair, even with no
+    // adjustment set (mediation, a randomized treatment, a selection example) — observed-vs-oracle is
+    // always informative. With an empty set the from-data methods collapse toward the crude contrast,
+    // which is honest ("nothing to adjust"); an IV example keeps them too (unmeasured confounder).
+    if (!spec) return null;
+    // g-methods contrast two treatment arms — only meaningful for a BINARY treatment. For a continuous
+    // exposure (e.g. the chess IQ selection example) skip the unified panel; the estimand/structure
+    // still render via the structural diagnosis.
+    const treatmentNode = computationDocument.graph.nodes.find((node) => node.id === (spec.treatments[0] ?? pair.x));
+    if (treatmentNode && normalizeVariableModel(treatmentNode.variable).valueType !== "binary") return null;
     const comparison = analyzeAdjustment(computationDocument, { ...spec, covariateBasis });
     if (!comparison) return null;
     const outcomeNode = computationDocument.graph.nodes.find((node) => node.id === spec.outcome);
@@ -1031,7 +1084,7 @@ export function App() {
         event.preventDefault();
         deleteSelection();
       } else if (selection?.kind === "node") {
-        const roleMap: Record<string, keyof NodeRoleFlags> = { e: "exposure", o: "outcome", a: "adjusted", s: "selected", u: "latent" };
+        const roleMap: Record<string, keyof NodeRoleFlags> = { e: "exposure", o: "outcome", a: "adjusted", s: "selected", u: "latent", i: "instrument" };
         const role = roleMap[event.key.toLowerCase()];
         if (role) {
           event.preventDefault();
@@ -1477,6 +1530,7 @@ export function App() {
         simulation={simulation}
         derived={simulationDerived}
         edgeMechanisms={document.simulation.edges}
+        modulations={modulations}
         disabledEdgeIds={new Set(Object.entries(document.simulation.edges).filter(([, mechanism]) => !mechanism.enabled).map(([id]) => id))}
         highlightedEdges={highlightedEdges}
         ancestorIds={ancestorIds}
@@ -1534,13 +1588,12 @@ export function App() {
     <Panel id="outputs" defaultSize={compactWorkspace ? 28 : presentationActive ? 42 : 28} minSize={compactWorkspace ? 24 : 22} className="workspace-panel outputs-panel" key="outputs">
       <PanelGroup orientation="vertical" className="workspace-output-panel-group">
         {showAdjustedOutputColumn && (
-          <>
-            <Panel id="adjusted" defaultSize={64} minSize={30} className="workspace-panel">
+          <Panel id="adjusted" defaultSize={showPairwiseScatter ? 58 : 100} minSize={30} className="workspace-panel">
               <aside className="side-panel module-pane adjusted-output-column">
                 <ModuleFrame
                   tone="output"
                   label={completedOutputActive ? "Output"
-                    : frameOperation === "adjust" ? "Adjusted output"
+                    : frameOperation === "adjust" ? "Output"
                       : frameOperation === "condition" ? "Conditioned output"
                         : frameOperation === "select" ? "Selected output"
                           : "Diagnosis"}
@@ -1552,6 +1605,7 @@ export function App() {
                     moduleId={activeExample?.outputModule ?? null}
                     exampleId={activeExample?.id ?? null}
                     computedOutput={completedOutput}
+                    auxDiagnosis={auxEstimandTrustworthy ? structuralAux : null}
                     binaryOutput={binaryAdjustmentOutput}
                     continuousOutput={binaryContinuousAdjustmentOutput}
                     unified={unifiedAdjustment}
@@ -1562,11 +1616,11 @@ export function App() {
                   />
                 </ModuleFrame>
               </aside>
-            </Panel>
-            {renderWorkspaceHandle("adjusted-pairwise", true)}
-          </>
+          </Panel>
         )}
-        <Panel id="pairwise" defaultSize={showAdjustedOutputColumn ? 36 : 100} minSize={22} className="workspace-panel">
+        {showAdjustedOutputColumn && showPairwiseScatter && renderWorkspaceHandle("adjusted-pairwise", true)}
+        {showPairwiseScatter && (
+          <Panel id="pairwise" defaultSize={showAdjustedOutputColumn ? 42 : 100} minSize={22} className="workspace-panel">
           <aside className="side-panel module-pane pairwise-column">
             <ModuleFrame
               tone="output"
@@ -1584,12 +1638,14 @@ export function App() {
                     derived={simulationDerived}
                     pair={activeOutputPair}
                     pending={pairwisePending}
+                    simulationSpec={document.simulation}
                     onPair={setScatterPair}
                     onSelectNode={selectNode}
                   />}
             </ModuleFrame>
           </aside>
-        </Panel>
+          </Panel>
+        )}
       </PanelGroup>
     </Panel>
   );
@@ -1625,12 +1681,13 @@ export function App() {
         {!paperNetworkOpen && <div className="toolbar" aria-label="Model actions">
           {isBasicMode ? <>
             <BasicExampleTabs activeExampleId={activeExampleId} onSelect={loadExample} />
-            <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
+            <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} onOpenGlossary={() => setShowGlossary(true)} />
           </> : <>
             {!presentationActive && <IconButton label="New" onClick={createNewDocument}><FilePlus2 size={18} /></IconButton>}
-            <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} />
+            <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} onOpenGlossary={() => setShowGlossary(true)} />
             <IconButton label="Explain this example" pressed={showExplanation} onClick={() => setShowExplanation((open) => { if (!open) trackInfoOverlayOpened("explanation"); return !open; })}><Info size={18} /></IconButton>
             <IconButton label="Data-generating process" pressed={showDgp} onClick={() => setShowDgp((open) => !open)}><Sigma size={18} /></IconButton>
+            <IconButton label="Term disambiguation" pressed={showGlossary} onClick={() => setShowGlossary((open) => !open)}><BookOpen size={18} /></IconButton>
             <IconButton label="Overlap / positivity" pressed={showOverlap} badge={positivity === "ok" ? null : positivity} onClick={() => setShowOverlap((open) => !open)}><Blend size={18} /></IconButton>
             <input
               ref={snapshotInputRef}
@@ -1668,6 +1725,17 @@ export function App() {
           </div>
         </div>
       )}
+      {showGlossary && (
+        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Term disambiguation" onClick={() => setShowGlossary(false)}>
+          <div className="explanation-modal disambiguation-map-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="explanation-modal-header">
+              <strong>Term disambiguation — the vocabulary, mapped to structure</strong>
+              <button type="button" aria-label="Close term disambiguation" onClick={() => setShowGlossary(false)}><X size={16} /></button>
+            </div>
+            <DisambiguationMap onOpenExample={(id) => { loadExample(id); setShowGlossary(false); }} />
+          </div>
+        </div>
+      )}
       {showDgp && (
         <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Data-generating process" onClick={() => setShowDgp(false)}>
           <div className="explanation-modal" onClick={(event) => event.stopPropagation()}>
@@ -1675,7 +1743,7 @@ export function App() {
               <strong>Data-generating process — {activeExample?.title ?? document.title}</strong>
               <button type="button" aria-label="Close data-generating process" onClick={() => setShowDgp(false)}><X size={16} /></button>
             </div>
-            <DgpInspector document={document} simulation={simulation} />
+            <DgpInspector document={document} simulation={simulation} onCorrelationChange={(rho) => commit(setCopulaCorrelation(document, rho))} />
           </div>
         </div>
       )}
@@ -1869,6 +1937,8 @@ function FlowGraphCanvasInner(props: React.ComponentProps<typeof GraphCanvas>) {
   const nodesById = useMemo(() => new Map(props.graph.nodes.map((node) => [node.id, node])), [props.graph.nodes]);
   const denseEdges = props.graph.edges.length > 7;
   const viewportSignature = useMemo(() => graphViewportSignature(props.graph), [props.graph]);
+  // Structural "this could be an IV!" hint — advisory; never assigns the role.
+  const candidateInstrumentIds = useMemo(() => new Set(candidateInstruments(props.graph)), [props.graph]);
   const computedNodes = useMemo<FlowGraphNode[]>(() => props.graph.nodes.map((node) => {
     const selected = props.selection?.kind === "node" && props.selection.id === node.id;
     return {
@@ -1892,13 +1962,14 @@ function FlowGraphCanvasInner(props: React.ComponentProps<typeof GraphCanvas>) {
         value: props.simulation.values[node.id],
         state: props.simulation.nodeStates[node.id],
         summary: props.derived.nodes.get(node.id),
+        candidateInstrument: candidateInstrumentIds.has(node.id),
         onNodeClick: props.onNodeClick
       },
       selected,
       draggable: true,
       focusable: true
     };
-  }), [props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.onNodeClick, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values]);
+  }), [candidateInstrumentIds, props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.onNodeClick, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values]);
   const [nodes, setNodes] = useState<FlowGraphNode[]>(computedNodes);
   const [legendOpen, setLegendOpen] = useState(false);
 
@@ -2011,12 +2082,18 @@ function FlowGraphCanvasInner(props: React.ComponentProps<typeof GraphCanvas>) {
           onNodeClick={(_, node) => props.tool === "edge" ? props.onNodeClick(node.id) : props.onNodeClick(node.id)}
           onNodeDragStop={(_, node) => props.onMoveNode(node.id, flowNodePositionToGraphPoint(node.position))}
           onEdgeClick={(_, edge) => props.onEdgeClick(edge.id)}
-          onPaneClick={() => props.onSelect(null)}
+          onPaneClick={(event) => {
+            // With the "Variable" tool active, a single click on the canvas drops a new node (the
+            // toolbar button was otherwise inert on the React-Flow canvas — only double-click added).
+            if (props.tool === "node") props.onAddNode(flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+            else props.onSelect(null);
+          }}
           proOptions={{ hideAttribution: true }}
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} />
           {props.mode !== "basic" && <Controls className="canvas-zoom-controls react-flow-controls" showInteractive={false} />}
           <FlowGraphArrowLayer edges={computedEdges} />
+          <FlowModulationLayer modulations={props.modulations} edges={computedEdges} nodesById={liveNodesById} />
         </ReactFlow>
       </div>
       <button
@@ -2045,19 +2122,40 @@ function FlowGraphLegend() {
     <div className="graph-legend flow-graph-legend" aria-hidden="true">
       <div className="flow-graph-legend-title">Legend</div>
       <div className="flow-graph-legend-row">
+        <span className="flow-graph-legend-node exposure" />
+        <span><strong>intervention</strong> — the cause you do()</span>
+      </div>
+      <div className="flow-graph-legend-row">
+        <span className="flow-graph-legend-node outcome" />
+        <span><strong>outcome</strong> — the effect measured</span>
+      </div>
+      <div className="flow-graph-legend-row">
         <span className="flow-graph-legend-node adjusted" />
-        <span>adjusted</span>
+        <span><strong>adjusted</strong> — conditioned on</span>
       </div>
       <div className="flow-graph-legend-row">
         <span className="flow-graph-legend-node selected" />
-        <span>sample marker</span>
+        <span><strong>sample marker</strong> — selected sub-population</span>
+      </div>
+      <div className="flow-graph-legend-row">
+        <span className="flow-graph-legend-node latent" />
+        <span><strong>latent</strong> — unobserved</span>
+      </div>
+      <div className="flow-graph-legend-row">
+        <span className="flow-graph-legend-node instrument" />
+        <span><strong>instrument</strong> — an IV</span>
       </div>
     </div>
   );
 }
 
+// Pentagon (intervention) circumradius 25, vertex up — distinguishes do()-able exposures from
+// square outcomes and circular covariates by SHAPE rather than colour.
+const PENTAGON_POINTS = "0,-25 23.8,-7.7 14.7,20.2 -14.7,20.2 -23.8,-7.7";
+
 function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
-  const { node, selected, edgeSource, ancestor, changed, value, state, summary, onNodeClick } = props.data;
+  const { node, selected, edgeSource, ancestor, changed, value, state, summary, candidateInstrument, onNodeClick } = props.data;
+  const showInstrumentHint = candidateInstrument && !node.roles.instrument;
   const variable = normalizeVariableModel(node.variable);
   const labelLines = nodeLabelLines(node.label);
   const labelY = labelLines.length === 1 ? 4 : -((labelLines.length - 1) * 6);
@@ -2065,16 +2163,15 @@ function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
     "flow-graph-node",
     "node",
     selected || props.selected ? "selected" : "",
+    node.roles.exposure ? "exposure" : "",
+    node.roles.outcome ? "outcome" : "",
     node.roles.latent ? "latent" : "",
+    node.roles.instrument ? "instrument" : "",
     ancestor ? "ancestor" : "",
     changed ? "changed" : "",
     edgeSource ? "edge-source" : ""
   ].filter(Boolean).join(" ");
   const handleSelect = (event: React.MouseEvent) => {
-    event.stopPropagation();
-    onNodeClick(node.id);
-  };
-  const handleLabelPointerDown = (event: React.PointerEvent<SVGTextElement>) => {
     event.stopPropagation();
     onNodeClick(node.id);
   };
@@ -2086,10 +2183,23 @@ function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
       <Handle type="target" position={Position.Left} className="flow-node-handle" />
       <Handle type="source" position={Position.Right} className="flow-node-handle" />
       <svg viewBox="-76 -42 152 152" className="flow-node-svg" aria-hidden="true" onClick={handleSelect}>
-        <circle r={node.roles.exposure || node.roles.outcome ? 25 : 21} />
+        {node.roles.exposure ? (
+          <polygon className="node-base" points={PENTAGON_POINTS}><title>Intervention — the cause you do()</title></polygon>
+        ) : node.roles.outcome ? (
+          <rect className="node-base" x={-22} y={-22} width={44} height={44} rx={4}><title>Outcome — the effect measured</title></rect>
+        ) : (
+          <circle className="node-base" r={21} />
+        )}
+        {showInstrumentHint && (
+          <g className="instrument-candidate-flag">
+            <title>This could be an instrument (IV) — it feeds the exposure with no other path to the outcome. Assign the instrument role to estimate via 2SLS.</title>
+            <rect x="11" y="-36" width="30" height="16" rx="8" />
+            <text x="26" y="-24">IV?</text>
+          </g>
+        )}
         {node.roles.adjusted && <rect className="adjusted-ring" x="-27" y="-27" width="54" height="54" rx="6" />}
         {node.roles.selected && <path className="selected-mark" d="M -20 24 L 0 34 L 20 24" />}
-        <text className="node-label" y={labelY} onClick={handleSelect} onPointerDown={handleLabelPointerDown}>
+        <text className="node-label" y={labelY} onClick={handleSelect}>
           {labelLines.map((line, index) => (
             <tspan x="0" dy={index === 0 ? 0 : 12} key={`${line}-${index}`}>
               {line}{index < labelLines.length - 1 ? " " : ""}
@@ -2172,6 +2282,73 @@ function FlowGraphArrowLayer({ edges }: { edges: FlowGraphEdge[] }) {
   );
 }
 
+// A moderator/effect-modifier rendered structurally: the `gate` node acts upon the `source → target`
+// edge. Drawn as a dashed arrow from the gate to a small junction marker sitting on that edge — the
+// visual primitive that distinguishes moderation from confounding (fork) and mediation (chain).
+type ModulationLink = { id: string; gateId: string; sourceId: string; targetId: string; sign: number; coefficient: number };
+
+// How a gate reshapes the edge it sits on, judged against that edge's own baseline strength.
+// Opposite-sign gates that roughly cancel the edge "mask" it (recessive epistasis); a stronger
+// opposite gate "flips" the sign (crossover interaction); a same-sign gate "amplifies".
+function modulationVerb(baseline: number, gateCoefficient: number): string {
+  if (gateCoefficient === 0) return "gates";
+  if (baseline === 0) return "gates"; // no main effect — the gate IS the whole effect
+  const sameSign = Math.sign(baseline) === Math.sign(gateCoefficient);
+  if (sameSign) return "amplifies";
+  const ratio = Math.abs(gateCoefficient) / Math.abs(baseline);
+  if (ratio > 1.25) return "flips";
+  if (ratio < 0.75) return "dampens";
+  return "masks";
+}
+
+function FlowModulationLayer({ modulations, edges, nodesById }: { modulations: ModulationLink[]; edges: FlowGraphEdge[]; nodesById: Map<string, GraphNode> }) {
+  if (modulations.length === 0) return null;
+  return (
+    <ViewportPortal>
+      <svg className="modulation-arrow-layer" aria-hidden="true">
+        {modulations.map((modulation) => {
+          const edge = edges.find((candidate) => candidate.data?.edge.source === modulation.sourceId && candidate.data?.edge.target === modulation.targetId);
+          const gate = nodesById.get(modulation.gateId);
+          if (!edge?.data || !gate) return null;
+          // The junction sits at the edge's control point (its visual midpoint); the arrow runs from
+          // the gate's perimeter to just short of the junction so the head reads cleanly.
+          const junction = edge.data.geometry.control;
+          const start = nodeBoundaryPoint(gate, junction, 4, { includeDistribution: false });
+          // Stop the cap just outside the junction marker so it stays visible, not buried.
+          const toward = unitVector(start, junction);
+          const tip = { x: junction.x - toward.x * 7, y: junction.y - toward.y * 7 };
+          const baseline = edgeMechanismDisplayStrength(edge.data.mechanism);
+          const verb = modulationVerb(baseline, modulation.coefficient);
+          const suppresses = verb !== "amplifies"; // masks / flips / dampens / gates all read as suppression
+          const signClass = modulation.sign > 0 ? "mod-positive" : modulation.sign < 0 ? "mod-negative" : "mod-zero";
+          // A blunt ⊣ cap (universal "inhibits/blocks" notation) when the gate suppresses the edge;
+          // a normal arrowhead when it reinforces it.
+          const normal = { x: -toward.y, y: toward.x };
+          const barHalf = 6.2;
+          const capBase = suppresses
+            ? { x: tip.x - toward.x * 2, y: tip.y - toward.y * 2 }
+            : null;
+          const head = suppresses ? null : arrowHeadGeometry(tip, start, 2.2);
+          const lineEnd = head ? head.base : capBase!;
+          // Label sits at the line midpoint, nudged off the line so it doesn't sit on the dashes.
+          const mid = { x: (start.x + junction.x) / 2 + normal.x * 11, y: (start.y + junction.y) / 2 + normal.y * 11 };
+          return (
+            <g key={modulation.id} className={`modulation ${signClass} ${suppresses ? "modulation-suppress" : "modulation-boost"}`}>
+              <title>{`${gate.label} ${verb} the ${nodesById.get(edge.data.edge.source)?.label ?? edge.data.edge.source} → ${nodesById.get(edge.data.edge.target)?.label ?? edge.data.edge.target} effect`}</title>
+              <path className="modulation-line" d={`M ${start.x} ${start.y} L ${lineEnd.x} ${lineEnd.y}`} />
+              {head ? <path className="modulation-arrow-head" d={head.path} /> : (
+                <path className="modulation-cap-bar" d={`M ${tip.x + normal.x * barHalf} ${tip.y + normal.y * barHalf} L ${tip.x - normal.x * barHalf} ${tip.y - normal.y * barHalf}`} />
+              )}
+              <circle className="modulation-junction" cx={junction.x} cy={junction.y} r={5.5} />
+              <text className="modulation-label" x={mid.x} y={mid.y} textAnchor="middle">{verb}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </ViewportPortal>
+  );
+}
+
 function flowEdgeClassName(data: FlowGraphEdgeData, selected?: boolean): string {
   const edgeStrength = edgeMechanismDisplayStrength(data.mechanism);
   const coefficientClass = edgeStrength > 0 ? "coefficient-positive" : edgeStrength < 0 ? "coefficient-negative" : "coefficient-zero";
@@ -2235,6 +2412,7 @@ function GraphCanvas(props: {
   simulation: SimulationResult;
   derived: SimulationDerivedCache;
   edgeMechanisms: Record<string, EdgeMechanism>;
+  modulations: ModulationLink[];
   disabledEdgeIds: Set<string>;
   highlightedEdges: Map<string, "causal" | "biasing">;
   ancestorIds: Set<string>;
@@ -2783,11 +2961,20 @@ function ScatterplotPanel(props: {
   pending?: ResultPendingState;
   pendingLabel?: string;
   variant?: "default" | "demo";
+  simulationSpec?: SimulationSpec;
   onPair: (pair: ScatterPair) => void;
   onSelectNode: (id: string) => void;
 }) {
   const nodes = [...props.graph.nodes].sort((a, b) => a.id.localeCompare(b.id));
   const pair = reconcileScatterPair(props.graph, props.pair);
+  // User-tunable point opacity (persisted) — replaces the auto/adaptive alpha. Lets the user dial in
+  // overplotting for their own data instead of guessing a heuristic.
+  const [pointAlpha, setPointAlpha] = useState<number>(() => {
+    try { const v = parseFloat(localStorage.getItem("nudagitty.pointAlpha") ?? ""); return Number.isFinite(v) ? v : 0.4; } catch { return 0.4; }
+  });
+  useEffect(() => { try { localStorage.setItem("nudagitty.pointAlpha", String(pointAlpha)); } catch { /* ignore */ } }, [pointAlpha]);
+  // Polynomial degree of the dose term for the adjusted dose-response curve (1 = straight, 2 = curved).
+  const [doseDegree, setDoseDegree] = useState<1 | 2>(1);
   const roleOptions = scatterPairOptions(props.graph);
   const exposureOptionIds = new Set(roleOptions.exposures);
   const outcomeOptionIds = new Set(roleOptions.outcomes);
@@ -2846,6 +3033,13 @@ function ScatterplotPanel(props: {
       y2: stats.intercept + stats.slope * xDomain[1]
     }
     : null;
+  // For a continuous exposure we intervene on, overlay the dose-response curves
+  // (crude vs re-simulated oracle vs from-data adjusted). Returns null for any
+  // other pairing, falling back to the ordinary crude scatter. Skipped in demo.
+  const doseResponse = useMemo<DoseResponseCurves | null>(() => {
+    if (props.variant === "demo" || !props.simulationSpec) return null;
+    return computeDoseResponseCurves(props.graph, props.simulationSpec, props.simulation, { x: pair.x, y: pair.y }, { doseDegree });
+  }, [props.variant, props.simulationSpec, props.graph, props.simulation, pair.x, pair.y, doseDegree]);
 
   if (nodes.length < 2) return <p className="muted">Add at least two variables to compare simulated observations.</p>;
   const demoVariant = props.variant === "demo";
@@ -2871,6 +3065,12 @@ function ScatterplotPanel(props: {
           </div>
         ) : (
           <p className="pairwise-role-warning muted">Mark at least one exposure and one outcome to choose this output.</p>
+        )}
+        {points.length > 0 && (
+          <label className="scatter-alpha-control" title="Point opacity">
+            <span aria-hidden="true">α</span>
+            <input type="range" min="0.03" max="1" step="0.01" value={pointAlpha} aria-label="Point opacity" onChange={(event) => setPointAlpha(parseFloat(event.target.value))} />
+          </label>
         )}
         <details className="pairwise-info" onToggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open) trackInfoOverlayOpened("pairwise"); }}>
           <summary aria-label="Pairwise details" title="Pairwise details">i</summary>
@@ -2919,18 +3119,22 @@ function ScatterplotPanel(props: {
             <SvgAxisName className="scatter-axis-label y" label={yLabel} x={scatterFrame.anchors.title.yX} y={scatterFrame.plot.cy} transform={`rotate(-90 ${scatterFrame.anchors.title.yX} ${scatterFrame.plot.cy})`} maxChars={20} />
             {points.map((point) => {
               const normalizedWeight = Math.sqrt(Math.max(0, point.weight) / maxWeight);
-              return (
-                <circle
-                  className="scatter-point"
-                  key={point.index}
-                  cx={toX(point.x)}
-                  cy={toY(point.y)}
-                  r={1.7 + normalizedWeight * 2.4}
-                  style={{ opacity: 0.18 + normalizedWeight * 0.58 }}
-                />
-              );
-            })}
-            {regression && (
+              // Fixed radius; opacity is the user's slider value, modulated mildly by importance weight.
+              const opacity = clamp(pointAlpha * (0.5 + 0.5 * normalizedWeight), 0.02, 1);
+                return (
+                  <circle
+                    className="scatter-point"
+                    key={point.index}
+                    cx={toX(point.x)}
+                    cy={toY(point.y)}
+                    r={2 + normalizedWeight * 1.4}
+                    style={{ opacity }}
+                  />
+                );
+              })}
+            {doseResponse ? (
+              <DoseResponseOverlay curves={doseResponse} toX={toX} toY={toY} />
+            ) : regression ? (
               <line
                 className="scatter-regression"
                 x1={toX(regression.x1)}
@@ -2938,8 +3142,16 @@ function ScatterplotPanel(props: {
                 x2={toX(regression.x2)}
                 y2={toY(regression.y2)}
               />
-            )}
+            ) : null}
           </svg>
+          {doseResponse && (
+            <DoseResponseLegend
+              graph={props.graph}
+              curves={doseResponse}
+              doseDegree={doseDegree}
+              onDoseDegree={setDoseDegree}
+            />
+          )}
 
           {points.length === 0 ? (
             <p className="muted">No finite paired samples are available for this variable pair.</p>
@@ -2953,6 +3165,84 @@ function ScatterplotPanel(props: {
             </div>
           ) : null}
         </>
+      )}
+    </div>
+  );
+}
+
+// Builds an SVG path through (grid[i], values[i]), lifting the pen across non-finite points.
+function doseCurvePath(grid: number[], values: number[], toX: (v: number) => number, toY: (v: number) => number): string {
+  let d = "";
+  let pen = false;
+  for (let i = 0; i < grid.length; i += 1) {
+    const value = values[i];
+    if (value === undefined || !Number.isFinite(value)) { pen = false; continue; }
+    d += `${pen ? "L" : "M"}${toX(grid[i]!).toFixed(2)},${toY(value).toFixed(2)} `;
+    pen = true;
+  }
+  return d.trim();
+}
+
+function doseBandPath(grid: number[], lower: number[], upper: number[], toX: (v: number) => number, toY: (v: number) => number): string {
+  const pts: Array<{ x: number; lo: number; hi: number }> = [];
+  for (let i = 0; i < grid.length; i += 1) {
+    if (Number.isFinite(lower[i]) && Number.isFinite(upper[i])) pts.push({ x: toX(grid[i]!), lo: toY(lower[i]!), hi: toY(upper[i]!) });
+  }
+  if (pts.length < 2) return "";
+  let d = `M${pts[0]!.x.toFixed(2)},${pts[0]!.hi.toFixed(2)} `;
+  for (let i = 1; i < pts.length; i += 1) d += `L${pts[i]!.x.toFixed(2)},${pts[i]!.hi.toFixed(2)} `;
+  for (let i = pts.length - 1; i >= 0; i -= 1) d += `L${pts[i]!.x.toFixed(2)},${pts[i]!.lo.toFixed(2)} `;
+  return `${d}Z`;
+}
+
+// Overlays the three dose-response curves on the continuous-exposure scatter:
+// crude (gray) vs re-simulated oracle (ochre) vs from-data adjusted (blue, with
+// a confidence band that widens where the dose is sparsely observed).
+function DoseResponseOverlay(props: { curves: DoseResponseCurves; toX: (v: number) => number; toY: (v: number) => number }) {
+  const { curves, toX, toY } = props;
+  const hasAdjusted = curves.adjusted !== null;
+  return (
+    <g className="dose-response-overlay" aria-hidden="true">
+      {hasAdjusted && curves.adjustedLower && curves.adjustedUpper && (
+        <path className="dose-band" d={doseBandPath(curves.grid, curves.adjustedLower, curves.adjustedUpper, toX, toY)} />
+      )}
+      <path className="dose-curve crude" d={doseCurvePath(curves.grid, curves.observed, toX, toY)} />
+      <path className="dose-curve oracle" d={doseCurvePath(curves.grid, curves.oracle, toX, toY)} />
+      {hasAdjusted && curves.adjusted && (
+        <path className="dose-curve adjusted" d={doseCurvePath(curves.grid, curves.adjusted, toX, toY)} />
+      )}
+      {curves.grid.map((x, index) => {
+        const value = curves.oracle[index];
+        if (value === undefined || !Number.isFinite(value)) return null;
+        return <circle key={`do${index}`} className="dose-dot" cx={toX(x)} cy={toY(value)} r={1.9} />;
+      })}
+    </g>
+  );
+}
+
+function DoseResponseLegend(props: {
+  graph: GraphModel;
+  curves: DoseResponseCurves;
+  doseDegree: 1 | 2;
+  onDoseDegree: (degree: 1 | 2) => void;
+}) {
+  const adjustForLabel = props.curves.covariates
+    .map((id) => { const node = props.graph.nodes.find((candidate) => candidate.id === id); return node ? shortNodeLabel(node) : id; })
+    .join(", ");
+  const hasAdjusted = props.curves.adjusted !== null;
+  return (
+    <div className="dose-response-legend">
+      <div className="dose-legend-keys">
+        <span className="dose-key"><span className="dose-swatch crude" />observed <span className="dose-key-formula">E[Y | X]</span></span>
+        <span className="dose-key"><span className="dose-swatch oracle" />re-simulated oracle <span className="dose-key-formula">E[Y | do(X)]</span></span>
+        {hasAdjusted && <span className="dose-key"><span className="dose-swatch adjusted" />adjusted for {adjustForLabel}</span>}
+      </div>
+      {hasAdjusted && (
+        <div className="dose-fit-toggle" role="group" aria-label="Adjusted dose-response fit">
+          <span className="dose-fit-label">fit</span>
+          <button type="button" className={props.doseDegree === 1 ? "active" : ""} aria-pressed={props.doseDegree === 1} onClick={() => props.onDoseDegree(1)}>straight</button>
+          <button type="button" className={props.doseDegree === 2 ? "active" : ""} aria-pressed={props.doseDegree === 2} onClick={() => props.onDoseDegree(2)}>curved</button>
+        </div>
       )}
     </div>
   );
@@ -4178,6 +4468,7 @@ function AdjustedOutputPanel(props: {
   moduleId: string | null;
   exampleId?: string | null;
   computedOutput: ComputedCompletedOutput | null;
+  auxDiagnosis?: ReturnType<typeof computeStructuralDiagnosis>;
   binaryOutput: BinaryAdjustmentOutput | null;
   continuousOutput: BinaryContinuousAdjustmentOutput | null;
   unified?: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; points?: ScatterPoint[]; treatmentId?: string } | null;
@@ -4194,6 +4485,10 @@ function AdjustedOutputPanel(props: {
   const continuousOutput = props.continuousOutput;
   const pendingNotice = <ResultsPendingNotice pending={props.pending} label="Updating adjusted output" />;
   const showcaseGuide = showcaseGuideForExample(props.exampleId);
+  // Term-disambiguation reference card: shows whenever the active example instantiates a catalogued
+  // phenomenon (its cross-field names, what it's confused with, anchoring papers).
+  const disambiguationTerm = disambiguationTermForExample(props.exampleId);
+  const disambiguationCard = disambiguationTerm ? <DisambiguationCard term={disambiguationTerm} /> : null;
   // Either an example-specific module, or the generic structural diagnosis fallback
   // (computedOutput.moduleId === "structural-diagnosis") when the example has none.
   const effectiveModuleId = props.moduleId ?? props.computedOutput?.moduleId ?? null;
@@ -4203,8 +4498,10 @@ function AdjustedOutputPanel(props: {
       <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
         {pendingNotice}
         {showcaseGuide && <ShowcaseGuideCard guide={showcaseGuide} />}
-        <CompletedOutputPanel moduleId={effectiveModuleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
+        {disambiguationCard}
         {showGenericAdjustmentCards && unifiedPanel}
+        <CompletedOutputPanel moduleId={effectiveModuleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
+        {showGenericAdjustmentCards && effectiveModuleId !== "structural-diagnosis" && <AuxEstimandStructure diagnosis={props.auxDiagnosis ?? null} />}
       </div>
     );
   }
@@ -4212,6 +4509,7 @@ function AdjustedOutputPanel(props: {
     return (
       <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
         {pendingNotice}
+        {disambiguationCard}
         {unifiedPanel}
       </div>
     );
@@ -4220,7 +4518,7 @@ function AdjustedOutputPanel(props: {
     return (
       <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
         {pendingNotice}
-        <AdjustedOutputEmptyState />
+        {disambiguationCard ?? <AdjustedOutputEmptyState />}
       </div>
     );
   }
@@ -4238,6 +4536,7 @@ function AdjustedOutputPanel(props: {
   return (
     <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
       {pendingNotice}
+      {disambiguationCard}
       <CompletedOutputPanel moduleId={props.moduleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
     </div>
   );
@@ -4253,7 +4552,10 @@ function shouldShowAdjustedOutputColumn(document: GraphDocument, simulation: Sim
   const exposure = document.graph.nodes.find((node) => node.id === pair.x);
   const outcome = document.graph.nodes.find((node) => node.id === pair.y);
   if (!exposure || !outcome) return false;
-  return isBinaryGraphNode(exposure, simulation.nodeStates[exposure.id]);
+  if (isBinaryGraphNode(exposure, simulation.nodeStates[exposure.id])) return true;
+  // Continuous-exposure examples still earn the adjusted column (estimand + structure) when there's a
+  // conditioning operation — a selected / adjusted variable other than the exposure/outcome.
+  return document.graph.nodes.some((node) => (node.roles.selected || node.roles.adjusted) && node.id !== exposure.id && node.id !== outcome.id);
 }
 
 
@@ -4750,6 +5052,7 @@ function BasicSelectionEditor(props: Parameters<typeof SelectionEditor>[0]) {
     const node = props.node;
     const activeIntervention = Object.hasOwn(props.document.simulation.overrides ?? {}, node.id);
     const activeSelection = Object.hasOwn(props.document.simulation.selections ?? {}, node.id);
+    const isInstrumentCandidate = candidateInstruments(props.document.graph).includes(node.id);
     return (
       <div className="selection-editor basic-selection-editor" aria-label={`Variable ${node.id}`}>
         <div className="selection-editor-header">
@@ -4767,6 +5070,7 @@ function BasicSelectionEditor(props: Parameters<typeof SelectionEditor>[0]) {
               <RoleToggle label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
               <RoleToggle label="adjust for" checked={node.roles.adjusted} onChange={() => props.onToggleRole(node.id, "adjusted")} />
               <RoleToggle label="unobserved" checked={node.roles.latent} onChange={() => props.onToggleRole(node.id, "latent")} />
+              <RoleToggle label="instrument" checked={node.roles.instrument} disabled={!isInstrumentCandidate && !node.roles.instrument} onChange={() => props.onToggleRole(node.id, "instrument")} />
             </div>
           </div>
 
@@ -4874,6 +5178,8 @@ function VariableMechanismPanel(props: {
   const state = props.simulation.nodeStates[node.id];
   const parentIds = props.document.graph.edges.filter((edge) => edge.kind === "directed" && edge.target === node.id).map((edge) => edge.source);
   const isRoot = parentIds.length === 0;
+  // The instrument role is contextual: offerable only on a structural candidate (or to un-assign one).
+  const isInstrumentCandidate = useMemo(() => candidateInstruments(props.document.graph).includes(node.id), [props.document.graph, node.id]);
   const inferredValueType = inferValueTypeFromMechanism(isRoot, mechanism, variable.valueType);
   const updateVariable = (patch: Partial<VariableModel>) => props.onVariableChange(node.id, normalizeVariableModel({ ...variable, ...patch }));
   return (
@@ -4942,10 +5248,11 @@ function VariableEditor(props: {
   const node = props.node;
   const variable = normalizeVariableModel(node.variable);
   const mechanism = normalizeNodeMechanism(props.document.simulation.nodes[node.id]);
-  const value = props.simulation.values[node.id] ?? 0;
   const state = props.simulation.nodeStates[node.id];
   const parentIds = props.document.graph.edges.filter((edge) => edge.kind === "directed" && edge.target === node.id).map((edge) => edge.source);
   const isRoot = parentIds.length === 0;
+  // The instrument role is contextual: offerable only on a structural candidate (or to un-assign one).
+  const isInstrumentCandidate = useMemo(() => candidateInstruments(props.document.graph).includes(node.id), [props.document.graph, node.id]);
   const inferredValueType = inferValueTypeFromMechanism(isRoot, mechanism, variable.valueType);
   const updateVariable = (patch: Partial<VariableModel>) => props.onVariableChange(node.id, normalizeVariableModel({ ...variable, ...patch }));
 
@@ -4977,11 +5284,6 @@ function VariableEditor(props: {
       </div>
 
       <div className="selection-editor-body">
-        <div className="value-card">
-          <strong>current value</strong>
-          <span>{formatValue(value)}</span>
-        </div>
-
         <div className="operation-panel">
           <div className="operation-panel-head">
             <strong>Analysis operation</strong>
@@ -5031,21 +5333,19 @@ function VariableEditor(props: {
         </div>}
 
         <div className="variable-tab-panel" role="group" aria-label="Model and structure">
-          <div className="selection-editor-grid">
-            <div className="selection-editor-block">
-              <strong>Roles</strong>
-              <div className="role-toggle-grid">
-                <RoleToggle label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
-                <RoleToggle label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
-                <RoleToggle label="unobserved" checked={node.roles.latent} onChange={() => props.onToggleRole(node.id, "latent")} />
-              </div>
+          <div className="selection-editor-block">
+            <strong>Roles</strong>
+            <div className="role-toggle-row">
+              <RoleToggle label="exposure" checked={node.roles.exposure} onChange={() => props.onToggleRole(node.id, "exposure")} />
+              <RoleToggle label="outcome" checked={node.roles.outcome} onChange={() => props.onToggleRole(node.id, "outcome")} />
+              <RoleToggle label="unobserved" checked={node.roles.latent} onChange={() => props.onToggleRole(node.id, "latent")} />
+              <RoleToggle label="instrument" checked={node.roles.instrument} disabled={!isInstrumentCandidate && !node.roles.instrument} onChange={() => props.onToggleRole(node.id, "instrument")} />
             </div>
+          </div>
 
-            <div className="selection-editor-block">
-              <div className="selection-editor-block-title">
-                <strong>Distribution</strong>
-                <span className="variable-pill">{valueTypeLabel(inferredValueType)}</span>
-              </div>
+          <details className="output-box editor-section">
+            <summary><strong>Distribution</strong><span>{valueTypeLabel(inferredValueType)}</span></summary>
+            <div className="editor-section-body">
               {isRoot && <DistributionEditor
                 label="root distribution"
                 distribution={mechanism.distribution}
@@ -5072,21 +5372,25 @@ function VariableEditor(props: {
                 onChange={(intercept) => props.onMechanism(node.id, { intercept })}
               />
             </div>
-          </div>
+          </details>
 
-          {!isRoot && parentIds.length >= 2 && <details className="selection-editor-details">
-            <summary>Interactions</summary>
-            <InteractionEditor
-              nodeId={node.id}
-              parentIds={parentIds}
-              interactions={mechanism.interactions}
-              onChange={(interactions) => props.onMechanism(node.id, { interactions })}
-            />
+          {!isRoot && parentIds.length >= 2 && <details className="output-box editor-section">
+            <summary><strong>Interactions</strong></summary>
+            <div className="editor-section-body">
+              <InteractionEditor
+                nodeId={node.id}
+                parentIds={parentIds}
+                interactions={mechanism.interactions}
+                onChange={(interactions) => props.onMechanism(node.id, { interactions })}
+              />
+            </div>
           </details>}
 
-          <details className="selection-editor-details">
-            <summary>Description</summary>
-            <textarea aria-label="description" value={variable.description} rows={3} onChange={(event) => updateVariable({ description: event.target.value })} />
+          <details className="output-box editor-section">
+            <summary><strong>Description</strong></summary>
+            <div className="editor-section-body">
+              <textarea aria-label="description" value={variable.description} rows={3} onChange={(event) => updateVariable({ description: event.target.value })} />
+            </div>
           </details>
         </div>
 
@@ -5833,6 +6137,7 @@ function DistributionEditor(props: { label: string; distribution: NodeDistributi
           <option value="student_t">Student-t</option>
           <option value="gamma">gamma</option>
           <option value="exponential">exponential</option>
+          <option value="categorical">categorical</option>
         </select>
       </label>
       {distribution.kind === "constant" && <TactileNumberField
@@ -5892,6 +6197,35 @@ function DistributionEditor(props: { label: string; distribution: NodeDistributi
         <TactileNumberField label="scale" value={distribution.scale} min={0.001} step={0.1} nudge={1} onChange={(scale) => props.onChange({ ...distribution, scale })} />
       </>}
       {distribution.kind === "exponential" && <TactileNumberField label="rate" value={distribution.rate} min={0.001} step={0.1} nudge={1} onChange={(rate) => props.onChange({ ...distribution, rate })} />}
+      {distribution.kind === "categorical" && (() => {
+        const weights = distribution.weights;
+        const setWeights = (next: number[]) => props.onChange({ ...distribution, weights: next });
+        const total = weights.reduce((sum, w) => sum + Math.max(0, w), 0) || 1;
+        return (
+          <div className="categorical-editor">
+            <label className="field">
+              <span>levels</span>
+              <select value={weights.length} onChange={(event) => {
+                const k = parseInt(event.target.value, 10);
+                setWeights(Array.from({ length: k }, (_, i) => weights[i] ?? 1));
+              }}>
+                {[2, 3, 4, 5, 6].map((k) => <option value={k} key={k}>{k}</option>)}
+              </select>
+            </label>
+            {weights.map((weight, index) => (
+              <TactileNumberField
+                key={`cat-${index}`}
+                label={`level ${index} · ${formatPercent(Math.max(0, weight) / total)}`}
+                value={weight}
+                min={0}
+                step={0.1}
+                nudge={1}
+                onChange={(value) => setWeights(weights.map((w, i) => (i === index ? value : w)))}
+              />
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -6031,10 +6365,13 @@ function Checkbox({ label, checked, onChange }: { label: string; checked: boolea
   return <label className="check-row"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><span>{label}</span></label>;
 }
 
-function RoleToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+function RoleToggle({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: () => void; disabled?: boolean }) {
   return (
-    <label className={checked ? "role-toggle active" : "role-toggle"}>
-      <input type="checkbox" checked={checked} onChange={onChange} />
+    <label
+      className={`role-toggle${checked ? " active" : ""}${disabled ? " disabled" : ""}`}
+      title={disabled ? "Offered only on a structural instrument candidate (feeds the exposure, no other path to the outcome)." : undefined}
+    >
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={onChange} />
       <span>{label}</span>
     </label>
   );
@@ -7406,6 +7743,7 @@ function distributionParameterLabel(distribution: NodeDistribution): string {
   if (distribution.kind === "laplace") return `Laplace mean=${formatValue(distribution.mean)} scale=${formatValue(distribution.scale)}`;
   if (distribution.kind === "student_t") return `Student-t mean=${formatValue(distribution.mean)} scale=${formatValue(distribution.scale)} df=${formatValue(distribution.df)}`;
   if (distribution.kind === "gamma") return `Gamma shape=${formatValue(distribution.shape)} scale=${formatValue(distribution.scale)}`;
+  if (distribution.kind === "categorical") return `Categorical ${distribution.weights.length} levels`;
   return `Exponential rate=${formatValue(distribution.rate)}`;
 }
 
@@ -7424,6 +7762,7 @@ function distributionLabel(distribution: NodeDistribution): string {
   if (distribution.kind === "laplace") return `Laplace(${formatValue(distribution.mean)}, ${formatValue(distribution.scale)})`;
   if (distribution.kind === "student_t") return `Student-t(${formatValue(distribution.mean)}, ${formatValue(distribution.scale)}, ${formatValue(distribution.df)})`;
   if (distribution.kind === "gamma") return `Gamma(${formatValue(distribution.shape)}, ${formatValue(distribution.scale)})`;
+  if (distribution.kind === "categorical") return `Categorical(${distribution.weights.length} levels)`;
   return `Exponential(${formatValue(distribution.rate)})`;
 }
 
@@ -7470,6 +7809,7 @@ function defaultDistribution(kind: NodeDistribution["kind"]): NodeDistribution {
   if (kind === "student_t") return { kind, mean: 0, scale: 1, df: 5 };
   if (kind === "gamma") return { kind, shape: 2, scale: 1 };
   if (kind === "exponential") return { kind, rate: 1 };
+  if (kind === "categorical") return { kind, weights: [1, 1, 1] };
   return { kind: "constant", value: 0 };
 }
 

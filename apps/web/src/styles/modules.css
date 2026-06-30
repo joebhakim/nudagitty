@@ -229,6 +229,47 @@
   background: #f6fbfa;
 }
 
+/* Flat stack: the lead visual, then the Interpretation box, then the rest — all siblings, all
+   using the same .output-box chrome (no green wrapper). */
+.completed-output {
+  display: grid;
+  gap: 10px;
+}
+
+.completed-output > * {
+  margin-bottom: 0;
+}
+
+/* Box everything uniformly: the loose blocks (metric grid, bullet list, etc.) get the same bordered
+   card as the .output-box ones. Titled blocks (effect graph, Interpretation, methods) are already
+   .output-box; details keep their own chrome; the fix-prompt keeps its dashed CTA affordance. */
+.completed-output > *:not(.output-box):not(details):not(.completed-fix-prompt) {
+  border: 1px solid var(--line, #d7dde2);
+  border-radius: 10px;
+  background: #fff;
+  padding: 11px 13px;
+}
+
+/* Metric grid becomes ONE card: drop the per-cell borders so it isn't a box-in-box. */
+.completed-output > .completed-metric-grid {
+  gap: 18px;
+}
+
+.completed-output > .completed-metric-grid > div {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: none;
+}
+
+.completed-interpretation > summary strong {
+  margin-right: auto;
+}
+
+.completed-interpretation > .completed-output-body {
+  padding: 10px 13px;
+}
+
 .showcase-guide-card {
   display: grid;
   gap: 6px;

@@ -23,6 +23,10 @@ export interface NodeRoleFlags {
   adjusted: boolean;
   selected: boolean;
   latent: boolean;
+  // An instrument: a cause of the exposure with no other path to the outcome (exclusion) and no shared
+  // cause with it (independence). Lets the IV / 2SLS estimator recover the effect under unmeasured
+  // confounding. Assigned explicitly by the user; candidate instruments are flagged structurally.
+  instrument: boolean;
 }
 
 export type VariableValueType =
@@ -255,7 +259,9 @@ export type NodeDistribution =
   | { kind: "laplace"; mean: number; scale: number }
   | { kind: "student_t"; mean: number; scale: number; df: number }
   | { kind: "gamma"; shape: number; scale: number }
-  | { kind: "exponential"; rate: number };
+  | { kind: "exponential"; rate: number }
+  // k unordered/ordinal levels; the sampled value is the level index 0..k-1, drawn ∝ weights.
+  | { kind: "categorical"; weights: number[] };
 
 export type NodeCombinerKind =
   | "additive"

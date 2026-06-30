@@ -1,15 +1,26 @@
-import { EXAMPLE_DOMAINS } from "@nudagitty/core";
+import { EXAMPLE_DOMAINS, EXAMPLES } from "@nudagitty/core";
 import type { ExampleDomain } from "@nudagitty/core";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useEffect, useState } from "react";
 import type { WorkbenchMode } from "../shared/workbench";
-import { verifiedExamples } from "../shared/exampleVisibility";
+import { isExampleVerified, verifiedExamples } from "../shared/exampleVisibility";
 
-export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: string | null; onSelect: (id: string) => void; compact?: boolean }) {
-  // Only verified examples are exposed; demo/basic gating is gone (the app is pro-only).
-  const examples = verifiedExamples();
+export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: string | null; onSelect: (id: string) => void; onOpenGlossary?: () => void; compact?: boolean }) {
+  // "Include WIP examples" (default on) exposes every example; off restricts to the curated
+  // (verified / joe-approved) allowlist. Lets us sanity-check changes against the full set.
+  const [includeWip, setIncludeWip] = useState<boolean>(() => {
+    try { return localStorage.getItem("nudagitty.includeWip") !== "0"; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("nudagitty.includeWip", includeWip ? "1" : "0"); } catch { /* ignore */ }
+  }, [includeWip]);
+
+  const wipCount = EXAMPLES.length - verifiedExamples().length;
+  const examples = includeWip ? EXAMPLES.slice() : verifiedExamples();
   const domains = EXAMPLE_DOMAINS.filter((domain) => examples.some((example) => example.domain === domain.id));
-  const activeExample = examples.find((example) => example.id === props.activeExampleId);
+  // Look the active example up against the full set so the trigger title is right even when
+  // the toggle is off and a WIP example is loaded.
+  const activeExample = EXAMPLES.find((example) => example.id === props.activeExampleId);
   const activeDomain = activeExample ? activeExample.domain : domains[0]?.id ?? "classic";
   const [open, setOpen] = useState(false);
   const [highlightedDomain, setHighlightedDomain] = useState<ExampleDomain>(activeDomain);
@@ -18,11 +29,14 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
     setHighlightedDomain(activeDomain);
   }, [activeDomain]);
 
-  // Nothing verified to show yet -> render no example menu at all.
+  // Nothing to show yet -> render no example menu at all.
   if (examples.length === 0) return null;
 
   const highlighted = domains.find((domain) => domain.id === highlightedDomain) ?? domains[0];
-  const domainExamples = examples.filter((example) => example.domain === highlighted?.id);
+  // Curated examples first within each domain, WIP ones after (stable sort keeps source order).
+  const domainExamples = examples
+    .filter((example) => example.domain === highlighted?.id)
+    .sort((a, b) => Number(isExampleVerified(b.id)) - Number(isExampleVerified(a.id)));
   return (
     <DropdownMenu.Root open={open} onOpenChange={setOpen}>
       <div className="example-menu">
@@ -56,6 +70,10 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
               <button type="button" aria-label="Close menu" onClick={() => setOpen(false)}>close</button>
             </div>
             <div className="example-domain-list" aria-label="Example domains">
+              <label className="example-wip-toggle" title="Show work-in-progress examples that aren't curated yet">
+                <input type="checkbox" checked={includeWip} onChange={(event) => setIncludeWip(event.target.checked)} />
+                <span>Include WIP{wipCount > 0 ? ` (${wipCount})` : ""}</span>
+              </label>
               {domains.map((domain) => (
                 <button
                   type="button"
@@ -76,6 +94,15 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
               <div className="example-choice-head">
                 <strong>{highlighted?.label}</strong>
                 <span>{highlighted?.description}</span>
+                {highlighted?.id === "disambiguation" && props.onOpenGlossary && (
+                  <button
+                    type="button"
+                    className="example-glossary-link"
+                    onClick={() => { setOpen(false); props.onOpenGlossary!(); }}
+                  >
+                    Open the term-disambiguation map →
+                  </button>
+                )}
               </div>
               {domainExamples.map((example) => (
                 <DropdownMenu.Item key={example.id} asChild onSelect={() => props.onSelect(example.id)}>
@@ -83,7 +110,10 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
                     type="button"
                     className={example.id === props.activeExampleId ? "active" : ""}
                   >
-                    <strong>{example.title}</strong>
+                    <strong className="example-choice-title-row">
+                      <span className="example-choice-title">{example.title}</span>
+                      {!isExampleVerified(example.id) && <span className="example-wip-badge">WIP</span>}
+                    </strong>
                     <span>{example.summary}</span>
                   </button>
                 </DropdownMenu.Item>

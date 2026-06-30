@@ -80,12 +80,23 @@ export interface GMethodsComparisonConfig {
   covariateBasis?: CovariateBasis;
 }
 
+// A single unit's contribution to an arm mean: its outcome value (observed, predicted,
+// or re-simulated, depending on the method) and the weight with which it enters the mean.
+export interface ArmPoint {
+  y: number;
+  weight: number;
+}
+
 export interface GMethodArmSummary {
   strategyId: string;
   label: string;
   mean: number | null;
   sampleSize: number;
   effectiveSampleSize: number | null;
+  // The per-unit cloud whose weighted average IS `mean`, for methods that have a natural
+  // per-unit representation (re-simulated counterfactuals, parametric predictions, reweighted
+  // observations). null for methods that only yield a summary (e.g. g-estimation's blip).
+  points?: ArmPoint[] | null;
 }
 
 export interface GMethodEstimate {
@@ -510,8 +521,8 @@ function gFormulaEstimate(left: TreatmentStrategy, right: TreatmentStrategy, eva
     label: hasDynamicStrategy ? "Sequential strategy g-formula" : "Parametric g-formula",
     estimate: difference(leftEvaluation.mean, rightEvaluation.mean),
     arms: [
-      armSummary(left, leftEvaluation.mean, leftEvaluation.result.conditioning.acceptedSamples, leftEvaluation.result.conditioning.effectiveSampleSize),
-      armSummary(right, rightEvaluation.mean, rightEvaluation.result.conditioning.acceptedSamples, rightEvaluation.result.conditioning.effectiveSampleSize)
+      armSummary(left, leftEvaluation.mean, leftEvaluation.result.conditioning.acceptedSamples, leftEvaluation.result.conditioning.effectiveSampleSize, outcomeSamplePoints(leftEvaluation.result, leftEvaluation.outcome)),
+      armSummary(right, rightEvaluation.mean, rightEvaluation.result.conditioning.acceptedSamples, rightEvaluation.result.conditioning.effectiveSampleSize, outcomeSamplePoints(rightEvaluation.result, rightEvaluation.outcome))
     ],
     diagnostics: ["Simulates each complete strategy by intervening on the configured treatment nodes.", ...leftEvaluation.diagnostics, ...rightEvaluation.diagnostics]
   };
@@ -716,19 +727,24 @@ function outcomeRegressionEstimate(cohort: LongitudinalCohort, config: GMethodsC
   const binary = (config.outcomeScale ?? "risk") === "risk";
   const model = fitOutcomeModel(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary, config.covariateBasis ?? "linear");
   if (!model) return emptyEstimate("outcome_regression", "Outcome regression", left, right, "Not enough data to fit the parametric outcome model.");
-  const predictMean = (strategy: TreatmentStrategy): number | null => {
+  const predictArm = (strategy: TreatmentStrategy): { mean: number | null; points: ArmPoint[] } => {
     let sum = 0;
     let weight = 0;
+    const points: ArmPoint[] = [];
     for (let i = 0; i < cohort.rows.length; i += 1) {
       const row = cohort.rows[i]!;
       const baseWeight = cohort.weights[i] ?? 1;
-      sum += model(row, strategyAssignmentMap(row, strategy, config.treatmentVariables)) * baseWeight;
+      const predicted = model(row, strategyAssignmentMap(row, strategy, config.treatmentVariables));
+      if (Number.isFinite(predicted)) points.push({ y: predicted, weight: baseWeight });
+      sum += predicted * baseWeight;
       weight += baseWeight;
     }
-    return weight > 0 ? sum / weight : null;
+    return { mean: weight > 0 ? sum / weight : null, points };
   };
-  const leftMean = predictMean(left);
-  const rightMean = predictMean(right);
+  const leftArm = predictArm(left);
+  const rightArm = predictArm(right);
+  const leftMean = leftArm.mean;
+  const rightMean = rightArm.mean;
   const multiStep = config.treatmentVariables.length > 1;
   const diagnostics = [`Fits a ${binary ? "logistic" : "linear"} model of ${config.outcome} on treatment(s) + covariates, then predicts every unit under each strategy. Parametric: a misspecified functional form (e.g. real non-linearity) biases this even where standardization is unbiased.`];
   if (multiStep) diagnostics.push("Pooled across treatment times — a simplification of the full sequential parametric g-formula.");
@@ -736,7 +752,7 @@ function outcomeRegressionEstimate(cohort: LongitudinalCohort, config: GMethodsC
     id: "outcome_regression",
     label: "Outcome regression (parametric g-formula)",
     estimate: difference(leftMean, rightMean),
-    arms: [armSummary(left, leftMean, cohort.sampleSize, null), armSummary(right, rightMean, cohort.sampleSize, null)],
+    arms: [armSummary(left, leftMean, cohort.sampleSize, null, leftArm.points), armSummary(right, rightMean, cohort.sampleSize, null, rightArm.points)],
     diagnostics
   };
 }
@@ -749,9 +765,10 @@ function aipwEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConf
     treatment,
     table: binaryProbabilityTable(cohort, treatment, 1, treatmentHistory(treatment, config.treatmentVariables.slice(0, index), config.timeVaryingCovariates))
   }));
-  const armMean = (strategy: TreatmentStrategy): number | null => {
+  const armEvaluation = (strategy: TreatmentStrategy): { mean: number | null; points: ArmPoint[] } => {
     let sum = 0;
     let weight = 0;
+    const points: ArmPoint[] = [];
     for (let i = 0; i < cohort.rows.length; i += 1) {
       const row = cohort.rows[i]!;
       const baseWeight = cohort.weights[i] ?? 1;
@@ -769,16 +786,19 @@ function aipwEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConf
           value += (outcome - predicted) / Math.max(0.02, propensity);
         }
       }
+      if (Number.isFinite(value)) points.push({ y: value, weight: baseWeight });
       sum += value * baseWeight;
       weight += baseWeight;
     }
-    return weight > 0 ? sum / weight : null;
+    return { mean: weight > 0 ? sum / weight : null, points };
   };
+  const leftArm = armEvaluation(left);
+  const rightArm = armEvaluation(right);
   return {
     id: "aipw",
     label: "Doubly-robust (AIPW)",
-    estimate: difference(armMean(left), armMean(right)),
-    arms: [armSummary(left, armMean(left), cohort.sampleSize, null), armSummary(right, armMean(right), cohort.sampleSize, null)],
+    estimate: difference(leftArm.mean, rightArm.mean),
+    arms: [armSummary(left, leftArm.mean, cohort.sampleSize, null, leftArm.points), armSummary(right, rightArm.mean, cohort.sampleSize, null, rightArm.points)],
     diagnostics: ["Augmented IPW: outcome-model prediction plus an inverse-propensity correction. Consistent if EITHER the outcome model or the propensity model is right (doubly robust)."]
   };
 }
@@ -871,6 +891,7 @@ function weightedIpwArm(cohort: LongitudinalCohort, config: GMethodsComparisonCo
   let numerator = 0;
   let denominator = 0;
   const weights: number[] = [];
+  const points: ArmPoint[] = [];
   for (let index = 0; index < cohort.rows.length; index += 1) {
     const row = cohort.rows[index]!;
     if (!matchesStrategy(row, strategy, config.treatmentVariables) || !isUncensored(row, config.censoringVariables)) continue;
@@ -892,8 +913,9 @@ function weightedIpwArm(cohort: LongitudinalCohort, config: GMethodsComparisonCo
     numerator += outcome * weight;
     denominator += weight;
     weights.push(weight);
+    if (weight > 0) points.push({ y: outcome, weight });
   }
-  return armSummary(strategy, denominator > 0 ? numerator / denominator : null, weights.length, effectiveSampleSize(weights));
+  return armSummary(strategy, denominator > 0 ? numerator / denominator : null, weights.length, effectiveSampleSize(weights), points);
 }
 
 function residualizedTreatmentCoefficient(cohort: LongitudinalCohort, outcome: string, treatment: string, history: string[]): number {
@@ -1208,14 +1230,30 @@ function weightedAverage(values: Array<{ mean: number; weight: number }>): numbe
   return values.reduce((sum, value) => sum + value.mean * value.weight, 0) / denominator;
 }
 
-function armSummary(strategy: TreatmentStrategy, mean: number | null, sampleSize: number, effectiveSampleSize: number | null): GMethodArmSummary {
+function armSummary(strategy: TreatmentStrategy, mean: number | null, sampleSize: number, effectiveSampleSize: number | null, points?: ArmPoint[] | null): GMethodArmSummary {
   return {
     strategyId: strategy.id,
     label: strategy.label,
     mean,
     sampleSize,
-    effectiveSampleSize
+    effectiveSampleSize,
+    points: points && points.length > 0 ? points : null
   };
+}
+
+// Pull a strategy's re-simulated outcome cloud out of its forward-pass result. These ARE
+// the g-formula's individual counterfactual outcomes — their weighted mean is the arm mean.
+function outcomeSamplePoints(result: SimulationResult, outcome: string): ArmPoint[] | null {
+  const empirical = result.nodeStates[outcome]?.empirical;
+  if (!empirical) return null;
+  const points: ArmPoint[] = [];
+  for (let index = 0; index < empirical.samples.length; index += 1) {
+    const y = empirical.samples[index];
+    if (y === undefined || !Number.isFinite(y)) continue;
+    const weight = empirical.weights[index];
+    points.push({ y, weight: weight !== undefined && Number.isFinite(weight) && weight > 0 ? weight : 1 });
+  }
+  return points.length > 0 ? points : null;
 }
 
 function emptyArms(left: TreatmentStrategy, right: TreatmentStrategy): [GMethodArmSummary, GMethodArmSummary] {

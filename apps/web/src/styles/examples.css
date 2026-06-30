@@ -107,6 +107,58 @@
   background: #f8faf9;
 }
 
+.example-wip-toggle {
+  position: sticky;
+  top: -7px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -7px -7px 5px;
+  padding: 8px 9px;
+  background: #eef3f1;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 700;
+  color: #51606a;
+  cursor: pointer;
+}
+
+.example-wip-toggle input {
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Override the title line-clamp (.example-choice-list button strong is display:-webkit-box) so the
+   title + WIP pill sit on one flex row. Scoped specificity must beat that rule. */
+.example-choice-list button strong.example-choice-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.example-choice-list button .example-choice-title {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.example-choice-list button .example-wip-badge {
+  flex: 0 0 auto;
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #fbe9c8;
+  color: #8a5a12;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 .example-domain-list button,
 .example-choice-list button {
   justify-content: flex-start;
@@ -140,6 +192,25 @@
   display: grid;
   gap: 3px;
   padding: 5px 4px 7px;
+}
+
+.example-glossary-link {
+  justify-self: start;
+  margin-top: 5px;
+  min-height: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--moderator, #7c4dd6);
+  border-radius: 7px;
+  background: #f6f1fd;
+  color: var(--moderator, #7c4dd6);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.example-glossary-link:hover {
+  background: var(--moderator, #7c4dd6);
+  color: #fff;
 }
 
 .example-choice-head strong {
@@ -282,3 +353,9 @@
 .overlap-tiles small { font-size: 9.5px; color: #8b95a0; }
 .overlap-prov { font-size: 10.5px; line-height: 1.45; }
 @media (max-width: 560px) { .overlap-tiles { grid-template-columns: repeat(2, 1fr); } }
+
+/* Copula correlation tuner in the DGP inspector. */
+.dgp-copula-control p { margin: 2px 0 7px; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+.dgp-copula-control label { display: flex; align-items: center; gap: 10px; }
+.dgp-copula-control label span { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: #2b3640; min-width: 64px; }
+.dgp-copula-control input[type="range"] { flex: 1; max-width: 320px; accent-color: var(--moderator, #7c4dd6); cursor: pointer; }
