@@ -190,7 +190,7 @@ function BasicComparisonLedger(props: { rows: BasicComparisonLedgerRow[] }) {
   );
 }
 
-function BasicComparisonLedgerPlot(props: { rows: BasicComparisonLedgerRow[] }) {
+export function BasicComparisonLedgerPlot(props: { rows: BasicComparisonLedgerRow[] }) {
   const rows = props.rows.filter((row) => row.metric.numericValue !== null);
   if (rows.length < 2) return null;
   const width = 320;

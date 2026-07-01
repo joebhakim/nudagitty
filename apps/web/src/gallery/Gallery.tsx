@@ -10,8 +10,10 @@ import {
 import { ScatterChart } from "../charts/ScatterChart";
 import type { DoseResponseCurves } from "@nudagitty/core";
 import { NodeNamesProvider } from "../shared/NodeNames";
-import { binaryPoints, continuousPoints, doseCurvesFixture, riskPoints, scatter2d, scatterFit } from "./fixtures";
+import { binaryPoints, continuousPoints, doseCurvesFixture, huhShift, ledgerRows, riskPoints, scatter2d, scatterFit } from "./fixtures";
 import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
+import { HuhShiftPlot } from "../outputs/modules/components";
+import { BasicComparisonLedgerPlot } from "../panels/demo";
 import { OutputBoxesPrototype } from "../outputs/prototype/OutputBoxes";
 
 // Fake nodes so the SvgAxisName chips resolve, like in the real app.
@@ -78,6 +80,16 @@ function scatterFixture(name: string, points: ScatterPoint[], doseResponse?: Dos
   ) };
 }
 
+function huhShiftFixture(name: string, observed: number, causal: number, spread: number): Fixture {
+  const shift = huhShift(observed, causal, { spread });
+  return { name, render: () => <HuhShiftPlot shift={shift} /> };
+}
+
+function ledgerFixture(name: string, rows: Array<[string, number, "raw" | "adjusted" | "selected" | "intervention" | "dgp"]>): Fixture {
+  const data = ledgerRows(rows);
+  return { name, render: () => <BasicComparisonLedgerPlot rows={data} /> };
+}
+
 const SECTIONS: Array<{ title: string; fixtures: Fixture[] }> = [
   {
     title: "CategoryOutcomePlot — binary outcome",
@@ -117,6 +129,23 @@ const SECTIONS: Array<{ title: string; fixtures: Fixture[] }> = [
       scatterFixture("high noise", scatter2d(1.5, 30)),
       scatterFixture("tiny n", scatter2d(3, 6, { n: 6 })),
       scatterFixture("dose-response overlay", scatter2d(3, 8), doseCurvesFixture(3))
+    ]
+  },
+  {
+    title: "HuhShiftPlot — observed vs causal contrast",
+    fixtures: [
+      huhShiftFixture("sign agreement", -0.14, -0.1, 0.02),
+      huhShiftFixture("sign flip", 0.12, -0.08, 0.025),
+      huhShiftFixture("wide CIs", -0.1, -0.06, 0.11),
+      huhShiftFixture("near zero", 0.004, -0.003, 0.015)
+    ]
+  },
+  {
+    title: "BasicComparisonLedgerPlot — same-contrast estimates",
+    fixtures: [
+      ledgerFixture("raw → adjusted → dgp", [["raw", 0.16, "raw"], ["adjusted", 0.05, "adjusted"], ["do()", 0.04, "dgp"]]),
+      ledgerFixture("sign flip on adjust", [["raw", 0.11, "raw"], ["adjusted", -0.07, "selected"]]),
+      ledgerFixture("near zero", [["raw", 0.006, "raw"], ["adjusted", -0.004, "adjusted"]])
     ]
   }
 ];

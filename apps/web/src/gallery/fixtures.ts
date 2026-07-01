@@ -5,6 +5,8 @@
 import type { DoseResponseCurves } from "@nudagitty/core";
 import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
 import type { ScatterRegression } from "../charts/ScatterChart";
+import type { HuhShift } from "../outputs/modules/types";
+import type { BasicComparisonLedgerRow } from "../app/types";
 
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -125,4 +127,36 @@ export function doseCurvesFixture(slope: number, opts: { intercept?: number; xMi
     covariates: ["Obesity"],
     doseDegree: 1
   };
+}
+
+function ppLabel(value: number): string {
+  const pp = value * 100;
+  return `${pp >= 0 ? "+" : "−"}${Math.abs(pp).toFixed(1)}pp`;
+}
+
+// A HuhShiftPlot dataset: the observed (crude) contrast vs the causal (adjusted) contrast, each a
+// point + 95% interval on a signed axis. `spread` half-widens the intervals to exercise wide CIs.
+export function huhShift(observedNumeric: number, causalNumeric: number, opts: { spread?: number; title?: string } = {}): HuhShift {
+  const { spread = 0.03, title = "Observed vs causal contrast" } = opts;
+  return {
+    title,
+    axisLabel: "risk difference (pp)",
+    caption: "Observed [[Mortality]] gap by [[Obesity]], and the causal contrast after adjustment.",
+    observed: { label: "observed", sublabel: "crude", value: ppLabel(observedNumeric), numeric: observedNumeric, lower: observedNumeric - spread, upper: observedNumeric + spread },
+    causal: { label: "causal", sublabel: "adjusted", value: ppLabel(causalNumeric), numeric: causalNumeric, lower: causalNumeric - spread, upper: causalNumeric + spread }
+  };
+}
+
+// A BasicComparisonLedgerPlot dataset: several same-contrast estimates (raw / adjusted / dgp …)
+// plotted as dots on one signed axis. Each tuple is [label, numericValue (proportion), status].
+export function ledgerRows(rows: Array<[string, number, BasicComparisonLedgerRow["status"]]>): BasicComparisonLedgerRow[] {
+  return rows.map(([label, numericValue, status], index) => ({
+    id: `row-${index}`,
+    label,
+    sample: "n=1,000",
+    adjustment: status === "raw" ? "none" : "Obesity",
+    method: status === "dgp" ? "do()" : "IPW",
+    status,
+    metric: { label, value: ppLabel(numericValue), detail: "", numericValue }
+  }));
 }
