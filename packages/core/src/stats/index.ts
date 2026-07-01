@@ -8,3 +8,4 @@ export * from "./normal";
 export * from "./linalg";
 export * from "./quantile";
 export * from "./standardize";
+export * from "./moments";

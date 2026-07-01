@@ -23,7 +23,7 @@ export function weightedOutcomeMean(cohort: LongitudinalCohort, outcome: string,
   return {
     mean: denominator > 0 ? numerator / denominator : null,
     sampleSize: weights.length,
-    effectiveSampleSize: weights.length > 0 ? effectiveSampleSize(weights) : null
+    effectiveSampleSize: weights.length > 0 ? effectiveSampleSize(weights) ?? 0 : null
   };
 }
 

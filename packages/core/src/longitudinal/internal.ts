@@ -2,6 +2,10 @@ import type { LongitudinalCohort } from "./types";
 import type { SurvivalOutputSpec, TreatmentStrategy } from "../types";
 import { quantileEdges } from "../stats/quantile";
 
+// The canonical ESS returns null on degenerate weights; the historical name is kept
+// re-exported here. Call sites that need the old 0-on-degenerate number append `?? 0`.
+export { effectiveSampleSize } from "../stats/moments";
+
 interface BinaryProbabilityTable {
   treatment: string;
   value: 0 | 1;
@@ -163,12 +167,6 @@ export function survivalEventVariables(spec: SurvivalOutputSpec): string[] {
 export function survivalCensoringVariables(spec: SurvivalOutputSpec): string[] {
   if (spec.censoringVariables?.length) return spec.censoringVariables;
   return spec.censoringVariable ? [spec.censoringVariable] : [];
-}
-
-export function effectiveSampleSize(weights: number[]): number {
-  const sum = weights.reduce((total, weight) => total + weight, 0);
-  const sumSquares = weights.reduce((total, weight) => total + weight * weight, 0);
-  return sumSquares > 0 ? (sum * sum) / sumSquares : 0;
 }
 
 export function asBinary(value: number | undefined): 0 | 1 {

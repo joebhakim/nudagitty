@@ -53,7 +53,7 @@ export function compareLongitudinalGMethods(document: GraphDocument, config: GMe
     support: strategies.flatMap((strategy) => summarizeStrategySupport(cohort, config, strategy)),
     cohort: {
       sampleSize: cohort.sampleSize,
-      effectiveSampleSize: effectiveSampleSize(cohort.weights)
+      effectiveSampleSize: effectiveSampleSize(cohort.weights) ?? 0
     },
     diagnostics: validateLongitudinalMetadata(document)
   };

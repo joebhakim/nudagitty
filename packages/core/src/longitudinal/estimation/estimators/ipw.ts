@@ -63,5 +63,5 @@ function weightedIpwArm(cohort: LongitudinalCohort, config: GMethodsComparisonCo
     weights.push(weight);
     if (weight > 0) points.push({ y: outcome, weight });
   }
-  return armSummary(strategy, denominator > 0 ? numerator / denominator : null, weights.length, effectiveSampleSize(weights), points);
+  return armSummary(strategy, denominator > 0 ? numerator / denominator : null, weights.length, effectiveSampleSize(weights) ?? 0, points);
 }

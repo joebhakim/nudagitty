@@ -117,7 +117,7 @@ export function computeOverlapDiagnostic(document: GraphDocument, config: GMetho
     treatedPropensities: treated,
     controlPropensities: control,
     controlSampleSize: control.length,
-    controlEffectiveSampleSize: effectiveSampleSize(controlWeights),
+    controlEffectiveSampleSize: effectiveSampleSize(controlWeights) ?? 0,
     minPropensity: Math.min(...all),
     maxControlWeight: Math.max(...controlWeights),
     commonSupportShare: inSupport / all.length,

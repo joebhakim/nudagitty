@@ -120,9 +120,5 @@ export function normalizedWeights(logWeights: number[]): number[] {
   return logWeights.map((logWeight) => Math.exp(logWeight - maxLog));
 }
 
-export function computeEffectiveSampleSize(weights: number[]): number | null {
-  const sum = weights.reduce((total, weight) => total + weight, 0);
-  const sumSquares = weights.reduce((total, weight) => total + weight * weight, 0);
-  if (sum <= 0 || sumSquares <= 0) return null;
-  return (sum * sum) / sumSquares;
-}
+// The canonical ESS is exactly this defensive (null-on-degenerate) variant.
+export { effectiveSampleSize as computeEffectiveSampleSize } from "../stats/moments";
