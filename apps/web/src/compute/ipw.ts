@@ -1,4 +1,5 @@
 import type { GraphNode, SimulationResult } from "@nudagitty/core";
+import { effectiveSampleSize, weightedMean } from "@nudagitty/core";
 import { clamp, coerceBinary } from "../shared/formatting";
 import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
 import type {
@@ -246,13 +247,6 @@ export function standardizedMeanDifference(
   return (treated.mean - untreated.mean) / pooled;
 }
 
-export function effectiveSampleSize(weights: number[]): number | null {
-  const sum = weights.reduce((total, weight) => total + weight, 0);
-  const sumSquares = weights.reduce((total, weight) => total + weight * weight, 0);
-  if (sum <= 0 || sumSquares <= 0) return null;
-  return (sum * sum) / sumSquares;
-}
-
 export function standardizeCovariates(rows: Array<{ covariates: number[]; baseWeight: number }>): number[][] {
   const width = rows[0]?.covariates.length ?? 0;
   const weightSum = rows.reduce((sum, row) => sum + row.baseWeight, 0);
@@ -290,13 +284,15 @@ export function weightedOutcomeMean(
   treatment: 0 | 1,
   stabilized: boolean
 ): number | null {
-  let numerator = 0;
-  let denominator = 0;
+  // Collect this arm's non-null outcomes with the requested weight column, then
+  // defer to the canonical weighted mean — byte-identical to the old inline
+  // Σ(outcome·w) / Σw accumulation (same iteration order, same `Σw > 0 ? … : null`).
+  const values: number[] = [];
+  const weights: number[] = [];
   for (const row of rows) {
     if (row.treatment !== treatment || row.outcome === null) continue;
-    const weight = stabilized ? row.weight : row.baseWeight;
-    numerator += row.outcome * weight;
-    denominator += weight;
+    values.push(row.outcome);
+    weights.push(stabilized ? row.weight : row.baseWeight);
   }
-  return denominator > 0 ? numerator / denominator : null;
+  return weightedMean(values, weights);
 }
