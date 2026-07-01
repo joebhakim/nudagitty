@@ -42,9 +42,6 @@ import {
   addNode,
   setCopulaCorrelation,
   analyzeGraph,
-  adjustmentOverlap,
-  positivityStatus,
-  deriveAdjustmentSpec,
   classifyConditioned,
   createNewNodeId,
   createNode,
@@ -156,6 +153,7 @@ import { useAppTelemetry } from "./hooks/useAppTelemetry";
 import { useComputationWorkers } from "./hooks/useComputationWorkers";
 import { useUnifiedAdjustment } from "./hooks/useUnifiedAdjustment";
 import { useBasicOutputs } from "./hooks/useBasicOutputs";
+import { useOverlapDiagnostic } from "./hooks/useOverlapDiagnostic";
 import {
   adjustmentCutStep,
   conditioningSliderBounds,
@@ -332,13 +330,7 @@ export function App() {
   const showPairwiseScatter = !showAdjustedOutputColumn || !exposureBinaryForLayout;
 
   const { unifiedAdjustment, demoUnifiedAdjustment } = useUnifiedAdjustment(activeExample, computationDocument, covariateBasis, simulationDerived, activeOutputPair, defaultOutputPair);
-  // Overlap/positivity diagnostic, computed once per (signature-stable) computationDocument — so it
-  // does NOT re-run on node drags — and shared by the toolbar badge and the overlap modal.
-  const overlapDiagnostic = useMemo(() => {
-    const spec = deriveAdjustmentSpec(computationDocument);
-    return spec ? adjustmentOverlap(computationDocument, spec) : null;
-  }, [computationDocument]);
-  const positivity = overlapDiagnostic ? positivityStatus(overlapDiagnostic) : "ok";
+  const { overlapDiagnostic, positivity } = useOverlapDiagnostic(computationDocument);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
   useAppTelemetry(activeExample, analysis, completedOutput, document, selection, simulation, activeOutputPair);
