@@ -135,7 +135,6 @@ import { useWorkbenchStore } from "./store/workbenchStore";
 import type {
   BasicDemoContext,
   ModulationLink,
-  ResultPendingState,
   ShareStatus
 } from "./app/types";
 import {
@@ -145,11 +144,6 @@ import {
   MAX_SHARE_URL_LENGTH,
   WORKER_FALLBACK_MS
 } from "./app/constants";
-import {
-  graphAnalysisSignature,
-  graphOutputSignature,
-  graphSimulationSignature
-} from "./compute/graphSignatures";
 import {
   arrowHeadGeometry,
   edgeGeometry,
@@ -162,7 +156,8 @@ import {
   nodeBoundaryPoint,
   unitVector
 } from "./canvas/edgeGeometry";
-import { computeHighlightedEdges, transformView } from "./compute/viewTransforms";
+import { computeHighlightedEdges } from "./compute/viewTransforms";
+import { useDerivedGraphs } from "./hooks/useDerivedGraphs";
 import {
   adjustmentCutStep,
   conditioningSliderBounds,
@@ -277,26 +272,21 @@ export function App() {
   const [showGlossary, setShowGlossary] = useState(false);
   const [showOverlap, setShowOverlap] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
-  const visibleGraph = useMemo(() => transformView(document.graph, viewMode), [document.graph, viewMode]);
-  const analysisSignature = graphAnalysisSignature(document.graph);
-  const analysisGraph = useMemo(() => document.graph, [analysisSignature]);
-  const [analysisResultSignature, setAnalysisResultSignature] = useState(() => analysisSignature);
-  const simulationGraphSignature = graphSimulationSignature(document.graph);
-  const simulationGraph = useMemo(() => document.graph, [simulationGraphSignature]);
-  const simulationSignature = useMemo(() => `${simulationGraphSignature}::${JSON.stringify(document.simulation)}`, [document.simulation, simulationGraphSignature]);
-  const [simulationResultSignature, setSimulationResultSignature] = useState(() => simulationSignature);
-  const outputSignature = graphOutputSignature(document.graph);
-  const outputGraph = useMemo(() => document.graph, [outputSignature]);
-  const outputSimulation = useMemo(() => document.simulation, [simulationSignature]);
-  const analysisPending = analysisResultSignature !== analysisSignature;
-  const simulationPending = simulationResultSignature !== simulationSignature;
-  const resultsPending: ResultPendingState = { analysis: analysisPending, simulation: simulationPending };
-  const pairwisePending: ResultPendingState = { analysis: false, simulation: simulationPending };
-  const computationDocument = useMemo<GraphDocument>(() => ({
-    ...document,
-    graph: outputGraph,
-    simulation: outputSimulation
-  }), [document.id, document.metadata, document.schemaVersion, outputGraph, outputSimulation]);
+  const {
+    visibleGraph,
+    analysisSignature,
+    analysisGraph,
+    setAnalysisResultSignature,
+    simulationGraph,
+    simulationSignature,
+    setSimulationResultSignature,
+    outputSimulation,
+    analysisPending,
+    simulationPending,
+    resultsPending,
+    pairwisePending,
+    computationDocument
+  } = useDerivedGraphs(document, viewMode);
   // How flexibly continuous confounders enter the parametric estimators (outcome
   // regression, AIPW). Drives the basis selector on the methods panel.
   const [covariateBasis, setCovariateBasis] = useState<CovariateBasis>("linear");
