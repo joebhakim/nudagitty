@@ -3,6 +3,7 @@ import { Children, Fragment, memo, useState } from "react";
 import { formatPercent, formatPercentagePointMagnitude, formatPercentagePoints, formatSignedValue, formatValue, formatWeightedCount } from "../../shared/formatting";
 import { HighlightNames, NodeText } from "../../shared/NodeNames";
 import { chartFrame } from "../../charts/chartFrame";
+import { deterministicJitter } from "../../charts/jitter";
 import { SERIES_COLORS } from "../../charts/chartColors";
 import { CategoryOutcomePlot, binaryOutcomeSummaries, continuousOutcomeSummaries, wilsonInterval } from "../../charts/CategoryOutcomePlot";
 import type { CovariateBasis, GMethodEstimate, GMethodsComparison } from "@nudagitty/core";
@@ -1178,15 +1179,15 @@ export function sampleScoresForPlot(samples: number[]): number[] {
 }
 
 export function deterministicStripJitter(index: number, needValue: 0 | 1, treatment: "no tutoring" | "tutoring"): number {
+  // Byte-identical to the former inline hash: same salted seed, scale 10000, ±8.5px band.
   const seed = (index + 1) * 1103515245 + needValue * 12345 + (treatment === "tutoring" ? 6789 : 0);
-  const normalized = ((Math.sin(seed) * 10000) % 1 + 1) % 1;
-  return (normalized - 0.5) * 17;
+  return deterministicJitter(seed, 10000, 17);
 }
 
 export function deterministicBinnedJitter(index: number, binIndex: number, arm: 0 | 1): number {
+  // Byte-identical to the former inline hash: same salted seed, scale 10000, ±6.5px band.
   const seed = (index + 1) * 1664525 + binIndex * 1013904223 + arm * 7919;
-  const normalized = ((Math.sin(seed) * 10000) % 1 + 1) % 1;
-  return (normalized - 0.5) * 13;
+  return deterministicJitter(seed, 10000, 13);
 }
 
 export function CompletedOutputShell(props: { badge: string; conclusion: string; title?: string; children: React.ReactNode }) {

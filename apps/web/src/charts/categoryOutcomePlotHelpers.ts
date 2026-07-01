@@ -1,5 +1,6 @@
 import { coerceBinary } from "../shared/formatting";
 import { weightedMoments, wilsonInterval } from "@nudagitty/core";
+import { deterministicJitter } from "./jitter";
 import type { CategoryOutcomeSummary, RiskBin, ScatterPoint } from "./categoryOutcomePlotTypes";
 
 // Wilson score interval for a weighted binary proportion at effective sample size
@@ -208,10 +209,8 @@ function abbreviateLabel(value: string, limit: number): string {
 }
 
 export function deterministicCategoryOutcomeJitter(index: number, groupValue: 0 | 1, salt: number): number {
-  return deterministicJitter(index + groupValue * 1009 + salt * 7919);
-}
-
-function deterministicJitter(index: number): number {
-  const x = Math.sin((index + 1) * 12.9898) * 43758.5453;
-  return x - Math.floor(x) - 0.5;
+  // Same offsets as before: the previous private helper applied `(seed + 1) * 12.9898`
+  // and scale 43758.5453 to `seed = index + group*1009 + salt*7919`; that is folded into
+  // the canonical hash's `seed`/`scale` arguments here (amplitude stays at the call site).
+  return deterministicJitter((index + groupValue * 1009 + salt * 7919 + 1) * 12.9898, 43758.5453);
 }

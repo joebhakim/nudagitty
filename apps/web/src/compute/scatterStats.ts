@@ -208,11 +208,6 @@ export function niceTickStep(span: number): number {
   return factor * power;
 }
 
-export function deterministicJitter(index: number): number {
-  const x = Math.sin((index + 1) * 12.9898) * 43758.5453;
-  return x - Math.floor(x) - 0.5;
-}
-
 export function empiricalWeightAt(index: number, ...states: Array<SimulatedNodeState | undefined>): number {
   for (const state of states) {
     const weight = state?.empirical.weights[index];
