@@ -13,6 +13,9 @@ import { simulateLongitudinalCohort, validateLongitudinalMetadata } from "./extr
 import { evaluateTreatmentStrategy, summarizeStrategySupport } from "./survival";
 import { fitLinearModel, fitOutcomeModel, predictLinear, strategyAssignmentMap } from "./estimation/fit";
 import { armSummary, difference, emptyArms, emptyEstimate, outcomeSamplePoints, roundForDiagnostic, weightedAverage, weightedOutcomeMean, weightedShare } from "./estimation/shared";
+import { naiveEstimate } from "./estimation/estimators/naive";
+import { stratifiedEstimate } from "./estimation/estimators/stratified";
+import { gFormulaEstimate } from "./estimation/estimators/gFormula";
 import {
   asBinary,
   assignedTreatmentValue,
@@ -70,80 +73,6 @@ function resolveStrategies(strategies: TreatmentStrategy[], ids: [string, string
     return left && right ? [left, right] : null;
   }
   return strategies.length >= 2 && strategies[0] && strategies[1] ? [strategies[0], strategies[1]] : null;
-}
-
-function naiveEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
-  const leftArm = observedArm(cohort, left, config);
-  const rightArm = observedArm(cohort, right, config);
-  return {
-    id: "naive",
-    label: "Observed regimen contrast",
-    estimate: difference(leftArm.mean, rightArm.mean),
-    arms: [leftArm, rightArm],
-    diagnostics: ["Restricts to people whose observed treatment history matches each strategy."]
-  };
-}
-
-function stratifiedEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
-  const covariates = config.timeVaryingCovariates;
-  if (covariates.length === 0) {
-    return {
-      id: "stratified",
-      label: "Standardized within L",
-      estimate: null,
-      arms: emptyArms(left, right),
-      diagnostics: ["No adjustment covariate was supplied."]
-    };
-  }
-  // Standardize over the JOINT distribution of all covariates, discretizing
-  // continuous ones into quantile bins (a single composite stratum key per row).
-  const binners = buildBinners(cohort, covariates);
-  const stratumOf = (row: Record<string, number>) => keyFromBinners(row, covariates, binners);
-  const strata = [...new Set(cohort.rows.map(stratumOf))];
-  const leftMeans: Array<{ mean: number; weight: number }> = [];
-  const rightMeans: Array<{ mean: number; weight: number }> = [];
-  let unsupported = 0;
-  for (const stratum of strata) {
-    const inStratum = (row: Record<string, number>) => stratumOf(row) === stratum;
-    const stratumWeight = weightedShare(cohort, inStratum);
-    const leftMean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, left, config.treatmentVariables) && inStratum(row) && isUncensored(row, config.censoringVariables));
-    const rightMean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, right, config.treatmentVariables) && inStratum(row) && isUncensored(row, config.censoringVariables));
-    if (leftMean.mean === null || rightMean.mean === null) {
-      unsupported += 1;
-      continue;
-    }
-    leftMeans.push({ mean: leftMean.mean, weight: stratumWeight });
-    rightMeans.push({ mean: rightMean.mean, weight: stratumWeight });
-  }
-  const leftMean = weightedAverage(leftMeans);
-  const rightMean = weightedAverage(rightMeans);
-  const diagnostics = [`Standardizes the outcome over the joint empirical distribution of ${covariates.join(", ")} (continuous covariates quantile-binned).`];
-  if (unsupported > 0) diagnostics.push(`${unsupported} of ${strata.length} strata dropped for lack of both-arm support.`);
-  return {
-    id: "stratified",
-    label: covariates.length === 1 ? `Standardized by ${covariates[0]}` : "Standardized within L",
-    estimate: difference(leftMean, rightMean),
-    arms: [
-      armSummary(left, leftMean, cohort.sampleSize, null),
-      armSummary(right, rightMean, cohort.sampleSize, null)
-    ],
-    diagnostics
-  };
-}
-
-function gFormulaEstimate(left: TreatmentStrategy, right: TreatmentStrategy, evaluations: [StrategyEvaluation, StrategyEvaluation]): GMethodEstimate {
-  const [leftEvaluation, rightEvaluation] = evaluations;
-  const hasDynamicStrategy = [left, right].some((strategy) => strategy.kind !== "static" || strategy.rules.length > 0);
-  return {
-    id: "g_formula",
-    label: hasDynamicStrategy ? "Sequential strategy g-formula" : "Parametric g-formula",
-    estimate: difference(leftEvaluation.mean, rightEvaluation.mean),
-    arms: [
-      armSummary(left, leftEvaluation.mean, leftEvaluation.result.conditioning.acceptedSamples, leftEvaluation.result.conditioning.effectiveSampleSize, outcomeSamplePoints(leftEvaluation.result, leftEvaluation.outcome)),
-      armSummary(right, rightEvaluation.mean, rightEvaluation.result.conditioning.acceptedSamples, rightEvaluation.result.conditioning.effectiveSampleSize, outcomeSamplePoints(rightEvaluation.result, rightEvaluation.outcome))
-    ],
-    diagnostics: ["Simulates each complete strategy by intervening on the configured treatment nodes.", ...leftEvaluation.diagnostics, ...rightEvaluation.diagnostics]
-  };
 }
 
 function ipwEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
@@ -344,14 +273,6 @@ function matchingEstimate(cohort: LongitudinalCohort, config: GMethodsComparison
     arms: [armSummary(left, leftMean, treated.length, null), armSummary(right, rightMean, control.length, null)],
     diagnostics
   };
-}
-
-function observedArm(cohort: LongitudinalCohort, strategy: TreatmentStrategy, config: GMethodsComparisonConfig): GMethodArmSummary {
-  // The naive baseline is the raw crude contrast — it ignores BOTH confounding and
-  // censoring, so it matches the observed-relation scatter exactly. (The advanced rows
-  // are what bring censoring back in via IPCW.)
-  const mean = weightedOutcomeMean(cohort, config.outcome, (row) => matchesStrategy(row, strategy, config.treatmentVariables));
-  return armSummary(strategy, mean.mean, mean.sampleSize, mean.effectiveSampleSize);
 }
 
 function weightedIpwArm(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, strategy: TreatmentStrategy): GMethodArmSummary {
