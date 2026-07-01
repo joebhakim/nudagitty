@@ -177,190 +177,41 @@ import type { BibliographyTopic, Selection, ToolMode } from "./shared/appState";
 import { defaultScatterPair, reconcileScatterPair, scatterPairOptions } from "./shared/pairs";
 import type { ScatterPair } from "./shared/pairs";
 import { useWorkbenchStore } from "./store/workbenchStore";
-
-type CanvasViewport = { cx: number; cy: number; zoom: number };
-type BinaryCell = { x: 0 | 1; y: 0 | 1; weight: number; count: number; percent: number; columnPercent: number };
-type BinaryContinuousGroup = { value: 0 | 1; count: number; weight: number; mean: number | null; share: number };
-type BasicRelationSummary = {
-  relationLabel: string;
-  observed: BasicOutputPunchlineMetric;
-  comparison: BasicOutputPunchlineMetric | null;
-  ledgerRows?: BasicComparisonLedgerRow[];
-  note: string;
-};
-type BasicComparisonLedgerRow = {
-  id: string;
-  label: string;
-  sample: string;
-  adjustment: string;
-  method: string;
-  status: "raw" | "adjusted" | "selected" | "intervention" | "dgp";
-  metric: BasicOutputPunchlineMetric;
-};
-type BasicDemoContext = {
-  interventions: string[];
-  selections: string[];
-};
-type WeightedScatterSummary = {
-  meanX: number;
-  meanY: number;
-  correlation: number | null;
-  slope: number;
-  intercept: number;
-};
-type BinaryOutcomeContrastSummary = { yAtX0: number | null; yAtX1: number | null; diff: number | null };
-type NodeDistributionSummary = {
-  domain: [number, number] | null;
-  finiteSamples: number[];
-  histogram18: number[];
-  histogram20: number[];
-};
-type PairDerivedSummary = {
-  points: ScatterPoint[];
-  stats: WeightedScatterSummary | null;
-  binaryCells: BinaryCell[];
-  binaryContrast: BinaryOutcomeContrastSummary;
-  binaryContinuousGroups: BinaryContinuousGroup[];
-  xDomain: [number, number];
-  yDomain: [number, number];
-  ySampleDomain: [number, number];
-};
-type SimulationDerivedCache = {
-  simulation: SimulationResult;
-  nodes: Map<string, NodeDistributionSummary>;
-  pairs: Map<string, PairDerivedSummary>;
-};
-type BinaryAdjustmentOutput = {
-  exposure: GraphNode;
-  outcome: GraphNode;
-  rawPoints: ScatterPoint[];
-  rawCells: BinaryCell[];
-  rawContrast: BinaryOutcomeContrastSummary;
-  adjustedNodes: GraphNode[];
-  binaryAdjustedNodes: GraphNode[];
-  binnedAdjustedNodes: BinnedAdjustmentNode[];
-  unsupportedAdjustedNodes: GraphNode[];
-  strata: BinaryAdjustmentStratum[];
-  stabilizedIpw: StabilizedIpwOutput | null;
-  truncated: boolean;
-};
-type BinaryContinuousAdjustmentOutput = {
-  exposure: GraphNode;
-  outcome: GraphNode;
-  rawPoints: ScatterPoint[];
-  rawGroups: BinaryContinuousGroup[];
-  rawGap: number | null;
-  yDomain: [number, number];
-  adjustedNodes: GraphNode[];
-  binaryAdjustedNodes: GraphNode[];
-  binnedAdjustedNodes: BinnedAdjustmentNode[];
-  unsupportedAdjustedNodes: GraphNode[];
-  strata: BinaryContinuousAdjustmentStratum[];
-  stabilizedIpw: StabilizedIpwOutput | null;
-  adjustedGap: number | null;
-  truncated: boolean;
-};
-type ResultPendingState = {
-  analysis: boolean;
-  simulation: boolean;
-};
-type StabilizedIpwOutput = {
-  exposure: GraphNode;
-  outcome: GraphNode | null;
-  adjustedNodes: GraphNode[];
-  treatedShare: number;
-  rawTreated: number | null;
-  rawUntreated: number | null;
-  rawDiff: number | null;
-  weightedTreated: number | null;
-  weightedUntreated: number | null;
-  weightedDiff: number | null;
-  effectiveSampleSize: number | null;
-  maxWeight: number | null;
-  clippedCount: number;
-  sampleCount: number;
-  weightedPoints: ScatterPoint[];
-  weightedCells: BinaryCell[];
-  weightedContrast: BinaryOutcomeContrastSummary;
-  balances: StabilizedIpwBalance[];
-};
-type StabilizedIpwBalance = {
-  node: GraphNode;
-  domain: [number, number];
-  rawTreatedMean: number | null;
-  rawUntreatedMean: number | null;
-  weightedTreatedMean: number | null;
-  weightedUntreatedMean: number | null;
-  rawSmd: number | null;
-  weightedSmd: number | null;
-};
-type StabilizedIpwRow = {
-  treatment: 0 | 1;
-  outcome: number | null;
-  covariates: number[];
-  baseWeight: number;
-  weight: number;
-};
-type BinnedAdjustmentNode = {
-  node: GraphNode;
-  state: SimulatedNodeState;
-  domain: [number, number];
-  cutpoints: number[];
-  automatic?: boolean;
-};
-type BinaryAdjustmentStratum = {
-  id: string;
-  label: string;
-  points: ScatterPoint[];
-  cells: BinaryCell[];
-  contrast: BinaryOutcomeContrastSummary;
-  weight: number;
-};
-type BinaryContinuousAdjustmentStratum = {
-  id: string;
-  label: string;
-  displayLabels: string[];
-  points: ScatterPoint[];
-  groups: BinaryContinuousGroup[];
-  gap: number | null;
-  weight: number;
-};
-type AdjustmentStratumCondition =
-  | { kind: "binary"; node: GraphNode; value: 0 | 1; state: SimulatedNodeState }
-  | { kind: "bin"; node: GraphNode; lower: number; upper: number; index: number; last: boolean; state: SimulatedNodeState };
-type PositivityRow = { lower: number; upper: number; exposed: number; unexposed: number; total: number; warning: string | null };
-type DesignModuleStatus = "usable" | "todo";
-type DragState =
-  | { kind: "node"; id: string; offset: Point }
-  | { kind: "edge-control"; id: string }
-  | { kind: "pan"; pointerId: number; lastPoint: Point; moved: boolean }
-  | null;
-type PointerScreenPoint = { clientX: number; clientY: number };
-type EdgeGeometry = { path: string; control: Point; label: Point; start: Point; end: Point; curved: boolean };
-type ShareStatus = "idle" | "copied" | "too-large" | "failed";
-type FlowGraphNodeData = Record<string, unknown> & {
-  node: GraphNode;
-  selected: boolean;
-  edgeSource: boolean;
-  ancestor: boolean;
-  changed: boolean;
-  value?: number;
-  state?: SimulatedNodeState;
-  summary?: NodeDistributionSummary;
-  candidateInstrument: boolean;
-  onNodeClick: (id: string) => void;
-};
-type FlowGraphEdgeData = Record<string, unknown> & {
-  edge: GraphEdge;
-  source: GraphNode;
-  target: GraphNode;
-  mechanism: EdgeMechanism;
-  geometry: EdgeGeometry;
-  semantic?: "causal" | "biasing";
-  enabled: boolean;
-  denseEdges: boolean;
-  onSelect: (id: string) => void;
-};
+import type {
+  AdjustmentStratumCondition,
+  ArrowHeadGeometry,
+  BasicComparisonLedgerRow,
+  BasicDemoContext,
+  BasicRelationSummary,
+  BinaryAdjustmentOutput,
+  BinaryAdjustmentStratum,
+  BinaryCell,
+  BinaryContinuousAdjustmentOutput,
+  BinaryContinuousAdjustmentStratum,
+  BinaryContinuousGroup,
+  BinaryOutcomeContrastSummary,
+  BinnedAdjustmentNode,
+  CanvasViewport,
+  DesignModuleStatus,
+  DragState,
+  EdgeGeometry,
+  FlowGraphEdgeData,
+  FlowGraphNodeData,
+  ModulationLink,
+  ModuleTone,
+  NodeDistributionSummary,
+  PairDerivedSummary,
+  PointerScreenPoint,
+  PositivityRow,
+  ResultPendingState,
+  ShareStatus,
+  ShowcaseGuide,
+  SimulationDerivedCache,
+  StabilizedIpwBalance,
+  StabilizedIpwOutput,
+  StabilizedIpwRow,
+  WeightedScatterSummary
+} from "./app/types";
 
 const BASE_VIEWBOX = { width: 1000, height: 700 };
 const DEFAULT_VIEWPORT: CanvasViewport = { cx: 0, cy: 0, zoom: 1 };
@@ -2285,7 +2136,6 @@ function FlowGraphArrowLayer({ edges }: { edges: FlowGraphEdge[] }) {
 // A moderator/effect-modifier rendered structurally: the `gate` node acts upon the `source → target`
 // edge. Drawn as a dashed arrow from the gate to a small junction marker sitting on that edge — the
 // visual primitive that distinguishes moderation from confounding (fork) and mediation (chain).
-type ModulationLink = { id: string; gateId: string; sourceId: string; targetId: string; sign: number; coefficient: number };
 
 // How a gate reshapes the edge it sits on, judged against that edge's own baseline strength.
 // Opposite-sign gates that roughly cancel the edge "mask" it (recessive epistasis); a stronger
@@ -2369,7 +2219,6 @@ function flowNodePositionToGraphPoint(point: Point): Point {
   };
 }
 
-type ArrowHeadGeometry = { path: string; base: Point };
 
 function edgeVisibleStrokePath(geometry: EdgeGeometry, startArrow: ArrowHeadGeometry | null, endArrow: ArrowHeadGeometry | null): string {
   const start = startArrow?.base ?? geometry.start;
@@ -4379,11 +4228,6 @@ function shortNodeLabel(node: GraphNode): string {
   return abbreviateLabel(node.label || node.id, 24);
 }
 
-type ShowcaseGuide = {
-  title: string;
-  target: string;
-  items: string[];
-};
 
 function showcaseGuideForExample(exampleId: string | null | undefined): ShowcaseGuide | null {
   if (exampleId === "what-if-dynamic-g-formula") {
@@ -6303,7 +6147,6 @@ function Section({ title, pending, children }: { title: string; pending?: boolea
   );
 }
 
-type ModuleTone = "edit" | "output" | "scenario";
 
 function ModuleFrame({
   children,
