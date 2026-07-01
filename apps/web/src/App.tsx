@@ -109,7 +109,7 @@ import { applyOperation, deriveOperation } from "./shared/operations";
 import { displayNodeName } from "./outputs/estimand";
 import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
 import { NodeNamesProvider } from "./shared/NodeNames";
-import { WhatIfStrategySurvivalCurve, computeCompletedOutput, computeStructuralDiagnosis, observedSurvivalView } from "./outputs/modules";
+import { WhatIfStrategySurvivalCurve } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { DisambiguationMap } from "./outputs/DisambiguationMap";
 import { DgpInspector } from "./outputs/DgpInspector";
@@ -129,7 +129,7 @@ import {
   snapshotFilename
 } from "./shared/appState";
 import type { BibliographyTopic, Selection, ToolMode } from "./shared/appState";
-import { defaultScatterPair, reconcileScatterPair } from "./shared/pairs";
+import { reconcileScatterPair } from "./shared/pairs";
 import type { ScatterPair } from "./shared/pairs";
 import { useWorkbenchStore } from "./store/workbenchStore";
 import type {
@@ -157,6 +157,7 @@ import {
 } from "./canvas/edgeGeometry";
 import { useDerivedGraphs } from "./hooks/useDerivedGraphs";
 import { useCanvasOverlays } from "./hooks/useCanvasOverlays";
+import { useOutputComputations } from "./hooks/useOutputComputations";
 import {
   adjustmentCutStep,
   conditioningSliderBounds,
@@ -198,7 +199,6 @@ import {
 } from "./compute/stratification";
 import {
   computeBinaryAdjustmentOutput,
-  computeBinaryContinuousAdjustmentOutput,
   shouldShowAdjustedOutputColumn
 } from "./compute/adjustmentOutput";
 import {
@@ -305,41 +305,18 @@ export function App() {
   const compactWorkspace = useMediaQuery("(max-width: 1120px)");
   const empiricalDraws = graphEmpiricalDraws(document.graph);
   const { highlightedEdges, ancestorIds, modulations } = useCanvasOverlays(analysisGraph, analysis, showCausal, showBiasing, showAncestors, document);
-  const completedOutput = useMemo(() => computeCompletedOutput(outputContext, activeExample?.outputModule ?? null), [activeExample?.outputModule, outputContext]);
-  // The generic structural diagnosis, computed for EVERY example so its Estimand/Structure cards can be
-  // shown alongside a dedicated module too (consistency: the target estimand shouldn't depend on whether
-  // the example happens to have a bespoke output module).
-  const structuralAux = useMemo(() => computeStructuralDiagnosis(outputContext), [outputContext]);
-  // Only surface the auto-estimand alongside a dedicated module when it's TRUSTWORTHY: a descriptive
-  // selection/stratification estimand is always fine, but a "backdoor-standardized" estimand is only
-  // valid when the adjustment actually identifies the effect — otherwise (front-door's mediator, M-bias's
-  // collider) it would assert a wrong target, so we suppress it there rather than mislead.
-  const auxEstimandTrustworthy = useMemo(() => {
-    const primary = outputContext.analysis.conditioningRoles[0];
-    if (!primary) return false;
-    if (primary.operation !== "adjust") return true;
-    return outputContext.analysis.totalEffect.valid;
-  }, [outputContext]);
-  // For survival examples the observed-association card shows the crude (naive) survival
-  // curves — the same view as the adjusted estimate, before adjustment.
-  const observedSurvival = useMemo(() => observedSurvivalView(completedOutput), [completedOutput]);
-  const activeOutputPair = useMemo(() => reconcileScatterPair(computationDocument.graph, scatterPair), [computationDocument.graph, scatterPair]);
-  const defaultOutputPair = useMemo(() => defaultScatterPair(computationDocument.graph), [computationDocument.graph]);
-  const binaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived, activeOutputPair), [activeOutputPair, outputContext, simulationDerived]);
-  const binaryContinuousAdjustmentOutput = useMemo(() => computeBinaryContinuousAdjustmentOutput(outputContext, simulationDerived, activeOutputPair), [activeOutputPair, outputContext, simulationDerived]);
-  const completedOutputActive = Boolean(activeExample?.outputModule?.startsWith("what-if-") && completedOutput);
-  // The output frame is operation-aware: select / condition / adjust are distinct estimands,
-  // not all "adjustment". With no conditioning operation it is a structural diagnosis of the
-  // DAG, not an "adjustment target".
-  const frameOperation = useMemo(() => {
-    const operations = document.graph.nodes
-      .filter((node) => node.roles.adjusted || node.roles.selected)
-      .map((node) => deriveOperation(document, node.id));
-    if (operations.includes("select")) return "select" as const;
-    if (operations.includes("adjust")) return "adjust" as const;
-    if (operations.includes("condition")) return "condition" as const;
-    return "none" as const;
-  }, [document]);
+  const {
+    completedOutput,
+    structuralAux,
+    auxEstimandTrustworthy,
+    observedSurvival,
+    activeOutputPair,
+    defaultOutputPair,
+    binaryAdjustmentOutput,
+    binaryContinuousAdjustmentOutput,
+    completedOutputActive,
+    frameOperation
+  } = useOutputComputations(outputContext, simulationDerived, activeExample, computationDocument, scatterPair, document);
 
   useEffect(() => startEngagementMilestones(), []);
   const adjustedFrameTitle = completedOutputActive ? "Effect estimate"
