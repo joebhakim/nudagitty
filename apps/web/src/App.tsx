@@ -42,7 +42,6 @@ import {
   addNode,
   setCopulaCorrelation,
   analyzeGraph,
-  analyzeAdjustment,
   adjustmentOverlap,
   positivityStatus,
   deriveAdjustmentSpec,
@@ -128,7 +127,6 @@ import {
 } from "./shared/appState";
 import type { BibliographyTopic, Selection, ToolMode } from "./shared/appState";
 import { reconcileScatterPair } from "./shared/pairs";
-import type { ScatterPair } from "./shared/pairs";
 import { useWorkbenchStore } from "./store/workbenchStore";
 import type {
   BasicDemoContext,
@@ -157,6 +155,7 @@ import { useCanvasOverlays } from "./hooks/useCanvasOverlays";
 import { useOutputComputations } from "./hooks/useOutputComputations";
 import { useAppTelemetry } from "./hooks/useAppTelemetry";
 import { useComputationWorkers } from "./hooks/useComputationWorkers";
+import { useUnifiedAdjustment } from "./hooks/useUnifiedAdjustment";
 import {
   adjustmentCutStep,
   conditioningSliderBounds,
@@ -177,8 +176,7 @@ import {
   tikzDocument
 } from "./share/exportDocument";
 import {
-  buildSimulationDerivedCache,
-  pairDerivedSummary
+  buildSimulationDerivedCache
 } from "./compute/scatterStats";
 import {
   inferValueTypeFromMechanism
@@ -344,32 +342,7 @@ export function App() {
   const exposureBinaryForLayout = exposureNodeForLayout ? normalizeVariableModel(exposureNodeForLayout.variable).valueType === "binary" : true;
   const showPairwiseScatter = !showAdjustedOutputColumn || !exposureBinaryForLayout;
 
-  // Classic examples (no what-if module) get the SAME canonical g-method panel as the
-  // longitudinal ones, derived from the current adjust/condition operations + the pair —
-  // so the same operation renders the same output everywhere (Pro and Demo alike).
-  const computeUnifiedAdjustment = useCallback((pair: ScatterPair) => {
-    if (activeExample?.outputModule?.startsWith("what-if-")) return null;
-    const spec = deriveAdjustmentSpec(computationDocument, { exposure: pair.x, outcome: pair.y });
-    // Show the observed/re-simulated effect graph for ANY exposure→outcome pair, even with no
-    // adjustment set (mediation, a randomized treatment, a selection example) — observed-vs-oracle is
-    // always informative. With an empty set the from-data methods collapse toward the crude contrast,
-    // which is honest ("nothing to adjust"); an IV example keeps them too (unmeasured confounder).
-    if (!spec) return null;
-    // g-methods contrast two treatment arms — only meaningful for a BINARY treatment. For a continuous
-    // exposure (e.g. the chess IQ selection example) skip the unified panel; the estimand/structure
-    // still render via the structural diagnosis.
-    const treatmentNode = computationDocument.graph.nodes.find((node) => node.id === (spec.treatments[0] ?? pair.x));
-    if (treatmentNode && normalizeVariableModel(treatmentNode.variable).valueType !== "binary") return null;
-    const comparison = analyzeAdjustment(computationDocument, { ...spec, covariateBasis });
-    if (!comparison) return null;
-    const outcomeNode = computationDocument.graph.nodes.find((node) => node.id === spec.outcome);
-    // Observed individual outcome-by-treatment points (the swarm + the observed mean/CI) for the
-    // effect graph; treatment node id is kept so the graph can style the X axis like other charts.
-    const observed = pairDerivedSummary(simulationDerived, spec.treatments[0] ?? pair.x, spec.outcome);
-    return { comparison, outcomeScale: spec.outcomeScale, outcomeUnit: outcomeNode?.variable.unit ?? "", points: observed.points, treatmentId: spec.treatments[0] ?? pair.x };
-  }, [activeExample, computationDocument, covariateBasis, simulationDerived]);
-  const unifiedAdjustment = useMemo(() => computeUnifiedAdjustment(activeOutputPair), [computeUnifiedAdjustment, activeOutputPair]);
-  const demoUnifiedAdjustment = useMemo(() => computeUnifiedAdjustment(defaultOutputPair), [computeUnifiedAdjustment, defaultOutputPair]);
+  const { unifiedAdjustment, demoUnifiedAdjustment } = useUnifiedAdjustment(activeExample, computationDocument, covariateBasis, simulationDerived, activeOutputPair, defaultOutputPair);
   // Overlap/positivity diagnostic, computed once per (signature-stable) computationDocument — so it
   // does NOT re-run on node drags — and shared by the toolbar badge and the overlap modal.
   const overlapDiagnostic = useMemo(() => {
