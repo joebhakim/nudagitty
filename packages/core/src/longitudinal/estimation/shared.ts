@@ -1,47 +1,38 @@
 import type { SimulationResult, TreatmentStrategy } from "../../types";
 import type { ArmPoint, GMethodArmSummary, GMethodEstimate, LongitudinalCohort } from "../types";
 import { effectiveSampleSize } from "../internal";
+import { weightedAverageOfEstimates, weightedMean } from "../../stats/moments";
 
 export function emptyEstimate(id: GMethodEstimate["id"], label: string, left: TreatmentStrategy, right: TreatmentStrategy, message: string): GMethodEstimate {
   return { id, label, estimate: null, arms: emptyArms(left, right), diagnostics: [message] };
 }
 
 export function weightedOutcomeMean(cohort: LongitudinalCohort, outcome: string, predicate: (row: Record<string, number>) => boolean): { mean: number | null; sampleSize: number; effectiveSampleSize: number | null } {
-  let numerator = 0;
-  let denominator = 0;
+  const values: number[] = [];
   const weights: number[] = [];
   for (let index = 0; index < cohort.rows.length; index += 1) {
     const row = cohort.rows[index]!;
     if (!predicate(row)) continue;
     const value = row[outcome];
     if (value === undefined || !Number.isFinite(value)) continue;
-    const weight = cohort.weights[index] ?? 1;
-    numerator += value * weight;
-    denominator += weight;
-    weights.push(weight);
+    values.push(value);
+    weights.push(cohort.weights[index] ?? 1);
   }
   return {
-    mean: denominator > 0 ? numerator / denominator : null,
+    mean: weightedMean(values, weights),
     sampleSize: weights.length,
     effectiveSampleSize: weights.length > 0 ? effectiveSampleSize(weights) ?? 0 : null
   };
 }
 
 export function weightedShare(cohort: LongitudinalCohort, predicate: (row: Record<string, number>) => boolean): number {
-  let numerator = 0;
-  let denominator = 0;
-  for (let index = 0; index < cohort.rows.length; index += 1) {
-    const weight = cohort.weights[index] ?? 1;
-    denominator += weight;
-    if (predicate(cohort.rows[index]!)) numerator += weight;
-  }
-  return denominator > 0 ? numerator / denominator : 0;
+  const weights = cohort.rows.map((_, index) => cohort.weights[index] ?? 1);
+  const indicators = cohort.rows.map((row) => (predicate(row) ? 1 : 0));
+  return weightedMean(indicators, weights) ?? 0;
 }
 
 export function weightedAverage(values: Array<{ mean: number; weight: number }>): number | null {
-  const denominator = values.reduce((sum, value) => sum + value.weight, 0);
-  if (denominator <= 0) return null;
-  return values.reduce((sum, value) => sum + value.mean * value.weight, 0) / denominator;
+  return weightedAverageOfEstimates(values.map((entry) => ({ value: entry.mean, weight: entry.weight })));
 }
 
 export function armSummary(strategy: TreatmentStrategy, mean: number | null, sampleSize: number, effectiveSampleSize: number | null, points?: ArmPoint[] | null): GMethodArmSummary {
