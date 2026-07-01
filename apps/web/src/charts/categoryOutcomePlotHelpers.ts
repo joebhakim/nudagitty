@@ -1,5 +1,5 @@
 import { coerceBinary } from "../shared/formatting";
-import { weightedMoments, wilsonInterval } from "@nudagitty/core";
+import { effectiveSampleSize, weightedMoments, wilsonInterval } from "@nudagitty/core";
 import { deterministicJitter } from "./jitter";
 import type { CategoryOutcomeSummary, RiskBin, ScatterPoint } from "./categoryOutcomePlotTypes";
 
@@ -76,17 +76,17 @@ function continuousOutcomeSummary(points: ScatterPoint[], group: 0 | 1, label: s
 
 function binaryOutcomeSummary(points: ScatterPoint[], group: 0 | 1, label: string, tone: "treated" | "untreated"): CategoryOutcomeSummary {
   const groupPoints = binaryContinuousPointsForGroup(points, group);
+  // nEff via the canonical Kish effective sample size; it returns null on exactly the
+  // same degenerate weights (Σw ≤ 0 or Σw² ≤ 0) the inline guard used to reject.
+  const nEff = effectiveSampleSize(groupPoints.map((point) => point.weight));
   let sumWeight = 0;
-  let sumWeightSquared = 0;
   let successes = 0;
   for (const point of groupPoints) {
     sumWeight += point.weight;
-    sumWeightSquared += point.weight * point.weight;
     successes += coerceBinary(point.y) * point.weight;
   }
-  if (sumWeight <= 0 || sumWeightSquared <= 0) return { group, label, tone, mean: null, lower: null, upper: null, nEff: null, points: groupPoints };
+  if (nEff === null) return { group, label, tone, mean: null, lower: null, upper: null, nEff: null, points: groupPoints };
   const mean = successes / sumWeight;
-  const nEff = sumWeight * sumWeight / sumWeightSquared;
   if (!Number.isFinite(nEff) || nEff <= 0) return { group, label, tone, mean, lower: null, upper: null, nEff: null, points: groupPoints };
   const interval = wilsonInterval(mean, nEff);
   return {
@@ -141,6 +141,8 @@ export function binnedBinaryRiskSummaries(points: ScatterPoint[], binCount: numb
   return bins;
 }
 
+// Weight-cumulative quantile over already-sorted points: distinct from the canonical
+// (unweighted, order-statistic) `quantile` in @nudagitty/core, so it stays local.
 function weightedQuantile(sorted: ScatterPoint[], totalWeight: number, q: number): number {
   const threshold = totalWeight * q;
   let cumulative = 0;
@@ -152,19 +154,19 @@ function weightedQuantile(sorted: ScatterPoint[], totalWeight: number, q: number
 }
 
 function riskBinFromPoints(points: ScatterPoint[], loEdge: number, hiEdge: number | null): RiskBin | null {
+  // nEff via the canonical Kish effective sample size; null on the same degenerate
+  // weights (Σw ≤ 0 or Σw² ≤ 0) the inline guard used to reject with a null bin.
+  const nEff = effectiveSampleSize(points.map((point) => point.weight));
+  if (nEff === null) return null;
   let sumWeight = 0;
-  let sumWeightSquared = 0;
   let successes = 0;
   let sumX = 0;
   for (const point of points) {
     sumWeight += point.weight;
-    sumWeightSquared += point.weight * point.weight;
     successes += coerceBinary(point.y) * point.weight;
     sumX += point.x * point.weight;
   }
-  if (sumWeight <= 0 || sumWeightSquared <= 0) return null;
   const mean = successes / sumWeight;
-  const nEff = sumWeight * sumWeight / sumWeightSquared;
   const interval = Number.isFinite(nEff) && nEff > 0 ? wilsonInterval(mean, nEff) : null;
   return {
     center: sumX / sumWeight,
