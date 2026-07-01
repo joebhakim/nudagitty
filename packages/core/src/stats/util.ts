@@ -9,6 +9,14 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Like `clamp`, but a non-finite `value` collapses to 0 before clamping. This is
+ *  the guarded variant the web charting layer relies on (NaN/±Infinity → 0 rather
+ *  than propagating through Math.min/max). */
+export function clampFinite(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(max, Math.max(min, value));
+}
+
 /** Constrain `value` to [0, 1]. Equivalent to `clamp(value, 0, 1)`. */
 export function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));

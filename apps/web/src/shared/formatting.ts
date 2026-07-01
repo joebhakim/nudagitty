@@ -39,11 +39,7 @@ export function formatWeightedCount(value: number): string {
   return Math.abs(value - Math.round(value)) < 1e-6 ? String(Math.round(value)) : formatValue(value);
 }
 
-export function clamp(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(max, Math.max(min, value));
-}
-
-export function coerceBinary(value: number): number {
-  return value >= 0.5 ? 1 : 0;
-}
+// Canonical clamp/coerce helpers live in the shared stats lib. `clampFinite` is the
+// NaN-guarded clamp this module historically exposed as `clamp`, and `coerceBinary`
+// is byte-identical to the local copy that used to live here.
+export { clampFinite as clamp, coerceBinary } from "@nudagitty/core";
