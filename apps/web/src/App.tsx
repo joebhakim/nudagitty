@@ -47,7 +47,6 @@ import {
   positivityStatus,
   deriveAdjustmentSpec,
   classifyConditioned,
-  structuralRoleOf,
   createNewNodeId,
   createNode,
   defaultNodeDistribution,
@@ -103,8 +102,7 @@ import {
 } from "./charts/CategoryOutcomePlot";
 import type { RiskBin, ScatterPoint } from "./charts/CategoryOutcomePlot";
 import { chartFrame, niceTicks, paddedDomain } from "./charts/chartFrame";
-import { startEngagementMilestones, trackAnalyticsEvent, trackDenouementViewed, trackEditCommitted, trackInfoOverlayOpened, trackOperationSet, type ChartKind, type EmptyReason, type FunnelRole, type OutputKind } from "./analytics";
-import { useAnalyticsTelemetry, type TelemetrySignals } from "./analyticsTelemetry";
+import { startEngagementMilestones, trackAnalyticsEvent, trackDenouementViewed, trackEditCommitted, trackInfoOverlayOpened, trackOperationSet } from "./analytics";
 import { applyOperation, deriveOperation } from "./shared/operations";
 import { displayNodeName } from "./outputs/estimand";
 import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
@@ -158,6 +156,7 @@ import {
 import { useDerivedGraphs } from "./hooks/useDerivedGraphs";
 import { useCanvasOverlays } from "./hooks/useCanvasOverlays";
 import { useOutputComputations } from "./hooks/useOutputComputations";
+import { useAppTelemetry } from "./hooks/useAppTelemetry";
 import {
   adjustmentCutStep,
   conditioningSliderBounds,
@@ -179,7 +178,6 @@ import {
 } from "./share/exportDocument";
 import {
   buildSimulationDerivedCache,
-  isBinaryGraphNode,
   pairDerivedSummary
 } from "./compute/scatterStats";
 import {
@@ -381,57 +379,7 @@ export function App() {
   const positivity = overlapDiagnostic ? positivityStatus(overlapDiagnostic) : "ok";
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
-  // Granular, privacy-preserving telemetry (see analyticsTelemetry). Every field is
-  // a categorical signal derived from the analysis report / simulation summary —
-  // never a node label or free-form value — so it stays banner-free.
-  const telemetrySignals = useMemo<TelemetrySignals>(() => {
-    const hasEstimand = analysis.exposures.length > 0 && analysis.outcomes.length > 0;
-    const selectedNodeId = selection?.kind === "node" ? selection.id : null;
-    const conditionedOps = analysis.adjusted.map((id) => deriveOperation(document, id));
-    const conditioningActive = simulation.conditioning.activeConditions.length > 0;
-    const acceptedSamples = simulation.conditioning.acceptedSamples;
-
-    const outputKind: OutputKind | null = !hasEstimand ? null
-      : conditionedOps.includes("adjust") ? "standardized"
-      : conditionedOps.includes("condition") ? "stratified"
-      : completedOutput?.result ? "completed"
-      : activeExample && !activeExample.outputModule ? "diagnosis"
-      : "crude";
-
-    const outputEmptyReason: EmptyReason | null = !hasEstimand ? "no_exposure_outcome"
-      : completedOutput && completedOutput.result === null ? "needs_roles"
-      : conditioningActive && acceptedSamples === 0 ? "no_data"
-      : null;
-
-    let chartKind: ChartKind | null = null;
-    if (activeOutputPair) {
-      const xNode = findNode(document.graph, activeOutputPair.x);
-      const yNode = findNode(document.graph, activeOutputPair.y);
-      if (xNode && yNode) {
-        const xBinary = isBinaryGraphNode(xNode, simulation.nodeStates[xNode.id]);
-        const yBinary = isBinaryGraphNode(yNode, simulation.nodeStates[yNode.id]);
-        chartKind = xBinary && yBinary ? "category_binary"
-          : xBinary && !yBinary ? "category_continuous"
-          : !xBinary && yBinary ? "risk_curve"
-          : "scatter";
-      }
-    }
-
-    return {
-      exampleId: activeExample?.id ?? "",
-      selectedNodeId,
-      selectedRole: selectedNodeId ? (structuralRoleOf(document.graph, analysis, selectedNodeId) as FunnelRole) : null,
-      outputKind,
-      outputEmptyReason,
-      chartKind,
-      badControlActive: analysis.conditioningRoles.some((role) => role.opensBiasingPath),
-      simStatus: conditioningActive && acceptedSamples === 0 ? "empty" : "ok",
-      conditioningActive,
-      samplingMethod: simulation.conditioning.empiricalMethod,
-      acceptedSamples
-    };
-  }, [activeExample, analysis, completedOutput, document, selection, simulation, activeOutputPair]);
-  useAnalyticsTelemetry(telemetrySignals);
+  useAppTelemetry(activeExample, analysis, completedOutput, document, selection, simulation, activeOutputPair);
 
   useEffect(() => {
     let cancelled = false;
