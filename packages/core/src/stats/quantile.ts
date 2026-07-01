@@ -23,6 +23,19 @@ export function quantile(values: number[], p: number, options: QuantileOptions =
   return sorted[Math.min(n - 1, Math.max(0, Math.floor((n - 1) * p)))] ?? 0;
 }
 
+/** p-quantile (p in [0, 1]) of an ALREADY-SORTED ascending array, by linear
+ *  interpolation between the two bracketing order statistics (the continuous
+ *  'type 7' convention). Empty → 0; single element → that element. */
+export function quantileSorted(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0]!;
+  const pos = (sorted.length - 1) * p;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo]!;
+  return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (pos - lo);
+}
+
 /** Interior bin edges that split `values` into `bins` equal-frequency groups.
  *  Uses the 'lower' order statistic (index = floor((i/bins)·length)). */
 export function quantileEdges(values: number[], bins: number): number[] {

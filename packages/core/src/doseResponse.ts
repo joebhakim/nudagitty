@@ -1,5 +1,6 @@
 import { normalizeVariableModel } from "./graph";
 import { runSimulation } from "./simulation";
+import { dot, quantileSorted } from "./stats";
 import type { GraphModel, SimulationResult, SimulationSpec } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -48,16 +49,6 @@ export interface DoseResponseOptions {
 function isContinuous(graph: GraphModel, id: string): boolean {
   const node = graph.nodes.find((candidate) => candidate.id === id);
   return node !== undefined && normalizeVariableModel(node.variable).valueType !== "binary";
-}
-
-function quantileSorted(sorted: number[], q: number): number {
-  if (sorted.length === 0) return 0;
-  if (sorted.length === 1) return sorted[0]!;
-  const pos = (sorted.length - 1) * q;
-  const lo = Math.floor(pos);
-  const hi = Math.ceil(pos);
-  if (lo === hi) return sorted[lo]!;
-  return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (pos - lo);
 }
 
 // Observed (non-latent) nodes to adjust for: the user-marked adjustment set when
@@ -110,10 +101,6 @@ function invertMatrix(matrix: number[][]): number[][] | null {
 
 function matVec(matrix: number[][], vec: number[]): number[] {
   return matrix.map((row) => row.reduce((sum, value, j) => sum + value * (vec[j] ?? 0), 0));
-}
-
-function dot(a: number[], b: number[]): number {
-  return a.reduce((sum, value, i) => sum + value * (b[i] ?? 0), 0);
 }
 
 interface AdjustedFit {
