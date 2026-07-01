@@ -1,17 +1,12 @@
 import type { TreatmentStrategy } from "../../types";
 import type { CovariateBasis, LongitudinalCohort } from "../types";
 import { asBinary, assignedTreatmentValue } from "../internal";
+import { sigmoid } from "../../stats/links";
 
 function dot(a: number[], b: number[]): number {
   let sum = 0;
   for (let i = 0; i < a.length; i += 1) sum += (a[i] ?? 0) * (b[i] ?? 0);
   return sum;
-}
-
-function sigmoidLocal(x: number): number {
-  if (x >= 0) return 1 / (1 + Math.exp(-x));
-  const e = Math.exp(x);
-  return e / (1 + e);
 }
 
 function gaussianSolve(matrix: number[][], rhs: number[]): number[] | null {
@@ -111,7 +106,7 @@ export function fitOutcomeModel(cohort: LongitudinalCohort, outcome: string, tre
       const irlsWeights: number[] = [];
       for (let r = 0; r < design.length; r += 1) {
         const eta = dot(design[r]!, beta);
-        const mu = sigmoidLocal(eta);
+        const mu = sigmoid(eta);
         const variance = Math.max(1e-3, mu * (1 - mu));
         irlsWeights.push(variance * (baseWeights[r] ?? 1));
         working.push(eta + ((response[r] ?? 0) - mu) / variance);
@@ -125,7 +120,7 @@ export function fitOutcomeModel(cohort: LongitudinalCohort, outcome: string, tre
   const coefficients = beta;
   return (row, assignment) => {
     const linear = dot(designRow(row, treatments, plan, assignment), coefficients);
-    return binary ? sigmoidLocal(linear) : linear;
+    return binary ? sigmoid(linear) : linear;
   };
 }
 

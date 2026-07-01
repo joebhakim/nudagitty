@@ -10,6 +10,7 @@ import type {
   TreatmentStrategyRuleOperator,
   VariableModel
 } from "../types";
+import { clamp01 } from "../stats/util";
 import {
   ADJUSTMENT_METHOD_KINDS,
   EDGE_MECHANISM_KINDS,
@@ -339,8 +340,4 @@ function numberListOr(value: unknown): number[] {
 
 function isMember<T extends string>(value: unknown, values: ReadonlySet<T>): value is T {
   return typeof value === "string" && values.has(value as T);
-}
-
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value));
 }

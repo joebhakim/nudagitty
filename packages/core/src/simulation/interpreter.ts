@@ -8,6 +8,12 @@ import type {
   VariableModel
 } from "../types";
 import { probit, standardNormalCdf } from "./math";
+import { sigmoid } from "../stats/links";
+import { clamp01, coerceBinary } from "../stats/util";
+
+// Re-export the canonical link / clamp helpers under their historical names so the
+// simulation barrel (and existing importers) keep resolving them.
+export { sigmoid, clamp01, coerceBinary };
 
 export interface StructuralContribution {
   value: number;
@@ -226,15 +232,6 @@ function monotonePoints(points: EdgeMechanism["points"]): EdgeMechanism["points"
   });
 }
 
-export function sigmoid(value: number): number {
-  if (value >= 0) {
-    const z = Math.exp(-value);
-    return 1 / (1 + z);
-  }
-  const z = Math.exp(value);
-  return z / (1 + z);
-}
-
 export function softplus(value: number): number {
   if (value > 30) return value;
   if (value < -30) return Math.exp(value);
@@ -243,14 +240,6 @@ export function softplus(value: number): number {
 
 export function safeExp(value: number): number {
   return Math.exp(Math.max(-30, Math.min(30, value)));
-}
-
-export function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value));
-}
-
-export function coerceBinary(value: number): number {
-  return value >= 0.5 ? 1 : 0;
 }
 
 export function coerceVariableValue(value: number, variable: VariableModel): number {
