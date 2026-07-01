@@ -370,7 +370,6 @@ import {
 } from "./compute/relationSummary";
 import { Checkbox, IconButton, List, ModuleFrame, NumberField, PendingChip, RadioGroup, RoleToggle, Section, TactileNumberField } from "./controls";
 import { FlowGraphCanvas } from "./canvas/FlowGraphCanvas";
-import { DistributionEditor } from "./editors/DistributionEditor";
 import { SelectionEditor } from "./editors/VariableEditor";
 import { useMediaQuery } from "./app/useMediaQuery";
 import { BibliographyPanel, EffectPanel, ImplicationPanel, SummaryPanel } from "./panels/analysis";
@@ -1574,71 +1573,6 @@ export function App() {
       </>}
     </div>
     </NodeNamesProvider>
-  );
-}
-
-function VariableMechanismPanel(props: {
-  node: GraphNode;
-  document: GraphDocument;
-  simulation: SimulationResult;
-  onMechanism: (id: string, patch: Partial<NodeMechanism>) => void;
-  onVariableChange: (nodeId: string, variable: VariableModel) => void;
-}) {
-  const node = props.node;
-  const variable = normalizeVariableModel(node.variable);
-  const mechanism = normalizeNodeMechanism(props.document.simulation.nodes[node.id]);
-  const state = props.simulation.nodeStates[node.id];
-  const parentIds = props.document.graph.edges.filter((edge) => edge.kind === "directed" && edge.target === node.id).map((edge) => edge.source);
-  const isRoot = parentIds.length === 0;
-  // The instrument role is contextual: offerable only on a structural candidate (or to un-assign one).
-  const isInstrumentCandidate = useMemo(() => candidateInstruments(props.document.graph).includes(node.id), [props.document.graph, node.id]);
-  const inferredValueType = inferValueTypeFromMechanism(isRoot, mechanism, variable.valueType);
-  const updateVariable = (patch: Partial<VariableModel>) => props.onVariableChange(node.id, normalizeVariableModel({ ...variable, ...patch }));
-  return (
-    <div className="selection-editor-grid">
-      <div className="selection-editor-block">
-        <div className="selection-editor-block-title">
-          <strong>Distribution</strong>
-          <span className="variable-pill">{valueTypeLabel(inferredValueType)}</span>
-        </div>
-        {isRoot ? (
-          <DistributionEditor
-            label="root distribution"
-            distribution={mechanism.distribution}
-            onChange={(distribution) => props.onMechanism(node.id, { distribution })}
-          />
-        ) : (
-          <>
-            <label className="field">
-              <span>combiner</span>
-              <select value={mechanism.combiner} onChange={(event) => props.onMechanism(node.id, { combiner: event.target.value as NodeCombinerKind })}>
-                {NODE_COMBINERS.map((item) => <option value={item.kind} key={item.kind}>{item.label}</option>)}
-              </select>
-            </label>
-            <DistributionEditor
-              label="noise"
-              distribution={mechanism.noise}
-              onChange={(noise) => props.onMechanism(node.id, { noise })}
-            />
-          </>
-        )}
-        <TactileNumberField
-          label="intercept"
-          value={mechanism.intercept}
-          step={0.1}
-          nudge={1}
-          onChange={(intercept) => props.onMechanism(node.id, { intercept })}
-        />
-      </div>
-      <div className="selection-editor-block">
-        <strong>Notes</strong>
-        <textarea aria-label="description" value={variable.description} rows={3} onChange={(event) => updateVariable({ description: event.target.value })} />
-        <div className="model-facts">
-          <span>parents {parentIds.join(", ") || "none"}</span>
-          <span>analytic {state?.analytic ? analyticDistributionLabel(state.analytic) : "unavailable"}</span>
-        </div>
-      </div>
-    </div>
   );
 }
 
