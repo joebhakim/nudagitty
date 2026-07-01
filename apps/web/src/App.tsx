@@ -129,7 +129,6 @@ import type { BibliographyTopic, Selection, ToolMode } from "./shared/appState";
 import { reconcileScatterPair } from "./shared/pairs";
 import { useWorkbenchStore } from "./store/workbenchStore";
 import type {
-  BasicDemoContext,
   ShareStatus
 } from "./app/types";
 import {
@@ -156,6 +155,7 @@ import { useOutputComputations } from "./hooks/useOutputComputations";
 import { useAppTelemetry } from "./hooks/useAppTelemetry";
 import { useComputationWorkers } from "./hooks/useComputationWorkers";
 import { useUnifiedAdjustment } from "./hooks/useUnifiedAdjustment";
+import { useBasicOutputs } from "./hooks/useBasicOutputs";
 import {
   adjustmentCutStep,
   conditioningSliderBounds,
@@ -194,13 +194,10 @@ import {
   standardizedBinaryContinuousGap
 } from "./compute/stratification";
 import {
-  computeBinaryAdjustmentOutput,
   shouldShowAdjustedOutputColumn
 } from "./compute/adjustmentOutput";
 import {
   basicDemoRecommendedAdjustmentId,
-  computeBasicRelationSummary,
-  formatActiveInterventions,
   nodeAdjusted,
   resultPendingActive
 } from "./compute/relationSummary";
@@ -325,15 +322,7 @@ export function App() {
       : frameOperation === "condition" ? "Each stratum shown separately — not combined or standardized"
         : frameOperation === "select" ? "Restricted to the selected sub-population; the complement is unobserved"
           : "Derived from the DAG structure — set an operation on a variable to refine the estimand";
-  const demoBinaryAdjustmentOutput = useMemo(() => computeBinaryAdjustmentOutput(outputContext, simulationDerived, defaultOutputPair), [defaultOutputPair, outputContext, simulationDerived]);
-  const basicRelationSummary = useMemo(
-    () => computeBasicRelationSummary({ ...outputContext, moduleId: activeExample?.outputModule ?? null }, completedOutput, simulationDerived, demoBinaryAdjustmentOutput, { hideOracle: isBasicMode }),
-    [activeExample?.outputModule, completedOutput, demoBinaryAdjustmentOutput, isBasicMode, outputContext, simulationDerived]
-  );
-  const basicDemoContext = useMemo<BasicDemoContext>(() => ({
-    interventions: formatActiveInterventions(document),
-    selections: simulation.conditioning.activeConditions
-  }), [document.graph, document.simulation.overrides, simulation.conditioning.activeConditions]);
+  const { demoBinaryAdjustmentOutput, basicRelationSummary, basicDemoContext } = useBasicOutputs(outputContext, simulationDerived, defaultOutputPair, activeExample, completedOutput, isBasicMode, document, simulation);
   const showAdjustedOutputColumn = shouldShowAdjustedOutputColumn(computationDocument, simulation, activeExample?.outputModule ?? null, activeOutputPair);
   // Keep the raw scatter visible for continuous exposures (the cloud IS the teaching view, e.g. the
   // collider examples) even when the adjusted column also shows its estimand/structure; hide it only
