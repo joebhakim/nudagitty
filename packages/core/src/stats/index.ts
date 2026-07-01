@@ -5,3 +5,4 @@
 export * from "./util";
 export * from "./links";
 export * from "./normal";
+export * from "./linalg";

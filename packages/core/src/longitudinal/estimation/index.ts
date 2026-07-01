@@ -9,7 +9,8 @@ import type {
 } from "../types";
 import { simulateLongitudinalCohort, validateLongitudinalMetadata } from "../extract";
 import { evaluateTreatmentStrategy, summarizeStrategySupport } from "../survival";
-import { fitLinearModel, predictLinear } from "./fit";
+import { fitLinearModel } from "./fit";
+import { predictLinear } from "../../stats/linalg";
 import { weightedOutcomeMean } from "./shared";
 import { naiveEstimate } from "./estimators/naive";
 import { stratifiedEstimate } from "./estimators/stratified";

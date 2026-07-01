@@ -28,6 +28,7 @@ import { VARIANCE_EPSILON } from "./constants";
 import type { StructuralContribution } from "./interpreter";
 import { coerceVariableValue, edgeContribution, finalizeNodeValue, interactionContribution, sampleRootValue } from "./interpreter";
 import { clampProbability, empiricalSampleSize, inverseStandardNormalCdf, standardNormalCdf } from "./math";
+import { choleskyDecomposition } from "../stats/linalg";
 
 interface GuidedSample {
   value: number;
@@ -188,7 +189,7 @@ function simulateLinearGaussianConditionedEmpirical(
 
   const slopes = joint.ids.map((_, index) => (joint.covariance[index]?.[conditionIndex] ?? 0) / conditionVariance);
   const residualCovariance = conditionalResidualCovariance(joint, conditionIndex, conditionVariance);
-  const factor = choleskyLower(residualCovariance);
+  const factor = choleskyDecomposition(residualCovariance);
   if (!factor) return null;
 
   const samples: Record<string, number[]> = Object.fromEntries(order.map((id) => [id, []]));
@@ -232,27 +233,6 @@ function conditionalResidualCovariance(joint: LinearGaussianJoint, conditionInde
     const columnCovariance = joint.covariance[columnIndex]?.[conditionIndex] ?? 0;
     return covariance - (rowCovariance * columnCovariance / conditionVariance);
   }));
-}
-
-function choleskyLower(matrix: number[][]): number[][] | null {
-  const size = matrix.length;
-  const lower = Array.from({ length: size }, () => Array.from({ length: size }, () => 0));
-  for (let row = 0; row < size; row += 1) {
-    for (let column = 0; column <= row; column += 1) {
-      let sum = matrix[row]?.[column] ?? 0;
-      for (let previous = 0; previous < column; previous += 1) {
-        sum -= (lower[row]?.[previous] ?? 0) * (lower[column]?.[previous] ?? 0);
-      }
-      if (row === column) {
-        if (sum < -1e-8) return null;
-        lower[row]![column] = Math.sqrt(Math.max(0, sum));
-      } else {
-        const diagonal = lower[column]?.[column] ?? 0;
-        lower[row]![column] = Math.abs(diagonal) <= 1e-10 ? 0 : sum / diagonal;
-      }
-    }
-  }
-  return lower;
 }
 
 function sampleResidual(factor: number[][], rng: () => number): number[] {

@@ -2,48 +2,7 @@ import type { TreatmentStrategy } from "../../types";
 import type { CovariateBasis, LongitudinalCohort } from "../types";
 import { asBinary, assignedTreatmentValue } from "../internal";
 import { sigmoid } from "../../stats/links";
-
-function dot(a: number[], b: number[]): number {
-  let sum = 0;
-  for (let i = 0; i < a.length; i += 1) sum += (a[i] ?? 0) * (b[i] ?? 0);
-  return sum;
-}
-
-function gaussianSolve(matrix: number[][], rhs: number[]): number[] | null {
-  const n = matrix.length;
-  const m = matrix.map((row, i) => [...row, rhs[i] ?? 0]);
-  for (let col = 0; col < n; col += 1) {
-    let pivot = col;
-    for (let r = col + 1; r < n; r += 1) if (Math.abs(m[r]![col]!) > Math.abs(m[pivot]![col]!)) pivot = r;
-    [m[col], m[pivot]] = [m[pivot]!, m[col]!];
-    const diag = m[col]![col]!;
-    if (Math.abs(diag) < 1e-12) return null;
-    for (let j = col; j <= n; j += 1) m[col]![j]! /= diag;
-    for (let r = 0; r < n; r += 1) {
-      if (r === col) continue;
-      const factor = m[r]![col]!;
-      for (let j = col; j <= n; j += 1) m[r]![j]! -= factor * m[col]![j]!;
-    }
-  }
-  return m.map((row) => row[n]!);
-}
-
-function solveNormalEquations(design: number[][], response: number[], weights: number[], ridge: number): number[] | null {
-  const p = design[0]?.length ?? 0;
-  if (p === 0) return null;
-  const xtwx = Array.from({ length: p }, () => new Array<number>(p).fill(0));
-  const xtwy = new Array<number>(p).fill(0);
-  for (let i = 0; i < design.length; i += 1) {
-    const xi = design[i]!;
-    const wi = weights[i] ?? 1;
-    for (let a = 0; a < p; a += 1) {
-      xtwy[a]! += wi * xi[a]! * (response[i] ?? 0);
-      for (let b = 0; b < p; b += 1) xtwx[a]![b]! += wi * xi[a]! * xi[b]!;
-    }
-  }
-  for (let a = 0; a < p; a += 1) xtwx[a]![a]! += ridge;
-  return gaussianSolve(xtwx, xtwy);
-}
+import { dot, gaussianSolve, solveNormalEquations } from "../../stats/linalg";
 
 interface CovariateTerm { id: string; continuous: boolean; mean: number; sd: number; degree: number }
 
@@ -98,7 +57,7 @@ export function fitOutcomeModel(cohort: LongitudinalCohort, outcome: string, tre
   const baseWeights = indices.map((i) => cohort.weights[i] ?? 1);
   let beta: number[] | null;
   if (!binary) {
-    beta = solveNormalEquations(design, response, baseWeights, 1e-6);
+    beta = solveNormalEquations(design, response, baseWeights, { ridge: 1e-6 });
   } else {
     beta = new Array<number>(params).fill(0);
     for (let iter = 0; iter < 20; iter += 1) {
@@ -111,7 +70,7 @@ export function fitOutcomeModel(cohort: LongitudinalCohort, outcome: string, tre
         irlsWeights.push(variance * (baseWeights[r] ?? 1));
         working.push(eta + ((response[r] ?? 0) - mu) / variance);
       }
-      const next = solveNormalEquations(design, working, irlsWeights, 1e-6);
+      const next = solveNormalEquations(design, working, irlsWeights, { ridge: 1e-6 });
       if (!next || !next.every((value) => Number.isFinite(value))) break;
       beta = next;
     }
@@ -138,30 +97,7 @@ export function fitLinearModel(rows: Array<Record<string, number>>, outcome: str
     }
   }
   for (let i = 1; i < size; i += 1) xtx[i]![i] = (xtx[i]![i] ?? 0) + 1e-6;
-  return solveLinearSystem(xtx, xty);
-}
-
-function solveLinearSystem(matrix: number[][], vector: number[]): number[] | null {
-  const n = vector.length;
-  const augmented = matrix.map((row, index) => [...row, vector[index] ?? 0]);
-  for (let col = 0; col < n; col += 1) {
-    let pivot = col;
-    for (let row = col + 1; row < n; row += 1) {
-      if (Math.abs(augmented[row]![col] ?? 0) > Math.abs(augmented[pivot]![col] ?? 0)) pivot = row;
-    }
-    if (Math.abs(augmented[pivot]![col] ?? 0) < 1e-9) return null;
-    [augmented[col], augmented[pivot]] = [augmented[pivot]!, augmented[col]!];
-    const divisor = augmented[col]![col]!;
-    for (let j = col; j <= n; j += 1) augmented[col]![j]! /= divisor;
-    for (let row = 0; row < n; row += 1) {
-      if (row === col) continue;
-      const factor = augmented[row]![col] ?? 0;
-      for (let j = col; j <= n; j += 1) augmented[row]![j]! -= factor * (augmented[col]![j] ?? 0);
-    }
-  }
-  return augmented.map((row) => row[n] ?? 0);
-}
-
-export function predictLinear(beta: number[], features: string[], row: Record<string, number>): number {
-  return (beta[0] ?? 0) + features.reduce((sum, feature, index) => sum + (beta[index + 1] ?? 0) * (row[feature] ?? 0), 0);
+  // The ridge is pre-added to the (non-intercept) diagonal above, so the solver
+  // itself just needs the looser 1e-9 pivot tolerance the OLS path historically used.
+  return gaussianSolve(xtx, xty, { pivotTolerance: 1e-9 });
 }
