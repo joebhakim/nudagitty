@@ -9,3 +9,5 @@ export * from "./linalg";
 export * from "./quantile";
 export * from "./standardize";
 export * from "./moments";
+export * from "./correlation";
+export * from "./viz";

@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./stats";
 export * from "./graph";
 export * from "./parser";
 export * from "./analysis";
