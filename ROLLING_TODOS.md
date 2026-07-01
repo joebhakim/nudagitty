@@ -2,6 +2,36 @@
 
 Keep lightweight follow-ups here when a branch is reviewable but still needs product polish.
 
+## Decomposition + re-architecture — branch `refactor/decompose` (2026-06-30)
+
+Big structural pass: every monster file split into small descriptive files. `App.tsx` 7945 -> ~1215
+(shell); `examples.ts`/`simulation.ts`/`longitudinal.ts`/`graph.ts`/`outputs/modules.tsx` are now
+re-export barrels over part-file dirs; App's content lives in `apps/web/src/{app,canvas,controls,editors,panels,compute,share,hooks}/`;
+g-methods monolith split into per-estimator files; dead `GraphCanvas`/`VariableMechanismPanel` deleted.
+Behavior-locked by a new golden net (`packages/core/src/__golden__/`, byte-identical throughout).
+
+> ⚠ STALE LINE NUMBERS EVERYWHERE: every `App.tsx`/`modules.tsx` line reference elsewhere in this
+> file now predates the decomposition — re-locate by SYMBOL, and expect the symbol to live in one of
+> the new subdirs, not App.tsx/modules.tsx.
+
+In progress (do-it-right re-architecture):
+- [ ] **Canonical stats library** — one shared stats module with options (ridge, n-vs-(n-1),
+  quantile interpolation, clipping) + sensible defaults; route every duplicated quantile / weighted-
+  moment / linear-solver / sigmoid-logit / correlation / SMD / ESS copy (core + web) through it.
+- [ ] **Consistent chart-type library** — one canonical component per data-shape (binary×binary,
+  binary×continuous, continuous×binary, continuous×continuous, survival, effect-by-arm, …);
+  consolidate the scattered pair-views/plots.
+
+Deferred (needs care, not blocking):
+- [ ] **3 skipped App() hook regions:** `useSimulationResult` (simulation/analysis state + derived
+  cache + worker effects are non-contiguous — top/mid/bottom of `App()`), `useShareState` (status
+  states + reset effects + copy handlers scattered), and the keydown-shortcuts effect (references
+  handlers declared *after* it). Extracting any of these needs the state/handler declarations
+  reordered FIRST (hook order is load-bearing; tsc won't catch a reorder). Do with a manual canary
+  click-through of share buttons + keyboard shortcuts + pending spinners.
+- Decision: **keep `catalog.ts` as one file** (2924 lines) — the format/expected shape is obvious
+  when every example literal sits together; do NOT split it.
+
 ## Term disambiguation section (2026-06-29)
 
 A comprehensive section teaching the conflated vocabulary — roles (confounder / mediator / moderator /
