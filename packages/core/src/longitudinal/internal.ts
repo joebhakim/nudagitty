@@ -1,5 +1,6 @@
 import type { LongitudinalCohort } from "./types";
 import type { SurvivalOutputSpec, TreatmentStrategy } from "../types";
+import { quantileEdges } from "../stats/quantile";
 
 interface BinaryProbabilityTable {
   treatment: string;
@@ -101,16 +102,6 @@ function continuousBinCount(sampleSize: number, continuousCovariates: number): n
 export function keyFromBinners(row: Record<string, number>, ids: string[], binners: Map<string, CovariateBinner>): string {
   if (ids.length === 0) return "__all__";
   return ids.map((id) => (binners.get(id) ?? ((r: Record<string, number>) => `${id}=${r[id] ?? 0}`))(row)).join("|");
-}
-
-function quantileEdges(values: number[], bins: number): number[] {
-  const sorted = [...values].sort((a, b) => a - b);
-  const edges: number[] = [];
-  for (let i = 1; i < bins; i += 1) {
-    const index = Math.min(sorted.length - 1, Math.floor((i / bins) * sorted.length));
-    edges.push(sorted[index] ?? 0);
-  }
-  return edges;
 }
 
 function binIndex(edges: number[], value: number): number {

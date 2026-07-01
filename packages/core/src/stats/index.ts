@@ -6,3 +6,5 @@ export * from "./util";
 export * from "./links";
 export * from "./normal";
 export * from "./linalg";
+export * from "./quantile";
+export * from "./standardize";
