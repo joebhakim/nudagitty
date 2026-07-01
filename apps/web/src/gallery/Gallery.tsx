@@ -7,8 +7,11 @@ import {
   continuousOutcomeSummaries,
   binnedBinaryRiskSummaries
 } from "../charts/CategoryOutcomePlot";
+import { ScatterChart } from "../charts/ScatterChart";
+import type { DoseResponseCurves } from "@nudagitty/core";
 import { NodeNamesProvider } from "../shared/NodeNames";
-import { binaryPoints, continuousPoints, riskPoints } from "./fixtures";
+import { binaryPoints, continuousPoints, doseCurvesFixture, riskPoints, scatter2d, scatterFit } from "./fixtures";
+import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
 import { OutputBoxesPrototype } from "../outputs/prototype/OutputBoxes";
 
 // Fake nodes so the SvgAxisName chips resolve, like in the real app.
@@ -59,6 +62,22 @@ function riskFixture(name: string, risk: (x: number) => number, binCount: number
   ) };
 }
 
+function scatterFixture(name: string, points: ScatterPoint[], doseResponse?: DoseResponseCurves): Fixture {
+  const fit = scatterFit(points);
+  return { name, render: () => (
+    <ScatterChart
+      points={points}
+      xDomain={fit.xDomain}
+      yDomain={fit.yDomain}
+      regression={fit.regression}
+      xLabel="fall height"
+      yLabel="Posttest"
+      pointAlpha={0.4}
+      doseResponse={doseResponse ?? null}
+    />
+  ) };
+}
+
 const SECTIONS: Array<{ title: string; fixtures: Fixture[] }> = [
   {
     title: "CategoryOutcomePlot — binary outcome",
@@ -87,6 +106,17 @@ const SECTIONS: Array<{ title: string; fixtures: Fixture[] }> = [
       riskFixture("J-curve dip", (x) => 0.95 - 0.45 * Math.exp(-((x - 14) ** 2) / 40), 7),
       riskFixture("few bins (3)", (x) => 0.9 - x / 50, 3),
       riskFixture("many bins (12)", (x) => 0.9 - x / 50, 12)
+    ]
+  },
+  {
+    title: "ScatterChart — continuous × continuous",
+    fixtures: [
+      scatterFixture("strong positive", scatter2d(3, 6)),
+      scatterFixture("flat / no trend", scatter2d(0, 12)),
+      scatterFixture("negative", scatter2d(-2.6, 7)),
+      scatterFixture("high noise", scatter2d(1.5, 30)),
+      scatterFixture("tiny n", scatter2d(3, 6, { n: 6 })),
+      scatterFixture("dose-response overlay", scatter2d(3, 8), doseCurvesFixture(3))
     ]
   }
 ];
