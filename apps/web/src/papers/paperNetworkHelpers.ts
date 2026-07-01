@@ -248,10 +248,6 @@ export function formatSigned(value: number, digits: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
 }
 
-function formatNullable(value: number | null, digits: number): string {
-  return value === null ? "n/a" : value.toFixed(digits);
-}
-
 export function formatSignedNullable(value: number | null, digits: number): string {
   return value === null ? "n/a" : formatSigned(value, digits);
 }

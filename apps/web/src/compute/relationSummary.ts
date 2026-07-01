@@ -1,4 +1,4 @@
-import { adjusted, findNode, runSimulation, selected } from "@nudagitty/core";
+import { findNode, runSimulation } from "@nudagitty/core";
 import type { GraphDocument, GraphModel, GraphNode, SimulationResult } from "@nudagitty/core";
 import { weightedPointMoments } from "../charts/CategoryOutcomePlot";
 import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
@@ -16,7 +16,7 @@ import type {
   SimulationDerivedCache
 } from "../app/types";
 import { abbreviateLabel, formatOutcomeDifference, formatOutcomeMean, signForPunchline } from "./format";
-import { binaryContinuousGroups, buildSimulationDerivedCache, isBinaryGraphNode, pairDerivedSummary } from "./scatterStats";
+import { buildSimulationDerivedCache, isBinaryGraphNode, pairDerivedSummary } from "./scatterStats";
 
 
 export function computeObservedRelationSummary(graph: GraphModel, simulation: SimulationResult, derived: SimulationDerivedCache): BasicRelationSummary | null {

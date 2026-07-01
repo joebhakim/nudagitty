@@ -26,7 +26,6 @@ import {
   MousePointer2,
   Presentation,
   Redo2,
-  RefreshCw,
   Share2,
   Sigma,
   Blend,
@@ -36,26 +35,21 @@ import {
   Upload,
   X
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EXAMPLES,
   addEdge,
   addNode,
   setCopulaCorrelation,
-  adjusted,
   analyzeGraph,
   analyzeAdjustment,
   adjustmentOverlap,
   positivityStatus,
   deriveAdjustmentSpec,
   classifyConditioned,
-  candidateInstruments,
   structuralRoleOf,
-  correlationGraph,
-  computeDoseResponseCurves,
   createNewNodeId,
   createNode,
-  defaultEdgeMechanism,
   defaultNodeDistribution,
   deleteEdge,
   deleteNode,
@@ -63,23 +57,16 @@ import {
   emptyDocument,
   exampleDenouement,
   exampleDocument,
-  equivalenceGraph,
-  exposures,
   findEdge,
   findNode,
-  graphWithKind,
-  moralGraph,
   normalizeVariableModel,
-  outcomes,
   parseModel,
   reconcileSimulationSpec,
   renameNode,
   normalizeEdgeMechanism,
   normalizeNodeMechanism,
   runSimulation,
-  selected,
   serializeModel,
-  serializeTikz,
   setNodeRole,
   updateNode,
   upsertEdge,
@@ -88,42 +75,22 @@ import {
 import type {
   AnalysisOperation,
   AnalysisReport,
-  DoseResponseCurves,
   EdgeMechanism,
-  EdgeMechanismKind,
-  EdgeKind,
-  ExampleDenouement,
   EffectKind,
   CovariateBasis,
-  GMethodsComparison,
   GraphDocument,
   GraphEdge,
   GraphModel,
-  GraphNode,
-  NodeDistribution,
-  NodeCombinerKind,
-  NodeInteraction,
   NodeMechanism,
   NodeRoleFlags,
   Point,
   SimulationResult,
-  SimulationInferenceMode,
-  SimulationSpec,
   SimulationSelectionCondition,
-  SimulatedAnalyticDistribution,
-  SimulatedNodeState,
   VariableModel,
   ViewMode
 } from "@nudagitty/core";
 import {
-  clamp,
-  coerceBinary,
-  formatInputNumber,
-  formatPercent,
-  formatPercentagePoints,
-  formatSignedValue,
-  formatValue,
-  formatWeightedCount
+  coerceBinary
 } from "./shared/formatting";
 import {
   CategoryOutcomePlot,
@@ -135,136 +102,53 @@ import {
   weightedPointMoments
 } from "./charts/CategoryOutcomePlot";
 import type { RiskBin, ScatterPoint } from "./charts/CategoryOutcomePlot";
-import { computeEdgeTransfer } from "./charts/edgeTransfer";
 import { chartFrame, niceTicks, paddedDomain } from "./charts/chartFrame";
 import { startEngagementMilestones, trackAnalyticsEvent, trackDenouementViewed, trackEditCommitted, trackInfoOverlayOpened, trackOperationSet, type ChartKind, type EmptyReason, type FunnelRole, type OutputKind } from "./analytics";
 import { useAnalyticsTelemetry, type TelemetrySignals } from "./analyticsTelemetry";
-import { OPERATION_BLURBS, OPERATION_LABELS, applyOperation, deriveOperation } from "./shared/operations";
-import { badControlWarning, describeEstimand, displayNodeName } from "./outputs/estimand";
+import { applyOperation, deriveOperation } from "./shared/operations";
+import { displayNodeName } from "./outputs/estimand";
 import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
-import { HighlightNames, NodeNamesProvider, SvgAxisName } from "./shared/NodeNames";
-import { stratifyRiskCurves } from "./outputs/stratify";
-import type { StratifiedRiskContrast } from "./outputs/stratify";
-import { AuxEstimandStructure, MethodsComparisonPanel, UnifiedAdjustmentReadout, WhatIfStrategySurvivalCurve, basicOutputPunchlineFromResult, computeCompletedOutput, computeStructuralDiagnosis, observedSurvivalView } from "./outputs/modules";
+import { NodeNamesProvider } from "./shared/NodeNames";
+import { WhatIfStrategySurvivalCurve, computeCompletedOutput, computeStructuralDiagnosis, observedSurvivalView } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
-import { CompletedOutputPanel } from "./outputs/CompletedOutputPanel";
-import { DisambiguationCard } from "./outputs/DisambiguationCard";
 import { DisambiguationMap } from "./outputs/DisambiguationMap";
-import { disambiguationTermForExample } from "./shared/disambiguation";
 import { DgpInspector } from "./outputs/DgpInspector";
 import { OverlapInspector } from "./outputs/OverlapInspector";
 import type { OutputContext } from "./outputs/types";
 import { DenouementPanel } from "./outputs/DenouementPanel";
 import { ExampleExplanation } from "./examples/ExampleExplanation";
 import { ExampleMenu } from "./examples/ExampleMenu";
-import { ModeToggle } from "./examples/ModeToggle";
 import { PaperNetworkView } from "./papers/PaperNetworkView";
 import { K562_NETWORK_STUDY } from "./papers/k562Study";
-import { MODE_LABELS } from "./shared/workbench";
 import type { WorkbenchMode } from "./shared/workbench";
 import {
-  SHARE_COMPACT_HASH_KEY,
-  SHARE_DOCUMENT_HASH_KEY,
   SHARE_EXAMPLE_HASH_KEY,
   STORAGE_KEY,
   createWorkbenchSnapshot,
-  encodeCompactShareDocument,
-  encodeWorkbenchSnapshot,
   parseWorkbenchSnapshotText,
   snapshotFilename
 } from "./shared/appState";
 import type { BibliographyTopic, Selection, ToolMode } from "./shared/appState";
-import { defaultScatterPair, reconcileScatterPair, scatterPairOptions } from "./shared/pairs";
+import { defaultScatterPair, reconcileScatterPair } from "./shared/pairs";
 import type { ScatterPair } from "./shared/pairs";
 import { useWorkbenchStore } from "./store/workbenchStore";
 import type {
-  AdjustmentStratumCondition,
-  ArrowHeadGeometry,
-  BasicComparisonLedgerRow,
   BasicDemoContext,
-  BasicRelationSummary,
-  BinaryAdjustmentOutput,
-  BinaryAdjustmentStratum,
-  BinaryCell,
-  BinaryContinuousAdjustmentOutput,
-  BinaryContinuousAdjustmentStratum,
-  BinaryContinuousGroup,
-  BinaryOutcomeContrastSummary,
-  BinnedAdjustmentNode,
-  CanvasViewport,
-  DesignModuleStatus,
-  DragState,
-  EdgeGeometry,
-  FlowGraphEdgeData,
-  FlowGraphNodeData,
   ModulationLink,
-  ModuleTone,
-  NodeDistributionSummary,
-  PairDerivedSummary,
-  PointerScreenPoint,
-  PositivityRow,
   ResultPendingState,
-  ShareStatus,
-  ShowcaseGuide,
-  SimulationDerivedCache,
-  StabilizedIpwBalance,
-  StabilizedIpwOutput,
-  StabilizedIpwRow,
-  WeightedScatterSummary
+  ShareStatus
 } from "./app/types";
 import {
-  BASE_VIEWBOX,
-  BASIC_NODE_VIEW_MARGIN,
-  BASIC_VIEWPORT_ZOOM_BONUS,
-  BIBLIOGRAPHY,
-  BIBLIOGRAPHY_TOPICS,
   CUSTOM_DENOUEMENT,
-  DEFAULT_VIEWPORT,
-  DESIGN_MODULES,
-  EDGE_ARROW_NODE_OVERLAP,
-  EDGE_ARROW_TIP_EXTENSION_FACTOR,
-  EDGE_CROWDED_FAN_MAX_OFFSET,
-  EDGE_CROWDED_FAN_SPACING,
-  EDGE_CROWDED_FAN_THRESHOLD,
-  EDGE_ENDPOINT_PORT_DISTANCE,
-  EDGE_ENDPOINT_PORT_MAX_OFFSET,
-  EDGE_ENDPOINT_PORT_SPACING,
-  EDGE_MECHANISMS,
-  EDGE_OUTGOING_FAN_MAX_OFFSET,
-  EDGE_OUTGOING_FAN_SPACING,
-  EDGE_OUTGOING_FAN_THRESHOLD,
-  EDGE_SOURCE_CLEARANCE,
   EMPIRICAL_DRAW_DEFAULT,
-  EMPIRICAL_DRAW_MAX,
   EMPIRICAL_DRAW_MIN,
-  EMPIRICAL_DRAW_STEP,
-  FLOW_NODE_CENTER_X,
-  FLOW_NODE_CENTER_Y,
-  FLOW_NODE_HEIGHT,
-  FLOW_NODE_WIDTH,
-  FRONTLINE_EXAMPLE_IDS,
   MAX_SHARE_URL_LENGTH,
-  NODE_COMBINERS,
-  NODE_DISTRIBUTION_ANNOTATION_Y,
-  NODE_DISTRIBUTION_BOUNDS,
-  NODE_DISTRIBUTION_PLOT_HEIGHT,
-  NODE_DISTRIBUTION_PLOT_WIDTH,
-  NODE_DISTRIBUTION_PLOT_X,
-  NODE_DISTRIBUTION_PLOT_Y,
-  NODE_VIEW_MARGIN,
-  PAPER_NETWORK_HASH,
-  PENTAGON_POINTS,
-  PLANNED_CAUSAL_MODULES,
-  ROADMAP_TODOS,
-  VARIABLE_TYPES,
   WORKER_FALLBACK_MS
 } from "./app/constants";
 import {
-  fitViewportToGraph,
   graphAnalysisSignature,
   graphOutputSignature,
-  graphSimulationSignature,
-  graphViewportSignature
+  graphSimulationSignature
 } from "./compute/graphSignatures";
 import {
   arrowHeadGeometry,
@@ -299,47 +183,16 @@ import {
   tikzDocument
 } from "./share/exportDocument";
 import {
-  binaryCells,
-  binaryContinuousGroups,
-  binaryOutcomeContrastFromCells,
   buildSimulationDerivedCache,
-  empiricalWeightAt,
   isBinaryGraphNode,
-  isStabilizedIpwNode,
-  padDomain,
   pairDerivedSummary
 } from "./compute/scatterStats";
 import {
-  analyticDistributionLabel,
-  analyticDistributionPath,
-  binaryProbabilityFromState,
-  defaultDistribution,
-  distributionPlotDomain,
-  histogram,
-  inferValueTypeFromMechanism,
-  isBinaryDistributionState,
-  nodeDistributionAnnotationLines,
-  nodeDistributionFullSummary,
-  valueTypeLabel
+  inferValueTypeFromMechanism
 } from "./compute/distributionPlot";
 import {
-  abbreviateLabel,
-  analyticSummaryLabel,
-  binaryAxisValueLabel,
-  binaryShortLabel,
-  designModulesForMode,
-  formatOutcomeDifference,
-  formatOutcomeMean,
-  functionGlyphPath,
-  inferenceModeLabel,
-  mechanismLabel,
-  metricTone,
-  nodeDisplayName,
-  nodeOutputLabel,
-  signForPunchline,
-  trimNumber
+  nodeDisplayName
 } from "./compute/format";
-import { computeStabilizedIpw } from "./compute/ipw";
 import {
   binaryAdjustmentExpander,
   binaryAdjustmentStrata,
@@ -352,28 +205,21 @@ import {
 import {
   computeBinaryAdjustmentOutput,
   computeBinaryContinuousAdjustmentOutput,
-  shouldRenderBinaryAdjustmentOutput,
   shouldShowAdjustedOutputColumn
 } from "./compute/adjustmentOutput";
 import {
   basicDemoRecommendedAdjustmentId,
   computeBasicRelationSummary,
-  demoResultHeading,
-  fallbackLedgerRows,
   formatActiveInterventions,
   nodeAdjusted,
-  relationChangeLabel,
-  resultPendingActive,
-  resultPendingDetail,
-  resultPendingShortLabel,
-  shortNodeLabel
+  resultPendingActive
 } from "./compute/relationSummary";
-import { Checkbox, IconButton, List, ModuleFrame, NumberField, PendingChip, RadioGroup, RoleToggle, Section, TactileNumberField } from "./controls";
+import { Checkbox, IconButton, ModuleFrame, RadioGroup, Section } from "./controls";
 import { FlowGraphCanvas } from "./canvas/FlowGraphCanvas";
 import { SelectionEditor } from "./editors/VariableEditor";
 import { useMediaQuery } from "./app/useMediaQuery";
 import { BibliographyPanel, EffectPanel, ImplicationPanel, SummaryPanel } from "./panels/analysis";
-import { AnalysisSampleBanner, ConditioningMethodPanel, DesignModulePanel, DrawCountControl, RoadmapTodoPanel, ScenarioPanel, SimulationDiagnosticsPanel, clampDrawCount } from "./panels/diagnostics";
+import { AnalysisSampleBanner, DesignModulePanel, RoadmapTodoPanel, ScenarioPanel, SimulationDiagnosticsPanel, clampDrawCount } from "./panels/diagnostics";
 import { ScatterplotPanel } from "./panels/ScatterplotPanel";
 import { AdjustedOutputPanel } from "./panels/output";
 import { BasicExampleTabs, DemoResultPanel } from "./panels/demo";

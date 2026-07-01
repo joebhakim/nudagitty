@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import {
-  EXAMPLES,
   cloneDocument,
   serializeModel,
   withGraph

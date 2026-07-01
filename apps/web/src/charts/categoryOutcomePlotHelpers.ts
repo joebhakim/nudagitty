@@ -184,13 +184,6 @@ function riskBinFromPoints(points: ScatterPoint[], loEdge: number, hiEdge: numbe
   };
 }
 
-function formatBandEdges(loEdge: number, hiEdge: number | null): string {
-  const low = roundBandEdge(loEdge);
-  if (hiEdge === null) return `${low}+`;
-  const high = roundBandEdge(hiEdge);
-  return low === high ? `${low}` : `${low}–${high}`;
-}
-
 export function roundBandEdge(value: number): number {
   if (Math.abs(value) >= 10) return Math.round(value);
   return Math.round(value * 10) / 10;

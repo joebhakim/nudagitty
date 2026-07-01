@@ -1,8 +1,8 @@
 import { analyzeAdjustment, cohortFromSimulationResult, deriveAdjustmentSpec, estimateInstrument, normalizeVariableModel, runSimulation } from "@nudagitty/core";
 import type { SimulatedNodeState } from "@nudagitty/core";
 import type React from "react";
-import { formatPercent, formatPercentagePointMagnitude, formatPercentagePoints, formatSignedValue, formatValue, formatWeightedCount } from "../../shared/formatting";
-import { empiricalSampleWeight, formatAdjustmentSet, weightedBinaryShare, weightedConditionalMean, weightedJointConditionalMean } from "../helpers";
+import { formatPercent, formatPercentagePointMagnitude, formatPercentagePoints, formatSignedValue, formatValue } from "../../shared/formatting";
+import { formatAdjustmentSet, weightedBinaryShare, weightedConditionalMean, weightedJointConditionalMean } from "../helpers";
 import { badControlWarning, describeEstimand } from "../estimand";
 import { stratifyRiskCurves } from "../stratify";
 import { MARGINAL_COLOR, subgroupColor } from "../../charts/chartColors";

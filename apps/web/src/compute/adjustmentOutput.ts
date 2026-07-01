@@ -10,7 +10,7 @@ import type {
   SimulationDerivedCache
 } from "../app/types";
 import { computeStabilizedIpw } from "./ipw";
-import { binaryCells, binaryContinuousGroups, isBinaryGraphNode, isStabilizedIpwNode, pairDerivedSummary } from "./scatterStats";
+import { isBinaryGraphNode, isStabilizedIpwNode, pairDerivedSummary } from "./scatterStats";
 import {
   binaryAdjustmentExpander,
   binaryAdjustmentStrata,
