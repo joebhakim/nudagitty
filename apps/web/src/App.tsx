@@ -134,7 +134,6 @@ import type { ScatterPair } from "./shared/pairs";
 import { useWorkbenchStore } from "./store/workbenchStore";
 import type {
   BasicDemoContext,
-  ModulationLink,
   ShareStatus
 } from "./app/types";
 import {
@@ -156,8 +155,8 @@ import {
   nodeBoundaryPoint,
   unitVector
 } from "./canvas/edgeGeometry";
-import { computeHighlightedEdges } from "./compute/viewTransforms";
 import { useDerivedGraphs } from "./hooks/useDerivedGraphs";
+import { useCanvasOverlays } from "./hooks/useCanvasOverlays";
 import {
   adjustmentCutStep,
   conditioningSliderBounds,
@@ -305,23 +304,7 @@ export function App() {
   const presentationActive = presentationMode && !paperNetworkOpen && !isBasicMode;
   const compactWorkspace = useMediaQuery("(max-width: 1120px)");
   const empiricalDraws = graphEmpiricalDraws(document.graph);
-  // Keyed on analysisGraph (position-stable) not document.graph: edge highlighting is structural,
-  // so a node drag should not re-run the path analysis.
-  const highlightedEdges = useMemo(() => computeHighlightedEdges(analysisGraph, analysis, showCausal, showBiasing), [analysis, analysisGraph, showBiasing, showCausal]);
-  const ancestorIds = useMemo(() => showAncestors ? new Set(analysis.causalPaths.flat()) : new Set<string>(), [analysis.causalPaths, showAncestors]);
-  // Moderator / effect-modifier links: each smooth-gated interaction is a node (the gate) acting upon
-  // the source→target edge. Surfaced to the canvas so it can draw the gate→edge modulation arrow.
-  const modulations = useMemo<ModulationLink[]>(() => {
-    const out: ModulationLink[] = [];
-    for (const [targetId, mechanism] of Object.entries(document.simulation.nodes)) {
-      for (const interaction of mechanism?.interactions ?? []) {
-        if (interaction.kind === "smooth_gated") {
-          out.push({ id: interaction.id, gateId: interaction.gate, sourceId: interaction.source, targetId, sign: Math.sign(interaction.coefficient), coefficient: interaction.coefficient });
-        }
-      }
-    }
-    return out;
-  }, [document.simulation.nodes]);
+  const { highlightedEdges, ancestorIds, modulations } = useCanvasOverlays(analysisGraph, analysis, showCausal, showBiasing, showAncestors, document);
   const completedOutput = useMemo(() => computeCompletedOutput(outputContext, activeExample?.outputModule ?? null), [activeExample?.outputModule, outputContext]);
   // The generic structural diagnosis, computed for EVERY example so its Estimand/Structure cards can be
   // shown alongside a dedicated module too (consistency: the target estimand shouldn't depend on whether
