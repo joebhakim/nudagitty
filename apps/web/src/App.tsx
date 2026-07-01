@@ -298,6 +298,47 @@ import {
   shareStatusLabel,
   tikzDocument
 } from "./share/exportDocument";
+import {
+  binaryCells,
+  binaryContinuousGroups,
+  binaryOutcomeContrastFromCells,
+  buildSimulationDerivedCache,
+  empiricalWeightAt,
+  isBinaryGraphNode,
+  isStabilizedIpwNode,
+  padDomain,
+  pairDerivedSummary
+} from "./compute/scatterStats";
+import {
+  analyticDistributionLabel,
+  analyticDistributionPath,
+  binaryProbabilityFromState,
+  defaultDistribution,
+  distributionPlotDomain,
+  histogram,
+  inferValueTypeFromMechanism,
+  isBinaryDistributionState,
+  nodeDistributionAnnotationLines,
+  nodeDistributionFullSummary,
+  valueTypeLabel
+} from "./compute/distributionPlot";
+import {
+  abbreviateLabel,
+  analyticSummaryLabel,
+  binaryAxisValueLabel,
+  binaryShortLabel,
+  designModulesForMode,
+  formatOutcomeDifference,
+  formatOutcomeMean,
+  functionGlyphPath,
+  inferenceModeLabel,
+  mechanismLabel,
+  metricTone,
+  nodeDisplayName,
+  nodeOutputLabel,
+  signForPunchline,
+  trimNumber
+} from "./compute/format";
 
 
 
@@ -3717,14 +3758,6 @@ function formatActiveInterventions(document: GraphDocument): string[] {
   });
 }
 
-function formatOutcomeMean(node: GraphNode, state: SimulatedNodeState | undefined, value: number): string {
-  return isBinaryGraphNode(node, state) ? formatPercent(value) : formatValue(value);
-}
-
-function formatOutcomeDifference(node: GraphNode, value: number): string {
-  return normalizeVariableModel(node.variable).valueType === "binary" ? formatPercentagePoints(value) : formatSignedValue(value);
-}
-
 function computeObservedRelationSummary(graph: GraphModel, simulation: SimulationResult, derived: SimulationDerivedCache): BasicRelationSummary | null {
   const pair = defaultScatterPair(graph);
   const xNode = graph.nodes.find((node) => node.id === pair.x);
@@ -3805,11 +3838,6 @@ function relationChangeLabel(observed: number | null, comparison: number | null)
   return "same sign";
 }
 
-function signForPunchline(value: number | null): -1 | 0 | 1 {
-  if (value === null || Math.abs(value) < 0.005) return 0;
-  return value < 0 ? -1 : 1;
-}
-
 function isTutoringCompletedResult(value: unknown): value is {
   crudeTutoredScore: number;
   crudeUntutoredScore: number;
@@ -3839,13 +3867,6 @@ function weightedMeanDifferenceInterval(points: ScatterPoint[]): { lower: number
     lower: diff - 1.96 * se,
     upper: diff + 1.96 * se
   };
-}
-
-function metricTone(value: number | null): "negative" | "neutral" | "positive" {
-  const sign = signForPunchline(value);
-  if (sign < 0) return "negative";
-  if (sign > 0) return "positive";
-  return "neutral";
 }
 
 function resultPendingActive(pending?: ResultPendingState): boolean {
@@ -5457,14 +5478,6 @@ function defaultInteraction(kind: NodeInteraction["kind"], parentIds: string[]):
   return { id, kind, left, right, coefficient: 1 };
 }
 
-function mechanismLabel(kind: EdgeMechanismKind): string {
-  return EDGE_MECHANISMS.find((item) => item.kind === kind)?.label ?? kind;
-}
-
-function mechanismDescription(kind: EdgeMechanismKind): string {
-  return EDGE_MECHANISMS.find((item) => item.kind === kind)?.description ?? mechanismLabel(kind);
-}
-
 function FunctionGlyph({ kind }: { kind: EdgeMechanismKind }) {
   return (
     <svg className="function-glyph" viewBox="0 0 32 20" aria-hidden="true" focusable="false">
@@ -5524,20 +5537,6 @@ function FunctionPicker(props: { label: string; value: EdgeMechanismKind; onOpen
       )}
     </div>
   );
-}
-
-function functionGlyphPath(kind: EdgeMechanismKind): string {
-  if (kind === "absorbing") return "M 4 16 L 12 16 L 12 7 L 20 7 L 20 16 L 28 16";
-  if (kind === "threshold") return "M 4 16 H 15 V 5 H 28";
-  if (kind === "smooth_threshold") return "M 4 16 C 10 16 11 5 18 5 C 22 5 24 4 28 4";
-  if (kind === "saturating") return "M 4 16 C 9 16 11 10 16 10 C 21 10 23 4 28 4";
-  if (kind === "quadratic") return "M 4 5 Q 16 22 28 5";
-  if (kind === "piecewise_linear") return "M 4 16 L 11 10 L 18 13 L 28 4";
-  if (kind === "hill_emax") return "M 4 16 C 12 16 12 6 20 6 H 28";
-  if (kind === "log_linear") return "M 4 16 C 7 9 12 6 28 4";
-  if (kind === "power_law") return "M 4 16 C 12 16 20 10 28 4";
-  if (kind === "monotone_spline") return "M 4 16 C 10 15 10 11 16 10 S 22 5 28 4";
-  return "M 4 16 L 28 4";
 }
 
 function EdgeMechanismFields(props: { edge: GraphEdge; mechanism: EdgeMechanism; onMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void }) {
@@ -6000,184 +5999,9 @@ function List({ values, empty }: { values: string[]; empty: string }) {
   return <ul className="plain-list">{values.map((value) => <li key={value}>{value}</li>)}</ul>;
 }
 
-function designModulesForMode(mode: WorkbenchMode) {
-  if (mode === "pro") return DESIGN_MODULES;
-  return DESIGN_MODULES.filter((module) => module.basic);
-}
-
 function designModuleScopeLabel(mode: WorkbenchMode): string {
   if (mode === "basic") return "Small set for quick DAG explanations and common internet-argument traps.";
   return "All tools are visible, including TODO modules that still need data and code plumbing.";
-}
-
-function nodeDisplayName(node: GraphNode): string {
-  // Normalized name (unit + id parenthetical stripped, underscores → spaces) so
-  // headings read like the node-name chips instead of exposing raw ids.
-  return displayNodeName(node.label || node.id);
-}
-
-function nodeOutputLabel(node: GraphNode): string {
-  return node.label || node.id;
-}
-
-function abbreviateLabel(value: string, limit: number): string {
-  if (value.length <= limit) return value;
-  return `${value.slice(0, Math.max(0, limit - 3))}...`;
-}
-
-function binaryShortLabel(value: string): string {
-  return abbreviateLabel(value.replace(/\s+\([^)]*\)$/u, ""), 18);
-}
-
-function binaryAxisValueLabel(label: string, value: 0 | 1): string {
-  return `${binaryShortLabel(label)}=${value}`;
-}
-
-function binaryDisplayValueLabel(node: GraphNode | undefined, fallbackLabel: string, value: 0 | 1): string {
-  const unit = node ? normalizeVariableModel(node.variable).unit.trim() : "";
-  if (unit && value === 1) return abbreviateLabel(unit, 18);
-  if (unit && value === 0) return "none";
-  return binaryAxisValueLabel(fallbackLabel, value);
-}
-
-function buildSimulationDerivedCache(simulation: SimulationResult): SimulationDerivedCache {
-  const nodes = new Map<string, NodeDistributionSummary>();
-  for (const [id, state] of Object.entries(simulation.nodeStates)) {
-    const domain = distributionPlotDomain(state);
-    const finiteSamples = state.empirical.samples.filter(Number.isFinite);
-    nodes.set(id, {
-      domain,
-      finiteSamples,
-      histogram18: domain ? histogram(state.empirical.samples, domain, 18, state.empirical.weights) : [],
-      histogram20: domain ? histogram(state.empirical.samples, domain, 20, state.empirical.weights) : []
-    });
-  }
-  return {
-    simulation,
-    nodes,
-    pairs: new Map()
-  };
-}
-
-function pairDerivedSummary(cache: SimulationDerivedCache, xId: string, yId: string): PairDerivedSummary {
-  const key = `${xId}\u0000${yId}`;
-  const cached = cache.pairs.get(key);
-  if (cached) return cached;
-  const xState = cache.simulation.nodeStates[xId];
-  const yState = cache.simulation.nodeStates[yId];
-  const points = scatterPoints(xState, yState);
-  const xValues = points.map((point) => point.x);
-  const yValues = points.map((point) => point.y);
-  const cells = binaryCells(points);
-  const summary: PairDerivedSummary = {
-    points,
-    stats: weightedScatterStats(points),
-    binaryCells: cells,
-    binaryContrast: binaryOutcomeContrastFromCells(cells),
-    binaryContinuousGroups: binaryContinuousGroups(points),
-    xDomain: scatterDomain(xValues, xState, cache.nodes.get(xId)),
-    yDomain: scatterDomain(yValues, yState, cache.nodes.get(yId)),
-    ySampleDomain: scatterSampleDomain(yValues, yState, cache.nodes.get(yId))
-  };
-  cache.pairs.set(key, summary);
-  return summary;
-}
-
-function scatterPoints(xState: SimulatedNodeState | undefined, yState: SimulatedNodeState | undefined): ScatterPoint[] {
-  const xSamples = xState?.empirical.samples ?? [];
-  const ySamples = yState?.empirical.samples ?? [];
-  const xWeights = xState?.empirical.weights ?? [];
-  const yWeights = yState?.empirical.weights ?? [];
-  const length = Math.min(xSamples.length, ySamples.length);
-  const points: ScatterPoint[] = [];
-  for (let index = 0; index < length; index += 1) {
-    const x = xSamples[index];
-    const y = ySamples[index];
-    if (x === undefined || y === undefined || !Number.isFinite(x) || !Number.isFinite(y)) continue;
-    points.push({
-      x,
-      y,
-      weight: Math.max(0, xWeights[index] ?? yWeights[index] ?? 1),
-      index
-    });
-  }
-  return points;
-}
-
-function binaryContinuousGroups(points: ScatterPoint[]): BinaryContinuousGroup[] {
-  const groups: BinaryContinuousGroup[] = [
-    { value: 0, count: 0, weight: 0, mean: null, share: 0 },
-    { value: 1, count: 0, weight: 0, mean: null, share: 0 }
-  ];
-  const totals: Record<0 | 1, number> = { 0: 0, 1: 0 };
-  for (const point of points) {
-    const value = coerceBinary(point.x) as 0 | 1;
-    const group = groups[value];
-    if (!group) continue;
-    group.count += 1;
-    group.weight += point.weight;
-    totals[value] += point.y * point.weight;
-  }
-  const totalWeight = groups.reduce((sum, group) => sum + group.weight, 0);
-  return groups.map((group) => ({
-    ...group,
-    mean: group.weight > 0 ? totals[group.value] / group.weight : null,
-    share: totalWeight > 0 ? group.weight / totalWeight : 0
-  }));
-}
-
-function binaryCells(points: ScatterPoint[]): BinaryCell[] {
-  const cells: BinaryCell[] = [
-    { x: 0, y: 0, weight: 0, count: 0, percent: 0, columnPercent: 0 },
-    { x: 1, y: 0, weight: 0, count: 0, percent: 0, columnPercent: 0 },
-    { x: 0, y: 1, weight: 0, count: 0, percent: 0, columnPercent: 0 },
-    { x: 1, y: 1, weight: 0, count: 0, percent: 0, columnPercent: 0 }
-  ];
-  for (const point of points) {
-    const x = coerceBinary(point.x) as 0 | 1;
-    const y = coerceBinary(point.y) as 0 | 1;
-    const cell = cells.find((candidate) => candidate.x === x && candidate.y === y);
-    if (!cell) continue;
-    cell.weight += point.weight;
-    cell.count += 1;
-  }
-  const totalWeight = cells.reduce((sum, cell) => sum + cell.weight, 0);
-  const xWeights: Record<0 | 1, number> = {
-    0: cells.filter((cell) => cell.x === 0).reduce((sum, cell) => sum + cell.weight, 0),
-    1: cells.filter((cell) => cell.x === 1).reduce((sum, cell) => sum + cell.weight, 0)
-  };
-  return cells.map((cell) => ({
-    ...cell,
-    percent: totalWeight > 0 ? cell.weight / totalWeight : 0,
-    columnPercent: xWeights[cell.x] > 0 ? cell.weight / xWeights[cell.x] : 0
-  }));
-}
-
-function binaryOutcomeContrast(points: ScatterPoint[]): BinaryOutcomeContrastSummary {
-  return binaryOutcomeContrastFromCells(binaryCells(points));
-}
-
-function binaryOutcomeContrastFromCells(cells: BinaryCell[]): BinaryOutcomeContrastSummary {
-  const weightAtX0 = cells.filter((cell) => cell.x === 0).reduce((sum, cell) => sum + cell.weight, 0);
-  const weightAtX1 = cells.filter((cell) => cell.x === 1).reduce((sum, cell) => sum + cell.weight, 0);
-  const yAtX0Weight = cells.find((cell) => cell.x === 0 && cell.y === 1)?.weight ?? 0;
-  const yAtX1Weight = cells.find((cell) => cell.x === 1 && cell.y === 1)?.weight ?? 0;
-  const yAtX0 = weightAtX0 > 0 ? yAtX0Weight / weightAtX0 : null;
-  const yAtX1 = weightAtX1 > 0 ? yAtX1Weight / weightAtX1 : null;
-  return {
-    yAtX0,
-    yAtX1,
-    diff: yAtX0 === null || yAtX1 === null ? null : yAtX1 - yAtX0
-  };
-}
-
-function isBinaryGraphNode(node: GraphNode, state?: SimulatedNodeState): boolean {
-  return normalizeVariableModel(node.variable).valueType === "binary" || state?.analytic?.distribution.kind === "bernoulli";
-}
-
-function isStabilizedIpwNode(node: GraphNode): boolean {
-  const method = normalizeVariableModel(node.variable).adjustment.method;
-  return method === "stabilized_ipw" || method === "propensity_score_todo";
 }
 
 function computeStabilizedIpw(
@@ -6350,14 +6174,6 @@ function standardizedMeanDifference(
   if (treated.mean === null || untreated.mean === null || treated.variance === null || untreated.variance === null) return null;
   const pooled = Math.sqrt(Math.max((treated.variance + untreated.variance) / 2, 1e-12));
   return (treated.mean - untreated.mean) / pooled;
-}
-
-function padDomain(domain: [number, number]): [number, number] {
-  const [min, max] = domain;
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return [-1, 1];
-  if (Math.abs(max - min) < 1e-9) return [min - 1, max + 1];
-  const pad = (max - min) * 0.08;
-  return [min - pad, max + pad];
 }
 
 function standardizeCovariates(rows: Array<{ covariates: number[]; baseWeight: number }>): number[][] {
@@ -6642,82 +6458,6 @@ function filteredBinaryScatterPoints(
   return points;
 }
 
-function empiricalWeightAt(index: number, ...states: Array<SimulatedNodeState | undefined>): number {
-  for (const state of states) {
-    const weight = state?.empirical.weights[index];
-    if (weight !== undefined && Number.isFinite(weight)) return Math.max(0, weight);
-  }
-  return 1;
-}
-
-function scatterDomain(values: number[], state: SimulatedNodeState | undefined, summary?: NodeDistributionSummary): [number, number] {
-  const candidates = values.filter(Number.isFinite);
-  const distributionDomain = summary?.domain ?? (state ? distributionPlotDomain(state) : null);
-  if (distributionDomain) candidates.push(distributionDomain[0], distributionDomain[1]);
-  if (candidates.length === 0) return [-1, 1];
-  let min = Math.min(...candidates);
-  let max = Math.max(...candidates);
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return [-1, 1];
-  if (Math.abs(max - min) < 1e-6) {
-    min -= 1;
-    max += 1;
-  }
-  const pad = (max - min) * 0.06;
-  return [min - pad, max + pad];
-}
-
-function scatterSampleDomain(values: number[], state: SimulatedNodeState | undefined, summary?: NodeDistributionSummary): [number, number] {
-  const candidates = values.filter(Number.isFinite);
-  if (candidates.length === 0) {
-    if (state?.empirical.min !== null && state?.empirical.min !== undefined) candidates.push(state.empirical.min);
-    if (state?.empirical.max !== null && state?.empirical.max !== undefined) candidates.push(state.empirical.max);
-  }
-  if (candidates.length === 0 && summary?.domain) candidates.push(summary.domain[0], summary.domain[1]);
-  if (candidates.length === 0) return [-1, 1];
-  let min = Math.min(...candidates);
-  let max = Math.max(...candidates);
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return [-1, 1];
-  if (Math.abs(max - min) < 1e-6) {
-    min -= 1;
-    max += 1;
-  }
-  const pad = (max - min) * 0.08;
-  min -= pad;
-  max += pad;
-  const step = niceTickStep(max - min);
-  return [Math.floor(min / step) * step, Math.ceil(max / step) * step];
-}
-
-function niceTickStep(span: number): number {
-  if (!Number.isFinite(span) || span <= 0) return 1;
-  const rough = span / 4;
-  const power = 10 ** Math.floor(Math.log10(rough));
-  const scaled = rough / power;
-  const factor = scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 5 ? 5 : 10;
-  return factor * power;
-}
-
-function deterministicJitter(index: number): number {
-  const x = Math.sin((index + 1) * 12.9898) * 43758.5453;
-  return x - Math.floor(x) - 0.5;
-}
-
-function weightedScatterStats(points: ScatterPoint[]): WeightedScatterSummary | null {
-  const sumWeight = points.reduce((sum, point) => sum + point.weight, 0);
-  if (points.length === 0 || sumWeight <= 0) return null;
-  const meanX = points.reduce((sum, point) => sum + point.x * point.weight, 0) / sumWeight;
-  const meanY = points.reduce((sum, point) => sum + point.y * point.weight, 0) / sumWeight;
-  const varianceX = points.reduce((sum, point) => sum + point.weight * (point.x - meanX) ** 2, 0) / sumWeight;
-  const varianceY = points.reduce((sum, point) => sum + point.weight * (point.y - meanY) ** 2, 0) / sumWeight;
-  const covariance = points.reduce((sum, point) => sum + point.weight * (point.x - meanX) * (point.y - meanY), 0) / sumWeight;
-  const correlation = varianceX <= Number.EPSILON || varianceY <= Number.EPSILON ? null : covariance / Math.sqrt(varianceX * varianceY);
-  const slope = varianceX <= Number.EPSILON ? 0 : covariance / varianceX;
-  return { meanX, meanY, correlation, slope, intercept: meanY - slope * meanX };
-}
-
-
-
-
 function graphEmpiricalDraws(graph: GraphModel): number {
   if (graph.nodes.length === 0) return EMPIRICAL_DRAW_DEFAULT;
   const requested = graph.nodes.reduce((max, node) => {
@@ -6731,256 +6471,6 @@ function clampDrawCount(value: number): number {
   if (!Number.isFinite(value)) return EMPIRICAL_DRAW_DEFAULT;
   const stepped = Math.round(value / EMPIRICAL_DRAW_STEP) * EMPIRICAL_DRAW_STEP;
   return Math.min(EMPIRICAL_DRAW_MAX, Math.max(EMPIRICAL_DRAW_MIN, stepped));
-}
-
-
-function distributionPlotDomain(state: SimulatedNodeState): [number, number] | null {
-  const candidates = state.empirical.samples.filter(Number.isFinite);
-  if (state.empirical.min !== null) candidates.push(state.empirical.min);
-  if (state.empirical.max !== null) candidates.push(state.empirical.max);
-  const analytic = state.analytic;
-  if (analytic) {
-    const bounds = analyticDistributionBounds(analytic);
-    if (bounds) candidates.push(bounds[0], bounds[1]);
-  }
-  if (candidates.length === 0) return null;
-  let min = Math.min(...candidates);
-  let max = Math.max(...candidates);
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
-  if (Math.abs(max - min) < 1e-6) {
-    min -= 1;
-    max += 1;
-  }
-  const pad = (max - min) * 0.08;
-  return [min - pad, max + pad];
-}
-
-function analyticDistributionBounds(analytic: SimulatedAnalyticDistribution): [number, number] | null {
-  if (analytic.density?.kind === "truncated_normal") {
-    const lower = analytic.density.lower ?? analytic.density.mean - 3.5 * analytic.density.sd;
-    const upper = analytic.density.upper ?? analytic.density.mean + 3.5 * analytic.density.sd;
-    return [lower, upper];
-  }
-  const distribution = analytic.distribution;
-  const mean = analytic.mean;
-  const variance = analytic.variance;
-  if (distribution.kind === "constant") return [distribution.value - 1, distribution.value + 1];
-  if (distribution.kind === "uniform") return [distribution.min, distribution.max];
-  if (distribution.kind === "bernoulli" || distribution.kind === "beta") return [0, 1];
-  if (distribution.kind === "poisson") return [0, distribution.lambda + 4 * Math.sqrt(distribution.lambda)];
-  if (distribution.kind === "exponential") return [0, 5 / distribution.rate];
-  if (distribution.kind === "lognormal") {
-    const m = Math.exp(distribution.meanLog + (distribution.sdLog * distribution.sdLog / 2));
-    const sd = Math.sqrt((Math.exp(distribution.sdLog * distribution.sdLog) - 1) * Math.exp((2 * distribution.meanLog) + (distribution.sdLog * distribution.sdLog)));
-    return [Math.max(0, m - 3 * sd), m + 4 * sd];
-  }
-  if (distribution.kind === "gamma") return [0, distribution.shape * distribution.scale + 4 * Math.sqrt(distribution.shape * distribution.scale * distribution.scale)];
-  const center = mean ?? ("mean" in distribution ? distribution.mean : 0);
-  const sd = variance !== null && Number.isFinite(variance) ? Math.sqrt(Math.max(variance, 0)) : ("sd" in distribution ? distribution.sd : "scale" in distribution ? distribution.scale : 1);
-  return [center - 3.5 * sd, center + 3.5 * sd];
-}
-
-function histogram(samples: number[], domain: [number, number], binCount: number, weights: number[] = []): number[] {
-  const [min, max] = domain;
-  const span = max - min || 1;
-  const bins = Array.from({ length: binCount }, () => 0);
-  for (const [sampleIndex, sample] of samples.entries()) {
-    if (!Number.isFinite(sample)) continue;
-    const index = Math.min(binCount - 1, Math.max(0, Math.floor(((sample - min) / span) * binCount)));
-    bins[index] = (bins[index] ?? 0) + (weights[sampleIndex] ?? 1);
-  }
-  return bins;
-}
-
-function analyticDistributionPath(analytic: SimulatedAnalyticDistribution, domain: [number, number], width: number, height: number): string | null {
-  const distribution = analytic.distribution;
-  const [min, max] = domain;
-  const span = max - min || 1;
-  if (distribution.kind === "constant") {
-    const x = ((distribution.value - min) / span) * width;
-    return `M ${trimNumber(x)} ${height - 2} L ${trimNumber(x)} 3`;
-  }
-  if (distribution.kind === "uniform") {
-    const x0 = ((distribution.min - min) / span) * width;
-    const x1 = ((distribution.max - min) / span) * width;
-    return `M ${trimNumber(Math.max(0, x0))} ${height - 5} L ${trimNumber(Math.min(width, x1))} ${height - 5}`;
-  }
-  const density = analyticDensity(analytic);
-  if (!density) return null;
-  const points = Array.from({ length: 36 }, (_, index) => {
-    const t = index / 35;
-    const xValue = min + t * span;
-    return { x: t * width, density: density(xValue) };
-  }).filter((point) => Number.isFinite(point.density) && point.density >= 0);
-  if (points.length < 2) return null;
-  const maxDensity = Math.max(...points.map((point) => point.density), Number.EPSILON);
-  return points.map((point, index) => {
-    const y = height - 2 - Math.min(height - 5, (point.density / maxDensity) * (height - 5));
-    return `${index === 0 ? "M" : "L"} ${trimNumber(point.x)} ${trimNumber(y)}`;
-  }).join(" ");
-}
-
-function analyticDensity(analytic: SimulatedAnalyticDistribution): ((value: number) => number) | null {
-  const density = analytic.density;
-  if (density?.kind === "truncated_normal") {
-    return (value) => {
-      if (density.lower !== null && value < density.lower) return 0;
-      if (density.upper !== null && value > density.upper) return 0;
-      return normalDensity(value, density.mean, density.sd);
-    };
-  }
-  const distribution = analytic.distribution;
-  if (distribution.kind === "normal") return (value) => normalDensity(value, distribution.mean, distribution.sd);
-  if (distribution.kind === "lognormal") return (value) => value <= 0 ? 0 : normalDensity(Math.log(value), distribution.meanLog, distribution.sdLog) / value;
-  if (distribution.kind === "laplace") return (value) => Math.exp(-Math.abs(value - distribution.mean) / distribution.scale) / (2 * distribution.scale);
-  if (distribution.kind === "exponential") return (value) => value < 0 ? 0 : distribution.rate * Math.exp(-distribution.rate * value);
-  if (distribution.kind === "student_t") return (value) => normalDensity(value, distribution.mean, distribution.scale * Math.sqrt(distribution.df / Math.max(1, distribution.df - 2)));
-  if (distribution.kind === "gamma") {
-    const mean = distribution.shape * distribution.scale;
-    const sd = Math.sqrt(distribution.shape * distribution.scale * distribution.scale);
-    return (value) => value < 0 ? 0 : normalDensity(value, mean, sd);
-  }
-  return null;
-}
-
-function normalDensity(value: number, mean: number, sd: number): number {
-  const cleanSd = Math.max(sd, Number.EPSILON);
-  const z = (value - mean) / cleanSd;
-  return Math.exp(-0.5 * z * z) / (cleanSd * Math.sqrt(2 * Math.PI));
-}
-
-function nodeDistributionAnnotationLines(state: SimulatedNodeState | undefined, variable: VariableModel): string[] {
-  if (isBinaryDistributionState(state, variable)) {
-    const lines: string[] = [];
-    const probability = binaryProbabilityFromState(state);
-    if (probability !== null) lines.push(`P(1) ${formatPercent(probability)}`);
-    return lines.map((line) => compactSvgText(line, 28)).slice(0, 1);
-  }
-  const lines: string[] = [];
-  const moment = nodeMomentLabel(state);
-  if (moment) lines.push(moment);
-  return lines.map((line) => compactSvgText(line, 28)).slice(0, 2);
-}
-
-function nodeDistributionFullSummary(state: SimulatedNodeState | undefined, variable: VariableModel): string {
-  const binary = isBinaryDistributionState(state, variable);
-  return [
-    binary ? binaryProbabilitySummary(state) : nodeMomentLabel(state),
-    state?.analytic ? distributionParameterLabel(state.analytic.distribution) : "",
-    state?.analytic ? `analytic ${analyticDistributionLabel(state.analytic)}` : "",
-    state?.empirical.effectiveSampleSize !== null && state?.empirical.effectiveSampleSize !== undefined ? `ESS ${formatValue(state.empirical.effectiveSampleSize)}` : ""
-  ].filter(Boolean).join("; ");
-}
-
-function isBinaryDistributionState(state: SimulatedNodeState | undefined, variable: VariableModel): boolean {
-  return variable.valueType === "binary" || state?.analytic?.distribution.kind === "bernoulli";
-}
-
-function binaryProbabilitySummary(state: SimulatedNodeState | undefined): string {
-  const probability = binaryProbabilityFromState(state);
-  return probability === null ? "" : `P(1) ${formatPercent(probability)}`;
-}
-
-function binaryProbabilityFromState(state: SimulatedNodeState | undefined): number | null {
-  if (!state) return null;
-  const analytic = state.analytic;
-  if (analytic?.distribution.kind === "bernoulli") return clamp(analytic.distribution.p, 0, 1);
-  if (analytic?.mean !== null && analytic?.mean !== undefined && Number.isFinite(analytic.mean)) return clamp(analytic.mean, 0, 1);
-  if (state.empirical.mean !== null && Number.isFinite(state.empirical.mean)) return clamp(state.empirical.mean, 0, 1);
-  return null;
-}
-
-function nodeMomentLabel(state: SimulatedNodeState | undefined): string {
-  const mean = state?.analytic?.mean ?? state?.empirical.mean;
-  const variance = state?.analytic?.variance ?? state?.empirical.variance;
-  if (mean === null || mean === undefined || !Number.isFinite(mean)) return "";
-  const sd = variance !== null && variance !== undefined && Number.isFinite(variance) ? Math.sqrt(Math.max(0, variance)) : null;
-  return sd === null ? `mean ${formatValue(mean)}` : `mean ${formatValue(mean)} sd ${formatValue(sd)}`;
-}
-
-function distributionParameterLabel(distribution: NodeDistribution): string {
-  if (distribution.kind === "constant") return `Constant value=${formatValue(distribution.value)}`;
-  if (distribution.kind === "normal") return `Normal mean=${formatValue(distribution.mean)} sd=${formatValue(distribution.sd)}`;
-  if (distribution.kind === "lognormal") return `Lognormal logmean=${formatValue(distribution.meanLog)} logsd=${formatValue(distribution.sdLog)}`;
-  if (distribution.kind === "uniform") return `Uniform min=${formatValue(distribution.min)} max=${formatValue(distribution.max)}`;
-  if (distribution.kind === "bernoulli") return `Bernoulli p=${formatValue(distribution.p)}`;
-  if (distribution.kind === "poisson") return `Poisson lambda=${formatValue(distribution.lambda)}`;
-  if (distribution.kind === "beta") return `Beta alpha=${formatValue(distribution.alpha)} beta=${formatValue(distribution.beta)}`;
-  if (distribution.kind === "laplace") return `Laplace mean=${formatValue(distribution.mean)} scale=${formatValue(distribution.scale)}`;
-  if (distribution.kind === "student_t") return `Student-t mean=${formatValue(distribution.mean)} scale=${formatValue(distribution.scale)} df=${formatValue(distribution.df)}`;
-  if (distribution.kind === "gamma") return `Gamma shape=${formatValue(distribution.shape)} scale=${formatValue(distribution.scale)}`;
-  if (distribution.kind === "categorical") return `Categorical ${distribution.weights.length} levels`;
-  return `Exponential rate=${formatValue(distribution.rate)}`;
-}
-
-function compactSvgText(value: string, maxLength: number): string {
-  return value.length <= maxLength ? value : `${value.slice(0, Math.max(0, maxLength - 3))}...`;
-}
-
-function distributionLabel(distribution: NodeDistribution): string {
-  if (distribution.kind === "constant") return `constant ${formatValue(distribution.value)}`;
-  if (distribution.kind === "normal") return `Normal(${formatValue(distribution.mean)}, ${formatValue(distribution.sd)})`;
-  if (distribution.kind === "lognormal") return `Lognormal(${formatValue(distribution.meanLog)}, ${formatValue(distribution.sdLog)})`;
-  if (distribution.kind === "uniform") return `Uniform(${formatValue(distribution.min)}, ${formatValue(distribution.max)})`;
-  if (distribution.kind === "bernoulli") return `Bernoulli(${formatValue(distribution.p)})`;
-  if (distribution.kind === "poisson") return `Poisson(${formatValue(distribution.lambda)})`;
-  if (distribution.kind === "beta") return `Beta(${formatValue(distribution.alpha)}, ${formatValue(distribution.beta)})`;
-  if (distribution.kind === "laplace") return `Laplace(${formatValue(distribution.mean)}, ${formatValue(distribution.scale)})`;
-  if (distribution.kind === "student_t") return `Student-t(${formatValue(distribution.mean)}, ${formatValue(distribution.scale)}, ${formatValue(distribution.df)})`;
-  if (distribution.kind === "gamma") return `Gamma(${formatValue(distribution.shape)}, ${formatValue(distribution.scale)})`;
-  if (distribution.kind === "categorical") return `Categorical(${distribution.weights.length} levels)`;
-  return `Exponential(${formatValue(distribution.rate)})`;
-}
-
-function analyticDistributionLabel(analytic: SimulatedAnalyticDistribution): string {
-  if (analytic.density?.kind === "truncated_normal") {
-    const lower = analytic.density.lower === null ? "-inf" : formatValue(analytic.density.lower);
-    const upper = analytic.density.upper === null ? "inf" : formatValue(analytic.density.upper);
-    return `truncated Normal(${formatValue(analytic.density.mean)}, ${formatValue(analytic.density.sd)}, ${lower}..${upper})`;
-  }
-  return distributionLabel(analytic.distribution);
-}
-
-function inferValueTypeFromMechanism(isRoot: boolean, mechanism: NodeMechanism, fallback: VariableModel["valueType"]): VariableModel["valueType"] {
-  if (!isRoot) {
-    if (mechanism.combiner === "bernoulli_logit" || mechanism.combiner === "noisy_or") return "binary";
-    if (mechanism.combiner === "poisson_log") return "count";
-    if (mechanism.combiner === "gamma_log" || mechanism.combiner === "positive_softplus") return "positive";
-    if (mechanism.combiner === "bounded_logistic") return "proportion";
-  }
-  return valueTypeFromDistribution(isRoot ? mechanism.distribution : mechanism.noise, fallback);
-}
-
-function valueTypeFromDistribution(distribution: NodeDistribution, fallback: VariableModel["valueType"]): VariableModel["valueType"] {
-  if (distribution.kind === "bernoulli") return "binary";
-  if (distribution.kind === "poisson") return "count";
-  if (distribution.kind === "beta") return "proportion";
-  if (distribution.kind === "gamma" || distribution.kind === "exponential" || distribution.kind === "lognormal") return "positive";
-  if (distribution.kind === "normal" || distribution.kind === "uniform" || distribution.kind === "laplace" || distribution.kind === "student_t") return "continuous";
-  return fallback;
-}
-
-function valueTypeLabel(valueType: VariableModel["valueType"]): string {
-  return VARIABLE_TYPES.find(([id]) => id === valueType)?.[1] ?? valueType;
-}
-
-function defaultDistribution(kind: NodeDistribution["kind"]): NodeDistribution {
-  if (kind === "normal") return { kind, mean: 0, sd: 1 };
-  if (kind === "lognormal") return { kind, meanLog: 0, sdLog: 1 };
-  if (kind === "uniform") return { kind, min: 0, max: 1 };
-  if (kind === "bernoulli") return { kind, p: 0.5 };
-  if (kind === "poisson") return { kind, lambda: 1 };
-  if (kind === "beta") return { kind, alpha: 2, beta: 2 };
-  if (kind === "laplace") return { kind, mean: 0, scale: 1 };
-  if (kind === "student_t") return { kind, mean: 0, scale: 1, df: 5 };
-  if (kind === "gamma") return { kind, shape: 2, scale: 1 };
-  if (kind === "exponential") return { kind, rate: 1 };
-  if (kind === "categorical") return { kind, weights: [1, 1, 1] };
-  return { kind: "constant", value: 0 };
-}
-
-function trimNumber(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 
@@ -7001,16 +6491,6 @@ async function copyTextToClipboard(text: string) {
   if (!copied) throw new Error("copy failed");
 }
 
-
-function inferenceModeLabel(mode: SimulationInferenceMode | "forward"): string {
-  if (mode === "importance") return "importance sampling";
-  if (mode === "rejection") return "rejection sampling";
-  return mode;
-}
-
-function analyticSummaryLabel(note: string): string {
-  return note.replace(/^analytic\s+/i, "");
-}
 
 function simulationBlocked(result: SimulationResult): boolean {
   return result.diagnostics.some((message) => message.startsWith("Simulation disabled") || message.startsWith("Simulation is only enabled"));
