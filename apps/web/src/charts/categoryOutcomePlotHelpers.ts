@@ -1,5 +1,11 @@
-import { clamp, coerceBinary } from "../shared/formatting";
+import { coerceBinary } from "../shared/formatting";
+import { weightedMoments, wilsonInterval } from "@nudagitty/core";
 import type { CategoryOutcomeSummary, RiskBin, ScatterPoint } from "./categoryOutcomePlotTypes";
+
+// Wilson score interval for a weighted binary proportion at effective sample size
+// nEff, from the canonical stats lib (identical z=1.96 default and [0,1] clamp).
+// Re-exported for the chart/output modules that import it via this helper module.
+export { wilsonInterval };
 
 export function continuousOutcomeSummaries(points: ScatterPoint[], xLabel: string): CategoryOutcomeSummary[] {
   return [
@@ -33,25 +39,21 @@ export function categoryOutcomeDomain(base: [number, number], summaries: Categor
 }
 
 export function weightedPointMoments(points: ScatterPoint[], groupValue: 0 | 1): { mean: number; variance: number; nEff: number } | null {
-  let sumWeight = 0;
-  let sumWeightSquared = 0;
-  let sum = 0;
-  const retained: Array<{ value: number; weight: number }> = [];
+  // Select this group's positive-weight points, then defer to the canonical
+  // weighted-moments pass with the biased ('n') variance divisor — byte-identical
+  // to the former inline accumulation. Non-null only when the group is non-empty
+  // (matching the old `sumWeight <= 0 || sumWeightSquared <= 0 -> null` guard: all
+  // retained weights are > 0, so Σw > 0 iff Σw² > 0).
+  const values: number[] = [];
+  const weights: number[] = [];
   for (const point of points) {
     if (coerceBinary(point.x) !== groupValue || point.weight <= 0) continue;
-    retained.push({ value: point.y, weight: point.weight });
-    sumWeight += point.weight;
-    sumWeightSquared += point.weight * point.weight;
-    sum += point.y * point.weight;
+    values.push(point.y);
+    weights.push(point.weight);
   }
-  if (sumWeight <= 0 || sumWeightSquared <= 0) return null;
-  const mean = sum / sumWeight;
-  const variance = retained.reduce((acc, item) => acc + item.weight * (item.value - mean) ** 2, 0) / sumWeight;
-  return {
-    mean,
-    variance,
-    nEff: sumWeight * sumWeight / sumWeightSquared
-  };
+  const { mean, variance, nEff } = weightedMoments(values, weights, { varianceDivisor: "n" });
+  if (mean === null || variance === null || nEff === null) return null;
+  return { mean, variance, nEff };
 }
 
 function continuousOutcomeSummary(points: ScatterPoint[], group: 0 | 1, label: string, tone: "treated" | "untreated"): CategoryOutcomeSummary {
@@ -96,15 +98,6 @@ function binaryOutcomeSummary(points: ScatterPoint[], group: 0 | 1, label: strin
     nEff,
     points: groupPoints
   };
-}
-
-// Wilson score interval for a weighted binary proportion at effective sample size nEff.
-export function wilsonInterval(mean: number, nEff: number): { lower: number; upper: number } {
-  const z = 1.96;
-  const denominator = 1 + (z * z) / nEff;
-  const center = (mean + (z * z) / (2 * nEff)) / denominator;
-  const halfWidth = (z * Math.sqrt((mean * (1 - mean) + (z * z) / (4 * nEff)) / nEff)) / denominator;
-  return { lower: clamp(center - halfWidth, 0, 1), upper: clamp(center + halfWidth, 0, 1) };
 }
 
 // Bin a continuous exposure into fixed-width bands and report the weighted
