@@ -138,8 +138,7 @@ import {
   CUSTOM_DENOUEMENT,
   EMPIRICAL_DRAW_DEFAULT,
   EMPIRICAL_DRAW_MIN,
-  MAX_SHARE_URL_LENGTH,
-  WORKER_FALLBACK_MS
+  MAX_SHARE_URL_LENGTH
 } from "./app/constants";
 import {
   arrowHeadGeometry,
@@ -157,6 +156,7 @@ import { useDerivedGraphs } from "./hooks/useDerivedGraphs";
 import { useCanvasOverlays } from "./hooks/useCanvasOverlays";
 import { useOutputComputations } from "./hooks/useOutputComputations";
 import { useAppTelemetry } from "./hooks/useAppTelemetry";
+import { useComputationWorkers } from "./hooks/useComputationWorkers";
 import {
   adjustmentCutStep,
   conditioningSliderBounds,
@@ -381,104 +381,17 @@ export function App() {
 
   useAppTelemetry(activeExample, analysis, completedOutput, document, selection, simulation, activeOutputPair);
 
-  useEffect(() => {
-    let cancelled = false;
-    let settled = false;
-    let worker: Worker | null = null;
-    const requestSignature = analysisSignature;
-    const complete = (nextAnalysis: AnalysisReport) => {
-      if (cancelled || settled) return;
-      settled = true;
-      window.clearTimeout(fallbackTimer);
-      worker?.terminate();
-      setAnalysis(nextAnalysis);
-      setAnalysisResultSignature(requestSignature);
-    };
-    const completeFallback = () => {
-      if (cancelled || settled) return;
-      try {
-        complete(analyzeGraph(analysisGraph));
-      } catch (error) {
-        console.error("analysis worker fallback failed", error);
-        if (!cancelled && !settled) {
-          settled = true;
-          window.clearTimeout(fallbackTimer);
-          worker?.terminate();
-          setAnalysisResultSignature(requestSignature);
-        }
-      }
-    };
-    const fallbackTimer = window.setTimeout(completeFallback, WORKER_FALLBACK_MS);
-    try {
-      worker = new Worker(new URL("./analysis.worker.ts", import.meta.url), { type: "module" });
-      worker.onmessage = (event: MessageEvent<AnalysisReport>) => complete(event.data);
-      worker.onerror = (event) => {
-        event.preventDefault();
-        completeFallback();
-      };
-      worker.onmessageerror = completeFallback;
-      worker.postMessage(analysisGraph);
-    } catch (error) {
-      console.error("analysis worker start failed", error);
-      completeFallback();
-    }
-    return () => {
-      cancelled = true;
-      window.clearTimeout(fallbackTimer);
-      worker?.terminate();
-    };
-  }, [analysisGraph, analysisSignature]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let settled = false;
-    let worker: Worker | null = null;
-    const requestSignature = simulationSignature;
-    const complete = (nextSimulation: SimulationResult) => {
-      if (cancelled || settled) return;
-      settled = true;
-      window.clearTimeout(fallbackTimer);
-      worker?.terminate();
-      setSimulation(nextSimulation);
-      setSimulationResultSignature(requestSignature);
-    };
-    const completeFallback = () => {
-      if (cancelled || settled) return;
-      try {
-        complete(runSimulation(simulationGraph, outputSimulation));
-      } catch (error) {
-        console.error("simulation worker fallback failed", error);
-        if (!cancelled && !settled) {
-          settled = true;
-          window.clearTimeout(fallbackTimer);
-          worker?.terminate();
-          setSimulationResultSignature(requestSignature);
-        }
-      }
-    };
-    const fallbackTimer = window.setTimeout(completeFallback, WORKER_FALLBACK_MS);
-    try {
-      worker = new Worker(new URL("./sim.worker.ts", import.meta.url), { type: "module" });
-      worker.onmessage = (event: MessageEvent<SimulationResult>) => complete(event.data);
-      worker.onerror = (event) => {
-        event.preventDefault();
-        completeFallback();
-      };
-      worker.onmessageerror = completeFallback;
-      worker.postMessage({ graph: simulationGraph, spec: outputSimulation });
-    } catch (error) {
-      console.error("simulation worker start failed", error);
-      completeFallback();
-    }
-    return () => {
-      cancelled = true;
-      window.clearTimeout(fallbackTimer);
-      worker?.terminate();
-    };
-    // Keyed on outputSimulation (the signature-stable snapshot), NOT raw document.simulation:
-    // a position-only move clones document.simulation (new identity, identical content), which
-    // would otherwise re-run this effect — re-simulating on every node drag for nothing.
-  }, [outputSimulation, simulationGraph, simulationSignature]);
+  useComputationWorkers({
+    analysisSignature,
+    analysisGraph,
+    setAnalysis,
+    setAnalysisResultSignature,
+    simulationSignature,
+    simulationGraph,
+    outputSimulation,
+    setSimulation,
+    setSimulationResultSignature
+  });
 
   useEffect(() => {
     setScatterPair((pair) => reconcileScatterPair(document.graph, pair));
