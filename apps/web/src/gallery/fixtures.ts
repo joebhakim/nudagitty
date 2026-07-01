@@ -2,7 +2,8 @@
 // the boundary / representative datasets that bugs cluster around (values at
 // 0%/100%, tiny n, ties, extreme splits, flat curves) so the gallery and the
 // invariant tests can stress the charts without the real app.
-import type { DoseResponseCurves } from "@nudagitty/core";
+import { normalizeVariableModel } from "@nudagitty/core";
+import type { DoseResponseCurves, SimulatedNodeState, VariableModel } from "@nudagitty/core";
 import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
 import type { ScatterRegression } from "../charts/ScatterChart";
 import type { HuhShift } from "../outputs/modules/types";
@@ -160,3 +161,53 @@ export function ledgerRows(rows: Array<[string, number, BasicComparisonLedgerRow
     metric: { label, value: ppLabel(numericValue), detail: "", numericValue }
   }));
 }
+
+function summarizeSamples(samples: number[]): { mean: number; variance: number; min: number; max: number } {
+  const n = samples.length;
+  const mean = samples.reduce((sum, value) => sum + value, 0) / Math.max(1, n);
+  const variance = samples.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(1, n - 1);
+  return { mean, variance, min: Math.min(...samples), max: Math.max(...samples) };
+}
+
+// A minimal-but-valid continuous SimulatedNodeState (empirical samples + an analytic overlay) for the
+// node distribution mini-plot. `shape` picks the boundary: a clean normal, a right-skewed lognormal,
+// or a near-degenerate (tiny-spread) column.
+export function continuousNodeState(shape: "normal" | "skewed" | "degenerate", seed = 7): SimulatedNodeState {
+  const rng = mulberry32(seed);
+  let samples: number[];
+  let analytic: SimulatedNodeState["analytic"];
+  if (shape === "skewed") {
+    samples = Array.from({ length: 180 }, () => Math.exp(gaussian(rng, 3, 0.5)));
+    analytic = { distribution: { kind: "lognormal", meanLog: 3, sdLog: 0.5 }, mean: Math.exp(3.125), variance: null, note: "root lognormal" };
+  } else if (shape === "degenerate") {
+    samples = Array.from({ length: 180 }, () => gaussian(rng, 50, 0.15));
+    analytic = { distribution: { kind: "normal", mean: 50, sd: 0.15 }, mean: 50, variance: 0.0225, note: "near-constant" };
+  } else {
+    samples = Array.from({ length: 180 }, () => gaussian(rng, 50, 10));
+    analytic = { distribution: { kind: "normal", mean: 50, sd: 10 }, mean: 50, variance: 100, note: "root normal" };
+  }
+  const summary = summarizeSamples(samples);
+  return {
+    kind: "distribution",
+    value: summary.mean,
+    observed: null,
+    analytic,
+    empirical: { samples, weights: [], mean: summary.mean, variance: summary.variance, min: summary.min, max: summary.max, effectiveSampleSize: samples.length }
+  };
+}
+
+// A binary SimulatedNodeState with P(1)=p, for the binary node distribution mini-plot.
+export function binaryNodeState(p: number, seed = 7): SimulatedNodeState {
+  const rng = mulberry32(seed);
+  const samples: number[] = Array.from({ length: 180 }, () => (rng() < p ? 1 : 0));
+  const mean = samples.reduce((sum, value) => sum + value, 0) / samples.length;
+  return {
+    kind: "distribution",
+    value: mean,
+    observed: null,
+    analytic: { distribution: { kind: "bernoulli", p }, mean: p, variance: p * (1 - p), note: "root bernoulli" },
+    empirical: { samples, weights: [], mean, variance: mean * (1 - mean), min: 0, max: 1, effectiveSampleSize: samples.length }
+  };
+}
+
+export const CONTINUOUS_VARIABLE: VariableModel = normalizeVariableModel({ valueType: "continuous" });

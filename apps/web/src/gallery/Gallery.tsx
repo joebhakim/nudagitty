@@ -10,10 +10,11 @@ import {
 import { ScatterChart } from "../charts/ScatterChart";
 import type { DoseResponseCurves } from "@nudagitty/core";
 import { NodeNamesProvider } from "../shared/NodeNames";
-import { binaryPoints, continuousPoints, doseCurvesFixture, huhShift, ledgerRows, riskPoints, scatter2d, scatterFit } from "./fixtures";
+import { CONTINUOUS_VARIABLE, binaryNodeState, binaryPoints, continuousNodeState, continuousPoints, doseCurvesFixture, huhShift, ledgerRows, riskPoints, scatter2d, scatterFit } from "./fixtures";
 import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
 import { HuhShiftPlot } from "../outputs/modules/components";
 import { BasicComparisonLedgerPlot } from "../panels/demo";
+import { NodeDistributionMiniPlot, BinaryNodeDistributionMiniPlot } from "../canvas/FlowGraphCanvas";
 import { OutputBoxesPrototype } from "../outputs/prototype/OutputBoxes";
 
 // Fake nodes so the SvgAxisName chips resolve, like in the real app.
@@ -90,6 +91,14 @@ function ledgerFixture(name: string, rows: Array<[string, number, "raw" | "adjus
   return { name, render: () => <BasicComparisonLedgerPlot rows={data} /> };
 }
 
+// The mini-plots draw a translated <g> meant to sit inside a node SVG; frame it in its own viewBox
+// (the plot spans roughly x −53..53, y 35..77 in the node's coordinate space) so it stands alone.
+function nodeMiniFixture(name: string, node: () => ReactNode): Fixture {
+  return { name, render: () => (
+    <svg viewBox="-56 33 112 48" style={{ width: "100%", height: "100%" }} role="img" aria-label={name}>{node()}</svg>
+  ) };
+}
+
 const SECTIONS: Array<{ title: string; fixtures: Fixture[] }> = [
   {
     title: "CategoryOutcomePlot — binary outcome",
@@ -146,6 +155,15 @@ const SECTIONS: Array<{ title: string; fixtures: Fixture[] }> = [
       ledgerFixture("raw → adjusted → dgp", [["raw", 0.16, "raw"], ["adjusted", 0.05, "adjusted"], ["do()", 0.04, "dgp"]]),
       ledgerFixture("sign flip on adjust", [["raw", 0.11, "raw"], ["adjusted", -0.07, "selected"]]),
       ledgerFixture("near zero", [["raw", 0.006, "raw"], ["adjusted", -0.004, "adjusted"]])
+    ]
+  },
+  {
+    title: "Node distribution mini-plots",
+    fixtures: [
+      nodeMiniFixture("continuous normal", () => <NodeDistributionMiniPlot state={continuousNodeState("normal")} variable={CONTINUOUS_VARIABLE} />),
+      nodeMiniFixture("continuous skewed", () => <NodeDistributionMiniPlot state={continuousNodeState("skewed")} variable={CONTINUOUS_VARIABLE} />),
+      nodeMiniFixture("near-degenerate", () => <NodeDistributionMiniPlot state={continuousNodeState("degenerate")} variable={CONTINUOUS_VARIABLE} />),
+      nodeMiniFixture("binary 10/90", () => <BinaryNodeDistributionMiniPlot state={binaryNodeState(0.9)} />)
     ]
   }
 ];

@@ -565,7 +565,7 @@ function edgeStrokeWidth(edgeStrength: number, denseEdges: boolean): number {
 }
 
 
-function NodeDistributionMiniPlot({ state, variable, summary }: { state?: SimulatedNodeState; variable: VariableModel; summary?: NodeDistributionSummary }) {
+export function NodeDistributionMiniPlot({ state, variable, summary }: { state?: SimulatedNodeState; variable: VariableModel; summary?: NodeDistributionSummary }) {
   const samples = state?.empirical.samples ?? [];
   if (!state || samples.length < 2) return null;
   if (isBinaryDistributionState(state, variable)) return <BinaryNodeDistributionMiniPlot state={state} />;
@@ -605,7 +605,7 @@ function NodeDistributionMiniPlot({ state, variable, summary }: { state?: Simula
   );
 }
 
-function BinaryNodeDistributionMiniPlot({ state }: { state: SimulatedNodeState }) {
+export function BinaryNodeDistributionMiniPlot({ state }: { state: SimulatedNodeState }) {
   const probability = binaryProbabilityFromState(state);
   if (probability === null) return null;
   const width = NODE_DISTRIBUTION_PLOT_WIDTH;
