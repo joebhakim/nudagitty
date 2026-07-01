@@ -69,47 +69,10 @@ export interface ChartFrame {
   yScale: (value: number) => number;
 }
 
-/**
- * "Nice" tick values across [min, max] near `target` count (1/2/5 × 10^n steps).
- * Returns the round values that land inside the domain.
- */
-export function niceTicks(min: number, max: number, target = 4): number[] {
-  if (!(max > min)) return [min];
-  const rawStep = (max - min) / Math.max(1, target);
-  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
-  const norm = rawStep / mag;
-  const step = (norm >= 5 ? 5 : norm >= 2 ? 2 : 1) * mag;
-  const ticks: number[] = [];
-  const start = Math.ceil(min / step) * step;
-  for (let value = start; value <= max + step * 1e-6; value += step) {
-    // snap away tiny float dust
-    ticks.push(Math.abs(value) < step * 1e-6 ? 0 : Number(value.toFixed(10)));
-  }
-  return ticks;
-}
-
-/**
- * Pad a data range by a fraction for headroom, optionally clamping the result so
- * it never reads below `clampMin` / above `clampMax` (e.g. a 0–1 rate axis that
- * gets breathing room but never shows negative or >100%).
- */
-export function paddedDomain(
-  min: number,
-  max: number,
-  options: { pad?: number; clampMin?: number; clampMax?: number } = {}
-): [number, number] {
-  const pad = options.pad ?? 0.08;
-  if (!(max > min)) {
-    const center = Number.isFinite(min) ? min : 0;
-    return [center - 0.5, center + 0.5];
-  }
-  const amount = (max - min) * pad;
-  let lo = min - amount;
-  let hi = max + amount;
-  if (options.clampMin !== undefined) lo = Math.max(lo, options.clampMin);
-  if (options.clampMax !== undefined) hi = Math.min(hi, options.clampMax);
-  return [lo, hi];
-}
+// `niceTicks` and `paddedDomain` now live in the canonical stats lib (stats/viz),
+// ported verbatim from here. Re-exported so existing chartFrame importers are
+// unchanged.
+export { niceTicks, paddedDomain } from "@nudagitty/core";
 
 export function chartFrame(spec: ChartFrameSpec): ChartFrame {
   const pad = spec.pad ?? 10;
