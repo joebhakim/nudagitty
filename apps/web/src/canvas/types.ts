@@ -1,0 +1,31 @@
+import type { AnalysisReport, EdgeMechanism, GraphEdge, GraphModel, Point, SimulationResult } from "@nudagitty/core";
+import type { ModulationLink, ResultPendingState, SimulationDerivedCache } from "../app/types";
+import type { Selection, ToolMode } from "../shared/appState";
+import type { WorkbenchMode } from "../shared/workbench";
+
+// Prop shape for the canvas surface. Extracted verbatim from the (now-deleted) legacy
+// GraphCanvas so FlowGraphCanvas/FlowGraphCanvasInner keep their exact prop type.
+export interface GraphCanvasProps {
+  mode: WorkbenchMode;
+  graph: GraphModel;
+  sourceGraph: GraphModel;
+  selection: Selection;
+  tool: ToolMode;
+  edgeSource: string | null;
+  analysis: AnalysisReport;
+  simulation: SimulationResult;
+  derived: SimulationDerivedCache;
+  edgeMechanisms: Record<string, EdgeMechanism>;
+  modulations: ModulationLink[];
+  disabledEdgeIds: Set<string>;
+  highlightedEdges: Map<string, "causal" | "biasing">;
+  ancestorIds: Set<string>;
+  pending: ResultPendingState;
+  onSelect: (selection: Selection) => void;
+  onAddNode: (point: Point) => void;
+  onMoveNode: (id: string, position: Point) => void;
+  onNodeClick: (id: string) => void;
+  onEdgeClick: (id: string) => void;
+  onEdgeControl: (edge: GraphEdge) => void;
+  onResample: () => void;
+}
