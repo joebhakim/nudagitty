@@ -482,11 +482,11 @@
 }
 
 .category-outcome-observation.untreated {
-  fill: #65717d;
+  fill: var(--chart-arm-untreated);
 }
 
 .category-outcome-observation.treated {
-  fill: var(--accent);
+  fill: var(--chart-arm-treated);
 }
 
 .category-outcome-ci line {
@@ -508,11 +508,11 @@
 }
 
 .category-outcome-summary-point.untreated {
-  fill: #65717d;
+  fill: var(--chart-arm-untreated);
 }
 
 .category-outcome-summary-point.treated {
-  fill: var(--accent);
+  fill: var(--chart-arm-treated);
 }
 
 .binary-continuous-pair-view,

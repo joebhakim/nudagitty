@@ -1,4 +1,5 @@
 import type { OverlapDiagnostic } from "@nudagitty/core";
+import { ARM_COLORS } from "../charts/chartColors";
 
 // Overlap / positivity diagnostic for the current adjustment: the per-arm propensity-score
 // distribution (the estimators' OWN bin-based model), the inverse-probability-weight summary, and
@@ -7,8 +8,10 @@ import type { OverlapDiagnostic } from "@nudagitty/core";
 // adjustment (IPW, matching) fail. Derived live from the document; null unless the example has a
 // binary point-treatment adjustment spec with covariates.
 
-const OVERLAP_CTRL = "#64748b";
-const OVERLAP_TREAT = "#2563eb";
+// Arm colors from the canonical vocabulary (gray control / teal treated) — the treated arm no longer
+// near-collides with the reserved method-blue (--causal).
+const OVERLAP_CTRL = ARM_COLORS.untreated;
+const OVERLAP_TREAT = ARM_COLORS.treated;
 
 // Propensity-score distribution by arm (share within arm so the two are comparable despite very
 // different N). A control pile near 0 that the treated never reach is the positivity violation.
@@ -28,7 +31,7 @@ export function OverlapHistogram({ overlap }: { overlap: OverlapDiagnostic }) {
   const bw = plotW / bins;
   const bar = (s: number, i: number, fill: string) => {
     const h = (s / maxShare) * plotH;
-    return <rect key={`${fill}-${i}`} x={padL + i * bw} y={padT + plotH - h} width={Math.max(0.5, bw - 1)} height={h} fill={fill} opacity={0.55} />;
+    return <rect key={`${fill}-${i}`} x={padL + i * bw} y={padT + plotH - h} width={Math.max(0.5, bw - 1)} height={h} style={{ fill, opacity: 0.55 }} />;
   };
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="overlap-hist" role="img" aria-label="Propensity-score distribution by arm">

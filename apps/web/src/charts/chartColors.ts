@@ -12,6 +12,14 @@ export const SERIES_COLORS = {
 // so "marginal" and "observed" never share a swatch.
 export const MARGINAL_COLOR = "var(--chart-marginal)";
 
+// Treatment-arm axis — "which arm". Neutral gray (control/untreated) vs teal (treated); deliberately
+// distinct from the reserved method colors (gray/ochre/blue) so an arm swatch never reads as an
+// estimate. The single source for arm colors across charts (see the --chart-arm-* vars in base.css).
+export const ARM_COLORS = {
+  untreated: "var(--chart-arm-untreated)",
+  treated: "var(--chart-arm-treated)"
+} as const;
+
 // Subgroup / stratum axis — "which group". A sequential VIOLET ramp (light → dark) so ordered levels
 // read as ordered, and visually separate from the method colors (gray / ochre / blue).
 const RAMP_LIGHT = [201, 179, 236]; // #c9b3ec

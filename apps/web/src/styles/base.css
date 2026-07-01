@@ -26,6 +26,11 @@
   /* The pooled / standardized MARGINAL reference across subgroups — its own neutral, distinct from
      the observed-gray above so "marginal" and "observed" never share a swatch. */
   --chart-marginal: #3d4b57;
+  /* Treatment-arm axis — "which arm": control (neutral gray) vs treated (teal). Deliberately NOT
+     method-blue (--causal), so an arm bar never reads as "the chosen estimate". Single source for
+     every arm-based chart (outcome plots, overlap histogram). */
+  --chart-arm-untreated: var(--chart-muted);
+  --chart-arm-treated: var(--accent);
 }
 
 * {
