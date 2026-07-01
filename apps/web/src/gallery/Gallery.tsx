@@ -12,9 +12,12 @@ import type { DoseResponseCurves } from "@nudagitty/core";
 import { NodeNamesProvider } from "../shared/NodeNames";
 import { CONTINUOUS_VARIABLE, binaryNodeState, binaryPoints, continuousNodeState, continuousPoints, doseCurvesFixture, huhShift, ledgerRows, riskPoints, scatter2d, scatterFit } from "./fixtures";
 import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
-import { HuhShiftPlot } from "../outputs/modules/components";
+import { HuhShiftPlot, WhatIfStrategySurvivalCurve } from "../outputs/modules/components";
+import { whatIfSurvival } from "./fixtures";
 import { BasicComparisonLedgerPlot } from "../panels/demo";
 import { NodeDistributionMiniPlot, BinaryNodeDistributionMiniPlot } from "../canvas/FlowGraphCanvas";
+import { OverlapHistogram } from "../outputs/OverlapInspector";
+import { overlapDiagnostic } from "./fixtures";
 import { OutputBoxesPrototype } from "../outputs/prototype/OutputBoxes";
 
 // Fake nodes so the SvgAxisName chips resolve, like in the real app.
@@ -164,6 +167,20 @@ const SECTIONS: Array<{ title: string; fixtures: Fixture[] }> = [
       nodeMiniFixture("continuous skewed", () => <NodeDistributionMiniPlot state={continuousNodeState("skewed")} variable={CONTINUOUS_VARIABLE} />),
       nodeMiniFixture("near-degenerate", () => <NodeDistributionMiniPlot state={continuousNodeState("degenerate")} variable={CONTINUOUS_VARIABLE} />),
       nodeMiniFixture("binary 10/90", () => <BinaryNodeDistributionMiniPlot state={binaryNodeState(0.9)} />)
+    ]
+  },
+  {
+    title: "OverlapHistogram — propensity by arm",
+    fixtures: [
+      { name: "good overlap", render: () => <OverlapHistogram overlap={overlapDiagnostic("good")} /> },
+      { name: "positivity violation", render: () => <OverlapHistogram overlap={overlapDiagnostic("violation")} /> }
+    ]
+  },
+  {
+    title: "WhatIfStrategySurvivalCurve — survival by strategy",
+    fixtures: [
+      { name: "separated curves", render: () => <WhatIfStrategySurvivalCurve summary={whatIfSurvival("strong")} survivalTime={false} denominatorsOpen={false} /> },
+      { name: "overlapping curves", render: () => <WhatIfStrategySurvivalCurve summary={whatIfSurvival("null")} survivalTime={false} denominatorsOpen={false} /> }
     ]
   }
 ];

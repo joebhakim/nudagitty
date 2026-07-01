@@ -12,7 +12,7 @@ const OVERLAP_TREAT = "#2563eb";
 
 // Propensity-score distribution by arm (share within arm so the two are comparable despite very
 // different N). A control pile near 0 that the treated never reach is the positivity violation.
-function OverlapHistogram({ overlap }: { overlap: OverlapDiagnostic }) {
+export function OverlapHistogram({ overlap }: { overlap: OverlapDiagnostic }) {
   const bins = 20;
   const W = 340, H = 132, padL = 6, padR = 6, padB = 18, padT = 6;
   const plotW = W - padL - padR, plotH = H - padT - padB;

@@ -3,10 +3,10 @@
 // 0%/100%, tiny n, ties, extreme splits, flat curves) so the gallery and the
 // invariant tests can stress the charts without the real app.
 import { normalizeVariableModel } from "@nudagitty/core";
-import type { DoseResponseCurves, SimulatedNodeState, VariableModel } from "@nudagitty/core";
+import type { DoseResponseCurves, OverlapDiagnostic, SimulatedNodeState, SurvivalCurvePoint, VariableModel } from "@nudagitty/core";
 import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
 import type { ScatterRegression } from "../charts/ScatterChart";
-import type { HuhShift } from "../outputs/modules/types";
+import type { HuhShift, WhatIfStrategySurvivalSummary, WhatIfSurvivalSummary } from "../outputs/modules/types";
 import type { BasicComparisonLedgerRow } from "../app/types";
 
 function mulberry32(seed: number): () => number {
@@ -211,3 +211,85 @@ export function binaryNodeState(p: number, seed = 7): SimulatedNodeState {
 }
 
 export const CONTINUOUS_VARIABLE: VariableModel = normalizeVariableModel({ valueType: "continuous" });
+
+// A fabricated overlap / positivity diagnostic: per-arm propensity scores plus the derived control
+// ESS, min propensity, max IP weight and common-support share. "good" = broad, overlapping arms;
+// "violation" = a control pile near 0 the treated never reach (positivity breaks).
+export function overlapDiagnostic(kind: "good" | "violation", seed = 7): OverlapDiagnostic {
+  const rng = mulberry32(seed);
+  const clampP = (p: number) => Math.min(1 - 1e-3, Math.max(1e-3, p));
+  const draw = (n: number, mean: number, sd: number) => Array.from({ length: n }, () => clampP(gaussian(rng, mean, sd)));
+  const controlPropensities = kind === "good" ? draw(260, 0.42, 0.18) : draw(320, 0.08, 0.06);
+  const treatedPropensities = kind === "good" ? draw(240, 0.6, 0.18) : draw(180, 0.9, 0.08);
+  const controlWeights = controlPropensities.map((p) => p / (1 - p));
+  const sumW = controlWeights.reduce((sum, w) => sum + w, 0);
+  const sumW2 = controlWeights.reduce((sum, w) => sum + w * w, 0);
+  const controlEffectiveSampleSize = sumW2 > 0 ? (sumW * sumW) / sumW2 : 0;
+  const all = [...controlPropensities, ...treatedPropensities];
+  const inBand = all.filter((p) => p >= 0.1 && p <= 0.9).length;
+  return {
+    treatment: "Treatment",
+    treatedPropensities,
+    controlPropensities,
+    controlSampleSize: controlPropensities.length,
+    controlEffectiveSampleSize,
+    minPropensity: Math.min(...all),
+    maxControlWeight: Math.max(...controlWeights),
+    commonSupportShare: inBand / all.length,
+    propensityModel: "bin-based propensity model"
+  };
+}
+
+// One Kaplan-Meier-style strategy arm: survival declines by a per-interval hazard, with a Greenwood
+// 95% band that widens as the at-risk set shrinks.
+function survivalStrategy(strategyId: string, label: string, hazard: number, opts: { n?: number; intervals?: number } = {}): WhatIfStrategySurvivalSummary {
+  const { n = 1000, intervals = 6 } = opts;
+  let atRisk = n;
+  let survival = 1;
+  let greenwood = 0;
+  let totalEvents = 0;
+  let totalCensored = 0;
+  const points: SurvivalCurvePoint[] = [];
+  for (let interval = 0; interval < intervals; interval += 1) {
+    const events = Math.round(atRisk * hazard);
+    const censored = Math.round(atRisk * 0.02);
+    const h = atRisk > 0 ? events / atRisk : 0;
+    survival *= 1 - h;
+    if (atRisk > events && events > 0) greenwood += events / (atRisk * (atRisk - events));
+    const se = survival * Math.sqrt(greenwood);
+    points.push({
+      interval,
+      label: `t${interval + 1}`,
+      atRisk,
+      events,
+      censored,
+      hazard: h,
+      survival,
+      risk: 1 - survival,
+      survivalLo: Math.max(0, survival - 1.96 * se),
+      survivalHi: Math.min(1, survival + 1.96 * se)
+    });
+    totalEvents += events;
+    totalCensored += censored;
+    atRisk = Math.max(0, atRisk - events - censored);
+  }
+  const last = points[points.length - 1]!;
+  return { strategyId, label, points, finalRisk: last.risk, finalSurvival: last.survival, totalEvents, totalCensored, sampleSize: n, effectiveSampleSize: n };
+}
+
+// A fabricated survival what-if summary with two strategy arms (treat/no-treat). `separation` sets how
+// different the arms' hazards are: "strong" = clearly separated curves, "null" = overlapping curves.
+export function whatIfSurvival(separation: "strong" | "null"): WhatIfSurvivalSummary {
+  const treatedHazard = separation === "strong" ? 0.06 : 0.11;
+  const controlHazard = separation === "strong" ? 0.16 : 0.12;
+  const treated = survivalStrategy("treat", "always treat", treatedHazard);
+  const control = survivalStrategy("control", "never treat", controlHazard);
+  return {
+    label: "Survival by strategy",
+    strategies: [treated, control],
+    natural: survivalStrategy("natural", "natural course", (treatedHazard + controlHazard) / 2),
+    riskDifference: treated.finalRisk !== null && control.finalRisk !== null ? treated.finalRisk - control.finalRisk : null,
+    survivalDifference: treated.finalSurvival !== null && control.finalSurvival !== null ? treated.finalSurvival - control.finalSurvival : null,
+    curvesByMethod: {}
+  };
+}
