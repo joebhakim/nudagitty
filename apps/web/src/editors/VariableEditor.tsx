@@ -7,6 +7,7 @@ import type {
   GraphEdge,
   GraphNode,
   NodeCombinerKind,
+  NodeDistribution,
   NodeInteraction,
   NodeMechanism,
   NodeRoleFlags,
@@ -15,7 +16,7 @@ import type {
   VariableModel
 } from "@nudagitty/core";
 import type { SimulationDerivedCache } from "../app/types";
-import { NODE_COMBINERS, PLANNED_CAUSAL_MODULES } from "../app/constants";
+import { NODE_COMBINERS, PLANNED_CAUSAL_MODULES, VARIABLE_TYPES } from "../app/constants";
 import type { ScatterPair } from "../shared/pairs";
 import type { WorkbenchMode } from "../shared/workbench";
 import { OPERATION_BLURBS, OPERATION_LABELS, deriveOperation } from "../shared/operations";
@@ -23,7 +24,7 @@ import { clamp, coerceBinary, formatInputNumber, formatSignedValue, formatValue 
 import { badControlWarning, describeEstimand } from "../outputs/estimand";
 import { EstimandFormula, NodeName } from "../outputs/EstimandFormula";
 import { nodeDisplayName, nodeOutputLabel } from "../compute/format";
-import { analyticDistributionLabel, inferValueTypeFromMechanism, valueTypeLabel } from "../compute/distributionPlot";
+import { analyticDistributionLabel, defaultDistribution, valueTypeLabel } from "../compute/distributionPlot";
 import { conditioningSliderBounds, conditioningSliderStep, roundToStep } from "../compute/conditioning";
 import { Checkbox, NumberField, RoleToggle, TactileNumberField } from "../controls";
 import { EdgeEditor, EdgePanel } from "./EdgeEditor";
@@ -437,8 +438,18 @@ export function VariableEditor(props: {
   const isRoot = parentIds.length === 0;
   // The instrument role is contextual: offerable only on a structural candidate (or to un-assign one).
   const isInstrumentCandidate = useMemo(() => candidateInstruments(props.document.graph).includes(node.id), [props.document.graph, node.id]);
-  const inferredValueType = inferValueTypeFromMechanism(isRoot, mechanism, variable.valueType);
   const updateVariable = (patch: Partial<VariableModel>) => props.onVariableChange(node.id, normalizeVariableModel({ ...variable, ...patch }));
+  // R5: the response FAMILY is directly selectable and canonical (valueType is its synced mirror).
+  // Picking a family sets the family's canonical link (non-root) or root distribution so it generates
+  // correctly — no more picking a distribution and hoping the inferred type agrees.
+  const FAMILY_LINK: Partial<Record<VariableModel["valueType"], NodeCombinerKind>> = { continuous: "additive", binary: "bernoulli_logit", count: "poisson_log", positive: "gamma_log", proportion: "bounded_logistic" };
+  const FAMILY_ROOT_DISTRIBUTION: Partial<Record<VariableModel["valueType"], NodeDistribution["kind"]>> = { continuous: "normal", binary: "bernoulli", count: "poisson", positive: "gamma", proportion: "beta", categorical: "categorical", ordinal: "categorical" };
+  const REALIZED_FAMILIES = new Set<VariableModel["valueType"]>(["continuous", "binary", "count"]);
+  const changeFamily = (kind: VariableModel["valueType"]) => {
+    updateVariable({ valueType: kind });
+    if (isRoot) { const dist = FAMILY_ROOT_DISTRIBUTION[kind]; if (dist) props.onMechanism(node.id, { distribution: defaultDistribution(dist) }); }
+    else { const combiner = FAMILY_LINK[kind]; if (combiner) props.onMechanism(node.id, { combiner }); }
+  };
 
   const currentOperation = deriveOperation(props.document, node.id);
   const exposureNode = props.document.graph.nodes.find((candidate) => candidate.id === props.outputPair.x)
@@ -528,8 +539,16 @@ export function VariableEditor(props: {
           </div>
 
           <details className="output-box editor-section">
-            <summary><strong>Distribution</strong><span>{valueTypeLabel(inferredValueType)}</span></summary>
+            <summary><strong>Distribution</strong><span>{valueTypeLabel(variable.valueType)}</span></summary>
             <div className="editor-section-body">
+              <label className="field">
+                <span>type</span>
+                <select value={variable.valueType} onChange={(event) => changeFamily(event.target.value as VariableModel["valueType"])}>
+                  {VARIABLE_TYPES.map(([kind, label]) => (
+                    <option value={kind} key={kind} disabled={!REALIZED_FAMILIES.has(kind) && kind !== variable.valueType}>{label}{REALIZED_FAMILIES.has(kind) ? "" : " (planned)"}</option>
+                  ))}
+                </select>
+              </label>
               {isRoot && <DistributionEditor
                 label="root distribution"
                 distribution={mechanism.distribution}
