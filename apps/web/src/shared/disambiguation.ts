@@ -136,6 +136,73 @@ export const DISAMBIGUATION_TERMS: DisambiguationTerm[] = [
     ],
     note: "2SLS estimates a LATE under exclusion + independence — the effect among those the instrument moves, not the same estimand as adjustment."
   },
+  // Paths & identification — the procedural vocabulary (used throughout but previously unexplained):
+  // how confounding travels and how you shut it off. The roles above are the NOUNS; these are the VERBS.
+  {
+    id: "backdoor-path",
+    term: "Backdoor path",
+    oneLiner: "A non-causal path from treatment to outcome that starts with an arrow INTO treatment — the route confounding travels. Block it and the bias is gone.",
+    structure: "A ← C → Y (arrow into A)",
+    alsoCalled: [
+      { name: "confounding path", field: "epi" },
+      { name: "spurious / non-causal path", field: "stats" }
+    ],
+    distinctFrom: [
+      { term: "Causal (directed) path", because: "a backdoor starts with an arrow INTO A; the effect itself flows along paths OUT of A (A → … → Y)" },
+      { term: "Collider path", because: "a path through a collider is already CLOSED — conditioning on the collider OPENS it, the reverse of a confounding fork" }
+    ],
+    anchors: [{ cite: "Pearl 1993; Pearl, Causality", note: "the backdoor criterion" }],
+    note: "Backdoor CRITERION: a variable set is a valid adjustment set if it blocks every backdoor path and contains no descendant of A."
+  },
+  {
+    id: "adjustment-set",
+    exampleId: "flexible-adjustment",
+    term: "Adjustment set",
+    oneLiner: "The variables you condition on to block every backdoor path — what 'controlling for confounders' actually means.",
+    structure: "a set that blocks all A ← … → Y",
+    alsoCalled: [
+      { name: "sufficient / conditioning set", field: "stats" },
+      { name: "controls / covariate set", field: "econ" },
+      { name: "confounder set", field: "epi" }
+    ],
+    distinctFrom: [
+      { term: "Every available covariate", because: "more is not safer — adjusting for a mediator or a collider ADDS bias; a valid set blocks backdoors and touches no descendant of A" }
+    ],
+    anchors: [{ cite: "Pearl, Causality", note: "backdoor criterion" }, { cite: "VanderWeele 2019", note: "disjunctive-cause rule for choosing one" }],
+    note: "Rarely unique — several sets satisfy the criterion, and the minimal one isn't always the most efficient."
+  },
+  {
+    id: "front-door",
+    exampleId: "front-door-smoking",
+    term: "Front-door adjustment",
+    oneLiner: "Identify the effect through a fully-mediating mechanism when the confounder is UNMEASURED — chain two clean adjustments along A → M → Y.",
+    structure: "A → M → Y with unobserved U → A, U → Y",
+    alsoCalled: [
+      { name: "front-door criterion", field: "stats" },
+      { name: "mechanism-based identification", field: "epi" }
+    ],
+    distinctFrom: [
+      { term: "Backdoor adjustment", because: "backdoor blocks confounding by conditioning on common causes; front-door routes AROUND an unmeasured one through a clean mediator" },
+      { term: "Instrument", because: "an IV sits UPSTREAM of A with an exclusion restriction; the front-door mediator sits BETWEEN A and Y and must carry the whole effect" }
+    ],
+    anchors: [{ cite: "Pearl 1995", note: "front-door criterion — smoking → tar → cancer" }],
+    note: "Needs a mediator with no unblocked backdoor of its own that fully transmits A's effect — rare in practice, elegant in principle."
+  },
+  {
+    id: "d-separation",
+    term: "d-separation (blocking a path)",
+    oneLiner: "The graphical rule for when a path carries no association: it's BLOCKED at a chain/fork you condition on, or at a collider you do NOT condition on.",
+    structure: "chain/fork: block by conditioning · collider: block by NOT conditioning",
+    alsoCalled: [
+      { name: "directional separation", field: "stats" },
+      { name: "conditional independence in the DAG", field: "econ" }
+    ],
+    distinctFrom: [
+      { term: "Marginal independence", because: "d-separation is independence GIVEN a conditioning set — the same path is open or closed depending on what you condition on" }
+    ],
+    anchors: [{ cite: "Pearl 1988", note: "d-separation" }, { cite: "Verma & Pearl 1988" }],
+    note: "The engine under everything else: 'adjust for a confounder' = close a fork; 'don't touch a collider' = keep it closed."
+  },
   {
     id: "crossover",
     exampleId: "effect-modification-crossover",
