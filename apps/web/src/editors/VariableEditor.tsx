@@ -442,11 +442,13 @@ export function VariableEditor(props: {
   // R5: the response FAMILY is directly selectable and canonical (valueType is its synced mirror).
   // Picking a family sets the family's canonical link (non-root) or root distribution so it generates
   // correctly — no more picking a distribution and hoping the inferred type agrees.
-  const FAMILY_LINK: Partial<Record<VariableModel["valueType"], NodeCombinerKind>> = { continuous: "additive", binary: "bernoulli_logit", count: "poisson_log", positive: "gamma_log", proportion: "bounded_logistic" };
+  const FAMILY_LINK: Partial<Record<VariableModel["valueType"], NodeCombinerKind>> = { continuous: "additive", binary: "bernoulli_logit", count: "poisson_log", ordinal: "additive", positive: "gamma_log", proportion: "bounded_logistic" };
   const FAMILY_ROOT_DISTRIBUTION: Partial<Record<VariableModel["valueType"], NodeDistribution["kind"]>> = { continuous: "normal", binary: "bernoulli", count: "poisson", positive: "gamma", proportion: "beta", categorical: "categorical", ordinal: "categorical" };
-  const REALIZED_FAMILIES = new Set<VariableModel["valueType"]>(["continuous", "binary", "count"]);
+  const REALIZED_FAMILIES = new Set<VariableModel["valueType"]>(["continuous", "binary", "count", "ordinal"]);
   const changeFamily = (kind: VariableModel["valueType"]) => {
-    updateVariable({ valueType: kind });
+    const patch: Partial<VariableModel> = { valueType: kind };
+    if ((kind === "ordinal" || kind === "categorical") && variable.categories.length < 2) patch.categories = ["level 1", "level 2", "level 3"];
+    updateVariable(patch);
     if (isRoot) { const dist = FAMILY_ROOT_DISTRIBUTION[kind]; if (dist) props.onMechanism(node.id, { distribution: defaultDistribution(dist) }); }
     else { const combiner = FAMILY_LINK[kind]; if (combiner) props.onMechanism(node.id, { combiner }); }
   };

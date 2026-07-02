@@ -8,7 +8,7 @@ import type {
   SimulationSpec,
   VariableModel
 } from "../types";
-import { clamp01, coerceBinary, edgeContribution, safeExp, sigmoid, softplus } from "./interpreter";
+import { clamp01, coerceBinary, edgeContribution, ordinalThresholds, safeExp, sigmoid, softplus } from "./interpreter";
 
 // === Compiled forward-sampling fast path =====================================
 // A monomorphic, allocation-free reimplementation of the per-sample forward loop.
@@ -59,6 +59,8 @@ export interface CompiledNodePlan {
   out: number;
   binary: boolean;
   count: boolean;
+  ordinal: boolean;
+  ordinalThr: number[];
   isRoot: boolean;
   rootSampler: FastSampler;
   binaryNonBernoulliRoot: boolean;
@@ -91,6 +93,8 @@ export function compileModel(graph: GraphModel, spec: SimulationSpec, order: str
     const out = index.get(id) ?? 0;
     const binary = variable.valueType === "binary";
     const count = variable.valueType === "count";
+    const ordinal = variable.valueType === "ordinal";
+    const ordinalThr = ordinal ? ordinalThresholds(variable.responseFamily.levels, variable.responseFamily.thresholds) : [];
     const parents = directedParents(graph, id);
     const combiner = mechanism.combiner;
     const link: (eta: number) => number = combiner === "bounded_logistic" || combiner === "bernoulli_logit"
@@ -100,7 +104,7 @@ export function compileModel(graph: GraphModel, spec: SimulationSpec, order: str
     const riskFn: (eta: number) => number = (combiner === "bernoulli_logit" || combiner === "bounded_logistic") ? sigmoid : (eta) => clamp01(link(eta));
     if (parents.length === 0) {
       const binaryNonBernoulliRoot = binary && mechanism.distribution.kind !== "bernoulli";
-      plan.push({ id, out, binary, count, isRoot: true, rootSampler: compileDistributionSampler(mechanism.distribution), binaryNonBernoulliRoot, intercept: 0, edgeParents: [], edgeFns: [], absorbParents: [], absorbFns: [], interactions: [], noiseSampler: identity, riskFn, combineFn: link, variable });
+      plan.push({ id, out, binary, count, ordinal, ordinalThr, isRoot: true, rootSampler: compileDistributionSampler(mechanism.distribution), binaryNonBernoulliRoot, intercept: 0, edgeParents: [], edgeFns: [], absorbParents: [], absorbFns: [], interactions: [], noiseSampler: identity, riskFn, combineFn: link, variable });
       continue;
     }
     const edgeParents: number[] = []; const edgeFns: Array<(x: number) => number> = [];
@@ -115,7 +119,7 @@ export function compileModel(graph: GraphModel, spec: SimulationSpec, order: str
       if (edgeMechanism.kind === "absorbing") { absorbParents.push(pIdx); absorbFns.push(fn); }
       else { edgeParents.push(pIdx); edgeFns.push(fn); }
     }
-    plan.push({ id, out, binary, count, isRoot: false, rootSampler: identity, binaryNonBernoulliRoot: false, intercept: mechanism.intercept, edgeParents, edgeFns, absorbParents, absorbFns, interactions: mechanism.interactions.map((interaction) => compileInteractionFn(interaction, index)), noiseSampler: compileDistributionSampler(mechanism.noise), riskFn, combineFn: link, variable });
+    plan.push({ id, out, binary, count, ordinal, ordinalThr, isRoot: false, rootSampler: identity, binaryNonBernoulliRoot: false, intercept: mechanism.intercept, edgeParents, edgeFns, absorbParents, absorbFns, interactions: mechanism.interactions.map((interaction) => compileInteractionFn(interaction, index)), noiseSampler: compileDistributionSampler(mechanism.noise), riskFn, combineFn: link, variable });
   }
   return { plan, index };
 }
@@ -168,6 +172,11 @@ export function runCompiledForward(compiled: CompiledModel, spec: SimulationSpec
           v = Math.floor(rng() + p);
         } else if (n.count) {
           v = sampleDistribution({ kind: "poisson", lambda: Math.max(0, n.combineFn(eta)) }, rng);
+        } else if (n.ordinal) {
+          const u = rng();
+          let level = n.ordinalThr.length;
+          for (let k = 0; k < n.ordinalThr.length; k += 1) { if (u <= sigmoid((n.ordinalThr[k] ?? 0) - eta)) { level = k; break; } }
+          v = level;
         } else {
           v = n.combineFn(eta);
         }

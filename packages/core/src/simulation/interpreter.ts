@@ -15,6 +15,15 @@ import { clamp01, coerceBinary } from "../stats/util";
 // simulation barrel (and existing importers) keep resolving them.
 export { sigmoid, clamp01, coerceBinary };
 
+// Ordinal (proportional-odds) cutpoints: K-1 ascending thresholds on the η scale. Uses the node's
+// own thresholds when it carries the right count, else evenly-probable defaults (logistic quantiles,
+// so the K categories are equiprobable at η = 0).
+export function ordinalThresholds(levels: number, provided: number[]): number[] {
+  const K = Math.max(2, Math.floor(levels) || 2);
+  if (provided.length === K - 1) return provided;
+  return Array.from({ length: K - 1 }, (_, k) => Math.log((k + 1) / (K - k - 1)));
+}
+
 export interface StructuralContribution {
   value: number;
   absorbing: boolean;
@@ -100,6 +109,24 @@ export function finalizeNodeValue(value: number, mechanism: NodeMechanism, varia
     const lambda = Math.max(0, applyCombiner(value, mechanism, regularContributions, leakTerm));
     if (!forceDraw && variable.simulation.mode === "expected_value") return lambda;
     return sampleDistribution({ kind: "poisson", lambda }, rng);
+  }
+  // Ordinal family: ordered/cumulative logit. η is the linear predictor; P(Y≤k) = σ(θ_k − η).
+  // A single uniform draw walks the thresholds to pick the level (0..K-1).
+  if (variable.valueType === "ordinal") {
+    const thresholds = ordinalThresholds(variable.responseFamily.levels, variable.responseFamily.thresholds);
+    if (!forceDraw && variable.simulation.mode === "expected_value") {
+      let prev = 0;
+      let expected = 0;
+      for (let k = 0; k <= thresholds.length; k += 1) {
+        const cdf = k < thresholds.length ? sigmoid((thresholds[k] ?? 0) - value) : 1;
+        expected += k * (cdf - prev);
+        prev = cdf;
+      }
+      return expected;
+    }
+    const u = rng();
+    for (let k = 0; k < thresholds.length; k += 1) if (u <= sigmoid((thresholds[k] ?? 0) - value)) return k;
+    return thresholds.length;
   }
   if (variable.valueType !== "binary") return applyCombiner(value, mechanism, regularContributions, leakTerm);
   const probability = binaryProbability(value, mechanism, contributions, leakTerm);
