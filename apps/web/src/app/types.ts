@@ -179,6 +179,7 @@ export type FlowGraphNodeData = Record<string, unknown> & {
   state?: SimulatedNodeState;
   summary?: NodeDistributionSummary;
   candidateInstrument: boolean;
+  showNoise: boolean;
   onNodeClick: (id: string) => void;
 };
 export type FlowGraphEdgeData = Record<string, unknown> & {

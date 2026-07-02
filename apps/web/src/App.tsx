@@ -225,6 +225,7 @@ export function App() {
   const showCausal = useWorkbenchStore((state) => state.showCausal);
   const showBiasing = useWorkbenchStore((state) => state.showBiasing);
   const showAncestors = useWorkbenchStore((state) => state.showAncestors);
+  const showNoiseNodes = useWorkbenchStore((state) => state.showNoiseNodes);
   const workbenchMode = useWorkbenchStore((state) => state.workbenchMode);
   const basicResultsOpen = useWorkbenchStore((state) => state.basicResultsOpen);
   const activeExampleId = useWorkbenchStore((state) => state.activeExampleId);
@@ -244,6 +245,7 @@ export function App() {
   const setShowCausal = useWorkbenchStore((state) => state.setShowCausal);
   const setShowBiasing = useWorkbenchStore((state) => state.setShowBiasing);
   const setShowAncestors = useWorkbenchStore((state) => state.setShowAncestors);
+  const setShowNoiseNodes = useWorkbenchStore((state) => state.setShowNoiseNodes);
   const setWorkbenchMode = useWorkbenchStore((state) => state.setWorkbenchMode);
   const setBasicResultsOpen = useWorkbenchStore((state) => state.setBasicResultsOpen);
   const setActiveExampleId = useWorkbenchStore((state) => state.setActiveExampleId);
@@ -822,6 +824,7 @@ export function App() {
         disabledEdgeIds={new Set(Object.entries(document.simulation.edges).filter(([, mechanism]) => !mechanism.enabled).map(([id]) => id))}
         highlightedEdges={highlightedEdges}
         ancestorIds={ancestorIds}
+        showNoiseNodes={showNoiseNodes}
         pending={resultsPending}
         onSelect={setSelection}
         onAddNode={addNodeAt}
@@ -1130,6 +1133,7 @@ export function App() {
                 <Checkbox label="causal paths" checked={showCausal} onChange={setShowCausal} />
                 <Checkbox label="biasing paths" checked={showBiasing} onChange={setShowBiasing} />
                 <Checkbox label="ancestral structure" checked={showAncestors} onChange={setShowAncestors} />
+                <Checkbox label="implicit noise nodes" checked={showNoiseNodes} onChange={setShowNoiseNodes} />
               </Section>
               <Section title="Simulation Diagnostics" pending={simulationPending}>
                 <SimulationDiagnosticsPanel

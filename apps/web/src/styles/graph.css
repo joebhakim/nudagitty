@@ -523,6 +523,13 @@
 .node.exposure .node-base,
 .node.outcome .node-base { cursor: help; }
 
+/* "Show implicit noise nodes": each variable's exogenous disturbance Uᵢ (ε), drawn dashed (like
+   latent) as a small satellite feeding the node — always there in an SCM, conventionally omitted. */
+.noise-satellite { cursor: help; }
+.noise-satellite line { stroke: #9aa7b3; stroke-width: 1.2px; stroke-dasharray: 3 2; }
+.noise-satellite circle { fill: #fff; stroke: #9aa7b3; stroke-width: 1.2px; stroke-dasharray: 3 2; }
+.noise-satellite text { fill: #6b7782; font-size: 12px; font-style: italic; text-anchor: middle; }
+
 .node-label {
   paint-order: stroke;
   stroke: rgba(255, 255, 255, 0.96);

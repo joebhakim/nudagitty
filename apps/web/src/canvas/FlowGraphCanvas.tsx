@@ -118,13 +118,14 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         state: props.simulation.nodeStates[node.id],
         summary: props.derived.nodes.get(node.id),
         candidateInstrument: candidateInstrumentIds.has(node.id),
+        showNoise: props.showNoiseNodes,
         onNodeClick: props.onNodeClick
       },
       selected,
       draggable: true,
       focusable: true
     };
-  }), [candidateInstrumentIds, props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.onNodeClick, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values]);
+  }), [candidateInstrumentIds, props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.onNodeClick, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values, props.showNoiseNodes]);
   const [nodes, setNodes] = useState<FlowGraphNode[]>(computedNodes);
   const [legendOpen, setLegendOpen] = useState(false);
 
@@ -308,7 +309,7 @@ function FlowGraphLegend() {
 // square outcomes and circular covariates by SHAPE rather than colour.
 
 function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
-  const { node, selected, edgeSource, ancestor, changed, value, state, summary, candidateInstrument, onNodeClick } = props.data;
+  const { node, selected, edgeSource, ancestor, changed, value, state, summary, candidateInstrument, showNoise, onNodeClick } = props.data;
   const showInstrumentHint = candidateInstrument && !node.roles.instrument;
   const variable = normalizeVariableModel(node.variable);
   const labelLines = nodeLabelLines(node.label);
@@ -337,6 +338,14 @@ function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
       <Handle type="target" position={Position.Left} className="flow-node-handle" />
       <Handle type="source" position={Position.Right} className="flow-node-handle" />
       <svg viewBox="-76 -42 152 152" className="flow-node-svg" aria-hidden="true" onClick={handleSelect}>
+        {showNoise && (
+          <g className="noise-satellite">
+            <title>Implicit disturbance (U) — every variable has one: all the unmodeled causes that make it stochastic. DAGs conventionally omit them, assuming they're independent (the Markovian / causal-sufficiency assumption); a shared one would be latent confounding.</title>
+            <line x1={-32} y1={-25} x2={-15} y2={-13} />
+            <circle cx={-41} cy={-33} r={8.5} />
+            <text x={-41} y={-29}>&epsilon;</text>
+          </g>
+        )}
         {node.roles.exposure ? (
           <polygon className="node-base" points={PENTAGON_POINTS}><title>Intervention — the cause you do()</title></polygon>
         ) : node.roles.outcome ? (

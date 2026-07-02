@@ -20,6 +20,7 @@ export interface GraphCanvasProps {
   disabledEdgeIds: Set<string>;
   highlightedEdges: Map<string, "causal" | "biasing">;
   ancestorIds: Set<string>;
+  showNoiseNodes: boolean;
   pending: ResultPendingState;
   onSelect: (selection: Selection) => void;
   onAddNode: (point: Point) => void;

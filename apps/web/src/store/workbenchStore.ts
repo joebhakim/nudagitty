@@ -31,6 +31,7 @@ type WorkbenchStore = {
   showCausal: boolean;
   showBiasing: boolean;
   showAncestors: boolean;
+  showNoiseNodes: boolean;
   workbenchMode: WorkbenchMode;
   basicResultsOpen: boolean;
   activeExampleId: string | null;
@@ -50,6 +51,7 @@ type WorkbenchStore = {
   setShowCausal: (show: boolean) => void;
   setShowBiasing: (show: boolean) => void;
   setShowAncestors: (show: boolean) => void;
+  setShowNoiseNodes: (show: boolean) => void;
   setWorkbenchMode: (mode: WorkbenchMode) => void;
   setBasicResultsOpen: (open: boolean) => void;
   setActiveExampleId: (id: string | null) => void;
@@ -85,6 +87,7 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
   showCausal: true,
   showBiasing: true,
   showAncestors: true,
+  showNoiseNodes: false,
   // Demo (basic) mode is hidden for now — default to pro; the toggle is not rendered.
   workbenchMode: "pro",
   basicResultsOpen: true,
@@ -132,6 +135,7 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
   setShowCausal: (showCausal) => set({ showCausal }),
   setShowBiasing: (showBiasing) => set({ showBiasing }),
   setShowAncestors: (showAncestors) => set({ showAncestors }),
+  setShowNoiseNodes: (showNoiseNodes) => set({ showNoiseNodes }),
   setWorkbenchMode: (workbenchMode) => set({ workbenchMode }),
   setBasicResultsOpen: (basicResultsOpen) => set({ basicResultsOpen }),
   setActiveExampleId: (activeExampleId) => set({ activeExampleId }),
