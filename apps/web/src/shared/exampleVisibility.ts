@@ -15,6 +15,7 @@ export const VERIFIED_EXAMPLE_IDS: readonly string[] = [
   "restaurant-collider",
   "positivity-correlated-confounders",
   "continuous-dose-response",
+  "er-visits-count",
   // Term disambiguation: the node-on-edge moderation primitive. Regime modulates an edge (dashed
   // violet arrow); the moderator-CATE output facets the effect by regime. Crossover (sign flips) vs
   // ordinal (same sign) vs moderated mediation (the gate sits on the mediator→outcome edge).

@@ -20,6 +20,7 @@ describe("example catalog", () => {
       "restaurant-collider",
       "positivity-correlated-confounders",
       "continuous-dose-response",
+      "er-visits-count",
       "birthweight-paradox",
       "obesity-paradox",
       "cats-highrise-syndrome",

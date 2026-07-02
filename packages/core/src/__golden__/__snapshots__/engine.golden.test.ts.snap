@@ -354,6 +354,28 @@ exports[`engine golden > epistasis-coat-color — simulation + do-contrasts are 
 }
 `;
 
+exports[`engine golden > er-visits-count — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Program=1)−do(0) on Visits": -1.89375,
+  },
+  "nodes": {
+    "Illness": {
+      "mean": -0.032154,
+      "sd": 1.016299,
+    },
+    "Program": {
+      "mean": 0.449,
+      "sd": 0.497392,
+    },
+    "Visits": {
+      "mean": 3.39625,
+      "sd": 2.395253,
+    },
+  },
+}
+`;
+
 exports[`engine golden > flexible-adjustment — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {

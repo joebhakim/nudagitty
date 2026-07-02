@@ -271,6 +271,20 @@ export function configureContinuousDoseResponse(document: GraphDocument): GraphD
   return document;
 }
 
+export function configureErVisitsCount(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 4000);
+  setContinuousVariable(document, "Illness", "Baseline illness burden. Sicker patients enroll in the program more AND visit the ER more — the confounding.", "illness z-score");
+  setBinaryVariable(document, "Program", "Enrolled in the care-management program.", "enrolled");
+  setVariable(document, "Visits", { valueType: "count", description: "ER visits over the year — a COUNT outcome, drawn Poisson(exp η).", unit: "visits" });
+  setNode(document, "Illness", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setLogitNode(document, "Program", -0.2);
+  setNode(document, "Visits", { combiner: "poisson_log", intercept: Math.log(4), noise: ZERO_NOISE });
+  setLinearCoefficient(document, "Illness", "Program", 0.9);   // sicker → enroll more (the confounding)
+  setLinearCoefficient(document, "Illness", "Visits", 0.45);   // sicker → more visits (log-mean scale)
+  setLinearCoefficient(document, "Program", "Visits", -0.55);  // TRUE effect: the program cuts visits (×exp(−0.55) ≈ 0.58)
+  return document;
+}
+
 export function configureBirthweightParadox(document: GraphDocument): GraphDocument {
   setBinaryVariable(document, "Smoking", "Maternal smoking exposure.", "smokes");
   setContinuousVariable(document, "Frailty", "Latent infant frailty that lowers birthweight and raises mortality.", "frailty z-score", ["latent"]);
