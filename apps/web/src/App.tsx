@@ -975,7 +975,7 @@ export function App() {
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} onOpenGlossary={() => setShowGlossary(true)} />
             <IconButton label="Explain this example" pressed={showExplanation} onClick={() => setShowExplanation((open) => { if (!open) trackInfoOverlayOpened("explanation"); return !open; })}><Info size={18} /></IconButton>
             <IconButton label="Data-generating process" pressed={showDgp} onClick={() => setShowDgp((open) => !open)}><Sigma size={18} /></IconButton>
-            <IconButton label="Term disambiguation" pressed={showGlossary} onClick={() => setShowGlossary((open) => !open)}><BookOpen size={18} /></IconButton>
+            <IconButton label="Glossary" pressed={showGlossary} onClick={() => setShowGlossary((open) => !open)}><BookOpen size={18} /></IconButton>
             <IconButton label="Overlap / positivity" pressed={showOverlap} badge={positivity === "ok" ? null : positivity} onClick={() => setShowOverlap((open) => !open)}><Blend size={18} /></IconButton>
             <input
               ref={snapshotInputRef}
@@ -1014,11 +1014,11 @@ export function App() {
         </div>
       )}
       {showGlossary && (
-        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Term disambiguation" onClick={() => setShowGlossary(false)}>
+        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Glossary" onClick={() => setShowGlossary(false)}>
           <div className="explanation-modal disambiguation-map-modal" onClick={(event) => event.stopPropagation()}>
             <div className="explanation-modal-header">
-              <strong>Term disambiguation — the vocabulary, mapped to structure</strong>
-              <button type="button" aria-label="Close term disambiguation" onClick={() => setShowGlossary(false)}><X size={16} /></button>
+              <strong>Glossary — the vocabulary, mapped to structure</strong>
+              <button type="button" aria-label="Close glossary" onClick={() => setShowGlossary(false)}><X size={16} /></button>
             </div>
             <DisambiguationMap onOpenExample={(id) => { loadExample(id); setShowGlossary(false); }} />
           </div>

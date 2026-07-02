@@ -100,7 +100,7 @@ export function ExampleMenu(props: { mode: WorkbenchMode; activeExampleId: strin
                     className="example-glossary-link"
                     onClick={() => { setOpen(false); props.onOpenGlossary!(); }}
                   >
-                    Open the term-disambiguation map →
+                    Open the glossary →
                   </button>
                 )}
               </div>

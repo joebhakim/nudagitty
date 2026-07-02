@@ -23,6 +23,7 @@ export function roles(overrides: Partial<NodeRoleFlags> = {}): NodeRoleFlags {
 export function defaultVariableModel(): VariableModel {
   return {
     description: "",
+    responseFamily: { kind: "continuous", levels: 0, thresholds: [] },
     valueType: "continuous",
     unit: "",
     categories: [],

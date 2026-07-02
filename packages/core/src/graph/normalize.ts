@@ -5,10 +5,12 @@ import type {
   NodeDistribution,
   NodeInteraction,
   NodeMechanism,
+  ResponseFamily,
   SimulationSelectionCondition,
   TreatmentStrategyKind,
   TreatmentStrategyRuleOperator,
-  VariableModel
+  VariableModel,
+  VariableValueType
 } from "../types";
 import { clamp01 } from "../stats/util";
 import {
@@ -202,6 +204,36 @@ function cloneInteraction(interaction: NodeInteraction): NodeInteraction {
   return { ...interaction };
 }
 
+// Canonical family (support) + its derived `valueType` mirror. R1 keeps `valueType`
+// the operative field the engine/editor still read, so when a raw doc carries an
+// explicit `valueType` it wins and `responseFamily.kind` follows it; a persisted
+// `responseFamily` only supplies its own `kind` when `valueType` is absent, plus
+// `levels`/`thresholds` when it already agrees with the resolved kind. When it
+// disagrees (a stale family left over from a `valueType` edit), those are re-derived
+// so the two can never desync. INVARIANT: the returned pair satisfies
+// `valueType === responseFamily.kind`.
+function resolveResponseFamily(raw: Record<string, unknown>, categories: string[]): ResponseFamily {
+  const rf = raw.responseFamily;
+  const hasRf = rf !== null && typeof rf === "object";
+  const rfObj = (hasRf ? rf : {}) as Record<string, unknown>;
+  const rfKind = isMember(rfObj.kind, VARIABLE_VALUE_TYPES) ? rfObj.kind : undefined;
+  const kind: VariableValueType = isMember(raw.valueType, VARIABLE_VALUE_TYPES)
+    ? raw.valueType
+    : (rfKind ?? "continuous");
+  if (hasRf && rfKind === kind) {
+    return {
+      kind,
+      levels: integerOr(rfObj.levels, 0, 0),
+      thresholds: numberListOr(rfObj.thresholds)
+    };
+  }
+  return {
+    kind,
+    levels: categories.length >= 2 ? categories.length : 0,
+    thresholds: []
+  };
+}
+
 export function normalizeVariableModel(model: Partial<VariableModel> | undefined): VariableModel {
   const base = defaultVariableModel();
   const raw = (model ?? {}) as Record<string, unknown>;
@@ -209,11 +241,15 @@ export function normalizeVariableModel(model: Partial<VariableModel> | undefined
   const intervention = (raw.intervention ?? {}) as Record<string, unknown>;
   const simulation = (raw.simulation ?? {}) as Record<string, unknown>;
   const adjustment = (raw.adjustment ?? {}) as Record<string, unknown>;
+  const categories = stringListOr(raw.categories);
+  const responseFamily = resolveResponseFamily(raw, categories);
   return {
     description: stringOr(raw.description, base.description),
-    valueType: isMember(raw.valueType, VARIABLE_VALUE_TYPES) ? raw.valueType : base.valueType,
+    responseFamily,
+    // Derived mirror of the canonical family — kept in lockstep by construction.
+    valueType: responseFamily.kind,
     unit: stringOr(raw.unit, base.unit),
-    categories: stringListOr(raw.categories),
+    categories,
     measurement: {
       kind: isMember(measurement.kind, MEASUREMENT_MODEL_KINDS) ? measurement.kind : base.measurement.kind,
       errorSd: nonnegativeOr(measurement.errorSd, base.measurement.errorSd),

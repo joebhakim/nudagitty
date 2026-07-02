@@ -1,32 +1,30 @@
 import {
   DISAMBIGUATION_TERMS,
   DISAMBIGUATION_DISTINCTIONS,
+  CATEGORY_ORDER,
+  CATEGORY_LABELS,
   FIELD_LABELS,
   type DisambiguationTerm
 } from "../shared/disambiguation";
 
-// The standalone glossary map: the whole field at a glance. Roles (what a third variable does) and the
-// interaction flavours, each linking to its live example, plus the cross-field pitfalls.
-const ROLE_IDS = ["confounder", "mediator", "moderator", "collider", "instrument"];
-
+// The standalone glossary map: the whole field at a glance, grouped by category (roles, paths,
+// interactions, assumptions, estimands, methods, bad-controls), each term linking to its live example,
+// plus the cross-field pitfalls.
 export function DisambiguationMap({ onOpenExample }: { onOpenExample: (id: string) => void }) {
-  const roles = DISAMBIGUATION_TERMS.filter((term) => ROLE_IDS.includes(term.id));
-  const interactions = DISAMBIGUATION_TERMS.filter((term) => !ROLE_IDS.includes(term.id));
   return (
     <div className="disambiguation-map">
-      <section className="disambiguation-map-section">
-        <h3>Roles — what a third variable does</h3>
-        <div className="disambiguation-map-grid">
-          {roles.map((term) => <TermCard key={term.id} term={term} onOpen={onOpenExample} />)}
-        </div>
-      </section>
-
-      <section className="disambiguation-map-section">
-        <h3>Interaction — how a moderator bends the effect</h3>
-        <div className="disambiguation-map-grid">
-          {interactions.map((term) => <TermCard key={term.id} term={term} onOpen={onOpenExample} />)}
-        </div>
-      </section>
+      {CATEGORY_ORDER.map((category) => {
+        const terms = DISAMBIGUATION_TERMS.filter((term) => term.category === category);
+        if (terms.length === 0) return null;
+        return (
+          <section className="disambiguation-map-section" key={category}>
+            <h3>{CATEGORY_LABELS[category]}</h3>
+            <div className="disambiguation-map-grid">
+              {terms.map((term) => <TermCard key={term.id} term={term} onOpen={onOpenExample} />)}
+            </div>
+          </section>
+        );
+      })}
 
       <section className="disambiguation-map-section">
         <h3>Pitfalls — why the words slip</h3>

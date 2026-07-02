@@ -101,8 +101,21 @@ export interface VariableAdjustmentModel {
   standardize: boolean;
 }
 
+// Canonical description of a node's response support (its "family"). This is the
+// intended single source of truth for a node's type; `VariableModel.valueType` is
+// kept as a synced, derived mirror of `responseFamily.kind` (see normalizeVariableModel,
+// which enforces `valueType === responseFamily.kind`). Level labels live in
+// `VariableModel.categories`; `levels` records K for nominal/ordinal supports.
+export interface ResponseFamily {
+  kind: VariableValueType; // the family / support
+  levels: number; // K for nominal/ordinal (0 otherwise); labels live in variable.categories
+  thresholds: number[]; // ordinal cutpoints (empty otherwise)
+}
+
 export interface VariableModel {
   description: string;
+  responseFamily: ResponseFamily;
+  // Derived mirror of `responseFamily.kind`; normalize keeps the two in lockstep.
   valueType: VariableValueType;
   unit: string;
   categories: string[];
