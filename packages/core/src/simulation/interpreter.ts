@@ -94,6 +94,13 @@ export function finalizeNodeValue(value: number, mechanism: NodeMechanism, varia
     return inverseMarginalCdf(mechanism.distribution, standardNormalCdf(value));
   }
   const regularContributions = contributions.filter((contribution) => !contribution.absorbing).map((contribution) => contribution.value);
+  // Count family: the combiner is the (log) link giving the mean λ = link(η); draw a Poisson.
+  // expected_value mode returns λ, matching how binary returns its probability.
+  if (variable.valueType === "count") {
+    const lambda = Math.max(0, applyCombiner(value, mechanism, regularContributions, leakTerm));
+    if (!forceDraw && variable.simulation.mode === "expected_value") return lambda;
+    return sampleDistribution({ kind: "poisson", lambda }, rng);
+  }
   if (variable.valueType !== "binary") return applyCombiner(value, mechanism, regularContributions, leakTerm);
   const probability = binaryProbability(value, mechanism, contributions, leakTerm);
   if (!forceDraw && variable.simulation.mode === "expected_value") return probability;

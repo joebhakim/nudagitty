@@ -58,6 +58,7 @@ export interface CompiledNodePlan {
   id: string;
   out: number;
   binary: boolean;
+  count: boolean;
   isRoot: boolean;
   rootSampler: FastSampler;
   binaryNonBernoulliRoot: boolean;
@@ -89,6 +90,7 @@ export function compileModel(graph: GraphModel, spec: SimulationSpec, order: str
     if (mechanism.combiner === "copula_marginal") return null;
     const out = index.get(id) ?? 0;
     const binary = variable.valueType === "binary";
+    const count = variable.valueType === "count";
     const parents = directedParents(graph, id);
     const combiner = mechanism.combiner;
     const link: (eta: number) => number = combiner === "bounded_logistic" || combiner === "bernoulli_logit"
@@ -98,7 +100,7 @@ export function compileModel(graph: GraphModel, spec: SimulationSpec, order: str
     const riskFn: (eta: number) => number = (combiner === "bernoulli_logit" || combiner === "bounded_logistic") ? sigmoid : (eta) => clamp01(link(eta));
     if (parents.length === 0) {
       const binaryNonBernoulliRoot = binary && mechanism.distribution.kind !== "bernoulli";
-      plan.push({ id, out, binary, isRoot: true, rootSampler: compileDistributionSampler(mechanism.distribution), binaryNonBernoulliRoot, intercept: 0, edgeParents: [], edgeFns: [], absorbParents: [], absorbFns: [], interactions: [], noiseSampler: identity, riskFn, combineFn: link, variable });
+      plan.push({ id, out, binary, count, isRoot: true, rootSampler: compileDistributionSampler(mechanism.distribution), binaryNonBernoulliRoot, intercept: 0, edgeParents: [], edgeFns: [], absorbParents: [], absorbFns: [], interactions: [], noiseSampler: identity, riskFn, combineFn: link, variable });
       continue;
     }
     const edgeParents: number[] = []; const edgeFns: Array<(x: number) => number> = [];
@@ -113,7 +115,7 @@ export function compileModel(graph: GraphModel, spec: SimulationSpec, order: str
       if (edgeMechanism.kind === "absorbing") { absorbParents.push(pIdx); absorbFns.push(fn); }
       else { edgeParents.push(pIdx); edgeFns.push(fn); }
     }
-    plan.push({ id, out, binary, isRoot: false, rootSampler: identity, binaryNonBernoulliRoot: false, intercept: mechanism.intercept, edgeParents, edgeFns, absorbParents, absorbFns, interactions: mechanism.interactions.map((interaction) => compileInteractionFn(interaction, index)), noiseSampler: compileDistributionSampler(mechanism.noise), riskFn, combineFn: link, variable });
+    plan.push({ id, out, binary, count, isRoot: false, rootSampler: identity, binaryNonBernoulliRoot: false, intercept: mechanism.intercept, edgeParents, edgeFns, absorbParents, absorbFns, interactions: mechanism.interactions.map((interaction) => compileInteractionFn(interaction, index)), noiseSampler: compileDistributionSampler(mechanism.noise), riskFn, combineFn: link, variable });
   }
   return { plan, index };
 }
@@ -164,6 +166,8 @@ export function runCompiledForward(compiled: CompiledModel, spec: SimulationSpec
           for (let a = 0; a < ap.length; a += 1) pNoEvent *= 1 - clamp01(af[a]!(vals[ap[a]!]!));
           const p = (1 - pNoEvent) + pNoEvent * laterRisk;
           v = Math.floor(rng() + p);
+        } else if (n.count) {
+          v = sampleDistribution({ kind: "poisson", lambda: Math.max(0, n.combineFn(eta)) }, rng);
         } else {
           v = n.combineFn(eta);
         }
