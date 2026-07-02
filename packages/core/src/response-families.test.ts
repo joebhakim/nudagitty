@@ -69,3 +69,31 @@ describe("response families — ordinal (ordered logit)", () => {
     expect(mean(high)).toBeGreaterThan(1.3);
   });
 });
+
+describe("response families — categorical (softmax)", () => {
+  function catChildDoc(intercept: number) {
+    const doc = parseModel(`dag {
+      X
+      Y
+      X -> Y
+    }`).document;
+    const y = doc.graph.nodes.find((node) => node.id === "Y")!;
+    y.variable = normalizeVariableModel({ ...y.variable, valueType: "categorical", categories: ["a", "b", "c"] }); // K = 3
+    doc.simulation.nodes.X = normalizeNodeMechanism({ distribution: { kind: "constant", value: 0 }, noise: { kind: "constant", value: 0 } });
+    doc.simulation.nodes.Y = normalizeNodeMechanism({ combiner: "additive", intercept, noise: { kind: "constant", value: 0 } });
+    doc.simulation.edges[doc.graph.edges[0]!.id] = { ...defaultEdgeMechanism(), coefficient: 0 };
+    return doc;
+  }
+
+  it("draws integer levels 0..K-1; η shifts the category distribution", () => {
+    const lowDoc = catChildDoc(-3);
+    const highDoc = catChildDoc(3);
+    const low = runSimulation(lowDoc.graph, lowDoc.simulation).nodeStates.Y!.empirical.samples;
+    const high = runSimulation(highDoc.graph, highDoc.simulation).nodeStates.Y!.empirical.samples;
+    expect(low.every((v) => v === 0 || v === 1 || v === 2)).toBe(true);
+    expect(high.every((v) => v === 0 || v === 1 || v === 2)).toBe(true);
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    expect(mean(low)).toBeLessThan(0.6); // η = −3 concentrates on level 0
+    expect(mean(high)).toBeGreaterThan(1.4); // η = +3 concentrates on level 2
+  });
+});

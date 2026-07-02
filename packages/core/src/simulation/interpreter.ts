@@ -128,6 +128,28 @@ export function finalizeNodeValue(value: number, mechanism: NodeMechanism, varia
     for (let k = 0; k < thresholds.length; k += 1) if (u <= sigmoid((thresholds[k] ?? 0) - value)) return k;
     return thresholds.length;
   }
+  // Categorical (nominal) family: softmax draw over K unordered levels; η tilts the distribution via
+  // centered per-level loadings (a functional single-η multinomial). Follow-ups: categorical-PARENT
+  // one-hot encoding, and arbitrary per-level parent effects (full multinomial coefficients).
+  if (variable.valueType === "categorical") {
+    const K = Math.max(2, Math.floor(variable.responseFamily.levels) || 2);
+    const center = (K - 1) / 2;
+    const scale = Math.max(1, center);
+    const exps: number[] = [];
+    let maxU = -Infinity;
+    for (let k = 0; k < K; k += 1) { const u = value * ((k - center) / scale); if (u > maxU) maxU = u; exps.push(u); }
+    let total = 0;
+    for (let k = 0; k < K; k += 1) { exps[k] = Math.exp(exps[k]! - maxU); total += exps[k]!; }
+    if (!forceDraw && variable.simulation.mode === "expected_value") {
+      let best = 0;
+      for (let k = 1; k < K; k += 1) if (exps[k]! > exps[best]!) best = k;
+      return best;
+    }
+    const u = rng();
+    let cum = 0;
+    for (let k = 0; k < K; k += 1) { cum += exps[k]! / total; if (u <= cum) return k; }
+    return K - 1;
+  }
   if (variable.valueType !== "binary") return applyCombiner(value, mechanism, regularContributions, leakTerm);
   const probability = binaryProbability(value, mechanism, contributions, leakTerm);
   if (!forceDraw && variable.simulation.mode === "expected_value") return probability;

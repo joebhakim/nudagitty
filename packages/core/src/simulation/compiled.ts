@@ -61,6 +61,8 @@ export interface CompiledNodePlan {
   count: boolean;
   ordinal: boolean;
   ordinalThr: number[];
+  categorical: boolean;
+  catLevels: number;
   isRoot: boolean;
   rootSampler: FastSampler;
   binaryNonBernoulliRoot: boolean;
@@ -95,6 +97,8 @@ export function compileModel(graph: GraphModel, spec: SimulationSpec, order: str
     const count = variable.valueType === "count";
     const ordinal = variable.valueType === "ordinal";
     const ordinalThr = ordinal ? ordinalThresholds(variable.responseFamily.levels, variable.responseFamily.thresholds) : [];
+    const categorical = variable.valueType === "categorical";
+    const catLevels = categorical ? Math.max(2, Math.floor(variable.responseFamily.levels) || 2) : 0;
     const parents = directedParents(graph, id);
     const combiner = mechanism.combiner;
     const link: (eta: number) => number = combiner === "bounded_logistic" || combiner === "bernoulli_logit"
@@ -104,7 +108,7 @@ export function compileModel(graph: GraphModel, spec: SimulationSpec, order: str
     const riskFn: (eta: number) => number = (combiner === "bernoulli_logit" || combiner === "bounded_logistic") ? sigmoid : (eta) => clamp01(link(eta));
     if (parents.length === 0) {
       const binaryNonBernoulliRoot = binary && mechanism.distribution.kind !== "bernoulli";
-      plan.push({ id, out, binary, count, ordinal, ordinalThr, isRoot: true, rootSampler: compileDistributionSampler(mechanism.distribution), binaryNonBernoulliRoot, intercept: 0, edgeParents: [], edgeFns: [], absorbParents: [], absorbFns: [], interactions: [], noiseSampler: identity, riskFn, combineFn: link, variable });
+      plan.push({ id, out, binary, count, ordinal, ordinalThr, categorical, catLevels, isRoot: true, rootSampler: compileDistributionSampler(mechanism.distribution), binaryNonBernoulliRoot, intercept: 0, edgeParents: [], edgeFns: [], absorbParents: [], absorbFns: [], interactions: [], noiseSampler: identity, riskFn, combineFn: link, variable });
       continue;
     }
     const edgeParents: number[] = []; const edgeFns: Array<(x: number) => number> = [];
@@ -119,7 +123,7 @@ export function compileModel(graph: GraphModel, spec: SimulationSpec, order: str
       if (edgeMechanism.kind === "absorbing") { absorbParents.push(pIdx); absorbFns.push(fn); }
       else { edgeParents.push(pIdx); edgeFns.push(fn); }
     }
-    plan.push({ id, out, binary, count, ordinal, ordinalThr, isRoot: false, rootSampler: identity, binaryNonBernoulliRoot: false, intercept: mechanism.intercept, edgeParents, edgeFns, absorbParents, absorbFns, interactions: mechanism.interactions.map((interaction) => compileInteractionFn(interaction, index)), noiseSampler: compileDistributionSampler(mechanism.noise), riskFn, combineFn: link, variable });
+    plan.push({ id, out, binary, count, ordinal, ordinalThr, categorical, catLevels, isRoot: false, rootSampler: identity, binaryNonBernoulliRoot: false, intercept: mechanism.intercept, edgeParents, edgeFns, absorbParents, absorbFns, interactions: mechanism.interactions.map((interaction) => compileInteractionFn(interaction, index)), noiseSampler: compileDistributionSampler(mechanism.noise), riskFn, combineFn: link, variable });
   }
   return { plan, index };
 }
@@ -176,6 +180,20 @@ export function runCompiledForward(compiled: CompiledModel, spec: SimulationSpec
           const u = rng();
           let level = n.ordinalThr.length;
           for (let k = 0; k < n.ordinalThr.length; k += 1) { if (u <= sigmoid((n.ordinalThr[k] ?? 0) - eta)) { level = k; break; } }
+          v = level;
+        } else if (n.categorical) {
+          const K = n.catLevels;
+          const center = (K - 1) / 2;
+          const scale = Math.max(1, center);
+          const exps: number[] = [];
+          let maxU = -Infinity;
+          for (let k = 0; k < K; k += 1) { const u = eta * ((k - center) / scale); if (u > maxU) maxU = u; exps.push(u); }
+          let total = 0;
+          for (let k = 0; k < K; k += 1) { exps[k] = Math.exp(exps[k]! - maxU); total += exps[k]!; }
+          const uu = rng();
+          let cum = 0;
+          let level = K - 1;
+          for (let k = 0; k < K; k += 1) { cum += exps[k]! / total; if (uu <= cum) { level = k; break; } }
           v = level;
         } else {
           v = n.combineFn(eta);
