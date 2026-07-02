@@ -402,6 +402,13 @@ export function WhatIfAdvancedOutputView({ output }: { output: WhatIfAdvancedOut
 }
 
 // Plain-language + formula for each g-method row, so the table isn't just labels.
+// Shared explanation of the oracle / re-simulated "true effect" — used both as the tooltip on the
+// oracle graph facet and as the g-formula row's prose in the methods panel. Written to answer the
+// real confusion (why is one simulation "the truth" and the others "estimates"): the estimators only
+// see the data; the oracle owns the structural equations and runs them under each do().
+const ORACLE_EXPLANATION =
+  "Every other method (IPW, matching, …) only uses the data — imagine a literal spreadsheet. The oracle is different: we actually have the structural equation model (outcome ~ treatment + confounder + noise; treatment ~ confounder + noise; confounder ~ noise), so instead of fitting curves from the data we plug in the real math — simulate under each do(treatment), i.e. each treatment setting, then take the difference.";
+
 export const METHOD_GLOSSARY: Record<GMethodEstimate["id"], { plain: string; formula: string }> = {
   naive: {
     plain: "The raw crude contrast — the outcome by the treatment people actually took. This is exactly the observed-relation plot above; it ignores both confounding and censoring.",
@@ -412,7 +419,7 @@ export const METHOD_GLOSSARY: Record<GMethodEstimate["id"], { plain: string; for
     formula: "Σ_l  E[ Y | A = a, L = l ] · P(L = l)"
   },
   g_formula: {
-    plain: "Re-simulates the whole population under each complete strategy from the fitted model. With the true model this is the oracle effect.",
+    plain: ORACLE_EXPLANATION,
     formula: "E[ Y | do(A = a) ]   (sequential over time for time-varying A)"
   },
   ipw: {
@@ -563,7 +570,7 @@ export function EffectByArmGraph(props: { comparison: GMethodsComparison; outcom
     <div className="effect-facet-row">
       {facets.map((f) => (
         <div className="effect-facet" key={f.id}>
-          <div className="effect-facet-head"><strong style={{ color: f.color }}>{f.title}</strong><span>{formatOutcomeDifference(f.effect, props.outcomeScale, "")}</span></div>
+          <div className="effect-facet-head"><strong style={{ color: f.color }} className={f.id === "truth" ? "facet-title-info" : undefined} title={f.id === "truth" ? ORACLE_EXPLANATION : undefined}>{f.title}</strong><span>{formatOutcomeDifference(f.effect, props.outcomeScale, "")}</span></div>
           <div className="effect-facet-formula"><code>{f.id === "observed" ? "E[Y | X]" : "E[Y | do(X)]"}</code></div>
           <div className="effect-facet-body">
             <CategoryOutcomePlot compact points={f.points} summaries={f.summaries} xLabel={xLabel} yLabel={comparison.outcome} yDomain={yDomain} clampToDomain seriesColor={f.color} outcomeKind={binary ? "binary" : "continuous"} />

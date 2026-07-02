@@ -622,6 +622,9 @@
 .effect-facet { flex: 1 1 150px; min-width: 130px; max-width: 220px; border: 1px solid var(--line, #d7dde2); border-radius: 9px; background: #fcfdfd; padding: 9px 10px; }
 .effect-facet-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 12px; }
 .effect-facet-head strong { font-weight: 700; }
+/* The oracle facet title carries the "why is this the truth" explanation as a hover tooltip; the
+   dotted underline signals it's hoverable (native title — no glyph that can misrender). */
+.effect-facet-head strong.facet-title-info { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
 .effect-facet-head span { font-variant-numeric: tabular-nums; font-weight: 700; color: #475d63; }
 .effect-facet-formula { margin: 1px 0 4px; font-size: 10.5px; color: #7a838d; }
 .effect-facet-formula code { font-family: var(--font-mono, ui-monospace, monospace); }
