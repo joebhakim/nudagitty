@@ -22,6 +22,24 @@ export function binaryOutcomeSummaries(points: ScatterPoint[], xLabel: string): 
   ];
 }
 
+// K-level (categorical / ordinal) exposure × continuous outcome: one grouped summary per level,
+// grouped by the floored x (the level index 0..K-1). Generalizes the 2-group binary case.
+export function multiLevelContinuousSummaries(points: ScatterPoint[], labels: string[]): CategoryOutcomeSummary[] {
+  return labels.map((label, level) => levelContinuousSummary(points, level, label));
+}
+
+function levelContinuousSummary(points: ScatterPoint[], level: number, label: string): CategoryOutcomeSummary {
+  const groupPoints = points.filter((point) => Math.floor(point.x) === level);
+  const values: number[] = [];
+  const weights: number[] = [];
+  for (const point of groupPoints) { if (point.weight <= 0) continue; values.push(point.y); weights.push(point.weight); }
+  const tone: "treated" | "untreated" = level % 2 === 0 ? "untreated" : "treated";
+  const { mean, variance, nEff } = weightedMoments(values, weights, { varianceDivisor: "n" });
+  if (mean === null || variance === null || nEff === null) return { group: level, label, tone, mean: null, lower: null, upper: null, nEff: null, points: groupPoints };
+  const se = nEff > 1 ? Math.sqrt(variance / nEff) : Number.NaN;
+  return { group: level, label, tone, mean, lower: Number.isFinite(se) ? mean - 1.96 * se : null, upper: Number.isFinite(se) ? mean + 1.96 * se : null, nEff, points: groupPoints };
+}
+
 export function categoryOutcomeDomain(base: [number, number], summaries: CategoryOutcomeSummary[], binary: boolean): [number, number] {
   if (binary) return [0, 1];
   const values = [base[0], base[1]];
@@ -189,7 +207,7 @@ function binaryContinuousPointsForGroup(points: ScatterPoint[], groupValue: 0 | 
   return points.filter((point) => point.weight > 0 && Number.isFinite(point.y) && coerceBinary(point.x) === groupValue);
 }
 
-export function categoryOutcomeGroupTickLabel(label: string, group: 0 | 1, compact: boolean): string {
+export function categoryOutcomeGroupTickLabel(label: string, group: number, compact: boolean): string {
   const equalsIndex = label.lastIndexOf("=");
   if (compact) return equalsIndex >= 0 ? label.slice(equalsIndex + 1) : String(group);
   if (label.length <= 20) return label;
@@ -210,7 +228,7 @@ function abbreviateLabel(value: string, limit: number): string {
   return `${value.slice(0, Math.max(0, limit - 3))}...`;
 }
 
-export function deterministicCategoryOutcomeJitter(index: number, groupValue: 0 | 1, salt: number): number {
+export function deterministicCategoryOutcomeJitter(index: number, groupValue: number, salt: number): number {
   // Same offsets as before: the previous private helper applied `(seed + 1) * 12.9898`
   // and scale 43758.5453 to `seed = index + group*1009 + salt*7919`; that is folded into
   // the canonical hash's `seed`/`scale` arguments here (amplitude stays at the call site).

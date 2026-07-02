@@ -8,7 +8,8 @@ import {
   binaryOutcomeSummaries,
   binnedBinaryRiskSummaries,
   categoryOutcomeDomain,
-  continuousOutcomeSummaries
+  continuousOutcomeSummaries,
+  multiLevelContinuousSummaries
 } from "../charts/CategoryOutcomePlot";
 import type { RiskBin, ScatterPoint } from "../charts/CategoryOutcomePlot";
 import { ScatterChart } from "../charts/ScatterChart";
@@ -66,6 +67,17 @@ export function ScatterplotPanel(props: {
   const yLabel = yNode ? nodeOutputLabel(yNode) : pair.y;
   const xIsBinary = xNode !== undefined && normalizeVariableModel(xNode.variable).valueType === "binary";
   const yIsBinary = yNode !== undefined && normalizeVariableModel(yNode.variable).valueType === "binary";
+  // A categorical / ordinal exposure (K small levels) × continuous outcome renders as K grouped
+  // means (the K-arm generalization of the binary-continuous view). Categorical outcomes and
+  // categorical × binary remain follow-ups.
+  const xFamily = xNode ? normalizeVariableModel(xNode.variable) : null;
+  const categoricalExposureLevels = xFamily && (xFamily.valueType === "categorical" || xFamily.valueType === "ordinal")
+    ? Math.max(2, Math.min(8, Math.floor(xFamily.responseFamily.levels) || 0)) : 0;
+  const categoricalExposureContinuous = categoricalExposureLevels >= 2 && yNode !== undefined && !yIsBinary;
+  const categoricalSummaries = categoricalExposureContinuous && xFamily
+    ? multiLevelContinuousSummaries(points, Array.from({ length: categoricalExposureLevels }, (_, i) => xFamily.categories[i] ?? `${i}`))
+    : [];
+  const categoricalYDomain = categoricalExposureContinuous ? categoryOutcomeDomain(yDomain, categoricalSummaries, false) : yDomain;
   const binaryPair = xIsBinary && yIsBinary;
   const binaryContinuousPair = xIsBinary && !yIsBinary;
   const continuousBinaryPair = !xIsBinary && yIsBinary;
@@ -159,6 +171,8 @@ export function ScatterplotPanel(props: {
         <StratifiedContrastView contrast={stratifiedContrast} operation={stratifyOperation} xLabel={xLabel} yLabel={yLabel} />
       ) : continuousBinaryPair ? (
         <ContinuousBinaryPairView summary={pairSummary} xLabel={xLabel} yLabel={yLabel} showStats={demoVariant} />
+      ) : categoricalExposureContinuous ? (
+        <CategoryOutcomePlot points={points} summaries={categoricalSummaries} xLabel={xLabel} yLabel={yLabel} yDomain={categoricalYDomain} outcomeKind="continuous" />
       ) : (
         <>
           <ScatterChart

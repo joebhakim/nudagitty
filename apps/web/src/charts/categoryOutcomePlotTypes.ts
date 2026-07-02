@@ -3,7 +3,7 @@ export type ScatterPoint = { x: number; y: number; weight: number; index: number
 export type CategoryOutcomeKind = "binary" | "continuous";
 
 export type CategoryOutcomeSummary = {
-  group: 0 | 1;
+  group: number;
   label: string;
   tone: "treated" | "untreated";
   mean: number | null;

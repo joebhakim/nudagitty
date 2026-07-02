@@ -26,6 +26,7 @@ export {
   binnedBinaryRiskSummaries,
   categoryOutcomeDomain,
   continuousOutcomeSummaries,
+  multiLevelContinuousSummaries,
   weightedPointMoments,
   wilsonInterval
 } from "./categoryOutcomePlotHelpers";
@@ -123,11 +124,13 @@ export function CategoryOutcomePlot(props: {
     insetY: shortChart ? 7 : 12
   });
   const { plot, yScale, anchors } = frame;
-  const groupX = (group: 0 | 1) => plot.x + plot.width * (group === 0 ? 0.32 : 0.68);
+  const groupX = (group: number) => (props.summaries.length <= 2
+    ? plot.x + plot.width * (group === 0 ? 0.32 : 0.68)
+    : plot.x + plot.width * ((group + 1) / (props.summaries.length + 1)));
   const maxWeight = Math.max(...props.points.map((point) => point.weight), 1);
   const formatOutcome = (value: number) => isBinary ? formatPercent(value) : formatValue(value);
   const ticks = niceTicks(yMin, yMax, shortChart || props.compact ? 2 : 3);
-  const pointX = (point: ScatterPoint, group: 0 | 1) => groupX(group) + deterministicCategoryOutcomeJitter(point.index, group, 29) * (props.compact ? 22 : 30);
+  const pointX = (point: ScatterPoint, group: number) => groupX(group) + deterministicCategoryOutcomeJitter(point.index, group, 29) * (props.compact ? 22 : 30);
 
   return (
     <div ref={wrapRef} className={`category-outcome-plot-wrap${props.compact ? " compact" : ""}`}>
@@ -205,7 +208,7 @@ export function CategoryOutcomePlot(props: {
       {(props.overlays ?? []).map((overlay, k) => {
         const n = (props.overlays ?? []).length;
         const off = ((k - (n - 1) / 2) * (props.compact ? 9 : 11)) + (props.compact ? 13 : 16); // dodge to one side of the observed center
-        const at = (g: { group: 0 | 1; mean: number }) => ({ x: groupX(g.group) + off, y: yScale(g.mean) });
+        const at = (g: { group: number; mean: number }) => ({ x: groupX(g.group) + off, y: yScale(g.mean) });
         const sw = overlay.emphasis ? 2 : 1.2;
         return (
           <g className="category-outcome-overlay" key={overlay.id}>
