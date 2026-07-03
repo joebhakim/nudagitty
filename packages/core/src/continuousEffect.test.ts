@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { exampleDocument } from "./examples";
+import { parseModel } from "./parser";
+import { setExampleSampleSize, setLinearCoefficient, setNode, setVariable } from "./examples/builders";
 import { runSimulation } from "./simulation";
 import { analyzeContinuousEffect } from "./continuousEffect";
 
@@ -50,5 +52,44 @@ describe("analyzeContinuousEffect", () => {
     const gcomp = comparison!.methods.find((m) => m.id === "g-computation")!;
     const [p10, p90] = comparison!.loHiDose;
     expect(gcomp.standardized).toBeCloseTo(gcomp.slope * (p90 - p10), 6);
+  });
+});
+
+// A COUNT exposure (drawn Poisson) is ordered-numeric, so it rides the same dose-
+// response estimator — proving the ordered-family generalization beyond continuous.
+describe("analyzeContinuousEffect — count exposure", () => {
+  const document = parseModel(`dag {
+    Stress [adjusted]
+    Coffee [exposure]
+    Productivity [outcome]
+    Stress -> Coffee
+    Stress -> Productivity
+    Coffee -> Productivity
+  }`).document;
+  setExampleSampleSize(document, 6000);
+  setVariable(document, "Stress", { valueType: "continuous", unit: "z" });
+  setVariable(document, "Coffee", { valueType: "count", unit: "cups" });
+  setVariable(document, "Productivity", { valueType: "continuous", unit: "score" });
+  setNode(document, "Stress", { distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } });
+  setNode(document, "Coffee", { combiner: "poisson_log", intercept: Math.log(3), noise: { kind: "constant", value: 0 } });
+  setNode(document, "Productivity", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setLinearCoefficient(document, "Stress", "Coffee", 0.35);        // more stress → more coffee (log-mean)
+  setLinearCoefficient(document, "Stress", "Productivity", -2.2);  // stress hurts productivity (confounding)
+  setLinearCoefficient(document, "Coffee", "Productivity", 0.5);   // TRUE effect: coffee helps
+  const result = runSimulation(document.graph, document.simulation);
+  const comparison = analyzeContinuousEffect(document.graph, document.simulation, result, { x: "Coffee", y: "Productivity" });
+
+  it("treats the count exposure as an ordered dose and returns all five methods", () => {
+    expect(comparison).not.toBeNull();
+    expect(comparison!.methods.map((m) => m.id)).toEqual(["crude", "g-computation", "gps-ipw", "aipw", "oracle"]);
+  });
+
+  it("g-computation recovers the true +0.5/cup effect the crude slope misses", () => {
+    const oracle = comparison!.methods.find((m) => m.id === "oracle")!;
+    const gcomp = comparison!.methods.find((m) => m.id === "g-computation")!;
+    const crude = comparison!.methods.find((m) => m.id === "crude")!;
+    expect(oracle.slope).toBeGreaterThan(0.2);                    // truth is positive
+    expect(Math.abs(gcomp.slope - oracle.slope)).toBeLessThan(0.15);
+    expect(Math.abs(crude.slope - oracle.slope)).toBeGreaterThan(Math.abs(gcomp.slope - oracle.slope)); // crude more biased
   });
 });
