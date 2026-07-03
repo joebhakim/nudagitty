@@ -153,6 +153,7 @@ import { useOutputComputations } from "./hooks/useOutputComputations";
 import { useAppTelemetry } from "./hooks/useAppTelemetry";
 import { useComputationWorkers } from "./hooks/useComputationWorkers";
 import { useUnifiedAdjustment } from "./hooks/useUnifiedAdjustment";
+import { useContinuousEffect } from "./hooks/useContinuousEffect";
 import { useBasicOutputs } from "./hooks/useBasicOutputs";
 import { useOverlapDiagnostic } from "./hooks/useOverlapDiagnostic";
 import {
@@ -333,6 +334,7 @@ export function App() {
   const showPairwiseScatter = !showAdjustedOutputColumn || !exposureBinaryForLayout;
 
   const { unifiedAdjustment, demoUnifiedAdjustment } = useUnifiedAdjustment(activeExample, computationDocument, covariateBasis, simulationDerived, activeOutputPair, defaultOutputPair);
+  const { continuousEffect } = useContinuousEffect(activeExample, document.graph, document.simulation, simulation, activeOutputPair);
   const { overlapDiagnostic, positivity } = useOverlapDiagnostic(computationDocument);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
@@ -901,6 +903,11 @@ export function App() {
                     binaryOutput={binaryAdjustmentOutput}
                     continuousOutput={binaryContinuousAdjustmentOutput}
                     unified={unifiedAdjustment}
+                    continuousEffect={continuousEffect ? {
+                      comparison: continuousEffect,
+                      xLabel: document.graph.nodes.find((node) => node.id === continuousEffect.xId)?.label ?? continuousEffect.xId,
+                      yLabel: document.graph.nodes.find((node) => node.id === continuousEffect.yId)?.label ?? continuousEffect.yId
+                    } : null}
                     basis={covariateBasis}
                     onBasisChange={setCovariateBasis}
                     pending={resultsPending}

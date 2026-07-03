@@ -1,4 +1,5 @@
-import type { CovariateBasis, GMethodsComparison } from "@nudagitty/core";
+import type { ContinuousEffectComparison, CovariateBasis, GMethodsComparison } from "@nudagitty/core";
+import { ContinuousEffectReadout } from "../outputs/ContinuousEffectReadout";
 import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
 import { AuxEstimandStructure, UnifiedAdjustmentReadout, computeStructuralDiagnosis } from "../outputs/modules";
 import type { ComputedCompletedOutput } from "../outputs/modules";
@@ -96,6 +97,7 @@ export function AdjustedOutputPanel(props: {
   binaryOutput: BinaryAdjustmentOutput | null;
   continuousOutput: BinaryContinuousAdjustmentOutput | null;
   unified?: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; points?: ScatterPoint[]; treatmentId?: string } | null;
+  continuousEffect?: { comparison: ContinuousEffectComparison; xLabel: string; yLabel: string } | null;
   basis?: CovariateBasis;
   onBasisChange?: (basis: CovariateBasis) => void;
   pending?: ResultPendingState;
@@ -103,6 +105,10 @@ export function AdjustedOutputPanel(props: {
 }) {
   const unifiedPanel = props.unified
     ? <UnifiedAdjustmentReadout comparison={props.unified.comparison} outcomeScale={props.unified.outcomeScale} outcomeUnit={props.unified.outcomeUnit} points={props.unified.points} treatmentId={props.unified.treatmentId} basis={props.basis} onBasisChange={props.onBasisChange} />
+    : null;
+  // Continuous-exposure analog of the unified panel: the dose-response method comparison.
+  const continuousPanel = props.continuousEffect
+    ? <ContinuousEffectReadout comparison={props.continuousEffect.comparison} xLabel={props.continuousEffect.xLabel} yLabel={props.continuousEffect.yLabel} />
     : null;
   const adjustedNodes = props.binaryOutput?.adjustedNodes ?? props.continuousOutput?.adjustedNodes ?? [];
   const binaryOutput = props.binaryOutput;
@@ -123,7 +129,7 @@ export function AdjustedOutputPanel(props: {
         {pendingNotice}
         {showcaseGuide && <ShowcaseGuideCard guide={showcaseGuide} />}
         {disambiguationCard}
-        {showGenericAdjustmentCards && unifiedPanel}
+        {showGenericAdjustmentCards && (unifiedPanel ?? continuousPanel)}
         <CompletedOutputPanel moduleId={effectiveModuleId} computedOutput={props.computedOutput} hideOracle={props.hideOracle} />
         {showGenericAdjustmentCards && effectiveModuleId !== "structural-diagnosis" && <AuxEstimandStructure diagnosis={props.auxDiagnosis ?? null} />}
       </div>
@@ -135,6 +141,15 @@ export function AdjustedOutputPanel(props: {
         {pendingNotice}
         {disambiguationCard}
         {unifiedPanel}
+      </div>
+    );
+  }
+  if (continuousPanel) {
+    return (
+      <div className="adjusted-output-stack" aria-busy={resultPendingActive(props.pending)}>
+        {pendingNotice}
+        {disambiguationCard}
+        {continuousPanel}
       </div>
     );
   }
