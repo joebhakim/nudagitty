@@ -29,6 +29,7 @@ import {
   Share2,
   Sigma,
   Blend,
+  CircleDashed,
   BookOpen,
   Trash2,
   Undo2,
@@ -980,6 +981,7 @@ export function App() {
             <IconButton label="Data-generating process" pressed={showDgp} onClick={() => setShowDgp((open) => !open)}><Sigma size={18} /></IconButton>
             <IconButton label="Glossary" pressed={showGlossary} onClick={() => setShowGlossary((open) => !open)}><BookOpen size={18} /></IconButton>
             <IconButton label="Overlap / positivity" pressed={showOverlap} badge={positivity === "ok" ? null : positivity} onClick={() => setShowOverlap((open) => !open)}><Blend size={18} /></IconButton>
+            <IconButton label="Implicit noise nodes" pressed={showNoiseNodes} onClick={() => setShowNoiseNodes(!showNoiseNodes)}><CircleDashed size={18} /></IconButton>
             <input
               ref={snapshotInputRef}
               type="file"
@@ -1133,7 +1135,6 @@ export function App() {
                 <Checkbox label="causal paths" checked={showCausal} onChange={setShowCausal} />
                 <Checkbox label="biasing paths" checked={showBiasing} onChange={setShowBiasing} />
                 <Checkbox label="ancestral structure" checked={showAncestors} onChange={setShowAncestors} />
-                <Checkbox label="implicit noise nodes" checked={showNoiseNodes} onChange={setShowNoiseNodes} />
               </Section>
               <Section title="Simulation Diagnostics" pending={simulationPending}>
                 <SimulationDiagnosticsPanel
