@@ -1,5 +1,6 @@
-import type { ContinuousEffectComparison, CovariateBasis, GMethodsComparison } from "@nudagitty/core";
+import type { CategoricalEffectComparison, ContinuousEffectComparison, CovariateBasis, GMethodsComparison } from "@nudagitty/core";
 import { ContinuousEffectReadout } from "../outputs/ContinuousEffectReadout";
+import { CategoricalEffectReadout } from "../outputs/CategoricalEffectReadout";
 import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
 import { AuxEstimandStructure, UnifiedAdjustmentReadout, computeStructuralDiagnosis } from "../outputs/modules";
 import type { ComputedCompletedOutput } from "../outputs/modules";
@@ -98,6 +99,7 @@ export function AdjustedOutputPanel(props: {
   continuousOutput: BinaryContinuousAdjustmentOutput | null;
   unified?: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; points?: ScatterPoint[]; treatmentId?: string } | null;
   continuousEffect?: { comparison: ContinuousEffectComparison; xLabel: string; yLabel: string } | null;
+  categoricalEffect?: { comparison: CategoricalEffectComparison; xLabel: string; yLabel: string } | null;
   basis?: CovariateBasis;
   onBasisChange?: (basis: CovariateBasis) => void;
   pending?: ResultPendingState;
@@ -106,10 +108,13 @@ export function AdjustedOutputPanel(props: {
   const unifiedPanel = props.unified
     ? <UnifiedAdjustmentReadout comparison={props.unified.comparison} outcomeScale={props.unified.outcomeScale} outcomeUnit={props.unified.outcomeUnit} points={props.unified.points} treatmentId={props.unified.treatmentId} basis={props.basis} onBasisChange={props.onBasisChange} />
     : null;
-  // Continuous-exposure analog of the unified panel: the dose-response method comparison.
+  // Non-binary-exposure analogs of the unified panel: the dose-response method
+  // comparison (ordered exposures) or the per-level multi-arm table (categorical).
   const continuousPanel = props.continuousEffect
     ? <ContinuousEffectReadout comparison={props.continuousEffect.comparison} xLabel={props.continuousEffect.xLabel} yLabel={props.continuousEffect.yLabel} />
-    : null;
+    : props.categoricalEffect
+      ? <CategoricalEffectReadout comparison={props.categoricalEffect.comparison} xLabel={props.categoricalEffect.xLabel} yLabel={props.categoricalEffect.yLabel} />
+      : null;
   const adjustedNodes = props.binaryOutput?.adjustedNodes ?? props.continuousOutput?.adjustedNodes ?? [];
   const binaryOutput = props.binaryOutput;
   const continuousOutput = props.continuousOutput;

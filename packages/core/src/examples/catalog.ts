@@ -4,7 +4,7 @@ import { datasetColumnIndex, datasetRows } from "../datasets";
 import { defaultEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "../graph";
 import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeInteraction, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "../types";
 import { HIV_CD4_SEQUENCE_VISITS, UNIT_NORMAL, ZERO_NOISE, addCopulaCovariates, addPlasmodeCovariates, applyWhatIfMetadata, binaryStrategies, dynamicLowRiskStrategy, exampleSeed, layoutExampleDocument, markExposures, prepareDocument, riskEstimand, setBinaryVariable, setContinuousVariable, setEdgeMechanism, setExampleSampleSize, setLinearCoefficient, setLogitNode, setNode, setSelection, setSmoothGate, setVariable, staticStrategy, survivalSpec } from "./builders";
-import { configureBerksonHospital, configureBirthweightParadox, configureCaseControlSelection, configureCatsHighriseSyndrome, configureCausalMlRefutation, configureChessIntelligencePractice, configureChessIntelligenceSimpleFlip, configureCollegeEarnings, configureContinuousDoseResponse, configureEducationMediation, configureErVisitsCount, configureEffectModificationCrossover, configureEffectModificationOrdinal, configureEpistasisCoatColor, configureFlexibleAdjustment, configureFrontDoorSmoking, configureGaltonExample, configureIcuMortalityTriage, configureIncrementalityUplift, configureInstrumentalEncouragement, configureJohnSnowCholera, configureLalondeGenerative, configureLalondeIndependent, configureLalondePlasmode, configureLalondeReplay, configureLordsParadox, configureMBiasAdjustment, configureMeasurementErrorLatent, configureMediationDirectTotal, configureModeratedMediation, configureObesityParadox, configureOpsRootCause, configureOtaGeneProgramTraits, configurePolicingEncounters, configurePolicyEventStudy, configurePositivityCorrelatedConfounders, configureRestaurantCollider, configureSimpsonSeverity, configureTargetTrialFollowup, configureTutoringScores, configureWhatIfCensoringIpcw, configureWhatIfDynamicGFormula, configureWhatIfHazardSelection, configureWhatIfHivCd4Variants, configureWhatIfIpwPseudopopulation, configureWhatIfNhefsMortalitySurvival, configureWhatIfNhefsWeightGain, configureWhatIfNhefsWeightGainConfounderDag, configureWhatIfNhefsWeightGainCopula, configureWhatIfNhefsWeightGainGenerative, configureWhatIfNhefsWeightGainPlasmode, configureWhatIfNhefsWeightGainPositivity, configureWhatIfSnaftSurvival, configureWhatIfTreatmentFeedback, configureWhatIfWeightGainGEstimation } from "./configurators";
+import { configureBerksonHospital, configureBirthweightParadox, configureCaseControlSelection, configureCategoricalRegimen, configureCatsHighriseSyndrome, configureCausalMlRefutation, configureChessIntelligencePractice, configureChessIntelligenceSimpleFlip, configureCollegeEarnings, configureContinuousDoseResponse, configureEducationMediation, configureErVisitsCount, configureEffectModificationCrossover, configureEffectModificationOrdinal, configureEpistasisCoatColor, configureFlexibleAdjustment, configureFrontDoorSmoking, configureGaltonExample, configureIcuMortalityTriage, configureIncrementalityUplift, configureInstrumentalEncouragement, configureJohnSnowCholera, configureLalondeGenerative, configureLalondeIndependent, configureLalondePlasmode, configureLalondeReplay, configureLordsParadox, configureMBiasAdjustment, configureMeasurementErrorLatent, configureMediationDirectTotal, configureModeratedMediation, configureObesityParadox, configureOpsRootCause, configureOtaGeneProgramTraits, configurePolicingEncounters, configurePolicyEventStudy, configurePositivityCorrelatedConfounders, configureRestaurantCollider, configureSimpsonSeverity, configureTargetTrialFollowup, configureTutoringScores, configureWhatIfCensoringIpcw, configureWhatIfDynamicGFormula, configureWhatIfHazardSelection, configureWhatIfHivCd4Variants, configureWhatIfIpwPseudopopulation, configureWhatIfNhefsMortalitySurvival, configureWhatIfNhefsWeightGain, configureWhatIfNhefsWeightGainConfounderDag, configureWhatIfNhefsWeightGainCopula, configureWhatIfNhefsWeightGainGenerative, configureWhatIfNhefsWeightGainPlasmode, configureWhatIfNhefsWeightGainPositivity, configureWhatIfSnaftSurvival, configureWhatIfTreatmentFeedback, configureWhatIfWeightGainGEstimation } from "./configurators";
 
 export const EXAMPLE_DOMAINS = [
   { id: "classic", label: "Classic DAG patterns", description: "Compact examples for teaching and fast bias checks." },
@@ -358,6 +358,20 @@ export const EXAMPLES: ExampleModel[] = [
   Illness -> Program
   Illness -> Visits
   Program -> Visits
+}`
+  },
+  {
+    id: "categorical-regimen",
+    title: "Categorical treatment: three drug regimens",
+    domain: "classic",
+    summary: "The treatment is one of three UNORDERED regimens (A/B/C), not a dose or a 0/1 switch. Sicker patients are steered to the later regimens AND recover worse, so the crude per-regimen means are confounded. The output is a multi-arm table — each regimen's do()-effect standardized over severity, contrasted against A — where g-computation and the oracle agree while the crude column misleads.",
+    code: `dag {
+  Severity [adjusted,label="baseline severity",pos="-0.5,-1.5"]
+  Regimen [exposure,label="drug regimen",pos="-1.3,0.0"]
+  Recovery [outcome,label="recovery score",pos="1.3,0.8"]
+  Severity -> Regimen
+  Severity -> Recovery
+  Regimen -> Recovery
 }`
   },
   {
@@ -2885,6 +2899,7 @@ function configureClassicExample(document: GraphDocument, id: string): GraphDocu
   if (id === "restaurant-collider") return configureRestaurantCollider(next);
   if (id === "positivity-correlated-confounders") return configurePositivityCorrelatedConfounders(next);
   if (id === "continuous-dose-response") return configureContinuousDoseResponse(next);
+  if (id === "categorical-regimen") return configureCategoricalRegimen(next);
   if (id === "er-visits-count") return configureErVisitsCount(next);
   if (id === "birthweight-paradox") return configureBirthweightParadox(next);
   if (id === "obesity-paradox") return configureObesityParadox(next);

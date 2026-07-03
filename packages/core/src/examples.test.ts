@@ -21,6 +21,7 @@ describe("example catalog", () => {
       "positivity-correlated-confounders",
       "continuous-dose-response",
       "er-visits-count",
+      "categorical-regimen",
       "birthweight-paradox",
       "obesity-paradox",
       "cats-highrise-syndrome",

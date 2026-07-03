@@ -334,7 +334,7 @@ export function App() {
   const showPairwiseScatter = !showAdjustedOutputColumn || !exposureBinaryForLayout;
 
   const { unifiedAdjustment, demoUnifiedAdjustment } = useUnifiedAdjustment(activeExample, computationDocument, covariateBasis, simulationDerived, activeOutputPair, defaultOutputPair);
-  const { continuousEffect } = useContinuousEffect(activeExample, document.graph, document.simulation, simulation, activeOutputPair);
+  const { continuousEffect, categoricalEffect } = useContinuousEffect(activeExample, document.graph, document.simulation, simulation, activeOutputPair);
   const { overlapDiagnostic, positivity } = useOverlapDiagnostic(computationDocument);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
@@ -907,6 +907,11 @@ export function App() {
                       comparison: continuousEffect,
                       xLabel: document.graph.nodes.find((node) => node.id === continuousEffect.xId)?.label ?? continuousEffect.xId,
                       yLabel: document.graph.nodes.find((node) => node.id === continuousEffect.yId)?.label ?? continuousEffect.yId
+                    } : null}
+                    categoricalEffect={categoricalEffect ? {
+                      comparison: categoricalEffect,
+                      xLabel: document.graph.nodes.find((node) => node.id === categoricalEffect.xId)?.label ?? categoricalEffect.xId,
+                      yLabel: document.graph.nodes.find((node) => node.id === categoricalEffect.yId)?.label ?? categoricalEffect.yId
                     } : null}
                     basis={covariateBasis}
                     onBasisChange={setCovariateBasis}

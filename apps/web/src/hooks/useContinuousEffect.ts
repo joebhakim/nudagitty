@@ -1,22 +1,28 @@
 import { useMemo } from "react";
-import { analyzeContinuousEffect } from "@nudagitty/core";
-import type { ContinuousEffectComparison, ExampleModel, GraphModel, SimulationResult, SimulationSpec } from "@nudagitty/core";
+import { analyzeCategoricalEffect, analyzeContinuousEffect } from "@nudagitty/core";
+import type { CategoricalEffectComparison, ContinuousEffectComparison, ExampleModel, GraphModel, SimulationResult, SimulationSpec } from "@nudagitty/core";
 import type { ScatterPair } from "../shared/pairs";
 
-// The continuous-exposure analog of useUnifiedAdjustment: for an ordered-numeric
-// exposure (which the binary g-methods panel skips), produce the dose-response
-// effect comparison. Returns null for binary exposures (the unified panel handles
-// those) and for what-if examples (they own their output module).
+// The non-binary-exposure analog of useUnifiedAdjustment: for an exposure the binary
+// g-methods panel skips, produce the family-appropriate effect comparison — a dose-
+// response for ordered-numeric exposures, or a per-level multi-arm comparison for a
+// categorical (unordered) exposure. Both are null for binary exposures (the unified
+// panel handles those) and for what-if examples (they own their output module).
 export function useContinuousEffect(
   activeExample: ExampleModel | null,
   graph: GraphModel,
   spec: SimulationSpec,
   simulation: SimulationResult,
   activeOutputPair: ScatterPair
-): { continuousEffect: ContinuousEffectComparison | null } {
+): { continuousEffect: ContinuousEffectComparison | null; categoricalEffect: CategoricalEffectComparison | null } {
+  const suppress = activeExample?.outputModule?.startsWith("what-if-") ?? false;
   const continuousEffect = useMemo(() => {
-    if (activeExample?.outputModule?.startsWith("what-if-")) return null;
+    if (suppress) return null;
     return analyzeContinuousEffect(graph, spec, simulation, activeOutputPair);
-  }, [activeExample, graph, spec, simulation, activeOutputPair]);
-  return { continuousEffect };
+  }, [suppress, graph, spec, simulation, activeOutputPair]);
+  const categoricalEffect = useMemo(() => {
+    if (suppress) return null;
+    return analyzeCategoricalEffect(graph, spec, simulation, activeOutputPair);
+  }, [suppress, graph, spec, simulation, activeOutputPair]);
+  return { continuousEffect, categoricalEffect };
 }

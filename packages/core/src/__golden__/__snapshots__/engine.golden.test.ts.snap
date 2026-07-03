@@ -74,6 +74,28 @@ exports[`engine golden > case-control-selection — simulation + do-contrasts ar
 }
 `;
 
+exports[`engine golden > categorical-regimen — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Regimen↑)−do(↓) on Recovery": 3.2,
+  },
+  "nodes": {
+    "Recovery": {
+      "mean": 7.64179,
+      "sd": 2.996107,
+    },
+    "Regimen": {
+      "mean": 1.0024,
+      "sd": 0.872464,
+    },
+    "Severity": {
+      "mean": -0.017656,
+      "sd": 0.998842,
+    },
+  },
+}
+`;
+
 exports[`engine golden > cats-highrise-syndrome — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {

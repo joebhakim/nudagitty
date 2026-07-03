@@ -285,6 +285,19 @@ export function configureErVisitsCount(document: GraphDocument): GraphDocument {
   return document;
 }
 
+export function configureCategoricalRegimen(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 5000);
+  setContinuousVariable(document, "Severity", "Baseline illness severity. Sicker patients are steered to the later regimens AND recover worse — the confounding.", "severity z-score");
+  setVariable(document, "Regimen", { valueType: "categorical", categories: ["regimen A", "regimen B", "regimen C"], description: "Which of three UNORDERED drug regimens the patient received — a categorical treatment, not a dose.", unit: "" });
+  setContinuousVariable(document, "Recovery", "Recovery score at follow-up.", "score");
+  setNode(document, "Severity", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Recovery", { intercept: 6, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setLinearCoefficient(document, "Severity", "Regimen", 1.3);   // sicker → steered to a later regimen (the confounding channel)
+  setLinearCoefficient(document, "Severity", "Recovery", -3.5); // sicker → worse recovery (confounding)
+  setLinearCoefficient(document, "Regimen", "Recovery", 1.6);   // per-level lift: each later regimen genuinely helps more (the truth)
+  return document;
+}
+
 export function configureBirthweightParadox(document: GraphDocument): GraphDocument {
   setBinaryVariable(document, "Smoking", "Maternal smoking exposure.", "smokes");
   setContinuousVariable(document, "Frailty", "Latent infant frailty that lowers birthweight and raises mortality.", "frailty z-score", ["latent"]);
