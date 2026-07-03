@@ -3,25 +3,26 @@ import { TactileNumberField } from "../controls";
 import { defaultDistribution } from "../compute/distributionPlot";
 import { formatPercent } from "../shared/formatting";
 
-export function DistributionEditor(props: { label: string; distribution: NodeDistribution; onChange: (distribution: NodeDistribution) => void }) {
+const DISTRIBUTION_KINDS: Array<[NodeDistribution["kind"], string]> = [
+  ["constant", "constant"], ["normal", "normal"], ["lognormal", "lognormal"], ["uniform", "uniform"],
+  ["bernoulli", "bernoulli"], ["poisson", "poisson"], ["beta", "beta"], ["laplace", "laplace"],
+  ["student_t", "Student-t"], ["gamma", "gamma"], ["exponential", "exponential"], ["categorical", "categorical"]
+];
+
+// `allowedKinds`, when passed, restricts the picker to the distributions that match the node's
+// response family (e.g. a binary node only offers bernoulli) — the current kind is always kept so it
+// never vanishes. Omit it (the noise editor) to offer every kind.
+export function DistributionEditor(props: { label: string; distribution: NodeDistribution; onChange: (distribution: NodeDistribution) => void; allowedKinds?: NodeDistribution["kind"][] }) {
   const distribution = props.distribution;
+  const kinds = props.allowedKinds
+    ? DISTRIBUTION_KINDS.filter(([kind]) => props.allowedKinds!.includes(kind) || kind === distribution.kind)
+    : DISTRIBUTION_KINDS;
   return (
     <div className="distribution-editor">
       <label className="field">
         <span>{props.label}</span>
         <select value={distribution.kind} onChange={(event) => props.onChange(defaultDistribution(event.target.value as NodeDistribution["kind"]))}>
-          <option value="constant">constant</option>
-          <option value="normal">normal</option>
-          <option value="lognormal">lognormal</option>
-          <option value="uniform">uniform</option>
-          <option value="bernoulli">bernoulli</option>
-          <option value="poisson">poisson</option>
-          <option value="beta">beta</option>
-          <option value="laplace">laplace</option>
-          <option value="student_t">Student-t</option>
-          <option value="gamma">gamma</option>
-          <option value="exponential">exponential</option>
-          <option value="categorical">categorical</option>
+          {kinds.map(([kind, label]) => <option value={kind} key={kind}>{label}</option>)}
         </select>
       </label>
       {distribution.kind === "constant" && <TactileNumberField

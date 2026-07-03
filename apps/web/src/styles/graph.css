@@ -528,7 +528,7 @@
 .noise-satellite { cursor: help; }
 .noise-satellite line { stroke: #9aa7b3; stroke-width: 1.2px; stroke-dasharray: 3 2; }
 .noise-satellite circle { fill: #fff; stroke: #9aa7b3; stroke-width: 1.2px; stroke-dasharray: 3 2; }
-.noise-satellite text { fill: #6b7782; font-size: 12px; font-style: italic; text-anchor: middle; }
+.noise-satellite text { fill: #6b7782; font-size: 9px; font-style: italic; text-anchor: middle; }
 
 .node-label {
   paint-order: stroke;
@@ -609,6 +609,8 @@
 }
 .flow-graph-legend-node.latent { background: #f5f3f0; border-style: dashed; }
 .flow-graph-legend-node.instrument { background: #eaf2fb; border-color: var(--causal); border-width: 3px; }
+/* Disturbance (ε): a small dashed gray dot — matches the noise satellites, drawn smaller than a node. */
+.flow-graph-legend-node.noise { width: 12px; height: 12px; background: #fff; border-color: #9aa7b3; border-style: dashed; }
 
 .flow-graph-legend-node.adjusted::after {
   content: "";

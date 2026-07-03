@@ -24,7 +24,7 @@ import { clamp, coerceBinary, formatInputNumber, formatSignedValue, formatValue 
 import { badControlWarning, describeEstimand } from "../outputs/estimand";
 import { EstimandFormula, NodeName } from "../outputs/EstimandFormula";
 import { nodeDisplayName, nodeOutputLabel } from "../compute/format";
-import { analyticDistributionLabel, defaultDistribution, valueTypeLabel } from "../compute/distributionPlot";
+import { analyticDistributionLabel, defaultDistribution, valueTypeFromDistribution, valueTypeLabel } from "../compute/distributionPlot";
 import { conditioningSliderBounds, conditioningSliderStep, roundToStep } from "../compute/conditioning";
 import { Checkbox, NumberField, RoleToggle, TactileNumberField } from "../controls";
 import { EdgeEditor, EdgePanel } from "./EdgeEditor";
@@ -452,6 +452,28 @@ export function VariableEditor(props: {
     if (isRoot) { const dist = FAMILY_ROOT_DISTRIBUTION[kind]; if (dist) props.onMechanism(node.id, { distribution: defaultDistribution(dist) }); }
     else { const combiner = FAMILY_LINK[kind]; if (combiner) props.onMechanism(node.id, { combiner }); }
   };
+  // The root-distribution picker only offers distributions that match the family, and picking one
+  // syncs the family back — so the two pickers inform each other (choose poisson ⇒ type becomes count).
+  const FAMILY_DISTRIBUTIONS: Partial<Record<VariableModel["valueType"], NodeDistribution["kind"][]>> = {
+    continuous: ["normal", "lognormal", "uniform", "laplace", "student_t", "constant"],
+    binary: ["bernoulli"],
+    count: ["poisson"],
+    positive: ["gamma", "exponential", "lognormal"],
+    proportion: ["beta"],
+    categorical: ["categorical"],
+    ordinal: ["categorical"]
+  };
+  const onRootDistributionChange = (distribution: NodeDistribution) => {
+    props.onMechanism(node.id, { distribution });
+    const family = distribution.kind === "categorical"
+      ? (variable.valueType === "ordinal" ? "ordinal" : "categorical")
+      : valueTypeFromDistribution(distribution, variable.valueType);
+    if (family !== variable.valueType) {
+      const patch: Partial<VariableModel> = { valueType: family };
+      if ((family === "categorical" || family === "ordinal") && variable.categories.length < 2) patch.categories = ["level 1", "level 2", "level 3"];
+      updateVariable(patch);
+    }
+  };
 
   const currentOperation = deriveOperation(props.document, node.id);
   const exposureNode = props.document.graph.nodes.find((candidate) => candidate.id === props.outputPair.x)
@@ -554,7 +576,8 @@ export function VariableEditor(props: {
               {isRoot && <DistributionEditor
                 label="root distribution"
                 distribution={mechanism.distribution}
-                onChange={(distribution) => props.onMechanism(node.id, { distribution })}
+                allowedKinds={FAMILY_DISTRIBUTIONS[variable.valueType]}
+                onChange={onRootDistributionChange}
               />}
               {!isRoot && <>
                 <label className="field">

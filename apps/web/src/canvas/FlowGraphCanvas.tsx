@@ -260,7 +260,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
       >
         Legend
       </button>
-      {legendOpen && <FlowGraphLegend />}
+      {legendOpen && <FlowGraphLegend showNoise={props.showNoiseNodes} />}
       {props.mode !== "basic" && <div className="canvas-status">
         <span>{props.tool === "edge" ? (props.edgeSource ? `connect from ${props.edgeSource}` : "click a source variable") : "double-click canvas to add variable"}</span>
       </div>}
@@ -273,7 +273,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
   );
 }
 
-function FlowGraphLegend() {
+function FlowGraphLegend(props: { showNoise: boolean }) {
   return (
     <div className="graph-legend flow-graph-legend" aria-hidden="true">
       <div className="flow-graph-legend-title">Legend</div>
@@ -301,6 +301,10 @@ function FlowGraphLegend() {
         <span className="flow-graph-legend-node instrument" />
         <span><strong>instrument</strong> — an IV</span>
       </div>
+      {props.showNoise && <div className="flow-graph-legend-row">
+        <span className="flow-graph-legend-node noise" />
+        <span><strong>disturbance (ε)</strong> — a node's own unmodeled causes</span>
+      </div>}
     </div>
   );
 }
@@ -341,9 +345,9 @@ function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
         {showNoise && (
           <g className="noise-satellite">
             <title>Implicit disturbance (U) — every variable has one: all the unmodeled causes that make it stochastic. DAGs conventionally omit them, assuming they're independent (the Markovian / causal-sufficiency assumption); a shared one would be latent confounding.</title>
-            <line x1={-32} y1={-25} x2={-15} y2={-13} />
-            <circle cx={-41} cy={-33} r={8.5} />
-            <text x={-41} y={-29}>&epsilon;</text>
+            <line x1={-29} y1={-23} x2={-16} y2={-14} />
+            <circle cx={-37} cy={-30} r={6} />
+            <text x={-37} y={-27.5}>&epsilon;</text>
           </g>
         )}
         {node.roles.exposure ? (
