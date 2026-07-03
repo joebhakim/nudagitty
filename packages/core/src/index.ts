@@ -10,3 +10,4 @@ export * from "./instrument";
 export * from "./copula";
 export * from "./datasets";
 export * from "./doseResponse";
+export * from "./continuousEffect";
