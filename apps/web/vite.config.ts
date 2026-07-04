@@ -28,7 +28,7 @@ export default defineConfig({
         // gallery.* subdomain). In dev both are served at / and /gallery.html.
         main: resolve(root, "index.html"),
         gallery: resolve(root, "gallery.html"),
-        "copula-author": resolve(root, "copula-author.html")
+        "joint-lab": resolve(root, "joint-lab.html")
       }
     }
   },

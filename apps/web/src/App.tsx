@@ -28,6 +28,7 @@ import {
   Redo2,
   Share2,
   Sigma,
+  Spline,
   Blend,
   CircleDashed,
   BookOpen,
@@ -265,6 +266,7 @@ export function App() {
   const [paperNetworkOpen, setPaperNetworkOpen] = useState(() => hashMatchesPaperNetwork(window.location.hash));
   const [showExplanation, setShowExplanation] = useState(false);
   const [showDgp, setShowDgp] = useState(false);
+  const [showJointLab, setShowJointLab] = useState(false);
   const [showGlossary, setShowGlossary] = useState(false);
   const [showOverlap, setShowOverlap] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
@@ -1013,6 +1015,7 @@ export function App() {
             <IconButton label="Data-generating process" pressed={showDgp} onClick={() => setShowDgp((open) => !open)}><Sigma size={18} /></IconButton>
             <IconButton label="Glossary" pressed={showGlossary} onClick={() => setShowGlossary((open) => !open)}><BookOpen size={18} /></IconButton>
             <IconButton label="Overlap / positivity" pressed={showOverlap} badge={positivity === "ok" ? null : positivity} onClick={() => setShowOverlap((open) => !open)}><Blend size={18} /></IconButton>
+            <IconButton label="Joint Lab — confounder dependence" pressed={showJointLab} onClick={() => setShowJointLab((open) => !open)}><Spline size={18} /></IconButton>
             <IconButton label="Implicit noise nodes" pressed={showNoiseNodes} onClick={() => setShowNoiseNodes(!showNoiseNodes)}><CircleDashed size={18} /></IconButton>
             <input
               ref={snapshotInputRef}
@@ -1069,10 +1072,18 @@ export function App() {
               <button type="button" aria-label="Close data-generating process" onClick={() => setShowDgp(false)}><X size={16} /></button>
             </div>
             <DgpInspector document={document} simulation={simulation} onCorrelationChange={(rho) => commit(setCopulaCorrelation(document, rho))} />
-            <details className="dgp-copula-block">
-              <summary>Confounder joint — copula block</summary>
-              <CopulaBlockEditor key={activeExample?.id ?? "custom"} document={document} onCommit={commit} />
-            </details>
+            <button className="dgp-jointlab-open" onClick={() => { setShowDgp(false); setShowJointLab(true); }}>⚭ Open the Joint Lab — author the confounder joint →</button>
+          </div>
+        </div>
+      )}
+      {showJointLab && (
+        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Joint Lab" onClick={() => setShowJointLab(false)}>
+          <div className="explanation-modal wide" onClick={(event) => event.stopPropagation()}>
+            <div className="explanation-modal-header">
+              <strong>Joint Lab — the confounder joint · {activeExample?.title ?? document.title}</strong>
+              <button type="button" aria-label="Close Joint Lab" onClick={() => setShowJointLab(false)}><X size={16} /></button>
+            </div>
+            <CopulaBlockEditor key={activeExample?.id ?? "custom"} document={document} onCommit={commit} />
           </div>
         </div>
       )}

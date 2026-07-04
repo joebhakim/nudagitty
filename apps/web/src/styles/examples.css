@@ -359,3 +359,11 @@
 .dgp-copula-control label { display: flex; align-items: center; gap: 10px; }
 .dgp-copula-control label span { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: #2b3640; min-width: 64px; }
 .dgp-copula-control input[type="range"] { flex: 1; max-width: 320px; accent-color: var(--moderator, #7c4dd6); cursor: pointer; }
+
+/* Joint Lab: a wide, attention-consuming modal for authoring the confounder joint. */
+.explanation-modal.wide { max-width: 1150px; }
+.dgp-jointlab-open {
+  margin-top: 12px; width: 100%; padding: 9px 12px; border: 1px solid #cbb8e8; border-radius: 9px;
+  background: rgba(155, 109, 214, 0.10); color: #7a52c0; font: inherit; font-weight: 700; font-size: 13px; cursor: pointer;
+}
+.dgp-jointlab-open:hover { background: rgba(155, 109, 214, 0.18); }

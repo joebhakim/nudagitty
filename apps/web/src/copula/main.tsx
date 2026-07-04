@@ -39,9 +39,9 @@ function Harness() {
   return (
     <div className="ca-page">
       <header className="ca-header">
-        <h1>Copula Author</h1>
+        <h1>Joint Lab</h1>
         <p>The reusable dependence widget. A reorderable line of variables (a D-vine), each with a marginal; a pair-copula on every edge; live previews in rank space and data space. Reorder the line to restructure; add trees for conditional dependence. In the real system the variables are DAG nodes and the marginals come from them — here they are yours to pick.</p>
-        <nav><a href="/joint-lab.html">Copula Editor</a> · <a href="/formulas.html">Formulas</a> · <a href="/reading.html">Reading</a></nav>
+        <nav><a href="/formulas.html">Formulas</a> · <a href="/reading.html">Reading</a> · <a href="/">nudagitty</a></nav>
       </header>
       <div className="ca-varcount">
         <button onClick={removeVar} disabled={variables.length <= 2}>− variable</button>
