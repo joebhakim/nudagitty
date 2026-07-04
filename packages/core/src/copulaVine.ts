@@ -1,4 +1,6 @@
 import { inverseStandardNormalCdf as Ninv, standardNormalCdf as Phi } from "./simulation/math";
+import { edgeContribution } from "./simulation/interpreter";
+import type { EdgeMechanism } from "./types";
 
 // ---------------------------------------------------------------------------
 // Copula families + regular-vine (D-vine) sampling — the reusable dependence
@@ -23,6 +25,64 @@ export interface PairCopula {
 
 export const COPULA_FAMILIES: CopulaFamily[] = ["independence", "gaussian", "frank", "clayton", "gumbel"];
 export const ARCHIMEDEAN_FAMILIES: CopulaFamily[] = ["clayton", "gumbel"]; // one-tailed; rotate for negative τ
+
+// --- The complete edge model: a mixture over families, every parameter/weight a moderation curve ---
+// A Moderation is a scalar that is either constant (by === null → today's simplified case) or a
+// function of a conditioning variable's value, evaluated through the engine's transfer-function
+// library (EdgeMechanism) then a link. `by` is the LINE POSITION of the moderating variable
+// (which must lie in the edge's conditioning set for the vine to stay valid).
+export interface Moderation {
+  by: number | null;
+  constant: number;            // used when by === null (τ directly for constant tau; raw weight for weights)
+  mechanism?: EdgeMechanism;   // used when by !== null
+}
+export interface CopulaComponent {
+  family: CopulaFamily;
+  rotation: CopulaRotation;
+  tau: Moderation;             // linked into the family's valid τ range when moderated
+}
+export interface MixtureEdge {
+  components: CopulaComponent[];  // length ≥ 1
+  weights: Moderation[];          // same length; softmax-normalized (ignored when 1 component)
+}
+/** Today's { family, tau, rotation } as a 1-component constant edge — the simplified case. */
+export function simpleEdge(family: CopulaFamily, tau: number, rotation: CopulaRotation = 0): MixtureEdge {
+  return { components: [{ family, rotation, tau: { by: null, constant: tau } }], weights: [{ by: null, constant: 1 }] };
+}
+const INDEPENDENCE_EDGE: MixtureEdge = simpleEdge("independence", 0);
+
+const sigmoid = (z: number): number => 1 / (1 + Math.exp(-z));
+function tauLink(family: CopulaFamily, z: number): number {
+  if (family === "clayton" || family === "gumbel") return 0.02 + 0.96 * sigmoid(z); // (0.02, 0.98) base magnitude
+  return 0.95 * Math.tanh(z);                                                        // gaussian/frank: (−0.95, 0.95)
+}
+function evalTau(m: Moderation, family: CopulaFamily, resolve: (by: number) => number): number {
+  if (m.by === null || !m.mechanism) return m.constant;
+  return tauLink(family, edgeContribution(resolve(m.by), m.mechanism));
+}
+function evalWeight(m: Moderation, resolve: (by: number) => number): number {
+  if (m.by === null || !m.mechanism) return m.constant;
+  return edgeContribution(resolve(m.by), m.mechanism);
+}
+/** Evaluate a mixture edge at one sample's conditioning values → concrete per-sample copulas + weights. */
+function evaluateMixtureEdge(edge: MixtureEdge, resolve: (by: number) => number): { comps: PairCopula[]; weights: number[] } {
+  const comps: PairCopula[] = edge.components.map((c) => ({ family: c.family, rotation: c.rotation, tau: evalTau(c.tau, c.family, resolve) }));
+  if (comps.length === 1) return { comps, weights: [1] };
+  const raw = edge.weights.map((w) => evalWeight(w, resolve));
+  const mx = Math.max(...raw);
+  const exps = raw.map((r) => Math.exp(r - mx));
+  const s = exps.reduce((a, b) => a + b, 0) || 1;
+  return { comps, weights: exps.map((e) => e / s) };
+}
+// Mixture h = weighted sum of component h's (h is linear in the copula); h⁻¹ by bisection (monotone).
+function mixtureH(comps: PairCopula[], weights: number[], x: number, v: number): number {
+  let s = 0; for (let k = 0; k < comps.length; k += 1) s += weights[k]! * pairH(comps[k]!, x, v); return s;
+}
+function mixtureHinv(comps: PairCopula[], weights: number[], target: number, v: number): number {
+  let lo = 1e-7, hi = 1 - 1e-7;
+  for (let i = 0; i < 44; i += 1) { const m = (lo + hi) / 2; (mixtureH(comps, weights, m, v) < target) ? (lo = m) : (hi = m); }
+  return (lo + hi) / 2;
+}
 
 // --- Frank: Debye function + τ↔θ ---
 function debye1(theta: number): number {
@@ -147,33 +207,68 @@ export function tailDependence(pc: PairCopula): [number, number] {
  * conditional cell (valid without fixing conditioning values, under the simplified-vine
  * assumption this sampler embodies).
  */
-export function sampleDVine(trees: PairCopula[][], w: number[], pseudo?: Record<string, [number, number]>): number[] {
-  const n = w.length;
-  const IND: PairCopula = { family: "independence", tau: 0 };
-  const theta = (j: number, i: number): PairCopula => trees[j - 1]?.[i - 1] ?? IND; // tree j, edge i (1-based)
+type EdgeH = (tree0: number, edge0: number, x: number, v: number, drawn: number[]) => number;
+
+// The Aas Algorithm 2 recursion, parametrized by per-edge h / h⁻¹ accessors so the same code drives
+// both the constant vine and the moderated mixture vine. `drawn` (the 1-based x array being built)
+// is passed so moderated edges can read their conditioning variable's value.
+function dvineCore(n: number, w: number[], H: EdgeH, Hinv: EdgeH, pseudo?: Record<string, [number, number]>): number[] {
   const v: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(2 * n + 2).fill(0));
   const x: number[] = new Array<number>(n + 1).fill(0);
   x[1] = v[1]![1] = w[0]!;
   for (let i = 2; i <= n; i += 1) {
     v[i]![1] = w[i - 1]!;
     for (let k = i - 1; k >= 1; k -= 1) {
-      v[i]![1] = pairHinv(theta(k, i - k), v[i]![1]!, v[i - 1]![2 * k - 1]!);
-      // After the inversion, v[i][1] = F(x_i | between) and v[i-1][2k-1] = F(x_{i-k} | between):
-      // the copula's own arguments for the edge (tree k, positions i-k … i).
+      v[i]![1] = Hinv(k - 1, i - k - 1, v[i]![1]!, v[i - 1]![2 * k - 1]!, x);
       if (pseudo) pseudo[`${k - 1}:${i - k - 1}`] = [v[i - 1]![2 * k - 1]!, v[i]![1]!];
     }
     x[i] = v[i]![1]!;
     if (i === n) break;
     // Odd slots v[i][2m+1] = F(x_{i-m} | x_{i-m+1..i}); even slots v[i][2m] = F(x_i | x_{i-m..i-1}).
-    // The inner loop of later rows conditions on the odd slots v[i-1][2k-1].
-    v[i]![2] = pairH(theta(1, i - 1), v[i]![1]!, v[i - 1]![1]!);       // F(x_i | x_{i-1})
-    v[i]![3] = pairH(theta(1, i - 1), v[i - 1]![1]!, v[i]![1]!);       // F(x_{i-1} | x_i)
+    v[i]![2] = H(0, i - 2, v[i]![1]!, v[i - 1]![1]!, x);       // F(x_i | x_{i-1})
+    v[i]![3] = H(0, i - 2, v[i - 1]![1]!, v[i]![1]!, x);       // F(x_{i-1} | x_i)
     if (i > 2) {
       for (let j = 2; j <= i - 1; j += 1) {
-        v[i]![2 * j] = pairH(theta(j, i - j), v[i]![2 * j - 2]!, v[i - 1]![2 * j - 1]!);       // F(x_i | left set)
-        v[i]![2 * j + 1] = pairH(theta(j, i - j), v[i - 1]![2 * j - 1]!, v[i]![2 * j - 2]!);   // F(x_{i-j} | set)
+        v[i]![2 * j] = H(j - 1, i - j - 1, v[i]![2 * j - 2]!, v[i - 1]![2 * j - 1]!, x);       // F(x_i | left set)
+        v[i]![2 * j + 1] = H(j - 1, i - j - 1, v[i - 1]![2 * j - 1]!, v[i]![2 * j - 2]!, x);   // F(x_{i-j} | set)
       }
     }
   }
   return x.slice(1);
+}
+
+/**
+ * Sample a D-vine of constant pair-copulas from base uniforms. `trees[k]` is tree k+1; `trees[k][e]`
+ * the pair between line positions e and e+k+1. Missing entries truncate. Returns one draw in
+ * LINE-POSITION order. `pseudo`, if given, collects each edge's conditional-rank pseudo-observations
+ * `[F(a|D), F(b|D)]` keyed `"tree0:edge0"`. Aas et al. (2009), Algorithm 2.
+ */
+export function sampleDVine(trees: PairCopula[][], w: number[], pseudo?: Record<string, [number, number]>): number[] {
+  const IND: PairCopula = { family: "independence", tau: 0 };
+  return dvineCore(w.length, w,
+    (t, e, x, v) => pairH(trees[t]?.[e] ?? IND, x, v),
+    (t, e, tg, v) => pairHinv(trees[t]?.[e] ?? IND, tg, v),
+    pseudo);
+}
+
+/**
+ * Sample a D-vine of MODERATED MIXTURE edges — the complete (non-simplified) model. Each edge's
+ * copula is a mixture over families whose parameters/weights are moderation curves of a conditioning
+ * variable; evaluated per sample at that variable's DATA value (via `quantiles`). Returns the draw in
+ * rank space (`u`) and data space (`data`, marginals applied) — the latter is the NORTA coupled draw
+ * the engine consumes. `quantiles[p]` is position p's marginal inverse-CDF.
+ */
+export function sampleDVineModerated(
+  edges: MixtureEdge[][],
+  w: number[],
+  quantiles: Array<(u: number) => number>,
+  pseudo?: Record<string, [number, number]>
+): { u: number[]; data: number[] } {
+  const evalAt = (t: number, e: number, drawn: number[]) =>
+    evaluateMixtureEdge(edges[t]?.[e] ?? INDEPENDENCE_EDGE, (by) => quantiles[by]!(drawn[by + 1]!));
+  const u = dvineCore(w.length, w,
+    (t, e, x, v, drawn) => { const { comps, weights } = evalAt(t, e, drawn); return comps.length === 1 ? pairH(comps[0]!, x, v) : mixtureH(comps, weights, x, v); },
+    (t, e, tg, v, drawn) => { const { comps, weights } = evalAt(t, e, drawn); return comps.length === 1 ? pairHinv(comps[0]!, tg, v) : mixtureHinv(comps, weights, tg, v); },
+    pseudo);
+  return { u, data: u.map((ui, p) => quantiles[p]!(ui)) };
 }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { samplePair, sampleDVine, tailDependence, type PairCopula } from "./copulaVine";
+import { samplePair, sampleDVine, sampleDVineModerated, simpleEdge, tailDependence, type MixtureEdge, type PairCopula } from "./copulaVine";
+import { normalizeEdgeMechanism } from "./graph";
+import { buildDistributionQuantile } from "./distributions";
 
 // deterministic uniforms
 function uniforms(seed: number, n: number): number[] {
@@ -100,5 +102,55 @@ describe("copulaVine — D-vine", () => {
     expect(adj).toBeCloseTo(0.6, 1);
     expect(far).toBeGreaterThan(0.15);
     expect(far).toBeLessThan(adj); // decays with distance along the line
+  });
+});
+
+describe("copulaVine — moderated mixture edges (the complete model)", () => {
+  const id = (u: number) => u;
+
+  it("constant mixture edges reproduce sampleDVine exactly (backward compatible)", () => {
+    const trees: PairCopula[][] = [[{ family: "gaussian", tau: 0.6 }, { family: "clayton", tau: 0.5 }], [{ family: "gaussian", tau: 0.4 }]];
+    const edges: MixtureEdge[][] = [[simpleEdge("gaussian", 0.6), simpleEdge("clayton", 0.5)], [simpleEdge("gaussian", 0.4)]];
+    const q = [id, id, id];
+    const su = uniforms(11, 30);
+    for (let s = 0; s < 8; s += 1) {
+      const w = [su[3 * s]!, su[3 * s + 1]!, su[3 * s + 2]!];
+      const a = sampleDVine(trees, w);
+      const b = sampleDVineModerated(edges, w, q).u;
+      for (let p = 0; p < 3; p += 1) expect(b[p]).toBeCloseTo(a[p]!, 10);
+    }
+  });
+
+  it("a moderated edge flips the conditional τ with the moderator's value (non-simplified)", () => {
+    // T2 edge (0,2|1): τ = 0.95·tanh(2·value_of_position_1) — negative for low moderator, positive for high.
+    const lin = normalizeEdgeMechanism({ kind: "linear", coefficient: 2 });
+    const modEdge: MixtureEdge = { components: [{ family: "gaussian", rotation: 0, tau: { by: 1, constant: 0, mechanism: lin } }], weights: [{ by: null, constant: 1 }] };
+    const edges: MixtureEdge[][] = [[simpleEdge("gaussian", 0.3), simpleEdge("gaussian", 0.3)], [modEdge]];
+    const normalQ = buildDistributionQuantile({ kind: "normal", mean: 0, sd: 1 });
+    const q = [normalQ, normalQ, normalQ];
+    const su = uniforms(31, 3 * N);
+    const loU: number[] = [], loV: number[] = [], hiU: number[] = [], hiV: number[] = [];
+    for (let s = 0; s < N; s += 1) {
+      const pseudo: Record<string, [number, number]> = {};
+      const { u } = sampleDVineModerated(edges, [su[3 * s]!, su[3 * s + 1]!, su[3 * s + 2]!], q, pseudo);
+      const modVal = normalQ(u[1]!);
+      const [a, b] = pseudo["1:0"]!;
+      if (modVal < -0.4) { loU.push(a); loV.push(b); } else if (modVal > 0.4) { hiU.push(a); hiV.push(b); }
+    }
+    expect(kendall(loU, loV)).toBeLessThan(-0.1);   // low moderator → negative conditional dependence
+    expect(kendall(hiU, hiV)).toBeGreaterThan(0.1); // high moderator → positive
+  });
+
+  it("a mixture edge blends its components' dependence", () => {
+    const mix: MixtureEdge = {
+      components: [{ family: "gaussian", rotation: 0, tau: { by: null, constant: 0.7 } }, { family: "independence", rotation: 0, tau: { by: null, constant: 0 } }],
+      weights: [{ by: null, constant: 1.5 }, { by: null, constant: 0 }] // softmax([1.5,0]) ≈ [0.82, 0.18]
+    };
+    const su = uniforms(41, 2 * N);
+    const us: number[] = [], vs: number[] = [];
+    for (let s = 0; s < N; s += 1) { const { u } = sampleDVineModerated([[mix]], [su[2 * s]!, su[2 * s + 1]!], [id, id]); us.push(u[0]!); vs.push(u[1]!); }
+    const t = kendall(us, vs);
+    expect(t).toBeGreaterThan(0.15); // above independence
+    expect(t).toBeLessThan(0.65);    // below the pure gaussian(0.7) component
   });
 });
