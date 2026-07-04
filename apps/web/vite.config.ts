@@ -27,7 +27,8 @@ export default defineConfig({
         // Two pages: the app, and a standalone chart gallery (deployable to a
         // gallery.* subdomain). In dev both are served at / and /gallery.html.
         main: resolve(root, "index.html"),
-        gallery: resolve(root, "gallery.html")
+        gallery: resolve(root, "gallery.html"),
+        "copula-author": resolve(root, "copula-author.html")
       }
     }
   },

@@ -9,6 +9,7 @@ import {
   randomUniform
 } from "d3-random";
 import type { NodeDistribution } from "./types";
+import { quantileSorted } from "./stats";
 
 export type RandomSource = () => number;
 export type DistributionSampler = () => number;
@@ -26,6 +27,19 @@ export function createSeededRandomSource(seed: number): RandomSource {
 
 export function sampleDistribution(distribution: NodeDistribution, source: RandomSource): number {
   return createDistributionSampler(distribution, source)();
+}
+
+/**
+ * Empirical inverse-CDF (quantile function) for any distribution kind — the marginal
+ * side of a NORTA transform. Built by sorting forward draws, so it reuses the exact
+ * samplers the engine uses and covers discrete families and the numerically awkward
+ * continuous ones (gamma/beta/t) for free. Maps u ∈ [0,1] → x. In the app the same
+ * role is played by a node's actual simulated samples.
+ */
+export function buildDistributionQuantile(distribution: NodeDistribution, sampleCount = 4000, seed = 0x51ab): (u: number) => number {
+  const sampler = createDistributionSampler(distribution, createSeededRandomSource(seed));
+  const sorted = Array.from({ length: sampleCount }, () => sampler()).sort((a, b) => a - b);
+  return (u: number) => quantileSorted(sorted, Math.min(1, Math.max(0, u)));
 }
 
 export function createDistributionSampler(distribution: NodeDistribution, source: RandomSource): DistributionSampler {

@@ -13,3 +13,4 @@ export * from "./doseResponse";
 export * from "./continuousEffect";
 export * from "./categoricalEffect";
 export * from "./copulaVine";
+export { buildDistributionQuantile } from "./distributions";
