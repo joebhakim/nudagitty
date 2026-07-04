@@ -53,3 +53,6 @@
 .ca-dot { fill: var(--ca-accent); opacity: 0.3; }
 .ca-cell { fill: var(--ca-accent); }
 .ca-rank-wrap { position: sticky; top: 12px; }
+.ca-mix-add { border: 1px dashed var(--ca-line); background: transparent; color: var(--ca-accent); border-radius: 6px; padding: 2px 8px; font-size: 10.5px; cursor: pointer; margin-top: 3px; }
+.ca-mod-row button { border: none; background: transparent; color: var(--ca-muted); cursor: pointer; font-size: 12px; padding: 0 3px; }
+.ca-mod-row input[type=range] { flex: 1; accent-color: var(--ca-accent); min-width: 28px; }

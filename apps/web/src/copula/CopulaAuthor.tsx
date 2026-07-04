@@ -94,17 +94,25 @@ export function CopulaAuthor(props: {
   }, [base, spec, quantiles, d]);
 
   const edgeAt = (tree: number, edge: number): MixtureEdge => spec.trees[tree]?.[edge] ?? simpleEdge("independence", 0);
-  const setEdge = (tree: number, edge: number, patch: { family?: CopulaFamily; rotation?: CopulaRotation; tau?: Moderation }) => {
+  const mutateEdge = (tree: number, edge: number, fn: (e: MixtureEdge) => MixtureEdge) => {
     const trees = spec.trees.map((t) => t.slice());
     while (trees.length <= tree) trees.push([]);
-    const cur = trees[tree]![edge] ?? simpleEdge("independence", 0);
-    let comp = { ...cur.components[0]!, ...(patch.family !== undefined ? { family: patch.family } : {}), ...(patch.rotation !== undefined ? { rotation: patch.rotation } : {}), ...(patch.tau !== undefined ? { tau: patch.tau } : {}) };
-    if (ARCHIMEDEAN_FAMILIES.includes(comp.family) && comp.tau.by === null && comp.tau.constant < 0.02) comp = { ...comp, tau: { by: null, constant: 0.3 } };
-    if (!ARCHIMEDEAN_FAMILIES.includes(comp.family)) comp = { ...comp, rotation: 0 };
-    trees[tree]![edge] = { components: [comp], weights: [{ by: null, constant: 1 }] };
+    trees[tree]![edge] = fn(trees[tree]![edge] ?? simpleEdge("independence", 0));
     onSpec({ ...spec, trees });
     setFocus([tree, edge]); // editing an edge focuses it, so the copula view follows
   };
+  const setComponent = (tree: number, edge: number, ci: number, patch: { family?: CopulaFamily; rotation?: CopulaRotation; tau?: Moderation }) => mutateEdge(tree, edge, (ed) => {
+    const comps = ed.components.slice();
+    let comp = { ...comps[ci]!, ...(patch.family !== undefined ? { family: patch.family } : {}), ...(patch.rotation !== undefined ? { rotation: patch.rotation } : {}), ...(patch.tau !== undefined ? { tau: patch.tau } : {}) };
+    if (ARCHIMEDEAN_FAMILIES.includes(comp.family) && comp.tau.by === null && comp.tau.constant < 0.02) comp = { ...comp, tau: { by: null, constant: 0.3 } };
+    if (!ARCHIMEDEAN_FAMILIES.includes(comp.family)) comp = { ...comp, rotation: 0 };
+    comps[ci] = comp;
+    return { ...ed, components: comps };
+  });
+  const setEdge = (tree: number, edge: number, patch: { family?: CopulaFamily; rotation?: CopulaRotation; tau?: Moderation }) => setComponent(tree, edge, 0, patch);
+  const addComponent = (tree: number, edge: number) => mutateEdge(tree, edge, (ed) => ({ components: [...ed.components, { family: "clayton", rotation: 0, tau: { by: null, constant: 0.4 } }], weights: [...ed.weights, { by: null, constant: 0 }] }));
+  const removeComponent = (tree: number, edge: number, ci: number) => mutateEdge(tree, edge, (ed) => (ed.components.length <= 1 ? ed : { components: ed.components.filter((_, i) => i !== ci), weights: ed.weights.filter((_, i) => i !== ci) }));
+  const setWeight = (tree: number, edge: number, ci: number, w: number) => mutateEdge(tree, edge, (ed) => { const weights = ed.weights.slice(); weights[ci] = { by: null, constant: w }; return { ...ed, weights }; });
   const swap = (p: number, q: number) => {
     if (q < 0 || q >= d) return;
     const order = spec.order.slice();
@@ -202,6 +210,22 @@ export function CopulaAuthor(props: {
                           </div>
                         </div>
                       )}
+                      <div className="ca-mod" onClick={(ev) => ev.stopPropagation()}>
+                        {edgeAt(tree, e).components.slice(1).map((comp, i) => {
+                          const ci = i + 1;
+                          return (
+                            <div className="ca-mod-row" key={ci} title="mixture component: family · τ · weight">
+                              <select value={comp.family} onChange={(ev) => setComponent(tree, e, ci, { family: ev.target.value as CopulaFamily })}>
+                                {(["gaussian", "frank", "clayton", "gumbel"] as CopulaFamily[]).map((f) => <option key={f} value={f}>{FAMILY_LABEL[f]}</option>)}
+                              </select>
+                              <input type="range" min={ARCHIMEDEAN_FAMILIES.includes(comp.family) ? 0.02 : -0.9} max={0.9} step={0.01} value={comp.tau.constant} onChange={(ev) => setComponent(tree, e, ci, { tau: { by: null, constant: +ev.target.value } })} />
+                              <input type="range" min={-3} max={3} step={0.1} value={edgeAt(tree, e).weights[ci]?.constant ?? 0} onChange={(ev) => setWeight(tree, e, ci, +ev.target.value)} />
+                              <button onClick={() => removeComponent(tree, e, ci)}>×</button>
+                            </div>
+                          );
+                        })}
+                        <button className="ca-mix-add" onClick={() => addComponent(tree, e)}>+ mix a family</button>
+                      </div>
                     </div>
                   );
                 })}
