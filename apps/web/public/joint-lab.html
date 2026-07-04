@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Joint Lab — nudagitty prototypes</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --panel: #ffffff; --ink: #1a222b; --muted: #5a6670; --line: #e2e5e9;
+    --accent: #2f7d6b; --bias: #b4231f; --ok: #1f7a45; --oracle: #d97706; --blue: #2563aa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121619; --panel: #1b2126; --ink: #e7ecf0; --muted: #93a1ac; --line: #2c353c;
+      --accent: #56b39c; --bias: #ef6b64; --ok: #58c98a; --oracle: #f0a63a; --blue: #6fa8dc; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { max-width: 900px; margin: 0 auto; padding: 32px 20px 8px; }
+  header h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); max-width: 62ch; }
+  main { max-width: 900px; margin: 0 auto; padding: 12px 20px 64px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 20px 22px; margin: 20px 0; }
+  section h2 { margin: 0 0 2px; font-size: 19px; }
+  .hook { margin: 0 0 16px; color: var(--muted); font-size: 13.5px; max-width: 68ch; }
+  .lab { display: grid; grid-template-columns: minmax(240px, 300px) 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 640px) { .lab { grid-template-columns: 1fr; } }
+  .controls { display: flex; flex-direction: column; gap: 14px; }
+  .ctl label { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; margin-bottom: 3px; }
+  .ctl label .val { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .ctl input[type=range] { width: 100%; accent-color: var(--accent); }
+  .ctl select { width: 100%; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); font: inherit; }
+  .readout { margin-top: 12px; font-size: 13px; line-height: 1.5; color: var(--ink);
+    border-top: 1px dashed var(--line); padding-top: 10px; }
+  .readout b { font-variant-numeric: tabular-nums; }
+  .regime { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11.5px;
+    font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+  .regime.good { background: rgba(31,122,69,0.16); color: var(--ok); }
+  .regime.watch { background: rgba(217,119,6,0.18); color: var(--oracle); }
+  .regime.bad { background: rgba(180,35,31,0.16); color: var(--bias); }
+  svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .plot-wrap { min-width: 0; }
+  text { fill: var(--ink); }
+  .axis { stroke: var(--line); stroke-width: 1; }
+  .tick { fill: var(--muted); font-size: 10px; }
+  .lede { font-size: 12px; color: var(--muted); }
+  nav { max-width: 900px; margin: 0 auto; padding: 0 20px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+  nav a { color: var(--accent); text-decoration: none; }
+  code { background: rgba(127,127,127,0.14); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  footer { max-width: 900px; margin: 0 auto; padding: 8px 20px 48px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>The Joint Lab</h1>
+  <p>Three prototypes for <em>controlling the joint while pinning the truth</em> — the design questions from the SCM top-down pass. Every slider moves a nuisance direction; the causal mechanism (the estimand) is held fixed unless the demo is specifically about when it can't be.</p>
+</header>
+<nav>
+  <a href="#emod">① Effect modification untethers the truth</a>
+  <a href="#sweep">② One dial: identified → hopeless</a>
+  <a href="#norta">③ You set the noise, you observe its shadow</a>
+</nav>
+<main>
+
+  <section id="emod">
+    <h2>① Effect modification untethers the truth</h2>
+    <p class="hook">The clean claim "vary the joint, pin the truth" holds for the <b>CATE</b> — τ(C) is a property of the mechanism. But the <b>marginal</b> ATE is ∫τ(C)dP(C), so with effect modification, changing the population mix moves the "average effect" even though no CATE changed. The DGM knob and the target-population knob are entangled.</p>
+    <div class="lab">
+      <div class="controls" id="emod-ctl">
+        <div class="ctl"><label>P(C=1) — population mix <span class="val" id="emod-p-v"></span></label><input type="range" id="emod-p" min="0" max="1" step="0.01" value="0.3"></div>
+        <div class="ctl"><label>CATE at C=0 (τ₀) <span class="val" id="emod-t0-v"></span></label><input type="range" id="emod-t0" min="-2" max="10" step="0.1" value="2"></div>
+        <div class="ctl"><label>CATE at C=1 (τ₁) <span class="val" id="emod-t1-v"></span></label><input type="range" id="emod-t1" min="-2" max="10" step="0.1" value="8"></div>
+        <div class="readout" id="emod-read"></div>
+      </div>
+      <div class="plot-wrap"><svg id="emod-svg" viewBox="0 0 460 300" role="img" aria-label="Marginal ATE vs population mix"></svg></div>
+    </div>
+  </section>
+
+  <section id="sweep">
+    <h2>② One dial: from identified to hopeless</h2>
+    <p class="hook">Enriching the noise dependence isn't just "harder" — it crosses qualitative boundaries. <b>Observed</b> confounding worsens overlap (identified, but IPW gets fragile). <b>Unmeasured</b> confounding — a bidirected edge — pushes the estimand out of the identified region: even the correctly-adjusted estimate is biased. Two readings of one landscape. True effect β = 1, adjusting for the observed confounder only.</p>
+    <div class="lab">
+      <div class="controls">
+        <div class="ctl"><label>Observed confounding (overlap dial) <span class="val" id="sw-obs-v"></span></label><input type="range" id="sw-obs" min="0" max="3" step="0.05" value="1.4"></div>
+        <div class="ctl"><label>Unmeasured confounding (identifiability dial) <span class="val" id="sw-unm-v"></span></label><input type="range" id="sw-unm" min="0" max="3" step="0.05" value="0"></div>
+        <div class="readout" id="sw-read"></div>
+      </div>
+      <div class="plot-wrap"><svg id="sw-svg" viewBox="0 0 460 300" role="img" aria-label="Estimates vs true effect"></svg></div>
+    </div>
+  </section>
+
+  <section id="norta">
+    <h2>③ You set the noise, you observe its shadow</h2>
+    <p class="hook">You control the <b>copula</b> (a latent correlation r); what you observe is its pushforward through each marginal. For skewed / heavy-tailed marginals the observed <b>Pearson</b> correlation drifts away from r, while <b>rank</b> (Spearman) dependence is preserved. So "specify the correlation matrix" hides an inversion — the NORTA correction — and this is only the <em>root</em> joint; anything downstream is a further pushforward you don't set directly.</p>
+    <div class="lab">
+      <div class="controls">
+        <div class="ctl"><label>Latent copula correlation r <span class="val" id="nt-r-v"></span></label><input type="range" id="nt-r" min="-0.95" max="0.95" step="0.01" value="0.6"></div>
+        <div class="ctl"><label>Marginal shape</label>
+          <select id="nt-marg">
+            <option value="gauss">Gaussian (matched)</option>
+            <option value="lognorm" selected>Lognormal (right-skew)</option>
+            <option value="exp">Exponential</option>
+            <option value="pareto">Pareto α=2 (heavy tail)</option>
+          </select></div>
+        <div class="readout" id="nt-read"></div>
+      </div>
+      <div class="plot-wrap"><svg id="nt-svg" viewBox="0 0 460 300" role="img" aria-label="Observed joint scatter"></svg></div>
+    </div>
+  </section>
+
+</main>
+<footer>Prototypes — self-contained, linear-Gaussian / NORTA math in the page. nudagitty canary.</footer>
+
+<script>
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, text) {
+  const n = document.createElementNS(NS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (text != null) n.textContent = text;
+  return n;
+}
+function clear(svg) { while (svg.firstChild) svg.removeChild(svg.firstChild); }
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+const fmt = (v, d = 2) => (v >= 0 ? "+" : "") + v.toFixed(d);
+const fmtu = (v, d = 2) => v.toFixed(d);
+
+// ---- shared normal math ----
+function erf(x) {
+  const s = x < 0 ? -1 : 1; x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
+}
+const Phi = (z) => 0.5 * (1 + erf(z / Math.SQRT2));
+let seed = 1234567;
+function rand() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+function randn() { // Box-Muller
+  let u = 0, v = 0; while (u === 0) u = rand(); while (v === 0) v = rand();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// ============ DEMO 1: effect modification / transportability ============
+(function () {
+  const p = document.getElementById("emod-p"), t0 = document.getElementById("emod-t0"), t1 = document.getElementById("emod-t1");
+  const svg = document.getElementById("emod-svg"), read = document.getElementById("emod-read");
+  function draw() {
+    const P = +p.value, T0 = +t0.value, T1 = +t1.value;
+    document.getElementById("emod-p-v").textContent = fmtu(P, 2);
+    document.getElementById("emod-t0-v").textContent = fmt(T0, 1);
+    document.getElementById("emod-t1-v").textContent = fmt(T1, 1);
+    const ate = (1 - P) * T0 + P * T1;
+    clear(svg);
+    const W = 460, H = 300, L = 44, R = 20, TP = 24, B = 44;
+    const lo = Math.min(T0, T1, 0) - 1, hi = Math.max(T0, T1, 0) + 1;
+    const x = (v) => L + (v - 0) / (1 - 0) * (W - L - R);          // p axis 0..1
+    const y = (v) => H - B - (v - lo) / (hi - lo) * (H - TP - B);  // effect axis
+    svg.appendChild(el("line", { x1: L, y1: y(lo), x2: W - R, y2: y(lo), class: "axis" }));
+    svg.appendChild(el("line", { x1: L, y1: TP, x2: L, y2: H - B, class: "axis" }));
+    // effect ticks
+    for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4; svg.appendChild(el("text", { x: L - 6, y: y(v) + 3, "text-anchor": "end", class: "tick" }, fmtu(v, 0))); }
+    svg.appendChild(el("text", { x: 6, y: TP - 8, class: "tick" }, "treatment effect"));
+    for (let k = 0; k <= 4; k++) { const v = k / 4; svg.appendChild(el("text", { x: x(v), y: H - B + 16, "text-anchor": "middle", class: "tick" }, fmtu(v, 2))); }
+    svg.appendChild(el("text", { x: (L + W - R) / 2, y: H - 6, "text-anchor": "middle", class: "tick" }, "P(C=1) — population mix"));
+    // fixed CATE lines (horizontal, don't move with p)
+    svg.appendChild(el("line", { x1: L, y1: y(T0), x2: W - R, y2: y(T0), stroke: css("--blue"), "stroke-width": 1.5, "stroke-dasharray": "4 3", opacity: 0.7 }));
+    svg.appendChild(el("text", { x: W - R, y: y(T0) - 5, "text-anchor": "end", fill: css("--blue"), "font-size": 11 }, "CATE | C=0 (fixed)"));
+    svg.appendChild(el("line", { x1: L, y1: y(T1), x2: W - R, y2: y(T1), stroke: css("--oracle"), "stroke-width": 1.5, "stroke-dasharray": "4 3", opacity: 0.7 }));
+    svg.appendChild(el("text", { x: W - R, y: y(T1) - 5, "text-anchor": "end", fill: css("--oracle"), "font-size": 11 }, "CATE | C=1 (fixed)"));
+    // marginal ATE line = (1-p)T0 + p T1 across p
+    let d = "";
+    for (let i = 0; i <= 50; i++) { const pp = i / 50; const a = (1 - pp) * T0 + pp * T1; d += (i ? "L" : "M") + x(pp) + "," + y(a); }
+    svg.appendChild(el("path", { d, fill: "none", stroke: css("--ok"), "stroke-width": 2.5 }));
+    // current marker
+    svg.appendChild(el("circle", { cx: x(P), cy: y(ate), r: 6, fill: css("--ok"), stroke: css("--panel"), "stroke-width": 2 }));
+    svg.appendChild(el("text", { x: x(P), y: y(ate) - 12, "text-anchor": "middle", fill: css("--ok"), "font-size": 12, "font-weight": 700 }, "marginal ATE " + fmt(ate, 1)));
+    const emod = Math.abs(T1 - T0) > 0.15;
+    read.innerHTML = "CATEs are fixed by the mechanism: <b>" + fmt(T0, 1) + "</b> at C=0, <b>" + fmt(T1, 1) + "</b> at C=1. "
+      + "Marginal ATE = <b>" + fmt(ate, 2) + "</b>. "
+      + (emod
+        ? "<span class='regime watch'>entangled</span> — with effect modification the marginal truth slides with the population mix, from " + fmt(T0, 1) + " to " + fmt(T1, 1) + ". Pinning it needs a fixed target population (or a conditional estimand)."
+        : "<span class='regime good'>orthogonal</span> — no effect modification, so the marginal ATE is invariant to P(C). This is the clean case the DGM knob assumes.");
+  }
+  [p, t0, t1].forEach(c => c.addEventListener("input", draw)); draw();
+})();
+
+// ============ DEMO 2: identifiability / difficulty sweep ============
+(function () {
+  const obs = document.getElementById("sw-obs"), unm = document.getElementById("sw-unm");
+  const svg = document.getElementById("sw-svg"), read = document.getElementById("sw-read");
+  function draw() {
+    const so = +obs.value, su = +unm.value;
+    document.getElementById("sw-obs-v").textContent = fmtu(so, 2);
+    document.getElementById("sw-unm-v").textContent = fmtu(su, 2);
+    // linear-Gaussian confounder triangle, sigma_x=sigma_y=1, beta=1
+    // X = so*C - ... ; aC=so, bC=-2so, aU=su, bU=-2su
+    const varX = so * so + su * su + 1;
+    const beta = 1;
+    const crude = beta + ((-2 * so) * so + (-2 * su) * su) / varX;
+    const adjusted = beta + ((-2 * su) * su) / (su * su + 1);
+    const oracle = beta;
+    const overlapR2 = so * so / varX; // R^2 of X on C
+    clear(svg);
+    const W = 460, H = 300, L = 60, R = 20, TP = 24, B = 54;
+    const lo = Math.min(crude, adjusted, oracle, 0) - 0.5, hi = Math.max(crude, adjusted, oracle, 1) + 0.5;
+    const y = (v) => H - B - (v - lo) / (hi - lo) * (H - TP - B);
+    const bars = [["crude", crude, css("--muted")], ["adjusted for C", adjusted, css("--blue")], ["true β (oracle)", oracle, css("--oracle")]];
+    const bw = 74, gap = 40, x0 = L + 10;
+    svg.appendChild(el("line", { x1: L, y1: y(0), x2: W - R, y2: y(0), class: "axis" }));
+    for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4; svg.appendChild(el("text", { x: L - 8, y: y(v) + 3, "text-anchor": "end", class: "tick" }, fmtu(v, 1))); svg.appendChild(el("line", { x1: L - 3, y1: y(v), x2: L, y2: y(v), class: "axis" })); }
+    bars.forEach((bar, i) => {
+      const bx = x0 + i * (bw + gap);
+      const yv = y(bar[1]), y0 = y(0);
+      svg.appendChild(el("rect", { x: bx, y: Math.min(yv, y0), width: bw, height: Math.abs(yv - y0), fill: bar[2], opacity: 0.85, rx: 3 }));
+      svg.appendChild(el("text", { x: bx + bw / 2, y: yv + (bar[1] >= 0 ? -7 : 15), "text-anchor": "middle", "font-size": 13, "font-weight": 700, fill: css("--ink") }, fmt(bar[1], 2)));
+      svg.appendChild(el("text", { x: bx + bw / 2, y: H - B + 16, "text-anchor": "middle", class: "tick" }, bar[0]));
+    });
+    // oracle reference line
+    svg.appendChild(el("line", { x1: L, y1: y(1), x2: W - R, y2: y(1), stroke: css("--oracle"), "stroke-dasharray": "3 3", "stroke-width": 1, opacity: 0.6 }));
+    let regime, cls;
+    if (su > 0.25) { regime = "non-identified from {C}"; cls = "bad"; }
+    else if (overlapR2 > 0.6) { regime = "identified · strained overlap"; cls = "watch"; }
+    else { regime = "identified · good overlap"; cls = "good"; }
+    read.innerHTML = "<span class='regime " + cls + "'>" + regime + "</span><br>"
+      + "Crude <b>" + fmt(crude, 2) + "</b>, adjusted-for-C <b>" + fmt(adjusted, 2) + "</b>, truth <b>+1.00</b>. "
+      + "Overlap R²(X~C) = <b>" + fmtu(overlapR2, 2) + "</b>. "
+      + (su > 0.25
+        ? "The unmeasured confounder biases even the correctly-adjusted estimate — no from-data method recovers β; only the oracle knows."
+        : overlapR2 > 0.6
+          ? "Adjustment still hits β, but X is nearly determined by C — weights blow up, IPW gets fragile (the overlap card's STRAINED regime)."
+          : "Adjusting for C recovers the truth cleanly.");
+  }
+  [obs, unm].forEach(c => c.addEventListener("input", draw)); draw();
+})();
+
+// ============ DEMO 3: NORTA pushforward ============
+(function () {
+  const rc = document.getElementById("nt-r"), marg = document.getElementById("nt-marg");
+  const svg = document.getElementById("nt-svg"), read = document.getElementById("nt-read");
+  const N = 3000;
+  function Finv(u, kind, z) {
+    if (kind === "gauss") return z;
+    if (kind === "lognorm") return Math.exp(z);
+    if (kind === "exp") return -Math.log(1 - Math.min(0.9999, Math.max(1e-6, u)));
+    if (kind === "pareto") return Math.pow(1 - Math.min(0.9999, Math.max(1e-6, u)), -1 / 2);
+    return z;
+  }
+  function draw() {
+    const r = +rc.value, kind = marg.value;
+    document.getElementById("nt-r-v").textContent = fmt(r, 2);
+    seed = 987654; // reproducible per redraw
+    const xs = [], ys = [];
+    for (let i = 0; i < N; i++) {
+      const z1 = randn(), w = randn();
+      const z2 = r * z1 + Math.sqrt(Math.max(0, 1 - r * r)) * w;
+      xs.push(Finv(Phi(z1), kind, z1));
+      ys.push(Finv(Phi(z2), kind, z2));
+    }
+    // Pearson
+    const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+    const mx = mean(xs), my = mean(ys);
+    let cxy = 0, vx = 0, vy = 0;
+    for (let i = 0; i < N; i++) { cxy += (xs[i] - mx) * (ys[i] - my); vx += (xs[i] - mx) ** 2; vy += (ys[i] - my) ** 2; }
+    const pearson = cxy / Math.sqrt(vx * vy);
+    // Spearman = pearson of ranks
+    const rank = (a) => { const idx = a.map((v, i) => [v, i]).sort((p, q) => p[0] - q[0]); const rk = new Array(a.length); idx.forEach((p, k) => rk[p[1]] = k); return rk; };
+    const rxs = rank(xs), rys = rank(ys);
+    const mrx = (N - 1) / 2; let cr = 0, vrx = 0, vry = 0;
+    for (let i = 0; i < N; i++) { cr += (rxs[i] - mrx) * (rys[i] - mrx); vrx += (rxs[i] - mrx) ** 2; vry += (rys[i] - mrx) ** 2; }
+    const spearman = cr / Math.sqrt(vrx * vry);
+    // plot scatter (clip to 1st..99th percentile for skewed marginals)
+    clear(svg);
+    const W = 460, H = 300, L = 44, R = 16, TP = 16, B = 40;
+    const sortedX = [...xs].sort((a, b) => a - b), sortedY = [...ys].sort((a, b) => a - b);
+    const q = (arr, p) => arr[Math.floor(p * (arr.length - 1))];
+    const xlo = q(sortedX, 0.01), xhi = q(sortedX, 0.99), ylo = q(sortedY, 0.01), yhi = q(sortedY, 0.99);
+    const px = (v) => L + (Math.min(xhi, Math.max(xlo, v)) - xlo) / (xhi - xlo + 1e-9) * (W - L - R);
+    const py = (v) => H - B - (Math.min(yhi, Math.max(ylo, v)) - ylo) / (yhi - ylo + 1e-9) * (H - TP - B);
+    svg.appendChild(el("line", { x1: L, y1: H - B, x2: W - R, y2: H - B, class: "axis" }));
+    svg.appendChild(el("line", { x1: L, y1: TP, x2: L, y2: H - B, class: "axis" }));
+    svg.appendChild(el("text", { x: (L + W - R) / 2, y: H - 6, "text-anchor": "middle", class: "tick" }, "X₁"));
+    svg.appendChild(el("text", { x: 12, y: TP + 4, class: "tick" }, "X₂"));
+    const dots = document.createElementNS(NS, "g");
+    for (let i = 0; i < N; i += 2) { dots.appendChild(el("circle", { cx: px(xs[i]).toFixed(1), cy: py(ys[i]).toFixed(1), r: 1.4, fill: css("--accent"), opacity: 0.28 })); }
+    svg.appendChild(dots);
+    const drift = Math.abs(pearson - r);
+    read.innerHTML = "You set latent r = <b>" + fmt(r, 2) + "</b>. "
+      + "Observed <b>Pearson " + fmt(pearson, 2) + "</b> · rank <b>Spearman " + fmt(spearman, 2) + "</b>. "
+      + (kind === "gauss"
+        ? "<span class='regime good'>matched</span> — Gaussian marginals, so the observed Pearson equals the copula r exactly."
+        : "<span class='regime watch'>drift " + fmtu(drift, 2) + "</span> — the marginal transform bends Pearson away from r (Spearman stays put). To hit a <em>target</em> Pearson you must invert this — the NORTA correction.");
+  }
+  [rc, marg].forEach(c => c.addEventListener("input", draw)); draw();
+})();
+</script>
+</body>
+</html>
