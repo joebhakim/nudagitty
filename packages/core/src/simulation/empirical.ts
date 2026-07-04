@@ -61,12 +61,22 @@ export function simulateEmpiricalDistributions(
   const blockNodeIds = new Set(blocks.flatMap((b) => b.nodes));
   const linearGaussianImportance = blocks.length === 0 ? simulateLinearGaussianConditionedEmpirical(graph, spec, order, conditions, sampleCount, rng) : null;
   if (linearGaussianImportance) return linearGaussianImportance;
-  // Fast path: unconditioned forward sampling (no rejection/importance) via the
-  // compiled loop. Bit-identical to the interpreted loop below.
-  if (conditions.length === 0 && blocks.length === 0) {
+  // Fast path: unconditioned forward sampling (no rejection/importance) via the compiled loop.
+  // Copula blocks ride the same fast path — draw the coupled root values up front and inject them
+  // through the intervention hook (which skips those nodes' own draws), instead of the slow loop.
+  if (conditions.length === 0) {
     const compiled = compileModel(graph, spec, order);
     if (compiled) {
-      const { samples } = runCompiledForward(compiled, spec, rng, sampleCount);
+      let intervention: Parameters<typeof runCompiledForward>[4];
+      if (blocks.length > 0) {
+        const blockSamples: Record<string, number[]> = {};
+        for (const pb of preparedBlocks) for (const id of pb.block.nodes) blockSamples[id] = new Array<number>(sampleCount).fill(0);
+        for (let s = 0; s < sampleCount; s += 1) {
+          for (const pb of preparedBlocks) { const draw = drawCopulaBlockSample(pb, rng); for (const id in draw) blockSamples[id]![s] = draw[id]!; }
+        }
+        intervention = (ctx) => (blockNodeIds.has(ctx.nodeId) ? (blockSamples[ctx.nodeId]?.[ctx.sampleIndex] ?? 0) : null);
+      }
+      const { samples } = runCompiledForward(compiled, spec, rng, sampleCount, intervention);
       const logWeights = new Array<number>(sampleCount).fill(0);
       const weights = normalizedWeights(logWeights);
       return {

@@ -36,10 +36,19 @@ export function sampleDistribution(distribution: NodeDistribution, source: Rando
  * continuous ones (gamma/beta/t) for free. Maps u ∈ [0,1] → x. In the app the same
  * role is played by a node's actual simulated samples.
  */
+const quantileCache = new Map<string, (u: number) => number>();
 export function buildDistributionQuantile(distribution: NodeDistribution, sampleCount = 4000, seed = 0x51ab): (u: number) => number {
+  // Deterministic (fixed seed) ⇒ memoize by distribution so repeated sims / oracle re-sims don't
+  // rebuild the 4000-sample sort each time (the copula-block hot path).
+  const key = `${sampleCount}:${seed}:${JSON.stringify(distribution)}`;
+  const hit = quantileCache.get(key);
+  if (hit) return hit;
+  if (quantileCache.size > 400) quantileCache.clear();
   const sampler = createDistributionSampler(distribution, createSeededRandomSource(seed));
   const sorted = Array.from({ length: sampleCount }, () => sampler()).sort((a, b) => a - b);
-  return (u: number) => quantileSorted(sorted, Math.min(1, Math.max(0, u)));
+  const fn = (u: number) => quantileSorted(sorted, Math.min(1, Math.max(0, u)));
+  quantileCache.set(key, fn);
+  return fn;
 }
 
 export function createDistributionSampler(distribution: NodeDistribution, source: RandomSource): DistributionSampler {

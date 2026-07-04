@@ -40,8 +40,7 @@ function evalWeight(m: Moderation, resolve: (by: number) => number): number {
   if (m.by === null || !m.mechanism) return m.constant;
   return edgeContribution(resolve(m.by), m.mechanism);
 }
-/** Evaluate a mixture edge at one sample's conditioning values → concrete per-sample copulas + weights. */
-function evaluateMixtureEdge(edge: MixtureEdge, resolve: (by: number) => number): { comps: PairCopula[]; weights: number[] } {
+function computeMixtureEdge(edge: MixtureEdge, resolve: (by: number) => number): { comps: PairCopula[]; weights: number[] } {
   const comps: PairCopula[] = edge.components.map((c) => ({ family: c.family, rotation: c.rotation, tau: evalTau(c.tau, c.family, resolve) }));
   if (comps.length === 1) return { comps, weights: [1] };
   const raw = edge.weights.map((w) => evalWeight(w, resolve));
@@ -49,6 +48,22 @@ function evaluateMixtureEdge(edge: MixtureEdge, resolve: (by: number) => number)
   const exps = raw.map((r) => Math.exp(r - mx));
   const s = exps.reduce((a, b) => a + b, 0) || 1;
   return { comps, weights: exps.map((e) => e / s) };
+}
+function isModerated(edge: MixtureEdge): boolean {
+  return edge.components.some((c) => c.tau.by !== null) || (edge.components.length > 1 && edge.weights.some((w) => w.by !== null));
+}
+const staticEdgeCache = new WeakMap<MixtureEdge, { comps: PairCopula[]; weights: number[] }>();
+/** Evaluate a mixture edge at one sample's conditioning values. Constant (non-moderated) edges give
+ * the same copula every sample, so they are cached once per edge — the hot path for a plain vine. */
+function evaluateMixtureEdge(edge: MixtureEdge, resolve: (by: number) => number): { comps: PairCopula[]; weights: number[] } {
+  if (!isModerated(edge)) {
+    const hit = staticEdgeCache.get(edge);
+    if (hit) return hit;
+    const result = computeMixtureEdge(edge, resolve);
+    staticEdgeCache.set(edge, result);
+    return result;
+  }
+  return computeMixtureEdge(edge, resolve);
 }
 // Mixture h = weighted sum of component h's (h is linear in the copula); h⁻¹ by bisection (monotone).
 function mixtureH(comps: PairCopula[], weights: number[], x: number, v: number): number {
