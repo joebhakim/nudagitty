@@ -272,6 +272,36 @@ exports[`engine golden > confounder-joint-copula — simulation + do-contrasts a
 }
 `;
 
+exports[`engine golden > confounder-triple-copula — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Dose↑)−do(↓) on Recovery": 3.536876,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 0.014147,
+      "sd": 0.987181,
+    },
+    "Comorbidity": {
+      "mean": 0.003006,
+      "sd": 0.984715,
+    },
+    "Dose": {
+      "mean": 5.026737,
+      "sd": 1.734074,
+    },
+    "Recovery": {
+      "mean": 4.021691,
+      "sd": 1.684381,
+    },
+    "Severity": {
+      "mean": -0.000859,
+      "sd": 1.010141,
+    },
+  },
+}
+`;
+
 exports[`engine golden > continuous-dose-response — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {

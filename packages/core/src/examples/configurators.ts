@@ -303,6 +303,28 @@ export function configureConfounderJointCopula(document: GraphDocument): GraphDo
   return document;
 }
 
+export function configureConfounderTripleCopula(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 4000);
+  setContinuousVariable(document, "Age", "First baseline confounder — older patients get more dose AND recover worse.", "z-score");
+  setContinuousVariable(document, "Severity", "Second baseline confounder — sicker gets more dose AND recovers worse.", "z-score");
+  setContinuousVariable(document, "Comorbidity", "Third baseline confounder — more comorbid gets more dose AND recovers worse.", "z-score");
+  setContinuousVariable(document, "Dose", "Continuous drug dose administered.", "mg");
+  setContinuousVariable(document, "Recovery", "Recovery score at follow-up.", "score");
+  setNode(document, "Age", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Severity", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Comorbidity", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Dose", { intercept: 5, noise: { kind: "normal", mean: 0, sd: 0.8 } });
+  setNode(document, "Recovery", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setLinearCoefficient(document, "Age", "Dose", 0.9);
+  setLinearCoefficient(document, "Severity", "Dose", 0.9);
+  setLinearCoefficient(document, "Comorbidity", "Dose", 0.9);
+  setLinearCoefficient(document, "Age", "Recovery", -1.4);
+  setLinearCoefficient(document, "Severity", "Recovery", -1.4);
+  setLinearCoefficient(document, "Comorbidity", "Recovery", -1.4);
+  setLinearCoefficient(document, "Dose", "Recovery", 0.8); // the true effect
+  return document;
+}
+
 export function configureCategoricalRegimen(document: GraphDocument): GraphDocument {
   setExampleSampleSize(document, 5000);
   setContinuousVariable(document, "Severity", "Baseline illness severity. Sicker patients are steered to the later regimens AND recover worse — the confounding.", "severity z-score");
