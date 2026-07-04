@@ -858,6 +858,7 @@ export function App() {
         onEdgeClick={selectEdge}
         onEdgeControl={(edge) => replaceGraph(upsertEdge(document.graph, edge))}
         onResample={resample}
+        onOpenJointLab={() => setShowJointLab(true)}
       />
     </Panel>
   );

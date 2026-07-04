@@ -250,7 +250,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
           {props.mode !== "basic" && <Controls className="canvas-zoom-controls react-flow-controls" showInteractive={false} />}
           <FlowGraphArrowLayer edges={computedEdges} />
           <FlowModulationLayer modulations={props.modulations} edges={computedEdges} nodesById={liveNodesById} />
-          <FlowCopulaLayer couplings={props.copulaCouplings} nodesById={liveNodesById} />
+          <FlowCopulaLayer couplings={props.copulaCouplings} nodesById={liveNodesById} onEdit={props.onOpenJointLab} />
         </ReactFlow>
       </div>
       <button
@@ -317,6 +317,9 @@ function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
   const { node, selected, edgeSource, ancestor, changed, value, state, summary, candidateInstrument, showNoise, onNodeClick } = props.data;
   const showInstrumentHint = candidateInstrument && !node.roles.instrument;
   const variable = normalizeVariableModel(node.variable);
+  // Discrete / atomic marginals carry point masses — Sklar's copula is unidentified across the
+  // value gaps, so an authored τ on such a node is a latent knob the atoms compress. Flag it.
+  const hasPointMass = variable.valueType === "binary" || variable.valueType === "categorical" || variable.valueType === "ordinal" || variable.valueType === "count";
   const labelLines = nodeLabelLines(node.label);
   const labelY = labelLines.length === 1 ? 4 : -((labelLines.length - 1) * 6);
   const className = [
@@ -367,6 +370,15 @@ function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
         )}
         {node.roles.adjusted && <rect className="adjusted-ring" x="-27" y="-27" width="54" height="54" rx="6" />}
         {node.roles.selected && <path className="selected-mark" d="M -20 24 L 0 34 L 20 24" />}
+        {hasPointMass && (
+          <g className="pointmass-badge" transform="translate(30,-30)">
+            <title>Has point mass (atoms) — a discrete/atomic marginal ({variable.valueType}). Sklar's copula is unidentified across the value gaps, so an authored τ here is a latent knob the atoms compress (see the Joint Lab confession).</title>
+            <rect x={-9} y={-8} width={18} height={16} rx={4} />
+            <line x1={-5} y1={5} x2={-5} y2={-1} />
+            <line x1={0} y1={5} x2={0} y2={-5} />
+            <line x1={5} y1={5} x2={5} y2={1} />
+          </g>
+        )}
         <text className="node-label" y={labelY} onClick={handleSelect}>
           {labelLines.map((line, index) => (
             <tspan x="0" dy={index === 0 ? 0 : 12} key={`${line}-${index}`}>
@@ -470,11 +482,12 @@ function modulationVerb(baseline: number, gateCoefficient: number): string {
 
 // Copula couplings: dashed bidirected arcs between covariates that share a copula block, labelled τ.
 // Makes the authored dependence a visible part of the DAG rather than a hidden simulation setting.
-function FlowCopulaLayer({ couplings, nodesById }: { couplings: CopulaCoupling[]; nodesById: Map<string, GraphNode> }) {
+function FlowCopulaLayer({ couplings, nodesById, onEdit }: { couplings: CopulaCoupling[]; nodesById: Map<string, GraphNode>; onEdit?: () => void }) {
   if (!couplings || couplings.length === 0) return null;
+  const editable = Boolean(onEdit);
   return (
     <ViewportPortal>
-      <svg className="copula-coupling-layer" aria-hidden="true">
+      <svg className={`copula-coupling-layer${editable ? " editable" : ""}`} aria-hidden={editable ? undefined : "true"}>
         {couplings.map((c) => {
           const a = nodesById.get(c.aId), b = nodesById.get(c.bId);
           if (!a || !b) return null;
@@ -484,10 +497,13 @@ function FlowCopulaLayer({ couplings, nodesById }: { couplings: CopulaCoupling[]
           const dx = pb.x - pa.x, dy = pb.y - pa.y, len = Math.hypot(dx, dy) || 1;
           const nx = -dy / len, ny = dx / len, bow = Math.min(30, len * 0.2);
           const cx = mid.x + nx * bow, cy = mid.y + ny * bow;
+          const d = `M ${pa.x} ${pa.y} Q ${cx} ${cy} ${pb.x} ${pb.y}`;
           return (
-            <g key={c.id} className="copula-coupling">
-              <title>{c.label}</title>
-              <path className="copula-coupling-line" d={`M ${pa.x} ${pa.y} Q ${cx} ${cy} ${pb.x} ${pb.y}`} />
+            <g key={c.id} className="copula-coupling" onClick={onEdit ? (e) => { e.stopPropagation(); onEdit(); } : undefined}>
+              <title>{editable ? `${c.label} — click to edit in the Joint Lab` : c.label}</title>
+              {/* wide transparent hit-target so the thin dashed arc is easy to click */}
+              {editable && <path className="copula-coupling-hit" d={d} />}
+              <path className="copula-coupling-line" d={d} />
               <text className="copula-coupling-label" x={cx + nx * 7} y={cy + ny * 7} textAnchor="middle">{c.short}</text>
             </g>
           );
