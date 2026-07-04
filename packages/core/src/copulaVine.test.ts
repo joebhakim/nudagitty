@@ -71,6 +71,23 @@ describe("copulaVine — D-vine", () => {
     expect(t02coupled).toBeGreaterThan(t02indep + 0.15); // adding direct conditional dependence lifts it
   });
 
+  it("a conditional edge's pseudo-observations carry the edited conditional τ, not the marginal", () => {
+    const w = uniforms(23, 3 * N);
+    const trees: PairCopula[][] = [
+      [{ family: "gaussian", tau: 0.6 }, { family: "clayton", tau: 0.5 }], // T1
+      [{ family: "gaussian", tau: 0.5 }]                                   // T2: c_{0,2|1}
+    ];
+    const pu: number[] = [], pv: number[] = [], m0: number[] = [], m2: number[] = [];
+    for (let i = 0; i < N; i += 1) {
+      const pseudo: Record<string, [number, number]> = {};
+      const pos = sampleDVine(trees, [w[3 * i]!, w[3 * i + 1]!, w[3 * i + 2]!], pseudo);
+      const [a, b] = pseudo["1:0"]!; pu.push(a); pv.push(b);          // conditional-rank pseudo-obs of the T2 edge
+      m0.push(pos[0]!); m2.push(pos[2]!);                             // marginal ranks of the same outer pair
+    }
+    expect(kendall(pu, pv)).toBeCloseTo(0.5, 1);                       // the copula we edited
+    expect(kendall(m0, m2)).toBeGreaterThan(0.55);                    // the MARGINAL is higher (leak through the middle)
+  });
+
   it("d=4 truncated at T1: adjacent pairs strong, distant pair weaker (chain decay)", () => {
     const w = uniforms(19, 4 * N);
     const trees: PairCopula[][] = [[

@@ -140,8 +140,14 @@ export function tailDependence(pc: PairCopula): [number, number] {
  * Missing / independence entries truncate that tree. Returns one draw in LINE-POSITION
  * order (the caller maps positions → variable ids via the chosen order). Aas et al. (2009),
  * Algorithm 2.
+ *
+ * If `pseudo` is supplied it is filled with each edge's conditional-rank pseudo-observations
+ * `[F(a|D), F(b|D)]`, keyed `"<tree0>:<edge0>"` (0-based, positions edge0 and edge0+tree0+1).
+ * Those are the arguments the edge's copula actually acts on — the correct thing to plot for a
+ * conditional cell (valid without fixing conditioning values, under the simplified-vine
+ * assumption this sampler embodies).
  */
-export function sampleDVine(trees: PairCopula[][], w: number[]): number[] {
+export function sampleDVine(trees: PairCopula[][], w: number[], pseudo?: Record<string, [number, number]>): number[] {
   const n = w.length;
   const IND: PairCopula = { family: "independence", tau: 0 };
   const theta = (j: number, i: number): PairCopula => trees[j - 1]?.[i - 1] ?? IND; // tree j, edge i (1-based)
@@ -150,7 +156,12 @@ export function sampleDVine(trees: PairCopula[][], w: number[]): number[] {
   x[1] = v[1]![1] = w[0]!;
   for (let i = 2; i <= n; i += 1) {
     v[i]![1] = w[i - 1]!;
-    for (let k = i - 1; k >= 1; k -= 1) v[i]![1] = pairHinv(theta(k, i - k), v[i]![1]!, v[i - 1]![2 * k - 1]!);
+    for (let k = i - 1; k >= 1; k -= 1) {
+      v[i]![1] = pairHinv(theta(k, i - k), v[i]![1]!, v[i - 1]![2 * k - 1]!);
+      // After the inversion, v[i][1] = F(x_i | between) and v[i-1][2k-1] = F(x_{i-k} | between):
+      // the copula's own arguments for the edge (tree k, positions i-k … i).
+      if (pseudo) pseudo[`${k - 1}:${i - k - 1}`] = [v[i - 1]![2 * k - 1]!, v[i]![1]!];
+    }
     x[i] = v[i]![1]!;
     if (i === n) break;
     // Odd slots v[i][2m+1] = F(x_{i-m} | x_{i-m+1..i}); even slots v[i][2m] = F(x_i | x_{i-m..i-1}).

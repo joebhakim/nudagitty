@@ -45,24 +45,32 @@ export function CopulaAuthor(props: {
 }) {
   const { variables, spec, onSpec } = props;
   const d = variables.length;
-  const [focus, setFocus] = useState<[number, number]>([0, 1]); // focused pair (variable indices) for the rank view
+  const [focus, setFocus] = useState<[number, number]>([0, 0]); // focused edge [tree, edge] for the copula view
 
   const base = useMemo(() => seededBase(d), [d]);
   const quantiles = useMemo(() => variables.map((v) => buildDistributionQuantile(v.marginal)), [variables]);
 
-  // sample the joint: vine → position-order uniforms → reorder to variables → apply marginals
-  const { uCols, dataCols } = useMemo(() => {
+  // sample the joint: vine → position-order uniforms → reorder to variables → apply marginals.
+  // Also collect each edge's conditional-rank pseudo-observations (the copula's own arguments).
+  const { uCols, dataCols, pseudoByEdge } = useMemo(() => {
     const uCols: number[][] = Array.from({ length: d }, () => []);
     const dataCols: number[][] = Array.from({ length: d }, () => []);
+    const pseudoByEdge: Record<string, { u: number[]; v: number[] }> = {};
     for (const w of base) {
-      const pos = sampleDVine(spec.trees, w);
+      const pseudo: Record<string, [number, number]> = {};
+      const pos = sampleDVine(spec.trees, w, pseudo);
       for (let p = 0; p < d; p += 1) {
         const vi = spec.order[p]!;
         uCols[vi]!.push(pos[p]!);
         dataCols[vi]!.push(quantiles[vi]!(pos[p]!));
       }
+      for (const key in pseudo) {
+        (pseudoByEdge[key] ??= { u: [], v: [] });
+        pseudoByEdge[key]!.u.push(pseudo[key]![0]);
+        pseudoByEdge[key]!.v.push(pseudo[key]![1]);
+      }
     }
-    return { uCols, dataCols };
+    return { uCols, dataCols, pseudoByEdge };
   }, [base, spec, quantiles, d]);
 
   const setEdge = (tree: number, edge: number, patch: Partial<PairCopula>) => {
@@ -74,6 +82,7 @@ export function CopulaAuthor(props: {
     if (!ARCHIMEDEAN_FAMILIES.includes(next.family)) next = { ...next, rotation: 0 };
     trees[tree]![edge] = next;
     onSpec({ ...spec, trees });
+    setFocus([tree, edge]); // editing an edge focuses it, so the copula view follows
   };
   const swap = (p: number, q: number) => {
     if (q < 0 || q >= d) return;
@@ -84,6 +93,14 @@ export function CopulaAuthor(props: {
   const setDepth = (depth: number) => onSpec({ ...spec, depth: Math.max(1, Math.min(d - 1, depth)) });
 
   const hasDiscrete = variables.some((v) => DISCRETE_KINDS.has(v.marginal.kind));
+
+  // Resolve the focused edge (clamped for depth/dimension changes) → its variables + pseudo-obs.
+  const safeTree = Math.max(0, Math.min(focus[0], spec.depth - 1));
+  const safeEdge = Math.max(0, Math.min(focus[1], d - 2 - safeTree));
+  const faPos = safeEdge, fbPos = safeEdge + safeTree + 1;
+  const fa = spec.order[faPos]!, fb = spec.order[fbPos]!;
+  const between = spec.order.slice(faPos + 1, fbPos).map((k) => variables[k]!.name).join(", ");
+  const focusPseudo = pseudoByEdge[`${safeTree}:${safeEdge}`] ?? { u: [], v: [] };
 
   return (
     <div className="copula-author">
@@ -118,9 +135,9 @@ export function CopulaAuthor(props: {
                   const between = spec.order.slice(e + 1, e + tree + 1).map((k) => variables[k]!.name).join(",");
                   const pc = spec.trees[tree]?.[e] ?? { family: "independence" as CopulaFamily, tau: 0 };
                   const arch = ARCHIMEDEAN_FAMILIES.includes(pc.family);
-                  const active = focus[0] === va && focus[1] === vb;
+                  const active = focus[0] === tree && focus[1] === e;
                   return (
-                    <div className={`ca-edge${active ? " active" : ""}`} key={e} onClick={() => setFocus([va, vb])}>
+                    <div className={`ca-edge${active ? " active" : ""}`} key={e} onClick={() => setFocus([tree, e])}>
                       <div className="ca-edge-title">{variables[va]!.name} — {variables[vb]!.name}{tree > 0 && <span className="ca-cond"> | {between}</span>}</div>
                       <select value={pc.family} onClick={(ev) => ev.stopPropagation()} onChange={(ev) => setEdge(tree, e, { family: ev.target.value as CopulaFamily })}>
                         {(["independence", "gaussian", "frank", "clayton", "gumbel"] as CopulaFamily[]).map((f) => <option key={f} value={f}>{FAMILY_LABEL[f]}</option>)}
@@ -154,21 +171,24 @@ export function CopulaAuthor(props: {
       </div>
 
       {/* previews */}
+      <p className="ca-note">Simplified vine — each conditional copula is assumed not to vary with the conditioning values, so it is a single object, shown for the focused edge in <b>conditional-rank space</b> (the h-transformed pseudo-observations F(a|D), F(b|D)). The SPLOM is the <b>observable marginal</b> joint, which integrates over everything — so a conditional cell and its marginal panel differ.</p>
       <div className="ca-preview">
         <div className="ca-splom-wrap">
-          <div className="ca-cap">joint in data space — marginals applied</div>
-          <Splom variables={variables} dataCols={dataCols} uCols={uCols} focus={focus} onFocus={setFocus} />
+          <div className="ca-cap">observable marginal joint — every pair, marginals applied</div>
+          <Splom variables={variables} dataCols={dataCols} uCols={uCols} highlight={[Math.min(fa, fb), Math.max(fa, fb)]} />
         </div>
         <div className="ca-rank-wrap">
-          <div className="ca-cap">copula density — {variables[focus[0]]?.name} × {variables[focus[1]]?.name} (rank space)</div>
-          <RankDensity xs={uCols[focus[0]] ?? []} ys={uCols[focus[1]] ?? []} />
+          <div className="ca-cap">{safeTree === 0
+            ? `copula being edited — ${variables[fa]!.name} × ${variables[fb]!.name} (rank space)`
+            : `conditional copula being edited — ${variables[fa]!.name} × ${variables[fb]!.name} | ${between} (conditional-rank space)`}</div>
+          <RankDensity xs={focusPseudo.u} ys={focusPseudo.v} />
         </div>
       </div>
     </div>
   );
 }
 
-function Splom(props: { variables: CopulaVariable[]; dataCols: number[][]; uCols: number[][]; focus: [number, number]; onFocus: (p: [number, number]) => void }) {
+function Splom(props: { variables: CopulaVariable[]; dataCols: number[][]; uCols: number[][]; highlight: [number, number] }) {
   const { variables, dataCols, uCols } = props;
   const d = variables.length;
   const pairs: Array<[number, number]> = [];
@@ -178,9 +198,9 @@ function Splom(props: { variables: CopulaVariable[]; dataCols: number[][]; uCols
       {pairs.map(([i, j]) => {
         const xs = dataCols[i] ?? [], ys = dataCols[j] ?? [];
         const tau = kendallSub(uCols[i] ?? [], uCols[j] ?? []);
-        const active = props.focus[0] === i && props.focus[1] === j;
+        const active = props.highlight[0] === i && props.highlight[1] === j;
         return (
-          <div className={`ca-panel${active ? " active" : ""}`} key={`${i}-${j}`} onClick={() => props.onFocus([i, j])}>
+          <div className={`ca-panel${active ? " active" : ""}`} key={`${i}-${j}`}>
             <div className="ca-panel-cap">{variables[i]!.name} — {variables[j]!.name} · τ {fmt(tau)}</div>
             <Scatter xs={xs} ys={ys} />
           </div>
