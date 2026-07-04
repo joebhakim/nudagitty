@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reading — the joint, copulas & causal DGPs</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --panel: #ffffff; --ink: #1a222b; --muted: #5a6670; --line: #e2e5e9;
+    --accent: #2f7d6b; --oracle: #d97706; --blue: #2563aa; --chip: #eef3f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121619; --panel: #1b2126; --ink: #e7ecf0; --muted: #93a1ac; --line: #2c353c;
+      --accent: #56b39c; --oracle: #f0a63a; --blue: #6fa8dc; --chip: #23302c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { max-width: 820px; margin: 0 auto; padding: 32px 20px 4px; }
+  header h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); max-width: 64ch; }
+  nav { max-width: 820px; margin: 0 auto; padding: 6px 20px; font-size: 13px; }
+  nav a { color: var(--accent); text-decoration: none; }
+  main { max-width: 820px; margin: 0 auto; padding: 10px 20px 64px; }
+  .start { background: linear-gradient(180deg, var(--chip), var(--panel)); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 20px; margin: 16px 0 8px; }
+  .start h2 { margin: 0 0 8px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); }
+  section { margin: 26px 0 0; }
+  section > h2 { font-size: 17px; margin: 0 0 4px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  section > .cat-note { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: 10px 0; border-bottom: 1px dashed var(--line); }
+  li:last-child { border-bottom: none; }
+  .ref-title { font-size: 14.5px; }
+  .ref-title em { color: var(--ink); }
+  .ref-meta { color: var(--muted); font-size: 12.5px; }
+  .ref-why { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .tags { margin-top: 5px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag { background: var(--chip); color: var(--accent); border-radius: 999px; padding: 1px 9px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; }
+  .tag.free { background: rgba(31,122,69,0.16); color: #1f7a45; }
+  @media (prefers-color-scheme: dark) { .tag.free { color: #58c98a; } }
+  code { background: rgba(127,127,127,0.14); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  footer { max-width: 820px; margin: 0 auto; padding: 20px; color: var(--muted); font-size: 12.5px;
+    border-top: 1px solid var(--line); margin-top: 32px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Reading — the joint, copulas &amp; causal DGPs</h1>
+  <p>A curated path behind the <a href="/joint-lab.html">Joint Lab</a> and the effect-stack work: how to control the joint of a data-generating process while pinning the truth. Tags link each reference to the demo or estimator it underpins.</p>
+</header>
+<nav>← <a href="/joint-lab.html">The Joint Lab</a> &nbsp;·&nbsp; <a href="/">nudagitty</a></nav>
+<main>
+
+  <div class="start">
+    <h2>Start here — the spine</h2>
+    <ul>
+      <li>
+        <div class="ref-title">Peters, Janzing &amp; Schölkopf — <em>Elements of Causal Inference</em> <span class="ref-meta">MIT Press, 2017</span></div>
+        <div class="ref-why">Our exact framing: an SCM is structural functions f + an exogenous noise law P(U). The cleanest source for the "copula on the noise, f stays explicit" split.</div>
+        <div class="tags"><span class="tag free">free PDF</span><span class="tag">SCM / noise</span></div>
+      </li>
+      <li>
+        <div class="ref-title">Hernán &amp; Robins — <em>Causal Inference: What If</em> <span class="ref-meta">online, updated</span></div>
+        <div class="ref-why">The estimation side under everything: g-formula/standardization, IPW, positivity, effect modification, target populations.</div>
+        <div class="tags"><span class="tag free">free PDF</span><span class="tag">effect stack</span><span class="tag">① effect-mod</span></div>
+      </li>
+    </ul>
+  </div>
+
+  <section>
+    <h2>Copulas — the new machinery</h2>
+    <p class="cat-note">Sklar makes (marginals × copula) a lossless coordinate system for any joint.</p>
+    <ul>
+      <li><div class="ref-title">Nelsen — <em>An Introduction to Copulas</em> <span class="ref-meta">Springer, 2nd ed. 2006</span></div>
+        <div class="ref-why">The entry point: Sklar's theorem, Fréchet–Hoeffding bounds, Archimedean families.</div></li>
+      <li><div class="ref-title">Joe — <em>Dependence Modeling with Copulas</em> <span class="ref-meta">CRC, 2014</span></div>
+        <div class="ref-why">The comprehensive reference — tail dependence, multivariate families, vines. (1997 <em>Multivariate Models and Dependence Concepts</em> is the older classic.)</div></li>
+      <li><div class="ref-title">Sklar — <em>Fonctions de répartition à n dimensions et leurs marges</em> <span class="ref-meta">1959</span></div>
+        <div class="ref-why">The two-page origin of the whole idea.</div></li>
+      <li><div class="ref-title">Genest &amp; Nešlehová — <em>A primer on copulas for count data</em> <span class="ref-meta">ASTIN Bulletin, 2007</span></div>
+        <div class="ref-why">The discrete-margin caveat: non-uniqueness and squeezed dependence for binary/count variables. Read before trusting "set any correlation."</div>
+        <div class="tags"><span class="tag">discrete margins</span></div></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Vines — the actual superset</h2>
+    <p class="cat-note">Pair-copula constructions: any bivariate family per edge along a nested tree sequence.</p>
+    <ul>
+      <li><div class="ref-title">Czado — <em>Analyzing Dependent Data with Vine Copulas</em> <span class="ref-meta">Springer, 2019</span></div>
+        <div class="ref-why">The textbook — R-/C-/D-vines, the simplified-vine assumption.</div></li>
+      <li><div class="ref-title">Aas, Czado, Frigessi &amp; Bakken — <em>Pair-copula constructions of multiple dependence</em> <span class="ref-meta">Insurance: Math. &amp; Econ., 2009</span></div>
+        <div class="ref-why">The foundational vine paper.</div></li>
+      <li><div class="ref-title">Bedford &amp; Cooke — <em>Vines: a new graphical model for dependent random variables</em> <span class="ref-meta">Annals of Statistics, 2002</span></div>
+        <div class="ref-why">Where vine-as-graph comes from — directly the "bidirected edge = pair-copula" connection.</div>
+        <div class="tags"><span class="tag">copula editor</span></div></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Generating it — NORTA</h2>
+    <p class="cat-note">What <code>copula_marginal</code> already does: a latent-Gaussian draw mapped through each marginal.</p>
+    <ul>
+      <li><div class="ref-title">Cario &amp; Nelson — <em>Modeling and generating random vectors with arbitrary marginal distributions and correlation matrix</em> <span class="ref-meta">Northwestern tech report, 1997</span></div>
+        <div class="ref-why">The NORTA method itself.</div></li>
+      <li><div class="ref-title">Ghosh &amp; Henderson — <em>Behavior of the NORTA method for correlated random vector generation</em> <span class="ref-meta">ACM TOMACS, 2003</span></div>
+        <div class="ref-why">Feasibility and the correlation-matching inversion — Demo ③'s Pearson drift.</div>
+        <div class="tags"><span class="tag">③ NORTA</span></div></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>The bidirected / latent layer — ADMGs</h2>
+    <p class="cat-note">Where "confounding = coupled noise = bidirected edge" lives formally.</p>
+    <ul>
+      <li><div class="ref-title">Pearl — <em>Causality: Models, Reasoning, and Inference</em> <span class="ref-meta">2nd ed., 2009</span></div>
+        <div class="ref-why">SCMs, do-calculus, identification — the non-identified boundary in Demo ②.</div>
+        <div class="tags"><span class="tag">② sweep</span></div></li>
+      <li><div class="ref-title">Richardson — <em>Markov properties for acyclic directed mixed graphs</em> <span class="ref-meta">Scand. J. Statistics, 2003</span></div>
+        <div class="ref-why">The Markov theory of bidirected/latent structure.</div></li>
+      <li><div class="ref-title">Richardson, Evans, Robins &amp; Shpitser — <em>Nested Markov properties for ADMGs</em> <span class="ref-meta">2017</span></div>
+        <div class="ref-why">Parametrizing latent-projected models — the formal home of the coupling layer.</div></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Overlap, positivity &amp; continuous treatments</h2>
+    <p class="cat-note">The joint → overlap → estimator story (Thread 1's effect stack).</p>
+    <ul>
+      <li><div class="ref-title">D'Amour, Ding, Feller, Lei &amp; Sekhon — <em>Overlap in observational studies with high-dimensional covariates</em> <span class="ref-meta">J. Econometrics, 2021</span></div>
+        <div class="ref-why">Why richer joints wreck overlap, rigorously.</div>
+        <div class="tags"><span class="tag">overlap card</span><span class="tag">② sweep</span></div></li>
+      <li><div class="ref-title">Petersen, Porter, Gruber, Wang &amp; van der Laan — <em>Diagnosing and responding to violations in the positivity assumption</em> <span class="ref-meta">Stat. Methods Med. Res., 2012</span></div>
+        <div class="tags"><span class="tag">overlap card</span></div></li>
+      <li><div class="ref-title">Hirano &amp; Imbens — <em>The propensity score with continuous treatments</em> <span class="ref-meta">2004</span></div>
+        <div class="ref-why">The generalized propensity score behind the GPS-IPW estimator.</div>
+        <div class="tags"><span class="tag">GPS-IPW</span></div></li>
+      <li><div class="ref-title">Robins, Hernán &amp; Brumback — <em>Marginal structural models and causal inference in epidemiology</em> <span class="ref-meta">Epidemiology, 2000</span></div>
+        <div class="ref-why">Stabilized weights — the truncation the continuous IPW leans on.</div>
+        <div class="tags"><span class="tag">GPS-IPW</span></div></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Transportability &amp; effect modification</h2>
+    <ul>
+      <li><div class="ref-title">Pearl &amp; Bareinboim — <em>External validity: from do-calculus to transportability across populations</em> <span class="ref-meta">Statistical Science, 2014</span></div>
+        <div class="tags"><span class="tag">① effect-mod</span></div></li>
+      <li><div class="ref-title">Bareinboim &amp; Pearl — <em>Causal inference and the data-fusion problem</em> <span class="ref-meta">PNAS, 2016</span></div>
+        <div class="ref-why">Why the marginal truth is a population property, not a mechanism property.</div>
+        <div class="tags"><span class="tag">① effect-mod</span></div></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>DGP design &amp; benchmarking — "the DGM as a knob"</h2>
+    <ul>
+      <li><div class="ref-title">Dorie, Hill, Shalit, Scott &amp; Cervone — <em>Automated versus do-it-yourself methods for causal inference</em> <span class="ref-meta">Statistical Science, 2019</span></div>
+        <div class="ref-why">The ACIC competition — how people design DGPs to stress estimators, which is exactly what controlling the joint is for.</div></li>
+      <li><div class="ref-title">Franklin, Schneeweiss, Polinski &amp; Rassen — <em>Plasmode simulation for the evaluation of pharmacoepidemiologic methods…</em> <span class="ref-meta">Comput. Stat. Data Anal., 2014</span></div>
+        <div class="ref-why">Plasmode = the empirical copula (real rows).</div>
+        <div class="tags"><span class="tag">plasmode</span></div></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Learn by doing — software</h2>
+    <ul>
+      <li><div class="ref-title">R — <code>VineCopula</code> / <code>rvinecopulib</code>, and <code>copula</code></div>
+        <div class="ref-why">Vine fitting/simulation (Nagler, Czado et al.); the general copula toolbox (Hofert, Kojadinovic, Mächler, Yan).</div></li>
+      <li><div class="ref-title">Python — <code>pyvinecopulib</code>, and <code>copulas</code> (SDV)</div></li>
+    </ul>
+  </section>
+
+</main>
+<footer>
+  One honest note: the <b>copula × causal</b> intersection is thin — most copula work is predictive, most causal work treats dependence implicitly through the DAG. The bridge here (a vine on the exogenous noise, under an explicit f) is closer to a design contribution than a textbook chapter. Peters–Janzing–Schölkopf + Joe/Czado are the two halves; the join is the interesting part.
+</footer>
+</body>
+</html>
