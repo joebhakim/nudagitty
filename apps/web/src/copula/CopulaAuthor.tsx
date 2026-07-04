@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildDistributionQuantile, sampleDVineModerated, simpleEdge, normalizeEdgeMechanism, ARCHIMEDEAN_FAMILIES } from "@nudagitty/core";
 import type { CopulaFamily, CopulaRotation, MixtureEdge, Moderation, NodeDistribution } from "@nudagitty/core";
 import { defaultDistribution } from "../compute/distributionPlot";
@@ -96,6 +96,10 @@ export function CopulaAuthor(props: {
   const d = variables.length;
   const [focus, setFocus] = useState<[number, number]>([0, 0]); // focused edge [tree, edge] for the copula view
   const [confess, setConfess] = useState(false); // reveal what atomic marginals hide
+  // trivariate view — three freely-chosen variables at once (only meaningful for d ≥ 3)
+  const [axes3, setAxes3] = useState<[number, number, number]>([0, 1, 2]);
+  const [space3, setSpace3] = useState<"data" | "rank">("data");
+  const [mode3, setMode3] = useState<"points" | "density">("points");
 
   const base = useMemo(() => seededBase(d), [d]);
   const quantiles = useMemo(() => variables.map((v) => buildDistributionQuantile(v.marginal)), [variables]);
@@ -289,6 +293,43 @@ export function CopulaAuthor(props: {
           <RankDensity xs={focusPseudo.u} ys={focusPseudo.v} />
         </div>
       </div>
+
+      {/* trivariate solid view — three variables at once (fixed isometric, hand-rolled canvas) */}
+      {d >= 3 && (() => {
+        const clamp = (i: number) => Math.max(0, Math.min(d - 1, i));
+        const [ix, iy, iz] = [clamp(axes3[0]), clamp(axes3[1]), clamp(axes3[2])] as const;
+        const cols3 = space3 === "rank" ? uCols : dataCols;
+        const setAxis = (slot: 0 | 1 | 2, vi: number) => setAxes3((a) => { const n = [...a] as [number, number, number]; n[slot] = vi; return n; });
+        const axisSelect = (slot: 0 | 1 | 2, cur: number, glyph: string) => (
+          <label className="ca-solid-axis"><span className={`ca-solid-axistag ax${slot}`}>{glyph}</span>
+            <select value={cur} onChange={(ev) => setAxis(slot, +ev.target.value)}>
+              {variables.map((v, k) => <option key={v.id} value={k}>{v.name}</option>)}
+            </select>
+          </label>
+        );
+        return (
+          <div className="ca-solid">
+            <div className="ca-cap">trivariate view — three variables at once, {space3 === "rank" ? "rank" : "data"} space · fixed isometric</div>
+            <div className="ca-solid-controls">
+              {axisSelect(0, ix, "X")}{axisSelect(1, iy, "Y")}{axisSelect(2, iz, "Z")}
+              <div className="ca-solid-toggle" role="group" aria-label="space">
+                <button className={space3 === "data" ? "on" : ""} onClick={() => setSpace3("data")}>data</button>
+                <button className={space3 === "rank" ? "on" : ""} onClick={() => setSpace3("rank")}>rank</button>
+              </div>
+              <div className="ca-solid-toggle" role="group" aria-label="representation">
+                <button className={mode3 === "points" ? "on" : ""} onClick={() => setMode3("points")}>points</button>
+                <button className={mode3 === "density" ? "on" : ""} onClick={() => setMode3("density")}>density</button>
+              </div>
+            </div>
+            <Trivariate3D
+              nameX={variables[ix]!.name} nameY={variables[iy]!.name} nameZ={variables[iz]!.name}
+              xs={cols3[ix] ?? []} ys={cols3[iy] ?? []} zs={cols3[iz] ?? []}
+              space={space3} mode={mode3}
+            />
+            <p className="ca-note">The 2D panels are shadows of this cube. <b>Data space</b> shows the realistic joint (marginals applied); <b>rank space</b> is the unit cube of pure dependence (the copula). <b>Density</b> bins the cloud into depth-sorted voxels. Fixed isometric for now — drag-to-rotate is a follow-up.</p>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -361,4 +402,142 @@ function RankDensity(props: { xs: number[]; ys: number[] }) {
       {cells.map((c, i) => <rect key={i} x={c.x.toFixed(1)} y={c.y.toFixed(1)} width={cw.toFixed(2)} height={cw.toFixed(2)} className="ca-cell" fillOpacity={c.o.toFixed(3)} />)}
     </svg>
   );
+}
+
+// --- trivariate solid view: hand-rolled canvas 3D (no WebGL dep) ---
+// Fixed isometric projection (yaw/pitch are constants but factored so drag-rotation is a small
+// follow-up). Points get depth cueing (nearer = bigger/darker); density bins into depth-sorted
+// voxel splats. Each axis is normalized to [0,1] — rank space is already there, data space via a
+// robust 2–98% domain so outliers don't flatten the cloud.
+const ISO_YAW = -0.62;   // rotate about the vertical (up) axis
+const ISO_PITCH = 0.5;   // tilt the camera down
+function normAxis(vals: number[], rank: boolean): number[] {
+  if (rank) return vals;
+  const [lo, hi] = domain(vals);
+  const span = hi - lo + 1e-9;
+  return vals.map((v) => Math.min(1, Math.max(0, (v - lo) / span)));
+}
+function Trivariate3D(props: {
+  nameX: string; nameY: string; nameZ: string;
+  xs: number[]; ys: number[]; zs: number[];
+  space: "data" | "rank"; mode: "points" | "density";
+}) {
+  const { xs, ys, zs, space, mode } = props;
+  const ref = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const W = canvas.clientWidth || 360;
+    const H = canvas.clientHeight || 360;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    const cs = getComputedStyle(canvas);
+    const accent = cs.getPropertyValue("--ca-accent").trim() || "#2f7d6b";
+    const line = cs.getPropertyValue("--ca-line").trim() || "#e2e5e9";
+    const muted = cs.getPropertyValue("--ca-muted").trim() || "#5a6670";
+
+    const rank = space === "rank";
+    const nx = normAxis(xs, rank), ny = normAxis(ys, rank), nz = normAxis(zs, rank);
+    const n = Math.min(nx.length, ny.length, nz.length);
+
+    // projection: world coords x=right, y=up, z=toward-viewer; centered cube [-0.5,0.5]³.
+    const cy = Math.cos(ISO_YAW), sy = Math.sin(ISO_YAW), cp = Math.cos(ISO_PITCH), sp = Math.sin(ISO_PITCH);
+    const pad = 30;
+    const scale = (Math.min(W, H) * 0.5 - pad) / 0.78;
+    const ox = W / 2, oy = H / 2;
+    // (worldX, worldY-up, worldZ-depth) ← we map var0→x, var2→up, var1→depth so all three read clearly.
+    const project = (wx: number, wyUp: number, wzDepth: number) => {
+      const x1 = wx * cy + wzDepth * sy;
+      const z1 = -wx * sy + wzDepth * cy;
+      const y2 = wyUp * cp - z1 * sp;
+      const z2 = wyUp * sp + z1 * cp;
+      return { sx: ox + scale * x1, sy: oy - scale * y2, depth: z2 };
+    };
+    const p3 = (a: number, b: number, c: number) => project(a - 0.5, c - 0.5, b - 0.5); // (var0, var1, var2)
+
+    // wireframe cube — draw edges, back edges fainter.
+    const corners: Array<[number, number, number]> = [];
+    for (const a of [0, 1]) for (const b of [0, 1]) for (const c of [0, 1]) corners.push([a, b, c]);
+    const proj = corners.map(([a, b, c]) => p3(a, b, c));
+    let dLo = Infinity, dHi = -Infinity;
+    for (const p of proj) { if (p.depth < dLo) dLo = p.depth; if (p.depth > dHi) dHi = p.depth; }
+    const dt = (depth: number) => (depth - dLo) / (dHi - dLo + 1e-9);
+    const edges: Array<[number, number]> = [];
+    for (let i = 0; i < 8; i += 1) for (let j = i + 1; j < 8; j += 1) {
+      const diff = (corners[i]![0] !== corners[j]![0] ? 1 : 0) + (corners[i]![1] !== corners[j]![1] ? 1 : 0) + (corners[i]![2] !== corners[j]![2] ? 1 : 0);
+      if (diff === 1) edges.push([i, j]);
+    }
+    ctx.lineWidth = 1;
+    for (const [i, j] of edges) {
+      const a = proj[i]!, b = proj[j]!;
+      ctx.strokeStyle = line;
+      ctx.globalAlpha = 0.35 + 0.5 * dt((a.depth + b.depth) / 2);
+      ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // axis labels at the far end of the three edges from the origin corner (0,0,0).
+    const origin = p3(0, 0, 0);
+    const label = (end: { sx: number; sy: number }, text: string, tag: string) => {
+      const lx = end.sx + (end.sx - origin.sx) * 0.12;
+      const ly = end.sy + (end.sy - origin.sy) * 0.12;
+      ctx.font = "600 11px -apple-system, system-ui, sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = muted;
+      ctx.fillText(`${tag} ${text}`, lx, ly);
+    };
+    label(p3(1, 0, 0), props.nameX, "X");
+    label(p3(0, 1, 0), props.nameY, "Y");
+    label(p3(0, 0, 1), props.nameZ, "Z");
+
+    if (mode === "points") {
+      const pts = [];
+      for (let i = 0; i < n; i += 1) pts.push(p3(nx[i]!, ny[i]!, nz[i]!));
+      pts.sort((a, b) => a.depth - b.depth); // far → near
+      ctx.fillStyle = accent;
+      for (const p of pts) {
+        const t = dt(p.depth);
+        ctx.globalAlpha = 0.18 + 0.42 * t;
+        const r = 1.1 + 1.7 * t;
+        ctx.beginPath(); ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    } else {
+      // voxel density: bin into G³, splat non-empty cells back-to-front, alpha ∝ density.
+      const G = 12;
+      const counts = new Map<number, number>();
+      let mx = 0;
+      for (let i = 0; i < n; i += 1) {
+        const gi = Math.min(G - 1, Math.floor(nx[i]! * G));
+        const gj = Math.min(G - 1, Math.floor(ny[i]! * G));
+        const gk = Math.min(G - 1, Math.floor(nz[i]! * G));
+        const key = (gi * G + gj) * G + gk;
+        const c = (counts.get(key) ?? 0) + 1; counts.set(key, c);
+        if (c > mx) mx = c;
+      }
+      const voxels: Array<{ sx: number; sy: number; depth: number; o: number }> = [];
+      for (const [key, c] of counts) {
+        const gk = key % G, gj = Math.floor(key / G) % G, gi = Math.floor(key / (G * G));
+        const p = p3((gi + 0.5) / G, (gj + 0.5) / G, (gk + 0.5) / G);
+        voxels.push({ sx: p.sx, sy: p.sy, depth: p.depth, o: Math.pow(c / mx, 0.6) });
+      }
+      voxels.sort((a, b) => a.depth - b.depth);
+      const vs = (scale / G) * 1.25;
+      ctx.fillStyle = accent;
+      for (const v of voxels) {
+        ctx.globalAlpha = Math.min(0.85, 0.06 + 0.7 * v.o);
+        ctx.fillRect(v.sx - vs / 2, v.sy - vs / 2, vs, vs);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }, [xs, ys, zs, space, mode, props.nameX, props.nameY, props.nameZ]);
+
+  return <div className="ca-solid-canvas-wrap"><canvas ref={ref} className="ca-solid-canvas" /></div>;
 }
