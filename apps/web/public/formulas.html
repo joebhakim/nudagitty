@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Copula formulas — families, tails & vines</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script>
+  window.addEventListener("DOMContentLoaded", function () {
+    (function tryRender(){ if (window.renderMathInElement) {
+      renderMathInElement(document.body, { delimiters: [
+        { left: "\\[", right: "\\]", display: true },
+        { left: "\\(", right: "\\)", display: false } ], throwOnError: false });
+    } else setTimeout(tryRender, 60); })();
+  });
+</script>
+<style>
+  :root { --bg:#f7f8fa; --panel:#fff; --ink:#1a222b; --muted:#5a6670; --line:#e2e5e9; --accent:#2f7d6b; --accent2:#2563aa; --chip:#eef3f1; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121619; --panel:#1b2126; --ink:#e7ecf0; --muted:#93a1ac; --line:#2c353c; --accent:#56b39c; --accent2:#6fa8dc; --chip:#23302c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { max-width:820px; margin:0 auto; padding:32px 20px 4px; }
+  header h1 { margin:0 0 6px; font-size:26px; letter-spacing:-0.01em; }
+  header p { margin:0; color:var(--muted); max-width:64ch; }
+  nav { max-width:820px; margin:0 auto; padding:6px 20px; font-size:13px; }
+  nav a { color:var(--accent); text-decoration:none; margin-right:16px; }
+  main { max-width:820px; margin:0 auto; padding:10px 20px 72px; }
+  section { border-top:1px solid var(--line); padding-top:8px; margin-top:26px; }
+  h2 { font-size:19px; margin:8px 0 6px; }
+  h3 { font-size:15.5px; margin:20px 0 4px; color:var(--accent); }
+  p, li { font-size:14.5px; }
+  .muted { color:var(--muted); }
+  code { background:rgba(127,127,127,0.14); padding:1px 5px; border-radius:4px; font-size:13px; }
+  table { border-collapse:collapse; width:100%; margin:10px 0; font-size:13.5px; display:block; overflow-x:auto; }
+  th, td { border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--chip); font-weight:700; }
+  .katex-display { overflow-x:auto; overflow-y:hidden; padding:2px 0; }
+  .callout { background:var(--chip); border:1px solid var(--line); border-radius:9px; padding:12px 16px; margin:14px 0; font-size:13.5px; }
+  .toc { columns:2; font-size:13.5px; }
+  @media (max-width:560px){ .toc { columns:1; } }
+  .toc a { color:var(--accent); text-decoration:none; display:block; padding:1px 0; }
+  footer { max-width:820px; margin:0 auto; padding:20px; color:var(--muted); font-size:12.5px; border-top:1px solid var(--line); margin-top:32px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Copula formulas</h1>
+  <p>The actual CDFs, densities, h-functions, generators, Kendall-τ maps, tail dependence, and the regular-vine machinery that scales all of it to many variables. The interactive <a href="/joint-lab.html">editor</a> implements exactly these.</p>
+</header>
+<nav>← <a href="/joint-lab.html">Copula Editor</a> · <a href="/reading.html">Reading</a></nav>
+<main>
+
+<section id="setup">
+<h2>0 · Setup</h2>
+<p>A copula is a joint CDF on \([0,1]^d\) with uniform margins. <b>Sklar:</b> any joint \(F\) factors as
+\[ F(x_1,\dots,x_d) = C\big(F_1(x_1),\dots,F_d(x_d)\big), \]
+with \(C\) unique on \(\prod \mathrm{Ran}(F_k)\). Write \(u_k=F_k(x_k)\) (the probability-integral transform — "rank space").</p>
+<p>The workhorse for conditioning and simulation is the <b>h-function</b> (a conditional CDF):
+\[ h(u\mid v) \;=\; \frac{\partial C(u,v)}{\partial v} \;=\; \Pr(U\le u \mid V=v), \qquad h^{-1}(w\mid v)\ \text{its inverse in the first argument.} \]</p>
+<p>Rank dependence measures, invariant to the margins:
+\[ \tau = 4\!\int_{[0,1]^2}\! C\,dC - 1, \qquad \rho_S = 12\!\int_{[0,1]^2}\! uv\,dC(u,v) - 3. \]
+<b>Tail dependence</b> (limiting co-exceedance):
+\[ \lambda_L=\lim_{q\to 0^+}\Pr(U\le q\mid V\le q),\qquad \lambda_U=\lim_{q\to 1^-}\Pr(U> q\mid V> q). \]
+<b>Fréchet–Hoeffding bounds:</b> \(\;W(u,v)=\max(u+v-1,0)\ \le\ C\ \le\ M(u,v)=\min(u,v)\), with \(\tau(M)=1\) (comonotone), \(\tau(W)=-1\) (countermonotone), \(\tau(\Pi)=0\) for \(\Pi(u,v)=uv\).</p>
+</section>
+
+<section id="elliptical">
+<h2>1 · Elliptical copulas</h2>
+
+<h3>Gaussian</h3>
+<p>Let \(x=\Phi^{-1}(u),\ y=\Phi^{-1}(v)\), correlation \(\rho\in(-1,1)\).</p>
+\[ C(u,v)=\Phi_2(x,y;\rho), \qquad c(u,v)=\frac{1}{\sqrt{1-\rho^2}}\exp\!\left\{-\frac{\rho^2(x^2+y^2)-2\rho xy}{2(1-\rho^2)}\right\}. \]
+\[ h(u\mid v)=\Phi\!\left(\frac{x-\rho y}{\sqrt{1-\rho^2}}\right),\qquad h^{-1}(w\mid v)=\Phi\!\left(\rho\,\Phi^{-1}(v)+\sqrt{1-\rho^2}\;\Phi^{-1}(w)\right). \]
+\[ \tau=\tfrac{2}{\pi}\arcsin\rho,\qquad \rho_S=\tfrac{6}{\pi}\arcsin\tfrac{\rho}{2},\qquad \lambda_L=\lambda_U=0. \]
+<p class="muted">\(d\)-variate: \(C(\mathbf u;R)=\Phi_d(\Phi^{-1}(u_1),\dots;R)\) for a correlation matrix \(R\). Sample \(\mathbf z\sim\mathcal N(0,R)\) via Cholesky, set \(u_k=\Phi(z_k)\). The full-\(\Sigma\) case people want for many covariates is exactly an all-Gaussian vine (§4).</p>
+
+<h3>Student-t</h3>
+<p>\(x=t_\nu^{-1}(u),\ y=t_\nu^{-1}(v)\), correlation \(\rho\), dof \(\nu\).</p>
+\[ C(u,v)=t_{2}(x,y;\rho,\nu),\qquad c(u,v)=\frac{1}{\sqrt{1-\rho^2}}\cdot\frac{\Gamma\!\big(\tfrac{\nu+2}{2}\big)\,\Gamma\!\big(\tfrac{\nu}{2}\big)}{\Gamma\!\big(\tfrac{\nu+1}{2}\big)^2}\cdot\frac{\big(1+\tfrac{x^2+y^2-2\rho xy}{\nu(1-\rho^2)}\big)^{-\frac{\nu+2}{2}}}{\prod_{s\in\{x,y\}}\big(1+\tfrac{s^2}{\nu}\big)^{-\frac{\nu+1}{2}}}. \]
+\[ h(u\mid v)=t_{\nu+1}\!\left(\frac{x-\rho y}{\sqrt{\dfrac{(\nu+y^2)(1-\rho^2)}{\nu+1}}}\right),\qquad \tau=\tfrac{2}{\pi}\arcsin\rho. \]
+\[ \lambda_L=\lambda_U=2\,t_{\nu+1}\!\left(-\sqrt{\frac{(\nu+1)(1-\rho)}{1+\rho}}\right)\;>\;0. \]
+<p class="muted">Same \(\tau\)–\(\rho\) map as Gaussian, but <b>symmetric tail dependence</b> that vanishes only as \(\nu\to\infty\) — the reason t beats Gaussian for joint extremes.</p>
+</section>
+
+<section id="archimedean">
+<h2>2 · Archimedean copulas</h2>
+<p>Built from a generator \(\varphi:[0,1]\to[0,\infty]\), continuous, strictly decreasing, convex, \(\varphi(1)=0\):
+\[ C(u,v)=\varphi^{[-1]}\!\big(\varphi(u)+\varphi(v)\big),\qquad h(u\mid v)=\frac{\varphi'(v)}{\varphi'\!\big(C(u,v)\big)},\qquad \tau=1+4\!\int_0^1\!\frac{\varphi(t)}{\varphi'(t)}\,dt. \]
+Bivariate density \(c(u,v)=-\dfrac{\varphi''(C)\,\varphi'(u)\,\varphi'(v)}{\varphi'(C)^3}\). Single-parameter Archimedeans are <b>exchangeable</b> — all pairs identical — which is why high-dimensional dependence needs vines, not one Archimedean.</p>
+
+<h3>Clayton — lower tail</h3>
+<p>\(\varphi(t)=\tfrac{1}{\theta}(t^{-\theta}-1),\ \theta>0\) (extends to \(\theta\ge-1\)).</p>
+\[ C(u,v)=\big(u^{-\theta}+v^{-\theta}-1\big)^{-1/\theta},\qquad c(u,v)=(1+\theta)(uv)^{-\theta-1}\big(u^{-\theta}+v^{-\theta}-1\big)^{-2-1/\theta}. \]
+\[ h(u\mid v)=v^{-\theta-1}\big(u^{-\theta}+v^{-\theta}-1\big)^{-1-1/\theta},\quad h^{-1}(w\mid v)=\Big[\big(w\,v^{\theta+1}\big)^{-\frac{\theta}{\theta+1}}+1-v^{-\theta}\Big]^{-1/\theta}. \]
+\[ \theta=\frac{2\tau}{1-\tau},\qquad \lambda_L=2^{-1/\theta},\qquad \lambda_U=0. \]
+
+<h3>Gumbel — upper tail</h3>
+<p>\(\varphi(t)=(-\ln t)^\theta,\ \theta\ge1\). Let \(A=(-\ln u)^\theta+(-\ln v)^\theta\).</p>
+\[ C(u,v)=\exp\!\big(-A^{1/\theta}\big),\qquad c(u,v)=C(u,v)\,\frac{\big[(-\ln u)(-\ln v)\big]^{\theta-1}}{uv}\,A^{\frac1\theta-2}\big(A^{1/\theta}+\theta-1\big). \]
+\[ h(u\mid v)=C(u,v)\,A^{\frac1\theta-1}\,\frac{(-\ln v)^{\theta-1}}{v}\quad(\text{invert numerically}),\qquad \theta=\frac{1}{1-\tau},\ \ \lambda_U=2-2^{1/\theta},\ \ \lambda_L=0. \]
+
+<h3>Frank — symmetric, both signs, no tail</h3>
+<p>\(\varphi(t)=-\ln\dfrac{e^{-\theta t}-1}{e^{-\theta}-1},\ \theta\in\mathbb R\setminus\{0\}\).</p>
+\[ C(u,v)=-\frac1\theta\ln\!\left(1+\frac{(e^{-\theta u}-1)(e^{-\theta v}-1)}{e^{-\theta}-1}\right),\qquad c(u,v)=\frac{\theta\,(1-e^{-\theta})\,e^{-\theta(u+v)}}{\big[(1-e^{-\theta})-(1-e^{-\theta u})(1-e^{-\theta v})\big]^2}. \]
+\[ h(u\mid v)=\frac{e^{-\theta v}(e^{-\theta u}-1)}{(e^{-\theta u}-1)(e^{-\theta v}-1)+(e^{-\theta}-1)},\qquad \tau=1-\frac{4}{\theta}\big[1-D_1(\theta)\big],\quad \lambda_L=\lambda_U=0, \]
+where \(D_1(\theta)=\tfrac1\theta\int_0^\theta \tfrac{t}{e^t-1}\,dt\) is the Debye function (invert \(\tau\!\to\!\theta\) numerically). \(\theta<0\) gives negative dependence, \(\theta>0\) positive — Frank is <b>comprehensive</b>, spanning \(\tau\in(-1,1)\) with no rotation.</p>
+
+<h3>Rotations</h3>
+<p>For a base copula \(C\) with density \(c\), the rotations move the tail/negate the dependence:</p>
+<table>
+<tr><th>rotation</th><th>CDF</th><th>density</th><th>effect</th></tr>
+<tr><td>180° (survival)</td><td>\(u+v-1+C(1-u,1-v)\)</td><td>\(c(1-u,1-v)\)</td><td>\(\tau\) unchanged; \(\lambda_L\!\leftrightarrow\!\lambda_U\)</td></tr>
+<tr><td>90°</td><td>\(v-C(1-u,v)\)</td><td>\(c(1-u,v)\)</td><td>\(\tau\to-\tau\)</td></tr>
+<tr><td>270°</td><td>\(u-C(u,1-v)\)</td><td>\(c(u,1-v)\)</td><td>\(\tau\to-\tau\)</td></tr>
+</table>
+</section>
+
+<section id="reach">
+<h2>3 · What each family reaches</h2>
+<table>
+<tr><th>family</th><th>\(\tau\) range</th><th>\(\lambda_L,\lambda_U\)</th><th>parameters</th></tr>
+<tr><td>Gaussian</td><td>\((-1,1)\)</td><td>\(0,\ 0\)</td><td>\(R\) (corr. matrix)</td></tr>
+<tr><td>Student-t</td><td>\((-1,1)\)</td><td>\(>0,\ >0\) sym.</td><td>\(R,\ \nu\)</td></tr>
+<tr><td>Frank</td><td>\((-1,1)\)</td><td>\(0,\ 0\)</td><td>\(\theta\in\mathbb R\)</td></tr>
+<tr><td>Clayton</td><td>\((0,1)\) base</td><td>\(2^{-1/\theta},\ 0\)</td><td>\(\theta>0\) (+rot)</td></tr>
+<tr><td>Gumbel</td><td>\([0,1)\) base</td><td>\(0,\ 2\!-\!2^{1/\theta}\)</td><td>\(\theta\ge1\) (+rot)</td></tr>
+</table>
+<p class="callout"><b>So can \(\tau\) reach \(-1\)?</b> Yes — \(\tau\in[-1,1]\) for any copula; the endpoints are the comonotone \(M\) / countermonotone \(W\) copulas. Gaussian, t, and Frank span both signs directly (\(\theta\to\pm\infty\), \(\rho\to\pm1\)). Clayton and Gumbel are one-tailed positive-dependence families — their base only covers \(\tau\ge0\); a 90°/270° rotation gives the negative-dependence versions. Gumbel has <em>no</em> negative base at all.</p>
+</section>
+
+<section id="vines">
+<h2>4 · Many variables — regular vines</h2>
+<p>For \(d\ge3\) you cannot specify all pairwise copulas independently: they over-constrain (compatibility / positive-definiteness) and under-determine (many \(d\)-copulas share the same bivariate margins). The resolution is a <b>pair-copula construction</b> — factor the density into bivariate pieces, some conditional.</p>
+
+<h3>The recursion</h3>
+<p>Chain-rule the joint density and express each conditional with one pair-copula. With \(\mathbf v_{-j}=\mathbf v\setminus v_j\):
+\[ f(x\mid\mathbf v)=c_{x,v_j\mid\mathbf v_{-j}}\!\Big(F(x\mid\mathbf v_{-j}),\,F(v_j\mid\mathbf v_{-j})\Big)\cdot f(x\mid\mathbf v_{-j}), \]
+and the conditional CDFs propagate through the same h-functions:
+\[ F(x\mid\mathbf v)=h_{x,v_j;\mathbf v_{-j}}\!\Big(F(x\mid\mathbf v_{-j})\,\big|\,F(v_j\mid\mathbf v_{-j})\Big). \]
+Everything is built from the bivariate \(h\) and \(h^{-1}\) above.</p>
+
+<h3>R-vine density</h3>
+<p>A regular vine is a nested set of trees \(\mathcal V=(T_1,\dots,T_{d-1})\): \(T_1\) spans the \(d\) variables (\(d-1\) edges), and the edges of \(T_{m-1}\) become the nodes of \(T_m\) (proximity condition). Each edge \(e\) carries a pair-copula \(c_{j(e),k(e)\mid D(e)}\) with conditioned pair \(\{j,k\}\) and conditioning set \(D(e)\). There are exactly \(\sum_{m=1}^{d-1}(d-m)=\binom{d}{2}\) of them, and
+\[ f(\mathbf x)=\underbrace{\prod_{k=1}^{d} f_k(x_k)}_{\text{margins}}\ \cdot\!\!\prod_{m=1}^{d-1}\ \prod_{e\in E_m}\! c_{j(e),k(e)\mid D(e)}\!\Big(F(x_{j(e)}\mid\mathbf x_{D(e)}),\,F(x_{k(e)}\mid\mathbf x_{D(e)})\Big). \]
+Because it is a <em>product</em> of algebraically-free pieces, every choice of pair-copulas yields a valid joint — <b>no positive-definiteness constraint</b>, unlike a raw correlation matrix.</p>
+
+<h3>Simulation, simplification, truncation</h3>
+<ul>
+<li><b>Simulate</b> by the inverse-h recursion: draw \(w_1,\dots,w_d\sim U(0,1)\) and invert down the trees (the \(d=3\) case: \(x_2=h^{-1}(w_2\mid x_1),\ x_3=h^{-1}\!\big(h^{-1}(w_3\mid h(x_1\mid x_2))\big|x_2\big)\)).</li>
+<li><b>Simplified vine</b> assumption: \(c_{j,k\mid D}\) depends on \(D\) only as a set, not on the <em>value</em> \(\mathbf x_D\). Dropping it gives the fully general (non-simplified) vine — dense in all copulas.</li>
+<li><b>Truncate</b> at level \(K\): set \(c_{\cdot\mid D}=\Pi\) (independence) for all trees \(T_{K+1..d-1}\). Parameters drop from \(\binom{d}{2}\) to \(\sum_{m=1}^{K}(d-m)\); usually a couple of trees capture the dominant dependence.</li>
+<li><b>Structure selection</b> (Dißmann): build each tree as a maximum spanning tree weighted by \(|\hat\tau_{jk\mid D}|\), fit the best pair-copula per edge by AIC, recurse.</li>
+</ul>
+
+<h3>Running example — LaLonde job training</h3>
+<p>The covariate block is \(d=8\): {age, educ, black, hisp, married, nodegree, re74, re75}. A full R-vine is \(\binom{8}{2}=28\) pair-copulas. In practice:</p>
+<ul>
+<li>\(T_1\) is a spanning tree over the 8 covariates. The dominant \(|\tau|\) edges are the earnings-history persistence <code>re74 — re75</code> and the mechanical <code>educ — nodegree</code>; these anchor the tree.</li>
+<li>Prior earnings <code>re74,re75</code> are right-skewed with a mass at 0 → asymmetric-tail pair-copulas (Clayton/Gumbel or their rotations), not Gaussian.</li>
+<li>The binaries {black, hisp, married, nodegree} need the discrete-margin treatment (§5).</li>
+<li>Truncating at \(K=2\) (≈ 13 pair-copulas) captures most dependence; the rest \(\approx\Pi\). The tree structure can be selected (Dißmann) or read off the confounding DAG — a bidirected edge among covariates is one pair-copula.</li>
+</ul>
+<p class="callout">This is the honest answer to "eventually there are lots of variables": the atomic bivariate cell never changes — you arrange \(\binom{d}{2}\) of them along a vine, truncate the tail trees to independence, and let structure selection (or the causal graph) decide which pairs are direct. The editor's 3-variable case is this with \(d=3\).</p>
+</section>
+
+<section id="discrete">
+<h2>5 · Discrete margins</h2>
+<p>For discrete \(F_k\), Sklar gives existence but the copula is <b>not unique</b> off the grid \(\mathrm{Ran}(F_j)\times\mathrm{Ran}(F_k)\), and attainable dependence is squeezed by the discrete Fréchet–Hoeffding bounds — you cannot impose arbitrary correlation between two rare binaries. For binaries with means \(p,q\) the correlation is capped:
+\[ \rho \;\le\; \frac{\min(p,q)-pq}{\sqrt{pq(1-p)(1-q)}}. \]
+The practical generator is the latent-Gaussian threshold (NORTA): draw from a continuous copula and threshold to the discrete margin. This is what the engine's <code>copula_marginal</code> node already does, and why "set any correlation" is a lie for the binary covariates in LaLonde.</p>
+</section>
+
+</main>
+<footer>All h-functions and τ-maps here match the editor's implementation, validated against empirical Kendall's τ before wiring. Rendered with KaTeX. nudagitty canary.</footer>
+</body>
+</html>

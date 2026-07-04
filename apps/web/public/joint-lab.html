@@ -77,13 +77,14 @@
 <nav>
   <a href="#cell">① The bivariate cell</a>
   <a href="#vine">② The 3-variable vine</a>
+  <a href="/formulas.html">∑ Formulas →</a>
   <a href="/reading.html">📚 Further reading →</a>
 </nav>
 <main>
 
   <section id="cell">
     <h2>① The bivariate cell</h2>
-    <p class="hook">Pick a family, set the strength as Kendall's <b>τ</b> (family-invariant, so switching family keeps the same rank-correlation), rotate the Archimedeans to move the tail. The left preview is the pure copula density on the unit square; the right is a sample. This one cell is all you ever need — 3+ variables just arrange it.</p>
+    <p class="hook">Pick a family, set the strength as Kendall's <b>τ</b> (family-invariant, so switching family keeps the same rank-correlation), rotate the Archimedeans to move the tail. τ runs the full <b>[−1, 1]</b> — the ends are the comonotone / countermonotone Fréchet bounds. Gaussian and Frank span both signs; Clayton and Gumbel are positive-tail families, so rotate 90°/270° for negative dependence. The left preview is the pure copula density on the unit square; the right is a sample.</p>
     <div class="cell">
       <div class="controls">
         <div class="fam-gallery" id="fam-gallery"></div>
@@ -155,21 +156,30 @@ function Ninv(p){ p=Math.min(1-1e-9,Math.max(1e-9,p));
 }
 
 // ---- copula families, parametrized by Kendall's tau ----
+function debye1(th){ if(Math.abs(th)<1e-8) return 1; const n=120,h=th/n; let s=0;
+  for(let i=0;i<=n;i++){ const t=i*h; const f=Math.abs(t)<1e-9?1:t/(Math.exp(t)-1); s+=(i===0||i===n?1:(i%2?4:2))*f; } return (h/3)*s/th; }
+const tauFrank = th => Math.abs(th)<1e-6?0:1+4*(debye1(th)-1)/th;
+function thetaFromTauFrank(tau){ if(Math.abs(tau)<1e-4) return tau>=0?1e-4:-1e-4;
+  let lo=tau>0?1e-4:-40, hi=tau>0?40:-1e-4; for(let i=0;i<70;i++){ const m=(lo+hi)/2; (tauFrank(m)<tau)?lo=m:hi=m; } return (lo+hi)/2; }
 const paramOf = {
   independence: () => 0,
   gaussian: t => Math.sin(Math.PI*t/2),          // rho
   clayton: t => Math.max(1e-4, 2*t/(1-t)),
-  gumbel: t => Math.max(1.0001, 1/(1-t))
+  gumbel: t => Math.max(1.0001, 1/(1-t)),
+  frank: t => thetaFromTauFrank(t)
 };
 function hGumbel(x, v, th){ const lu=-Math.log(x), lv=-Math.log(v); const A=Math.pow(lu,th)+Math.pow(lv,th);
   const C=Math.exp(-Math.pow(A,1/th)); return C*Math.pow(A,1/th-1)*Math.pow(lv,th-1)/v; }
 function hinvGumbel(w, v, th){ let lo=1e-6, hi=1-1e-6; for(let i=0;i<38;i++){ const m=(lo+hi)/2; (hGumbel(m,v,th)<w)?lo=m:hi=m; } return (lo+hi)/2; }
+function hFrank(x, v, th){ const ex=Math.exp(-th*x), ev=Math.exp(-th*v), e1=Math.exp(-th)-1; return ev*(ex-1)/((ex-1)*(ev-1)+e1); } // h(x|v)
+function hinvFrank(w, u, th){ let lo=1e-7, hi=1-1e-7; for(let i=0;i<40;i++){ const m=(lo+hi)/2; (hFrank(m,u,th)<w)?lo=m:hi=m; } return (lo+hi)/2; }
 // h-inverse: v given w2 and conditioning u (returns second coordinate)
 function hinv(fam, par, w2, u){
   if(fam==="independence") return w2;
   if(fam==="gaussian") return Phi(par*Ninv(u)+Math.sqrt(1-par*par)*Ninv(w2));
   if(fam==="clayton"){ const b=u; return Math.pow(Math.pow(w2*Math.pow(b,par+1),-par/(par+1))-Math.pow(b,-par)+1,-1/par); }
   if(fam==="gumbel") return hinvGumbel(w2, u, par);
+  if(fam==="frank") return hinvFrank(w2, u, par);
 }
 // h-function: F(x|v)
 function hfun(fam, par, x, v){
@@ -177,6 +187,7 @@ function hfun(fam, par, x, v){
   if(fam==="gaussian") return Phi((Ninv(x)-par*Ninv(v))/Math.sqrt(1-par*par));
   if(fam==="clayton") return Math.pow(v,-par-1)*Math.pow(Math.pow(x,-par)+Math.pow(v,-par)-1,-1-1/par);
   if(fam==="gumbel") return hGumbel(x, v, par);
+  if(fam==="frank") return hFrank(x, v, par);
 }
 function rotate(u, v, rot){
   if(rot===90) return [1-u, v];
@@ -195,6 +206,7 @@ function tailDep(fam, tau, rot){ // returns [lambdaL, lambdaU]
 const FAMILIES = [
   { id:"independence", name:"Independence", desc:"no dependence — the product copula Π.", arch:false },
   { id:"gaussian", name:"Gaussian", desc:"elliptical, symmetric, zero tail dependence (both signs of τ).", arch:false },
+  { id:"frank", name:"Frank", desc:"Archimedean, symmetric, zero tail dependence — spans both signs of τ, no rotation needed.", arch:false },
   { id:"clayton", name:"Clayton", desc:"lower-tail dependence — the pair crashes together.", arch:true },
   { id:"gumbel", name:"Gumbel", desc:"upper-tail dependence — the pair spikes together.", arch:true }
 ];
@@ -226,15 +238,16 @@ function raf(fn){ let q=false; return () => { if(q) return; q=true; requestAnima
     document.getElementById("rot-v").textContent = arch ? state.rot+"°" : "n/a";
     // gaussian/independence: tau range full; archimedean: tau>0 only (positive dependence base)
     const posOnly = state.fam==="clayton" || state.fam==="gumbel";
-    tau.min = posOnly ? 0.02 : -0.9;
+    tau.min = posOnly ? 0.02 : -0.95;
+    tau.max = 0.95;
     if(posOnly && state.tau<0.02){ state.tau=0.3; }
     tau.value = state.tau;
     document.getElementById("tau-v").textContent = fmt(state.tau,2);
     descEl.textContent = FAMILIES.find(f=>f.id===state.fam).desc + (arch && state.rot ? "  Rotated "+state.rot+"°"+(state.rot===180?" (tail flipped to the opposite corner).": " (negative dependence).") : "");
   }
-  function sample(){ const par=paramOf[state.fam](Math.abs(state.tau)) ?? 0;
-    const sgn = state.fam==="gaussian" ? 1 : 1; // gaussian par already carries sign via tau
-    const p = state.fam==="gaussian" ? paramOf.gaussian(state.tau) : par;
+  function sample(){
+    const signed = state.fam==="gaussian" || state.fam==="frank";
+    const p = signed ? paramOf[state.fam](state.tau) : paramOf[state.fam](Math.abs(state.tau));
     const pts=[]; for(const [w1,w2] of BASE){ let u=w1, v=hinv(state.fam,p,w2,w1); [u,v]=rotate(u,v,state.rot); pts.push([u,v]); } return pts;
   }
   const redraw = raf(function(){
@@ -253,7 +266,8 @@ function raf(fn){ let q=false; return () => { if(q) return; q=true; requestAnima
     for(let i=0;i<pts.length;i+=2){ const [u,v]=pts[i]; g.appendChild(el("circle",{cx:(u*200).toFixed(1),cy:(200-v*200).toFixed(1),r:1.3,fill:css("--accent"),opacity:0.32})); }
     scatEl.appendChild(g);
     // readouts
-    const tauShown = (state.rot===90||state.rot===270) ? -Math.abs(state.tau) : (state.fam==="gaussian"?state.tau:Math.abs(state.tau));
+    const signedFam = state.fam==="gaussian" || state.fam==="frank";
+    const tauShown = (state.rot===90||state.rot===270) ? -Math.abs(state.tau) : (signedFam?state.tau:Math.abs(state.tau));
     const rhoS = (2/Math.PI)*Math.asin(2*Math.sin(Math.PI*tauShown/2)/2) ; // approx; display spearman for gaussian only meaningfully
     const [lL,lU]=tailDep(state.fam,state.tau,state.rot);
     readEl.innerHTML = "Kendall τ <b>"+fmt(tauShown,2)+"</b>"
@@ -276,7 +290,7 @@ function raf(fn){ let q=false; return () => { if(q) return; q=true; requestAnima
   const NV = 1500;
   seed = 55; const vb = Array.from({length: NV}, () => [rnd(), rnd(), rnd()]);
 
-  function parCell(c){ return c.fam==="gaussian" ? paramOf.gaussian(c.tau) : paramOf[c.fam](Math.abs(c.tau)); }
+  function parCell(c){ return (c.fam==="gaussian"||c.fam==="frank") ? paramOf[c.fam](c.tau) : paramOf[c.fam](Math.abs(c.tau)); }
   function vineSample(){
     const c12=cells[0], c23=cells[1], c13=cells[2];
     const p12=parCell(c12), p23=parCell(c23), p13=parCell(c13);
