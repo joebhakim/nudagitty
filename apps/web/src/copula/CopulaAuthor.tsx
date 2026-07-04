@@ -55,6 +55,36 @@ function kendallSub(xs: number[], ys: number[], cap = 260): number {
 }
 const fmt = (v: number, dg = 2) => (v >= 0 ? "+" : "") + v.toFixed(dg);
 
+// --- "atom confession" helpers: what discrete/atomic marginals hide ---
+// τ_b (tie-corrected Kendall's τ) of the GENERATED data — the achieved rank association, which
+// atoms compress below the latent copula τ.
+function kendallB(xs: number[], ys: number[], cap = 320): number {
+  const n = Math.min(xs.length, ys.length, cap);
+  let c = 0, d = 0, xt = 0, yt = 0;
+  for (let i = 0; i < n; i += 1) for (let j = i + 1; j < n; j += 1) {
+    const a = xs[i]! - xs[j]!, b = ys[i]! - ys[j]!;
+    if (a === 0 && b === 0) continue;
+    if (a === 0) { xt += 1; continue; }
+    if (b === 0) { yt += 1; continue; }
+    if (a * b > 0) c += 1; else d += 1;
+  }
+  return (c - d) / (Math.sqrt((c + d + yt) * (c + d + xt)) || 1);
+}
+function distinctCount(xs: number[], cap = 800): number {
+  const s = new Set<number>();
+  for (let i = 0; i < Math.min(xs.length, cap); i += 1) s.add(Math.round(xs[i]! * 1e6));
+  return s.size;
+}
+// Max attainable Pearson correlation between two binaries with means p, q (the discrete Fréchet bound).
+function frechetCapBinary(p: number, q: number): number {
+  return (Math.min(p, q) - p * q) / (Math.sqrt(p * (1 - p) * q * (1 - q)) || 1);
+}
+function hiFraction(xs: number[]): number {
+  let mx = -Infinity; for (const v of xs) if (v > mx) mx = v;
+  let c = 0; for (const v of xs) if (v === mx) c += 1;
+  return c / (xs.length || 1);
+}
+
 export function CopulaAuthor(props: {
   variables: CopulaVariable[];
   spec: VineSpec;
@@ -65,6 +95,7 @@ export function CopulaAuthor(props: {
   const { variables, spec, onSpec } = props;
   const d = variables.length;
   const [focus, setFocus] = useState<[number, number]>([0, 0]); // focused edge [tree, edge] for the copula view
+  const [confess, setConfess] = useState(false); // reveal what atomic marginals hide
 
   const base = useMemo(() => seededBase(d), [d]);
   const quantiles = useMemo(() => variables.map((v) => buildDistributionQuantile(v.marginal)), [variables]);
@@ -245,8 +276,11 @@ export function CopulaAuthor(props: {
       <p className="ca-note">Conditional edges can be <b>moderated</b> — set τ&nbsp;by the conditioning variable (a non-simplified vine: the sex/height case). The focused edge's density is the copula in <b>conditional-rank space</b> (the pseudo-observations F(a|D), F(b|D); moderator-averaged when moderated); the SPLOM is the <b>observable marginal</b> joint, which integrates over everything.</p>
       <div className="ca-preview">
         <div className="ca-splom-wrap">
-          <div className="ca-cap">observable marginal joint — every pair, marginals applied</div>
-          <Splom variables={variables} dataCols={dataCols} uCols={uCols} highlight={[Math.min(fa, fb), Math.max(fa, fb)]} />
+          <div className="ca-cap">observable marginal joint — every pair, marginals applied
+            <button className="ca-confess-btn" onClick={() => setConfess((c) => !c)}>{confess ? "hide" : "⚠ what the atoms hide"}</button>
+          </div>
+          {confess && <p className="ca-note ca-confess-note">Atoms confess: where a marginal has point masses (binary / count / categorical), Sklar's copula is <b>unidentified</b> across the gaps — for a binary pair, everything but one grid point. Generatively that free region is <b>invisible</b> (NORTA reads the copula only at grid values), so the DGP is unambiguous — but the authored τ is a <b>latent</b> knob the atoms compress. Below, <b>got</b> is the achieved association (Kendall τ<sub>b</sub> of the generated data); <b>cap</b> is the Fréchet bound — the most a binary pair's marginals allow.</p>}
+          <Splom variables={variables} dataCols={dataCols} uCols={uCols} highlight={[Math.min(fa, fb), Math.max(fa, fb)]} confess={confess} />
         </div>
         <div className="ca-rank-wrap">
           <div className="ca-cap">{safeTree === 0
@@ -259,8 +293,8 @@ export function CopulaAuthor(props: {
   );
 }
 
-function Splom(props: { variables: CopulaVariable[]; dataCols: number[][]; uCols: number[][]; highlight: [number, number] }) {
-  const { variables, dataCols, uCols } = props;
+function Splom(props: { variables: CopulaVariable[]; dataCols: number[][]; uCols: number[][]; highlight: [number, number]; confess: boolean }) {
+  const { variables, dataCols, uCols, confess } = props;
   const d = variables.length;
   const pairs: Array<[number, number]> = [];
   for (let i = 0; i < d; i += 1) for (let j = i + 1; j < d; j += 1) pairs.push([i, j]);
@@ -269,10 +303,15 @@ function Splom(props: { variables: CopulaVariable[]; dataCols: number[][]; uCols
       {pairs.map(([i, j]) => {
         const xs = dataCols[i] ?? [], ys = dataCols[j] ?? [];
         const tau = kendallSub(uCols[i] ?? [], uCols[j] ?? []);
+        const di = distinctCount(xs), dj = distinctCount(ys);
+        const atomic = di < 15 || dj < 15;
+        const cap = di === 2 && dj === 2 ? frechetCapBinary(hiFraction(xs), hiFraction(ys)) : null;
         const active = props.highlight[0] === i && props.highlight[1] === j;
         return (
           <div className={`ca-panel${active ? " active" : ""}`} key={`${i}-${j}`}>
-            <div className="ca-panel-cap">{variables[i]!.name} — {variables[j]!.name} · τ {fmt(tau)}</div>
+            <div className="ca-panel-cap">{variables[i]!.name} — {variables[j]!.name} · τ {fmt(tau)}
+              {confess && atomic && <span className="ca-confess"> → got {fmt(kendallB(xs, ys))}{cap !== null ? ` · cap ${fmt(cap)}` : ""}</span>}
+            </div>
             <Scatter xs={xs} ys={ys} />
           </div>
         );

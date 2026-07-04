@@ -56,3 +56,7 @@
 .ca-mix-add { border: 1px dashed var(--ca-line); background: transparent; color: var(--ca-accent); border-radius: 6px; padding: 2px 8px; font-size: 10.5px; cursor: pointer; margin-top: 3px; }
 .ca-mod-row button { border: none; background: transparent; color: var(--ca-muted); cursor: pointer; font-size: 12px; padding: 0 3px; }
 .ca-mod-row input[type=range] { flex: 1; accent-color: var(--ca-accent); min-width: 28px; }
+.ca-confess-btn { margin-left: 8px; border: 1px solid var(--ca-line); background: transparent; color: var(--ca-accent2); border-radius: 6px; padding: 1px 8px; font-size: 10.5px; cursor: pointer; }
+.ca-confess-note { border-left: 3px solid var(--ca-accent2); }
+.ca-confess { color: #b4231f; font-weight: 700; }
+@media (prefers-color-scheme: dark) { .ca-confess { color: #ef6b64; } }
