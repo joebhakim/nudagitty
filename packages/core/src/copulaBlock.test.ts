@@ -3,6 +3,8 @@ import { parseModel } from "./parser";
 import { setExampleSampleSize, setNode, setVariable } from "./examples/builders";
 import { runSimulation } from "./simulation";
 import { simpleEdge, type CopulaBlock } from "./copulaVine";
+import { analyzeContinuousEffect } from "./continuousEffect";
+import { setLinearCoefficient } from "./examples/builders";
 
 function pearson(xs: number[], ys: number[]): number {
   const n = Math.min(xs.length, ys.length);
@@ -56,5 +58,48 @@ describe("copula block — engine integration", () => {
     // Marginals preserved (standard normal).
     expect(A.mean!).toBeCloseTo(0, 1);
     expect(Math.sqrt(A.variance!)).toBeCloseTo(1, 1);
+  });
+});
+
+describe("copula block → effect stack (the loop)", () => {
+  function doseDoc(tau: number | null) {
+    const doc = parseModel(`dag {
+      S1 [adjusted]
+      S2 [adjusted]
+      Dose [exposure]
+      Recovery [outcome]
+      S1 -> Dose
+      S2 -> Dose
+      S1 -> Recovery
+      S2 -> Recovery
+      Dose -> Recovery
+    }`).document;
+    setExampleSampleSize(doc, 4000);
+    for (const id of ["S1", "S2"]) { setVariable(doc, id, { valueType: "continuous", unit: "z" }); setNode(doc, id, { distribution: { kind: "normal", mean: 0, sd: 1 }, noise: { kind: "constant", value: 0 } }); }
+    setVariable(doc, "Dose", { valueType: "continuous", unit: "mg" });
+    setVariable(doc, "Recovery", { valueType: "continuous", unit: "score" });
+    setNode(doc, "Dose", { intercept: 5, noise: { kind: "normal", mean: 0, sd: 0.8 } });
+    setNode(doc, "Recovery", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+    setLinearCoefficient(doc, "S1", "Dose", 1.2); setLinearCoefficient(doc, "S2", "Dose", 1.2);
+    setLinearCoefficient(doc, "S1", "Recovery", -2); setLinearCoefficient(doc, "S2", "Recovery", -2);
+    setLinearCoefficient(doc, "Dose", "Recovery", 0.8); // the truth
+    if (tau !== null) doc.simulation.copulaBlocks = [{ id: "cov", nodes: ["S1", "S2"], order: [0, 1], depth: 1, edges: [[simpleEdge("gaussian", tau)]] }];
+    return doc;
+  }
+  const effect = (tau: number | null) => {
+    const doc = doseDoc(tau);
+    const r = runSimulation(doc.graph, doc.simulation);
+    return analyzeContinuousEffect(doc.graph, doc.simulation, r, { x: "Dose", y: "Recovery" })!;
+  };
+
+  it("coupling the confounders moves the observed crude effect but adjustment still recovers the truth", () => {
+    const pos = effect(0.7), neg = effect(-0.7);
+    const crude = (c: typeof pos) => c.methods.find((m) => m.id === "crude")!.slope;
+    const gcomp = (c: typeof pos) => c.methods.find((m) => m.id === "g-computation")!.slope;
+    // Positively-coupled confounders concentrate the (negative) confounding ⇒ lower crude slope than negatively coupled.
+    expect(crude(pos)).toBeLessThan(crude(neg) - 0.15);
+    // g-computation recovers +0.8 regardless of the confounder joint.
+    expect(gcomp(pos)).toBeCloseTo(0.8, 1);
+    expect(gcomp(neg)).toBeCloseTo(0.8, 1);
   });
 });

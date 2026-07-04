@@ -1,4 +1,9 @@
-import type { GraphDocument } from "./types";
+import type { CopulaBlock, GraphDocument } from "./types";
+
+/** Set (or clear, with null) the document's copula blocks — the general moderated-vine dependence layer. */
+export function setCopulaBlock(document: GraphDocument, block: CopulaBlock | null): GraphDocument {
+  return { ...document, simulation: { ...document.simulation, copulaBlocks: block ? [block] : undefined } };
+}
 
 // Gaussian-copula covariates are nodes whose value is drawn from a marginal mapped through a shared
 // latent Gaussian source (combiner "copula_marginal"). Their pairwise correlation ≈ loading², where the
