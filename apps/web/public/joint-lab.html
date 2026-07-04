@@ -3,297 +3,345 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>The Joint Lab — nudagitty prototypes</title>
+<title>Copula Editor — nudagitty</title>
 <style>
   :root {
     --bg: #f7f8fa; --panel: #ffffff; --ink: #1a222b; --muted: #5a6670; --line: #e2e5e9;
-    --accent: #2f7d6b; --bias: #b4231f; --ok: #1f7a45; --oracle: #d97706; --blue: #2563aa;
+    --accent: #2f7d6b; --accent2: #2563aa; --oracle: #d97706; --chip: #eef3f1; --sel: #dcefe9;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #121619; --panel: #1b2126; --ink: #e7ecf0; --muted: #93a1ac; --line: #2c353c;
-      --accent: #56b39c; --bias: #ef6b64; --ok: #58c98a; --oracle: #f0a63a; --blue: #6fa8dc; }
+      --accent: #56b39c; --accent2: #6fa8dc; --oracle: #f0a63a; --chip: #23302c; --sel: #24463d; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
     font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  header { max-width: 900px; margin: 0 auto; padding: 32px 20px 8px; }
-  header h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
-  header p { margin: 0; color: var(--muted); max-width: 62ch; }
-  main { max-width: 900px; margin: 0 auto; padding: 12px 20px 64px; }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-    padding: 20px 22px; margin: 20px 0; }
-  section h2 { margin: 0 0 2px; font-size: 19px; }
-  .hook { margin: 0 0 16px; color: var(--muted); font-size: 13.5px; max-width: 68ch; }
-  .lab { display: grid; grid-template-columns: minmax(240px, 300px) 1fr; gap: 22px; align-items: start; }
-  @media (max-width: 640px) { .lab { grid-template-columns: 1fr; } }
+  header { max-width: 920px; margin: 0 auto; padding: 30px 20px 4px; }
+  header h1 { margin: 0 0 6px; font-size: 25px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); max-width: 66ch; font-size: 14px; }
+  nav { max-width: 920px; margin: 0 auto; padding: 6px 20px; font-size: 13px; }
+  nav a { color: var(--accent); text-decoration: none; margin-right: 16px; }
+  main { max-width: 920px; margin: 0 auto; padding: 10px 20px 64px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; margin: 18px 0; }
+  section h2 { margin: 0 0 3px; font-size: 19px; }
+  .hook { margin: 0 0 16px; color: var(--muted); font-size: 13px; max-width: 70ch; }
+  .cell { display: grid; grid-template-columns: minmax(220px, 280px) 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 660px) { .cell { grid-template-columns: 1fr; } }
   .controls { display: flex; flex-direction: column; gap: 14px; }
+  .fam-gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .fam-btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px;
+    padding: 7px 8px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left; }
+  .fam-btn.on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
   .ctl label { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; margin-bottom: 3px; }
   .ctl label .val { color: var(--accent); font-variant-numeric: tabular-nums; }
-  .ctl input[type=range] { width: 100%; accent-color: var(--accent); }
-  .ctl select { width: 100%; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--line);
-    background: var(--panel); color: var(--ink); font: inherit; }
-  .readout { margin-top: 12px; font-size: 13px; line-height: 1.5; color: var(--ink);
-    border-top: 1px dashed var(--line); padding-top: 10px; }
-  .readout b { font-variant-numeric: tabular-nums; }
-  .regime { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11.5px;
-    font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
-  .regime.good { background: rgba(31,122,69,0.16); color: var(--ok); }
-  .regime.watch { background: rgba(217,119,6,0.18); color: var(--oracle); }
-  .regime.bad { background: rgba(180,35,31,0.16); color: var(--bias); }
-  svg { width: 100%; height: auto; display: block; overflow: visible; }
-  .plot-wrap { min-width: 0; }
-  text { fill: var(--ink); }
-  .axis { stroke: var(--line); stroke-width: 1; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .rot-row { display: flex; gap: 6px; }
+  .rot-btn { flex: 1; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 7px;
+    padding: 5px; font: inherit; font-size: 12px; cursor: pointer; }
+  .rot-btn.on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
+  .rot-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .previews { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-width: 0; }
+  @media (max-width: 520px) { .previews { grid-template-columns: 1fr; } }
+  .pv { min-width: 0; }
+  .pv .cap { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+  svg { width: 100%; height: auto; display: block; background: transparent; }
+  .readout { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12.5px;
+    border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 2px; }
+  .readout b { font-variant-numeric: tabular-nums; color: var(--accent); }
+  .fam-desc { font-size: 12.5px; color: var(--muted); }
+  .frame { stroke: var(--line); fill: none; }
+  /* vine */
+  .vine-lab { display: grid; grid-template-columns: 300px 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 720px) { .vine-lab { grid-template-columns: 1fr; } }
+  .mini-cell { border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; margin-bottom: 9px; }
+  .mini-cell .mc-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+  .mini-cell .mc-title { font-weight: 700; font-size: 13px; }
+  .mini-cell .mc-title small { color: var(--muted); font-weight: 500; }
+  .mini-cell select { width: 100%; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); font: inherit; font-size: 12.5px; margin-bottom: 6px; }
+  .mini-cell.cond { border-style: dashed; border-color: var(--accent2); }
+  .struct-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 12.5px; }
+  .struct-row select { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; }
+  .splom { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .splom { grid-template-columns: 1fr; } }
   .tick { fill: var(--muted); font-size: 10px; }
-  .lede { font-size: 12px; color: var(--muted); }
-  nav { max-width: 900px; margin: 0 auto; padding: 0 20px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
-  nav a { color: var(--accent); text-decoration: none; }
-  code { background: rgba(127,127,127,0.14); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
-  footer { max-width: 900px; margin: 0 auto; padding: 8px 20px 48px; color: var(--muted); font-size: 12px; }
+  footer { max-width: 920px; margin: 0 auto; padding: 8px 20px 48px; color: var(--muted); font-size: 12px; }
+  code { background: rgba(127,127,127,0.14); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>The Joint Lab</h1>
-  <p>Three prototypes for <em>controlling the joint while pinning the truth</em> — the design questions from the SCM top-down pass. Every slider moves a nuisance direction; the causal mechanism (the estimand) is held fixed unless the demo is specifically about when it can't be.</p>
+  <h1>Copula Editor</h1>
+  <p>Dependence, decoupled from the marginals. The atomic unit is a <b>bivariate cell</b>; three or more variables are a <b>vine</b> — a cascade of those cells, some conditional. Everything lives in rank space [0,1], so you're editing pure dependence and previewing it live.</p>
 </header>
 <nav>
-  <a href="#emod">① Effect modification untethers the truth</a>
-  <a href="#sweep">② One dial: identified → hopeless</a>
-  <a href="#norta">③ You set the noise, you observe its shadow</a>
+  <a href="#cell">① The bivariate cell</a>
+  <a href="#vine">② The 3-variable vine</a>
   <a href="/reading.html">📚 Further reading →</a>
 </nav>
 <main>
 
-  <section id="emod">
-    <h2>① Effect modification untethers the truth</h2>
-    <p class="hook">The clean claim "vary the joint, pin the truth" holds for the <b>CATE</b> — τ(C) is a property of the mechanism. But the <b>marginal</b> ATE is ∫τ(C)dP(C), so with effect modification, changing the population mix moves the "average effect" even though no CATE changed. The DGM knob and the target-population knob are entangled.</p>
-    <div class="lab">
-      <div class="controls" id="emod-ctl">
-        <div class="ctl"><label>P(C=1) — population mix <span class="val" id="emod-p-v"></span></label><input type="range" id="emod-p" min="0" max="1" step="0.01" value="0.3"></div>
-        <div class="ctl"><label>CATE at C=0 (τ₀) <span class="val" id="emod-t0-v"></span></label><input type="range" id="emod-t0" min="-2" max="10" step="0.1" value="2"></div>
-        <div class="ctl"><label>CATE at C=1 (τ₁) <span class="val" id="emod-t1-v"></span></label><input type="range" id="emod-t1" min="-2" max="10" step="0.1" value="8"></div>
-        <div class="readout" id="emod-read"></div>
+  <section id="cell">
+    <h2>① The bivariate cell</h2>
+    <p class="hook">Pick a family, set the strength as Kendall's <b>τ</b> (family-invariant, so switching family keeps the same rank-correlation), rotate the Archimedeans to move the tail. The left preview is the pure copula density on the unit square; the right is a sample. This one cell is all you ever need — 3+ variables just arrange it.</p>
+    <div class="cell">
+      <div class="controls">
+        <div class="fam-gallery" id="fam-gallery"></div>
+        <div class="ctl"><label>Kendall's τ <span class="val" id="tau-v"></span></label><input type="range" id="tau" min="-0.9" max="0.9" step="0.01" value="0.5"></div>
+        <div class="ctl"><label>rotation (Archimedean) <span class="val" id="rot-v"></span></label>
+          <div class="rot-row" id="rot-row">
+            <button class="rot-btn" data-rot="0">0°</button>
+            <button class="rot-btn" data-rot="90">90°</button>
+            <button class="rot-btn" data-rot="180">180°</button>
+            <button class="rot-btn" data-rot="270">270°</button>
+          </div></div>
+        <div class="fam-desc" id="fam-desc"></div>
       </div>
-      <div class="plot-wrap"><svg id="emod-svg" viewBox="0 0 460 300" role="img" aria-label="Marginal ATE vs population mix"></svg></div>
+      <div class="previews">
+        <div class="pv"><div class="cap">copula density c(u,v) — rank space</div><svg id="dens" viewBox="0 0 200 200"></svg></div>
+        <div class="pv"><div class="cap">a sample from the copula</div><svg id="scat" viewBox="0 0 200 200"></svg></div>
+        <div class="readout" id="cell-read"></div>
+      </div>
     </div>
   </section>
 
-  <section id="sweep">
-    <h2>② One dial: from identified to hopeless</h2>
-    <p class="hook">Enriching the noise dependence isn't just "harder" — it crosses qualitative boundaries. <b>Observed</b> confounding worsens overlap (identified, but IPW gets fragile). <b>Unmeasured</b> confounding — a bidirected edge — pushes the estimand out of the identified region: even the correctly-adjusted estimate is biased. Two readings of one landscape. True effect β = 1, adjusting for the observed confounder only.</p>
-    <div class="lab">
+  <section id="vine">
+    <h2>② The 3-variable vine</h2>
+    <p class="hook">Three variables aren't a bag of three pairwise copulas (that's over-constrained). They're a cascade: two <b>direct</b> pairs along a chain, plus one <b>conditional</b> pair (the outer two, given the middle). Edit those three cells; the pairwise scatters below are <em>computed</em>. Turn up the dashed conditional cell and watch the outer pair's dependence rise beyond what merely leaks through the middle.</p>
+    <div class="vine-lab">
       <div class="controls">
-        <div class="ctl"><label>Observed confounding (overlap dial) <span class="val" id="sw-obs-v"></span></label><input type="range" id="sw-obs" min="0" max="3" step="0.05" value="1.4"></div>
-        <div class="ctl"><label>Unmeasured confounding (identifiability dial) <span class="val" id="sw-unm-v"></span></label><input type="range" id="sw-unm" min="0" max="3" step="0.05" value="0"></div>
-        <div class="readout" id="sw-read"></div>
+        <div class="struct-row">structure
+          <select id="struct">
+            <option value="0,1,2">1 — 2 — 3</option>
+            <option value="1,0,2">2 — 1 — 3</option>
+            <option value="0,2,1">1 — 3 — 2</option>
+          </select>
+        </div>
+        <svg id="tree" viewBox="0 0 280 90" style="margin-bottom:10px"></svg>
+        <div class="mini-cell" id="mc-0"></div>
+        <div class="mini-cell" id="mc-1"></div>
+        <div class="mini-cell cond" id="mc-2"></div>
       </div>
-      <div class="plot-wrap"><svg id="sw-svg" viewBox="0 0 460 300" role="img" aria-label="Estimates vs true effect"></svg></div>
-    </div>
-  </section>
-
-  <section id="norta">
-    <h2>③ You set the noise, you observe its shadow</h2>
-    <p class="hook">You control the <b>copula</b> (a latent correlation r); what you observe is its pushforward through each marginal. For skewed / heavy-tailed marginals the observed <b>Pearson</b> correlation drifts away from r, while <b>rank</b> (Spearman) dependence is preserved. So "specify the correlation matrix" hides an inversion — the NORTA correction — and this is only the <em>root</em> joint; anything downstream is a further pushforward you don't set directly.</p>
-    <div class="lab">
-      <div class="controls">
-        <div class="ctl"><label>Latent copula correlation r <span class="val" id="nt-r-v"></span></label><input type="range" id="nt-r" min="-0.95" max="0.95" step="0.01" value="0.6"></div>
-        <div class="ctl"><label>Marginal shape</label>
-          <select id="nt-marg">
-            <option value="gauss">Gaussian (matched)</option>
-            <option value="lognorm" selected>Lognormal (right-skew)</option>
-            <option value="exp">Exponential</option>
-            <option value="pareto">Pareto α=2 (heavy tail)</option>
-          </select></div>
-        <div class="readout" id="nt-read"></div>
+      <div>
+        <div class="splom" id="splom"></div>
       </div>
-      <div class="plot-wrap"><svg id="nt-svg" viewBox="0 0 460 300" role="img" aria-label="Observed joint scatter"></svg></div>
     </div>
   </section>
 
 </main>
-<footer>Prototypes — self-contained, linear-Gaussian / NORTA math in the page. nudagitty canary.</footer>
+<footer>Prototype — closed-form Gaussian/Clayton, numeric Gumbel h-inverse, D-vine simulation; all in-page. Kendall's τ verified against empirical samples. nudagitty canary.</footer>
 
 <script>
 "use strict";
 const NS = "http://www.w3.org/2000/svg";
-function el(tag, attrs, text) {
-  const n = document.createElementNS(NS, tag);
-  for (const k in attrs) n.setAttribute(k, attrs[k]);
-  if (text != null) n.textContent = text;
-  return n;
-}
-function clear(svg) { while (svg.firstChild) svg.removeChild(svg.firstChild); }
-function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
-const fmt = (v, d = 2) => (v >= 0 ? "+" : "") + v.toFixed(d);
-const fmtu = (v, d = 2) => v.toFixed(d);
+function el(t, a, tx){ const n = document.createElementNS(NS, t); for (const k in a) n.setAttribute(k, a[k]); if (tx != null) n.textContent = tx; return n; }
+function clear(s){ while (s.firstChild) s.removeChild(s.firstChild); }
+function css(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+const fmt = (v, d=2) => (v>=0?"+":"") + v.toFixed(d);
 
-// ---- shared normal math ----
-function erf(x) {
-  const s = x < 0 ? -1 : 1; x = Math.abs(x);
-  const t = 1 / (1 + 0.3275911 * x);
-  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
-  return s * y;
-}
-const Phi = (z) => 0.5 * (1 + erf(z / Math.SQRT2));
-let seed = 1234567;
-function rand() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
-function randn() { // Box-Muller
-  let u = 0, v = 0; while (u === 0) u = rand(); while (v === 0) v = rand();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+// ---- normal cdf / inverse ----
+function erf(x){ const s=x<0?-1:1; x=Math.abs(x); const t=1/(1+0.3275911*x);
+  const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x); return s*y; }
+const Phi = z => 0.5*(1+erf(z/Math.SQRT2));
+function Ninv(p){ p=Math.min(1-1e-9,Math.max(1e-9,p));
+  const a=[-3.969683028665376e+01,2.209460984245205e+02,-2.759285104469687e+02,1.383577518672690e+02,-3.066479806614716e+01,2.506628277459239e+00];
+  const b=[-5.447609879822406e+01,1.615858368580409e+02,-1.556989798598866e+02,6.680131188771972e+01,-1.328068155288572e+01];
+  const c=[-7.784894002430293e-03,-3.223964580411365e-01,-2.400758277161838e+00,-2.549732539343734e+00,4.374664141464968e+00,2.938163982698783e+00];
+  const d=[7.784695709041462e-03,3.224671290700398e-01,2.445134137142996e+00,3.754408661907416e+00];
+  const pl=0.02425,ph=1-pl; let q,r;
+  if(p<pl){q=Math.sqrt(-2*Math.log(p));return(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);}
+  if(p<=ph){q=p-0.5;r=q*q;return(((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);}
+  q=Math.sqrt(-2*Math.log(1-p));return-(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
 }
 
-// ============ DEMO 1: effect modification / transportability ============
-(function () {
-  const p = document.getElementById("emod-p"), t0 = document.getElementById("emod-t0"), t1 = document.getElementById("emod-t1");
-  const svg = document.getElementById("emod-svg"), read = document.getElementById("emod-read");
-  function draw() {
-    const P = +p.value, T0 = +t0.value, T1 = +t1.value;
-    document.getElementById("emod-p-v").textContent = fmtu(P, 2);
-    document.getElementById("emod-t0-v").textContent = fmt(T0, 1);
-    document.getElementById("emod-t1-v").textContent = fmt(T1, 1);
-    const ate = (1 - P) * T0 + P * T1;
-    clear(svg);
-    const W = 460, H = 300, L = 44, R = 20, TP = 24, B = 44;
-    const lo = Math.min(T0, T1, 0) - 1, hi = Math.max(T0, T1, 0) + 1;
-    const x = (v) => L + (v - 0) / (1 - 0) * (W - L - R);          // p axis 0..1
-    const y = (v) => H - B - (v - lo) / (hi - lo) * (H - TP - B);  // effect axis
-    svg.appendChild(el("line", { x1: L, y1: y(lo), x2: W - R, y2: y(lo), class: "axis" }));
-    svg.appendChild(el("line", { x1: L, y1: TP, x2: L, y2: H - B, class: "axis" }));
-    // effect ticks
-    for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4; svg.appendChild(el("text", { x: L - 6, y: y(v) + 3, "text-anchor": "end", class: "tick" }, fmtu(v, 0))); }
-    svg.appendChild(el("text", { x: 6, y: TP - 8, class: "tick" }, "treatment effect"));
-    for (let k = 0; k <= 4; k++) { const v = k / 4; svg.appendChild(el("text", { x: x(v), y: H - B + 16, "text-anchor": "middle", class: "tick" }, fmtu(v, 2))); }
-    svg.appendChild(el("text", { x: (L + W - R) / 2, y: H - 6, "text-anchor": "middle", class: "tick" }, "P(C=1) — population mix"));
-    // fixed CATE lines (horizontal, don't move with p)
-    svg.appendChild(el("line", { x1: L, y1: y(T0), x2: W - R, y2: y(T0), stroke: css("--blue"), "stroke-width": 1.5, "stroke-dasharray": "4 3", opacity: 0.7 }));
-    svg.appendChild(el("text", { x: W - R, y: y(T0) - 5, "text-anchor": "end", fill: css("--blue"), "font-size": 11 }, "CATE | C=0 (fixed)"));
-    svg.appendChild(el("line", { x1: L, y1: y(T1), x2: W - R, y2: y(T1), stroke: css("--oracle"), "stroke-width": 1.5, "stroke-dasharray": "4 3", opacity: 0.7 }));
-    svg.appendChild(el("text", { x: W - R, y: y(T1) - 5, "text-anchor": "end", fill: css("--oracle"), "font-size": 11 }, "CATE | C=1 (fixed)"));
-    // marginal ATE line = (1-p)T0 + p T1 across p
-    let d = "";
-    for (let i = 0; i <= 50; i++) { const pp = i / 50; const a = (1 - pp) * T0 + pp * T1; d += (i ? "L" : "M") + x(pp) + "," + y(a); }
-    svg.appendChild(el("path", { d, fill: "none", stroke: css("--ok"), "stroke-width": 2.5 }));
-    // current marker
-    svg.appendChild(el("circle", { cx: x(P), cy: y(ate), r: 6, fill: css("--ok"), stroke: css("--panel"), "stroke-width": 2 }));
-    svg.appendChild(el("text", { x: x(P), y: y(ate) - 12, "text-anchor": "middle", fill: css("--ok"), "font-size": 12, "font-weight": 700 }, "marginal ATE " + fmt(ate, 1)));
-    const emod = Math.abs(T1 - T0) > 0.15;
-    read.innerHTML = "CATEs are fixed by the mechanism: <b>" + fmt(T0, 1) + "</b> at C=0, <b>" + fmt(T1, 1) + "</b> at C=1. "
-      + "Marginal ATE = <b>" + fmt(ate, 2) + "</b>. "
-      + (emod
-        ? "<span class='regime watch'>entangled</span> — with effect modification the marginal truth slides with the population mix, from " + fmt(T0, 1) + " to " + fmt(T1, 1) + ". Pinning it needs a fixed target population (or a conditional estimand)."
-        : "<span class='regime good'>orthogonal</span> — no effect modification, so the marginal ATE is invariant to P(C). This is the clean case the DGM knob assumes.");
+// ---- copula families, parametrized by Kendall's tau ----
+const paramOf = {
+  independence: () => 0,
+  gaussian: t => Math.sin(Math.PI*t/2),          // rho
+  clayton: t => Math.max(1e-4, 2*t/(1-t)),
+  gumbel: t => Math.max(1.0001, 1/(1-t))
+};
+function hGumbel(x, v, th){ const lu=-Math.log(x), lv=-Math.log(v); const A=Math.pow(lu,th)+Math.pow(lv,th);
+  const C=Math.exp(-Math.pow(A,1/th)); return C*Math.pow(A,1/th-1)*Math.pow(lv,th-1)/v; }
+function hinvGumbel(w, v, th){ let lo=1e-6, hi=1-1e-6; for(let i=0;i<38;i++){ const m=(lo+hi)/2; (hGumbel(m,v,th)<w)?lo=m:hi=m; } return (lo+hi)/2; }
+// h-inverse: v given w2 and conditioning u (returns second coordinate)
+function hinv(fam, par, w2, u){
+  if(fam==="independence") return w2;
+  if(fam==="gaussian") return Phi(par*Ninv(u)+Math.sqrt(1-par*par)*Ninv(w2));
+  if(fam==="clayton"){ const b=u; return Math.pow(Math.pow(w2*Math.pow(b,par+1),-par/(par+1))-Math.pow(b,-par)+1,-1/par); }
+  if(fam==="gumbel") return hinvGumbel(w2, u, par);
+}
+// h-function: F(x|v)
+function hfun(fam, par, x, v){
+  if(fam==="independence") return x;
+  if(fam==="gaussian") return Phi((Ninv(x)-par*Ninv(v))/Math.sqrt(1-par*par));
+  if(fam==="clayton") return Math.pow(v,-par-1)*Math.pow(Math.pow(x,-par)+Math.pow(v,-par)-1,-1-1/par);
+  if(fam==="gumbel") return hGumbel(x, v, par);
+}
+function rotate(u, v, rot){
+  if(rot===90) return [1-u, v];
+  if(rot===180) return [1-u, 1-v];
+  if(rot===270) return [u, 1-v];
+  return [u, v];
+}
+function tailDep(fam, tau, rot){ // returns [lambdaL, lambdaU]
+  let lL=0, lU=0;
+  if(fam==="clayton"){ const th=paramOf.clayton(Math.abs(tau)); lL=Math.pow(2,-1/th); }
+  if(fam==="gumbel"){ const th=paramOf.gumbel(Math.abs(tau)); lU=2-Math.pow(2,1/th); }
+  if(rot===180){ const t=lL; lL=lU; lU=t; }
+  if(rot===90||rot===270){ lL=0; lU=0; } // negative-dependence rotations: no lower/upper tail
+  return [lL, lU];
+}
+const FAMILIES = [
+  { id:"independence", name:"Independence", desc:"no dependence — the product copula Π.", arch:false },
+  { id:"gaussian", name:"Gaussian", desc:"elliptical, symmetric, zero tail dependence (both signs of τ).", arch:false },
+  { id:"clayton", name:"Clayton", desc:"lower-tail dependence — the pair crashes together.", arch:true },
+  { id:"gumbel", name:"Gumbel", desc:"upper-tail dependence — the pair spikes together.", arch:true }
+];
+
+// fixed base-uniform buffer (seeded) so redraws are stable + fast
+let seed = 20240704;
+const rnd = () => { seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
+const NB = 2200;
+const BASE = Array.from({length: NB}, () => [rnd(), rnd()]);
+
+// schedule redraws on animation frames (coalesce rapid slider input)
+function raf(fn){ let q=false; return () => { if(q) return; q=true; requestAnimationFrame(() => { q=false; fn(); }); }; }
+
+// ============ DEMO 1: the bivariate cell ============
+(function(){
+  let state = { fam:"clayton", tau:0.5, rot:0 };
+  const gallery = document.getElementById("fam-gallery");
+  FAMILIES.forEach(f => { const b=document.createElement("button"); b.className="fam-btn"; b.dataset.fam=f.id; b.textContent=f.name;
+    b.onclick=()=>{ state.fam=f.id; if(!f.arch) state.rot=0; syncUI(); redraw(); }; gallery.appendChild(b); });
+  const tau=document.getElementById("tau"), densEl=document.getElementById("dens"), scatEl=document.getElementById("scat"), readEl=document.getElementById("cell-read"), descEl=document.getElementById("fam-desc");
+  const rotBtns=[...document.querySelectorAll("#rot-row .rot-btn")];
+  tau.oninput=()=>{ state.tau=+tau.value; document.getElementById("tau-v").textContent=fmt(state.tau,2); redraw(); };
+  rotBtns.forEach(b => b.onclick=()=>{ state.rot=+b.dataset.rot; syncUI(); redraw(); });
+
+  function syncUI(){
+    [...gallery.children].forEach(b => b.classList.toggle("on", b.dataset.fam===state.fam));
+    const arch = FAMILIES.find(f=>f.id===state.fam).arch;
+    rotBtns.forEach(b => { b.disabled=!arch; b.classList.toggle("on", arch && +b.dataset.rot===state.rot); });
+    document.getElementById("rot-v").textContent = arch ? state.rot+"°" : "n/a";
+    // gaussian/independence: tau range full; archimedean: tau>0 only (positive dependence base)
+    const posOnly = state.fam==="clayton" || state.fam==="gumbel";
+    tau.min = posOnly ? 0.02 : -0.9;
+    if(posOnly && state.tau<0.02){ state.tau=0.3; }
+    tau.value = state.tau;
+    document.getElementById("tau-v").textContent = fmt(state.tau,2);
+    descEl.textContent = FAMILIES.find(f=>f.id===state.fam).desc + (arch && state.rot ? "  Rotated "+state.rot+"°"+(state.rot===180?" (tail flipped to the opposite corner).": " (negative dependence).") : "");
   }
-  [p, t0, t1].forEach(c => c.addEventListener("input", draw)); draw();
+  function sample(){ const par=paramOf[state.fam](Math.abs(state.tau)) ?? 0;
+    const sgn = state.fam==="gaussian" ? 1 : 1; // gaussian par already carries sign via tau
+    const p = state.fam==="gaussian" ? paramOf.gaussian(state.tau) : par;
+    const pts=[]; for(const [w1,w2] of BASE){ let u=w1, v=hinv(state.fam,p,w2,w1); [u,v]=rotate(u,v,state.rot); pts.push([u,v]); } return pts;
+  }
+  const redraw = raf(function(){
+    const pts=sample();
+    // density heatmap via 2D histogram of the sample
+    const G=40, grid=new Float64Array(G*G); let mx=0;
+    for(const [u,v] of pts){ const gi=Math.min(G-1,Math.floor(u*G)), gj=Math.min(G-1,Math.floor(v*G)); grid[gj*G+gi]++; }
+    for(let i=0;i<grid.length;i++) if(grid[i]>mx) mx=grid[i];
+    clear(densEl); densEl.appendChild(el("rect",{x:0,y:0,width:200,height:200,class:"frame"}));
+    const cell=200/G, ac=css("--accent");
+    for(let gj=0;gj<G;gj++) for(let gi=0;gi<G;gi++){ const c=grid[gj*G+gi]; if(c<=0) continue;
+      const o=Math.pow(c/mx,0.55); densEl.appendChild(el("rect",{x:(gi*cell).toFixed(1),y:(200-(gj+1)*cell).toFixed(1),width:cell.toFixed(1)+"",height:cell.toFixed(1)+"",fill:ac,"fill-opacity":o.toFixed(3)})); }
+    // scatter
+    clear(scatEl); scatEl.appendChild(el("rect",{x:0,y:0,width:200,height:200,class:"frame"}));
+    const g=document.createElementNS(NS,"g");
+    for(let i=0;i<pts.length;i+=2){ const [u,v]=pts[i]; g.appendChild(el("circle",{cx:(u*200).toFixed(1),cy:(200-v*200).toFixed(1),r:1.3,fill:css("--accent"),opacity:0.32})); }
+    scatEl.appendChild(g);
+    // readouts
+    const tauShown = (state.rot===90||state.rot===270) ? -Math.abs(state.tau) : (state.fam==="gaussian"?state.tau:Math.abs(state.tau));
+    const rhoS = (2/Math.PI)*Math.asin(2*Math.sin(Math.PI*tauShown/2)/2) ; // approx; display spearman for gaussian only meaningfully
+    const [lL,lU]=tailDep(state.fam,state.tau,state.rot);
+    readEl.innerHTML = "Kendall τ <b>"+fmt(tauShown,2)+"</b>"
+      + " · lower-tail λ<sub>L</sub> <b>"+lL.toFixed(2)+"</b>"
+      + " · upper-tail λ<sub>U</sub> <b>"+lU.toFixed(2)+"</b>"
+      + (state.fam==="gaussian" ? " · Spearman ρ<sub>S</sub> <b>"+fmt((6/Math.PI)*Math.asin(paramOf.gaussian(state.tau)/2),2)+"</b>" : "");
+  });
+  syncUI(); redraw();
 })();
 
-// ============ DEMO 2: identifiability / difficulty sweep ============
-(function () {
-  const obs = document.getElementById("sw-obs"), unm = document.getElementById("sw-unm");
-  const svg = document.getElementById("sw-svg"), read = document.getElementById("sw-read");
-  function draw() {
-    const so = +obs.value, su = +unm.value;
-    document.getElementById("sw-obs-v").textContent = fmtu(so, 2);
-    document.getElementById("sw-unm-v").textContent = fmtu(su, 2);
-    // linear-Gaussian confounder triangle, sigma_x=sigma_y=1, beta=1
-    // X = so*C - ... ; aC=so, bC=-2so, aU=su, bU=-2su
-    const varX = so * so + su * su + 1;
-    const beta = 1;
-    const crude = beta + ((-2 * so) * so + (-2 * su) * su) / varX;
-    const adjusted = beta + ((-2 * su) * su) / (su * su + 1);
-    const oracle = beta;
-    const overlapR2 = so * so / varX; // R^2 of X on C
-    clear(svg);
-    const W = 460, H = 300, L = 60, R = 20, TP = 24, B = 54;
-    const lo = Math.min(crude, adjusted, oracle, 0) - 0.5, hi = Math.max(crude, adjusted, oracle, 1) + 0.5;
-    const y = (v) => H - B - (v - lo) / (hi - lo) * (H - TP - B);
-    const bars = [["crude", crude, css("--muted")], ["adjusted for C", adjusted, css("--blue")], ["true β (oracle)", oracle, css("--oracle")]];
-    const bw = 74, gap = 40, x0 = L + 10;
-    svg.appendChild(el("line", { x1: L, y1: y(0), x2: W - R, y2: y(0), class: "axis" }));
-    for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4; svg.appendChild(el("text", { x: L - 8, y: y(v) + 3, "text-anchor": "end", class: "tick" }, fmtu(v, 1))); svg.appendChild(el("line", { x1: L - 3, y1: y(v), x2: L, y2: y(v), class: "axis" })); }
-    bars.forEach((bar, i) => {
-      const bx = x0 + i * (bw + gap);
-      const yv = y(bar[1]), y0 = y(0);
-      svg.appendChild(el("rect", { x: bx, y: Math.min(yv, y0), width: bw, height: Math.abs(yv - y0), fill: bar[2], opacity: 0.85, rx: 3 }));
-      svg.appendChild(el("text", { x: bx + bw / 2, y: yv + (bar[1] >= 0 ? -7 : 15), "text-anchor": "middle", "font-size": 13, "font-weight": 700, fill: css("--ink") }, fmt(bar[1], 2)));
-      svg.appendChild(el("text", { x: bx + bw / 2, y: H - B + 16, "text-anchor": "middle", class: "tick" }, bar[0]));
-    });
-    // oracle reference line
-    svg.appendChild(el("line", { x1: L, y1: y(1), x2: W - R, y2: y(1), stroke: css("--oracle"), "stroke-dasharray": "3 3", "stroke-width": 1, opacity: 0.6 }));
-    let regime, cls;
-    if (su > 0.25) { regime = "non-identified from {C}"; cls = "bad"; }
-    else if (overlapR2 > 0.6) { regime = "identified · strained overlap"; cls = "watch"; }
-    else { regime = "identified · good overlap"; cls = "good"; }
-    read.innerHTML = "<span class='regime " + cls + "'>" + regime + "</span><br>"
-      + "Crude <b>" + fmt(crude, 2) + "</b>, adjusted-for-C <b>" + fmt(adjusted, 2) + "</b>, truth <b>+1.00</b>. "
-      + "Overlap R²(X~C) = <b>" + fmtu(overlapR2, 2) + "</b>. "
-      + (su > 0.25
-        ? "The unmeasured confounder biases even the correctly-adjusted estimate — no from-data method recovers β; only the oracle knows."
-        : overlapR2 > 0.6
-          ? "Adjustment still hits β, but X is nearly determined by C — weights blow up, IPW gets fragile (the overlap card's STRAINED regime)."
-          : "Adjusting for C recovers the truth cleanly.");
-  }
-  [obs, unm].forEach(c => c.addEventListener("input", draw)); draw();
-})();
+// ============ DEMO 2: the 3-variable vine ============
+(function(){
+  // three editable cells: [0]=direct(order0,order1), [1]=direct(order1,order2), [2]=conditional(order0,order2 | order1)
+  let cells = [ {fam:"gaussian",tau:0.6}, {fam:"clayton",tau:0.5}, {fam:"independence",tau:0.0} ];
+  let order = [0,1,2];
+  const NAMES = ["1","2","3"];
+  const structSel = document.getElementById("struct");
+  const treeEl = document.getElementById("tree");
+  const splom = document.getElementById("splom");
+  const NV = 1500;
+  seed = 55; const vb = Array.from({length: NV}, () => [rnd(), rnd(), rnd()]);
 
-// ============ DEMO 3: NORTA pushforward ============
-(function () {
-  const rc = document.getElementById("nt-r"), marg = document.getElementById("nt-marg");
-  const svg = document.getElementById("nt-svg"), read = document.getElementById("nt-read");
-  const N = 3000;
-  function Finv(u, kind, z) {
-    if (kind === "gauss") return z;
-    if (kind === "lognorm") return Math.exp(z);
-    if (kind === "exp") return -Math.log(1 - Math.min(0.9999, Math.max(1e-6, u)));
-    if (kind === "pareto") return Math.pow(1 - Math.min(0.9999, Math.max(1e-6, u)), -1 / 2);
-    return z;
-  }
-  function draw() {
-    const r = +rc.value, kind = marg.value;
-    document.getElementById("nt-r-v").textContent = fmt(r, 2);
-    seed = 987654; // reproducible per redraw
-    const xs = [], ys = [];
-    for (let i = 0; i < N; i++) {
-      const z1 = randn(), w = randn();
-      const z2 = r * z1 + Math.sqrt(Math.max(0, 1 - r * r)) * w;
-      xs.push(Finv(Phi(z1), kind, z1));
-      ys.push(Finv(Phi(z2), kind, z2));
+  function parCell(c){ return c.fam==="gaussian" ? paramOf.gaussian(c.tau) : paramOf[c.fam](Math.abs(c.tau)); }
+  function vineSample(){
+    const c12=cells[0], c23=cells[1], c13=cells[2];
+    const p12=parCell(c12), p23=parCell(c23), p13=parCell(c13);
+    const out=[];
+    for(const [w1,w2,w3] of vb){
+      const x1=w1;
+      const x2=hinv(c12.fam,p12,w2,x1);
+      const a=hfun(c12.fam,p12,x1,x2);
+      const b=hinv(c13.fam,p13,w3,a);
+      const x3=hinv(c23.fam,p23,b,x2);
+      out.push([x1,x2,x3]); // positions along the CHAIN order[0],order[1],order[2]
     }
-    // Pearson
-    const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
-    const mx = mean(xs), my = mean(ys);
-    let cxy = 0, vx = 0, vy = 0;
-    for (let i = 0; i < N; i++) { cxy += (xs[i] - mx) * (ys[i] - my); vx += (xs[i] - mx) ** 2; vy += (ys[i] - my) ** 2; }
-    const pearson = cxy / Math.sqrt(vx * vy);
-    // Spearman = pearson of ranks
-    const rank = (a) => { const idx = a.map((v, i) => [v, i]).sort((p, q) => p[0] - q[0]); const rk = new Array(a.length); idx.forEach((p, k) => rk[p[1]] = k); return rk; };
-    const rxs = rank(xs), rys = rank(ys);
-    const mrx = (N - 1) / 2; let cr = 0, vrx = 0, vry = 0;
-    for (let i = 0; i < N; i++) { cr += (rxs[i] - mrx) * (rys[i] - mrx); vrx += (rxs[i] - mrx) ** 2; vry += (rys[i] - mrx) ** 2; }
-    const spearman = cr / Math.sqrt(vrx * vry);
-    // plot scatter (clip to 1st..99th percentile for skewed marginals)
-    clear(svg);
-    const W = 460, H = 300, L = 44, R = 16, TP = 16, B = 40;
-    const sortedX = [...xs].sort((a, b) => a - b), sortedY = [...ys].sort((a, b) => a - b);
-    const q = (arr, p) => arr[Math.floor(p * (arr.length - 1))];
-    const xlo = q(sortedX, 0.01), xhi = q(sortedX, 0.99), ylo = q(sortedY, 0.01), yhi = q(sortedY, 0.99);
-    const px = (v) => L + (Math.min(xhi, Math.max(xlo, v)) - xlo) / (xhi - xlo + 1e-9) * (W - L - R);
-    const py = (v) => H - B - (Math.min(yhi, Math.max(ylo, v)) - ylo) / (yhi - ylo + 1e-9) * (H - TP - B);
-    svg.appendChild(el("line", { x1: L, y1: H - B, x2: W - R, y2: H - B, class: "axis" }));
-    svg.appendChild(el("line", { x1: L, y1: TP, x2: L, y2: H - B, class: "axis" }));
-    svg.appendChild(el("text", { x: (L + W - R) / 2, y: H - 6, "text-anchor": "middle", class: "tick" }, "X₁"));
-    svg.appendChild(el("text", { x: 12, y: TP + 4, class: "tick" }, "X₂"));
-    const dots = document.createElementNS(NS, "g");
-    for (let i = 0; i < N; i += 2) { dots.appendChild(el("circle", { cx: px(xs[i]).toFixed(1), cy: py(ys[i]).toFixed(1), r: 1.4, fill: css("--accent"), opacity: 0.28 })); }
-    svg.appendChild(dots);
-    const drift = Math.abs(pearson - r);
-    read.innerHTML = "You set latent r = <b>" + fmt(r, 2) + "</b>. "
-      + "Observed <b>Pearson " + fmt(pearson, 2) + "</b> · rank <b>Spearman " + fmt(spearman, 2) + "</b>. "
-      + (kind === "gauss"
-        ? "<span class='regime good'>matched</span> — Gaussian marginals, so the observed Pearson equals the copula r exactly."
-        : "<span class='regime watch'>drift " + fmtu(drift, 2) + "</span> — the marginal transform bends Pearson away from r (Spearman stays put). To hit a <em>target</em> Pearson you must invert this — the NORTA correction.");
+    return out;
   }
-  [rc, marg].forEach(c => c.addEventListener("input", draw)); draw();
+  function kendallSub(xs,ys){ let c=0,d=0,n=Math.min(xs.length,400); for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){ const a=(xs[i]-xs[j])*(ys[i]-ys[j]); if(a>0)c++; else if(a<0)d++; } return (c-d)/(c+d||1); }
+
+  function renderCellEditor(idx){
+    const host=document.getElementById("mc-"+idx);
+    const c=cells[idx];
+    const o=order;
+    const label = idx===0 ? `c<sub>${NAMES[o[0]]}${NAMES[o[1]]}</sub>` : idx===1 ? `c<sub>${NAMES[o[1]]}${NAMES[o[2]]}</sub>` : `c<sub>${NAMES[o[0]]}${NAMES[o[2]]} | ${NAMES[o[1]]}</sub>`;
+    const kind = idx===2 ? "conditional (T₂)" : "direct (T₁)";
+    host.innerHTML = `<div class="mc-head"><span class="mc-title">${label} <small>${kind}</small></span><span class="mc-title" style="color:var(--accent)">τ ${fmt(c.tau,2)}</span></div>`;
+    const sel=document.createElement("select");
+    FAMILIES.forEach(f=>{ const op=document.createElement("option"); op.value=f.id; op.textContent=f.name; if(f.id===c.fam)op.selected=true; sel.appendChild(op); });
+    sel.onchange=()=>{ c.fam=sel.value; if((c.fam==="clayton"||c.fam==="gumbel")&&c.tau<0.02)c.tau=0.3; renderCellEditor(idx); redraw(); };
+    const rng=document.createElement("input"); rng.type="range"; rng.step="0.01"; rng.value=c.tau;
+    const posOnly=(c.fam==="clayton"||c.fam==="gumbel"); rng.min=posOnly?"0.02":"-0.9"; rng.max="0.9";
+    rng.oninput=()=>{ c.tau=+rng.value; host.querySelector(".mc-head .mc-title:last-child").textContent="τ "+fmt(c.tau,2); redraw(); };
+    host.appendChild(sel); host.appendChild(rng);
+  }
+  function renderTree(){
+    clear(treeEl);
+    const o=order, xs=[40,140,240], y=34;
+    // chain edges
+    treeEl.appendChild(el("line",{x1:xs[0],y1:y,x2:xs[1],y2:y,stroke:css("--accent"),"stroke-width":2}));
+    treeEl.appendChild(el("line",{x1:xs[1],y1:y,x2:xs[2],y2:y,stroke:css("--accent"),"stroke-width":2}));
+    // conditional arc (outer two)
+    treeEl.appendChild(el("path",{d:`M${xs[0]},${y} Q140,${y+38} ${xs[2]},${y}`,fill:"none",stroke:css("--accent2"),"stroke-width":1.5,"stroke-dasharray":"4 3"}));
+    treeEl.appendChild(el("text",{x:140,y:y+34,"text-anchor":"middle",fill:css("--accent2"),"font-size":10},`| ${NAMES[o[1]]}`));
+    for(let i=0;i<3;i++){ treeEl.appendChild(el("circle",{cx:xs[i],cy:y,r:13,fill:css("--panel"),stroke:css("--ink"),"stroke-width":1.4}));
+      treeEl.appendChild(el("text",{x:xs[i],y:y+4,"text-anchor":"middle","font-size":13,"font-weight":700,fill:css("--ink")},NAMES[o[i]])); }
+  }
+  function scatterPanel(title, xs, ys, tauv){
+    const wrap=document.createElement("div"); wrap.className="pv";
+    wrap.innerHTML=`<div class="cap">${title} · τ ${fmt(tauv,2)}</div>`;
+    const svg=el("svg",{viewBox:"0 0 200 200"}); svg.appendChild(el("rect",{x:0,y:0,width:200,height:200,class:"frame"}));
+    const g=document.createElementNS(NS,"g");
+    for(let i=0;i<xs.length;i+=1){ g.appendChild(el("circle",{cx:(xs[i]*200).toFixed(1),cy:(200-ys[i]*200).toFixed(1),r:1.3,fill:css("--accent"),opacity:0.3})); }
+    svg.appendChild(g); wrap.appendChild(svg); return wrap;
+  }
+  const redraw = raf(function(){
+    const S=vineSample();
+    // columns of S are chain positions order[0],order[1],order[2]. Map back to variable ids for labels.
+    const col=(k)=>S.map(r=>r[k]);
+    const o=order;
+    const pairs=[ [o[0],o[1],0,1], [o[1],o[2],1,2], [o[0],o[2],0,2] ];
+    clear(splom);
+    for(const [va,vb2,ka,kb] of pairs){
+      const xa=col(ka), xb=col(kb);
+      splom.appendChild(scatterPanel(`${NAMES[va]} — ${NAMES[vb2]}`, xa, xb, kendallSub(xa,xb)));
+    }
+  });
+  structSel.onchange=()=>{ order=structSel.value.split(",").map(Number); renderTree(); [0,1,2].forEach(renderCellEditor); redraw(); };
+  renderTree(); [0,1,2].forEach(renderCellEditor); redraw();
 })();
 </script>
 </body>
