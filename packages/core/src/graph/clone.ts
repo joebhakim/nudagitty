@@ -52,6 +52,7 @@ export function cloneSimulationSpec(spec: SimulationSpec): SimulationSpec {
     nodes: Object.fromEntries(Object.entries(spec.nodes ?? {}).map(([id, mechanism]) => [id, normalizeNodeMechanism(mechanism)])),
     edges: Object.fromEntries(Object.entries(spec.edges ?? {}).map(([id, mechanism]) => [id, normalizeEdgeMechanism(mechanism)])),
     overrides: { ...(spec.overrides ?? {}) },
-    selections: Object.fromEntries(Object.entries(spec.selections ?? {}).map(([id, condition]) => [id, normalizeSelectionCondition(condition)]))
+    selections: Object.fromEntries(Object.entries(spec.selections ?? {}).map(([id, condition]) => [id, normalizeSelectionCondition(condition)])),
+    ...(spec.copulaBlocks ? { copulaBlocks: JSON.parse(JSON.stringify(spec.copulaBlocks)) as SimulationSpec["copulaBlocks"] } : {})
   };
 }

@@ -1,6 +1,8 @@
 import { inverseStandardNormalCdf as Ninv, standardNormalCdf as Phi } from "./simulation/math";
 import { edgeContribution } from "./simulation/interpreter";
-import type { EdgeMechanism } from "./types";
+import { buildDistributionQuantile } from "./distributions";
+import type { CopulaBlock, CopulaComponent, CopulaFamily, CopulaRotation, MixtureEdge, Moderation, NodeDistribution, PairCopula } from "./types";
+export type { CopulaBlock, CopulaComponent, CopulaFamily, CopulaRotation, MixtureEdge, Moderation, PairCopula } from "./types";
 
 // ---------------------------------------------------------------------------
 // Copula families + regular-vine (D-vine) sampling — the reusable dependence
@@ -13,38 +15,12 @@ import type { EdgeMechanism } from "./types";
 //   argument. Sampling and conditioning are built entirely from h / h⁻¹.
 // ---------------------------------------------------------------------------
 
-export type CopulaFamily = "independence" | "gaussian" | "frank" | "clayton" | "gumbel";
-export type CopulaRotation = 0 | 90 | 180 | 270;
-
-export interface PairCopula {
-  family: CopulaFamily;
-  /** Kendall's τ. Signed for gaussian/frank; magnitude for clayton/gumbel (sign via rotation). */
-  tau: number;
-  rotation?: CopulaRotation;
-}
-
 export const COPULA_FAMILIES: CopulaFamily[] = ["independence", "gaussian", "frank", "clayton", "gumbel"];
 export const ARCHIMEDEAN_FAMILIES: CopulaFamily[] = ["clayton", "gumbel"]; // one-tailed; rotate for negative τ
 
-// --- The complete edge model: a mixture over families, every parameter/weight a moderation curve ---
-// A Moderation is a scalar that is either constant (by === null → today's simplified case) or a
-// function of a conditioning variable's value, evaluated through the engine's transfer-function
-// library (EdgeMechanism) then a link. `by` is the LINE POSITION of the moderating variable
-// (which must lie in the edge's conditioning set for the vine to stay valid).
-export interface Moderation {
-  by: number | null;
-  constant: number;            // used when by === null (τ directly for constant tau; raw weight for weights)
-  mechanism?: EdgeMechanism;   // used when by !== null
-}
-export interface CopulaComponent {
-  family: CopulaFamily;
-  rotation: CopulaRotation;
-  tau: Moderation;             // linked into the family's valid τ range when moderated
-}
-export interface MixtureEdge {
-  components: CopulaComponent[];  // length ≥ 1
-  weights: Moderation[];          // same length; softmax-normalized (ignored when 1 component)
-}
+// The edge model (Moderation / CopulaComponent / MixtureEdge) is defined in types.ts and re-exported
+// above. A Moderation is constant (by === null → simplified) or a curve of a conditioning variable's
+// value via the engine's EdgeMechanism library + a link.
 /** Today's { family, tau, rotation } as a 1-component constant edge — the simplified case. */
 export function simpleEdge(family: CopulaFamily, tau: number, rotation: CopulaRotation = 0): MixtureEdge {
   return { components: [{ family, rotation, tau: { by: null, constant: tau } }], weights: [{ by: null, constant: 1 }] };
@@ -271,4 +247,25 @@ export function sampleDVineModerated(
     (t, e, tg, v, drawn) => { const { comps, weights } = evalAt(t, e, drawn); return comps.length === 1 ? pairHinv(comps[0]!, tg, v) : mixtureHinv(comps, weights, tg, v); },
     pseudo);
   return { u, data: u.map((ui, p) => quantiles[p]!(ui)) };
+}
+
+// --- Engine glue: draw a copula block's coupled root values -----------------
+export interface PreparedCopulaBlock {
+  block: CopulaBlock;
+  quantiles: Array<(u: number) => number>; // position order
+  nodeIdByPosition: string[];              // position → node id
+}
+/** Build a block's marginal quantiles once (position order) from each node's distribution. */
+export function prepareCopulaBlock(block: CopulaBlock, marginalOf: (nodeId: string) => NodeDistribution): PreparedCopulaBlock {
+  const nodeIdByPosition = block.order.map((varIdx) => block.nodes[varIdx]!);
+  return { block, quantiles: nodeIdByPosition.map((id) => buildDistributionQuantile(marginalOf(id))), nodeIdByPosition };
+}
+/** Draw one coupled sample for the block → { nodeId: value } (marginals applied). Consumes d uniforms. */
+export function drawCopulaBlockSample(prepared: PreparedCopulaBlock, rng: () => number): Record<string, number> {
+  const d = prepared.block.nodes.length;
+  const w = Array.from({ length: d }, () => rng());
+  const { data } = sampleDVineModerated(prepared.block.edges, w, prepared.quantiles);
+  const out: Record<string, number> = {};
+  prepared.nodeIdByPosition.forEach((id, p) => { out[id] = data[p]!; });
+  return out;
 }

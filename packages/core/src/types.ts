@@ -347,12 +347,31 @@ export interface EdgeMechanism {
   dataColumn?: number;
 }
 
+// --- Copula / vine dependence model (functions live in copulaVine.ts) ---
+export type CopulaFamily = "independence" | "gaussian" | "frank" | "clayton" | "gumbel";
+export type CopulaRotation = 0 | 90 | 180 | 270;
+export interface PairCopula { family: CopulaFamily; tau: number; rotation?: CopulaRotation }
+/** A scalar that is constant (by === null) or a moderation curve of a conditioning variable's value. */
+export interface Moderation { by: number | null; constant: number; mechanism?: EdgeMechanism }
+export interface CopulaComponent { family: CopulaFamily; rotation: CopulaRotation; tau: Moderation }
+export interface MixtureEdge { components: CopulaComponent[]; weights: Moderation[] }
+/** A block of DAG nodes whose (root) marginals are coupled by a D-vine of mixture edges. */
+export interface CopulaBlock {
+  id: string;
+  nodes: string[];          // DAG node ids in the block (roots)
+  order: number[];          // D-vine order: line position → index into `nodes`
+  edges: MixtureEdge[][];   // [tree][edge], truncatable
+  depth: number;
+}
+
 export interface SimulationSpec {
   seed: number;
   nodes: Record<string, NodeMechanism>;
   edges: Record<string, EdgeMechanism>;
   overrides: Record<string, number>;
   selections: Record<string, SimulationSelectionCondition>;
+  /** Optional copula blocks coupling root-covariate marginals; absent/empty ⇒ independent draws. */
+  copulaBlocks?: CopulaBlock[];
 }
 
 export type SimulationSelectionOperator = "at_least" | "at_most" | "between" | "one_of";

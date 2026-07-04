@@ -24,6 +24,7 @@ import {
   shouldUseImportanceSampling
 } from "./conditioning";
 import { compileModel, runCompiledForward } from "./compiled";
+import { prepareCopulaBlock, drawCopulaBlockSample } from "../copulaVine";
 import { VARIANCE_EPSILON } from "./constants";
 import type { StructuralContribution } from "./interpreter";
 import { coerceVariableValue, edgeContribution, finalizeNodeValue, interactionContribution, sampleRootValue } from "./interpreter";
@@ -53,11 +54,16 @@ export function simulateEmpiricalDistributions(
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
   const rng = createSeededRandomSource((spec.seed || 1) ^ 0x9E3779B9);
   const conditions = activeSelectionConditions(spec, graph);
-  const linearGaussianImportance = simulateLinearGaussianConditionedEmpirical(graph, spec, order, conditions, sampleCount, rng);
+  // Copula blocks couple root-covariate marginals via a moderated mixture vine. Only valid on roots;
+  // when present, the analytic/compiled fast paths are skipped so the coupled draw runs in the loop.
+  const blocks = (spec.copulaBlocks ?? []).filter((b) => b.nodes.length >= 2 && b.nodes.every((id) => directedParents(graph, id).length === 0));
+  const preparedBlocks = blocks.map((b) => prepareCopulaBlock(b, (id) => normalizeNodeMechanism(spec.nodes[id]).distribution));
+  const blockNodeIds = new Set(blocks.flatMap((b) => b.nodes));
+  const linearGaussianImportance = blocks.length === 0 ? simulateLinearGaussianConditionedEmpirical(graph, spec, order, conditions, sampleCount, rng) : null;
   if (linearGaussianImportance) return linearGaussianImportance;
   // Fast path: unconditioned forward sampling (no rejection/importance) via the
   // compiled loop. Bit-identical to the interpreted loop below.
-  if (conditions.length === 0) {
+  if (conditions.length === 0 && blocks.length === 0) {
     const compiled = compileModel(graph, spec, order);
     if (compiled) {
       const { samples } = runCompiledForward(compiled, spec, rng, sampleCount);
@@ -85,6 +91,9 @@ export function simulateEmpiricalDistributions(
   while (attempts < maxAttempts && accepted < sampleCount) {
     attempts += 1;
     const values: Record<string, number> = {};
+    // Draw the coupled block values for this attempt up front; block (root) nodes read them below.
+    const blockDraw: Record<string, number> = {};
+    for (const pb of preparedBlocks) Object.assign(blockDraw, drawCopulaBlockSample(pb, rng));
     let logWeight = 0;
     let possible = true;
     let guidedThisSample = false;
@@ -97,7 +106,9 @@ export function simulateEmpiricalDistributions(
         values[id] = coerceVariableValue(spec.overrides[id] ?? 0, variable);
       } else {
         const parents = directedParents(graph, id);
-        if (parents.length === 0) {
+        if (parents.length === 0 && blockNodeIds.has(id)) {
+          values[id] = coerceVariableValue(blockDraw[id] ?? 0, variable); // coupled draw from the vine
+        } else if (parents.length === 0) {
           const guided = condition && shouldUseImportanceSampling(condition) ? guidedRootSample(mechanism.distribution, condition, variable, rng) : null;
           if (guided) {
             if (!guided.possible) possible = false;
