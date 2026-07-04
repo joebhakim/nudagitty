@@ -61,6 +61,31 @@
 .ca-confess { color: #b4231f; font-weight: 700; }
 @media (prefers-color-scheme: dark) { .ca-confess { color: #ef6b64; } }
 
+/* rich conditional-function editor */
+.ca-edge-moderated { cursor: pointer; }
+.ca-edge-moderated span { font-size: 11px; color: var(--ca-accent2); font-weight: 600; }
+.ca-modpanel { margin-top: 14px; border: 1px solid var(--ca-line); border-radius: 10px; padding: 10px 12px; background: var(--ca-panel); }
+.ca-modpanel-grid { display: grid; grid-template-columns: 1fr 1.3fr; gap: 14px; align-items: start; margin-top: 6px; }
+@media (max-width: 640px) { .ca-modpanel-grid { grid-template-columns: 1fr; } }
+.ca-modctl { display: flex; flex-direction: column; gap: 8px; }
+.ca-modslider { display: grid; grid-template-columns: 62px 1fr 40px; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ca-muted); }
+.ca-modslider select { grid-column: 2 / 4; padding: 3px 5px; border-radius: 6px; border: 1px solid var(--ca-line); background: var(--ca-panel); color: var(--ca-ink); font: inherit; font-size: 12px; }
+.ca-modslider input[type=range] { accent-color: var(--ca-accent); min-width: 40px; }
+.ca-modslider em { font-style: normal; font-variant-numeric: tabular-nums; color: var(--ca-accent); text-align: right; }
+.ca-modhint { font-size: 11px; color: var(--ca-muted); background: var(--ca-chip); border-radius: 7px; padding: 6px 9px; margin: 2px 0 0; }
+.ca-curve-wrap { max-width: 340px; }
+.ca-curve.draggable .ca-curve-handle { cursor: ns-resize; }
+.ca-curve-line { fill: none; stroke: var(--ca-accent); stroke-width: 2px; }
+.ca-curve-zero { stroke: var(--ca-line); stroke-width: 1px; stroke-dasharray: 2 2; }
+.ca-curve-mark { stroke: var(--ca-accent2); stroke-width: 0.8px; opacity: 0.4; }
+.ca-curve-handle { fill: var(--ca-panel); stroke: var(--ca-accent); stroke-width: 1.6px; }
+.ca-curve-handle:hover { fill: var(--ca-accent); }
+.ca-curve-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--ca-muted); margin-top: 1px; font-variant-numeric: tabular-nums; }
+.ca-filmstrip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.ca-film { border: 1px solid var(--ca-line); border-radius: 8px; padding: 4px; background: var(--ca-bg); }
+.ca-film-cap { font-size: 10px; color: var(--ca-muted); margin-bottom: 2px; font-variant-numeric: tabular-nums; }
+.ca-film-cap span { color: var(--ca-accent); font-weight: 600; }
+
 /* trivariate solid view */
 .ca-solid { margin-top: 16px; }
 .ca-solid-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; }

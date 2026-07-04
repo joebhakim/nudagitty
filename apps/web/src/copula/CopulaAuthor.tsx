@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { buildDistributionQuantile, sampleDVineModerated, simpleEdge, normalizeEdgeMechanism, ARCHIMEDEAN_FAMILIES } from "@nudagitty/core";
-import type { CopulaFamily, CopulaRotation, MixtureEdge, Moderation, NodeDistribution } from "@nudagitty/core";
+import { buildDistributionQuantile, sampleDVineModerated, simpleEdge, normalizeEdgeMechanism, moderationTau, samplePair, ARCHIMEDEAN_FAMILIES } from "@nudagitty/core";
+import type { CopulaFamily, CopulaRotation, EdgeMechanism, EdgeMechanismKind, MixtureEdge, Moderation, NodeDistribution, PairCopula, PiecewisePoint } from "@nudagitty/core";
 import { defaultDistribution } from "../compute/distributionPlot";
 import "./copula-component.css";
 
@@ -15,21 +15,72 @@ import "./copula-component.css";
 export interface CopulaVariable { id: string; name: string; marginal: NodeDistribution }
 export interface VineSpec { order: number[]; trees: MixtureEdge[][]; depth: number }
 
-type ModKind = "constant" | "linear" | "step";
-const CONST_TAU: Moderation = { by: null, constant: 0 };
+// The conditional-function ("τ by <var>") shapes we expose — each maps to an engine EdgeMechanism.
+type ModKind = "constant" | "linear" | "logistic" | "step" | "saturating" | "hill" | "piecewise" | "spline";
+const MOD_KINDS: ModKind[] = ["constant", "linear", "logistic", "step", "saturating", "hill", "piecewise", "spline"];
+const MOD_LABEL: Record<ModKind, string> = {
+  constant: "constant", linear: "linear ramp", logistic: "logistic S-curve", step: "step",
+  saturating: "saturating", hill: "hill / bell", piecewise: "piecewise (drag)", spline: "spline (drag)"
+};
 function modKindOf(m: Moderation): ModKind {
   if (m.by === null || !m.mechanism) return "constant";
-  return m.mechanism.kind === "threshold" ? "step" : "linear";
+  switch (m.mechanism.kind) {
+    case "smooth_threshold": return "logistic";
+    case "threshold": return "step";
+    case "saturating": return "saturating";
+    case "hill_emax": return "hill";
+    case "piecewise_linear": return "piecewise";
+    case "monotone_spline": return "spline";
+    default: return "linear";
+  }
 }
-// Build a Moderation for a conditional edge moderated by line-position `byPos`, strength `s`.
-function buildModeration(kind: ModKind, byPos: number, s: number, prevConst: number): Moderation {
-  if (kind === "constant") return { by: null, constant: prevConst || 0.3 };
-  if (kind === "linear") return { by: byPos, constant: 0, mechanism: normalizeEdgeMechanism({ kind: "linear", coefficient: s }) };
-  return { by: byPos, constant: 0, mechanism: normalizeEdgeMechanism({ kind: "threshold", threshold: 0, low: -s, high: s }) };
+function rampPoints(lo: number, hi: number, n: number): PiecewisePoint[] {
+  return Array.from({ length: n }, (_, i) => { const t = i / (n - 1); return { x: lo + t * (hi - lo), y: -1.6 + 3.2 * t }; });
 }
-function modStrength(m: Moderation): number {
-  if (!m.mechanism) return 2;
-  return m.mechanism.kind === "threshold" ? m.mechanism.high : m.mechanism.coefficient;
+// Build a moderation curve of the conditioning variable over its data-space domain {lo,mid,hi},
+// with defaults scaled to that domain so the curve spans a useful τ range immediately.
+function buildModeration(kind: ModKind, byPos: number, dom: { lo: number; mid: number; hi: number }, prevConst = 0.3): Moderation {
+  const { lo, mid, hi } = dom;
+  const span = Math.max(1e-3, hi - lo);
+  if (kind === "constant") return { by: null, constant: prevConst };
+  const mk = (m: Partial<EdgeMechanism> & { kind: EdgeMechanismKind }): Moderation => ({ by: byPos, constant: 0, mechanism: normalizeEdgeMechanism(m) });
+  switch (kind) {
+    case "linear": return mk({ kind: "linear", coefficient: 4 / span });
+    case "logistic": return mk({ kind: "smooth_threshold", threshold: mid, steepness: 5 / span, scale: 3 });
+    case "step": return mk({ kind: "threshold", threshold: mid, low: -1.3, high: 1.3 });
+    case "saturating": return mk({ kind: "saturating", midpoint: mid, steepness: 4 / span, scale: 2.2 });
+    case "hill": return mk({ kind: "hill_emax", ec50: Math.max(0.3, Math.abs(mid) + span / 4), exponent: 2, maxEffect: 2.6, baseline: 0 });
+    case "piecewise": return mk({ kind: "piecewise_linear", points: rampPoints(lo, hi, 5) });
+    case "spline": return mk({ kind: "monotone_spline", points: rampPoints(lo, hi, 5) });
+  }
+}
+// Invert the copula-vine τ link so a handle dragged in τ-space maps back to the mechanism's pre-link
+// contribution (mirrors tauLink: tanh for gaussian/frank, positive-sigmoid for the archimedeans).
+function inverseTauLink(family: CopulaFamily, tau: number): number {
+  if (family === "clayton" || family === "gumbel") {
+    const p = Math.min(0.999, Math.max(0.001, (tau - 0.02) / 0.96));
+    return Math.log(p / (1 - p));
+  }
+  const z = Math.min(0.999, Math.max(-0.999, tau / 0.95));
+  return 0.5 * Math.log((1 + z) / (1 - z));
+}
+// A single mechanism param a slider can nudge (kind-specific); returns null when the kind has none.
+function primaryParam(mech: EdgeMechanism): { key: keyof EdgeMechanism; label: string; min: number; max: number; step: number } | null {
+  switch (mech.kind) {
+    case "linear": return { key: "coefficient", label: "slope", min: -4, max: 4, step: 0.05 };
+    case "smooth_threshold": return { key: "steepness", label: "steepness", min: 0.1, max: 8, step: 0.1 };
+    case "saturating": return { key: "steepness", label: "steepness", min: 0.1, max: 6, step: 0.1 };
+    case "hill_emax": return { key: "exponent", label: "sharpness", min: 1, max: 6, step: 0.1 };
+    case "threshold": return { key: "high", label: "jump", min: 0.1, max: 3, step: 0.05 };
+    default: return null;
+  }
+}
+// A secondary "center/threshold" param slider where the shape has one.
+function centerParam(mech: EdgeMechanism, dom: { lo: number; hi: number }): { key: keyof EdgeMechanism; label: string } | null {
+  if (mech.kind === "smooth_threshold" || mech.kind === "threshold") return { key: "threshold", label: "midpoint" };
+  if (mech.kind === "saturating") return { key: "midpoint", label: "center" };
+  if (mech.kind === "hill_emax") return { key: "ec50", label: "half-point" };
+  return null;
 }
 
 const FAMILY_LABEL: Record<CopulaFamily, string> = {
@@ -204,7 +255,9 @@ export function CopulaAuthor(props: {
                   const active = focus[0] === tree && focus[1] === e;
                   const mk = modKindOf(c0.tau);
                   const modByPos = e + 1;                       // the nearest conditioning variable
-                  const modName = variables[spec.order[modByPos]!]?.name ?? "";
+                  const modVarIdx = spec.order[modByPos]!;
+                  const modName = variables[modVarIdx]?.name ?? "";
+                  const modDom = domainMid(dataCols[modVarIdx] ?? []);
                   return (
                     <div className={`ca-edge${active ? " active" : ""}`} key={e} onClick={() => setFocus([tree, e])}>
                       <div className="ca-edge-title">{variables[va]!.name} — {variables[vb]!.name}{tree > 0 && <span className="ca-cond"> | {between}</span>}</div>
@@ -219,11 +272,8 @@ export function CopulaAuthor(props: {
                           <span>τ {fmt(c0.tau.constant)}</span>
                         </div>
                       ) : (
-                        <div className="ca-edge-tau">
-                          <input type="range" min={-4} max={4} step={0.1} value={modStrength(c0.tau)}
-                            onClick={(ev) => ev.stopPropagation()}
-                            onChange={(ev) => setEdge(tree, e, { tau: buildModeration(mk, modByPos, +ev.target.value, c0.tau.constant) })} />
-                          <span>{mk === "step" ? "±" : "slope"} {fmt(modStrength(c0.tau))}</span>
+                        <div className="ca-edge-tau ca-edge-moderated" onClick={(ev) => { ev.stopPropagation(); setFocus([tree, e]); }} title="edit the conditional curve in the panel below">
+                          <span>∿ {MOD_LABEL[mk]} of {modName} · edit ↓</span>
                         </div>
                       )}
                       {arch && mk === "constant" && (
@@ -237,10 +287,10 @@ export function CopulaAuthor(props: {
                         <div className="ca-mod" onClick={(ev) => ev.stopPropagation()}>
                           <div className="ca-mod-row">
                             <span>τ&nbsp;by</span>
-                            <select value={mk} onChange={(ev) => setEdge(tree, e, { tau: buildModeration(ev.target.value as ModKind, modByPos, modStrength(c0.tau), c0.tau.constant) })}>
+                            <select value={mk === "constant" ? "constant" : "curve"}
+                              onChange={(ev) => setEdge(tree, e, { tau: ev.target.value === "constant" ? { by: null, constant: c0.tau.constant || 0.3 } : buildModeration("saturating", modByPos, modDom, c0.tau.constant) })}>
                               <option value="constant">constant</option>
-                              <option value="linear">∿ {modName} (smooth)</option>
-                              <option value="step">⊐ {modName} (step)</option>
+                              <option value="curve">∿ curve of {modName}</option>
                             </select>
                           </div>
                         </div>
@@ -293,6 +343,25 @@ export function CopulaAuthor(props: {
           <RankDensity xs={focusPseudo.u} ys={focusPseudo.v} />
         </div>
       </div>
+
+      {/* rich conditional-function editor — shown when the focused conditional edge is moderated */}
+      {(() => {
+        const fEdge = edgeAt(safeTree, safeEdge).components[0]!;
+        if (safeTree === 0 || modKindOf(fEdge.tau) === "constant") return null;
+        const mVarIdx = spec.order[safeEdge + 1]!;
+        return (
+          <ModerationPanel
+            moderation={fEdge.tau}
+            family={fEdge.family}
+            rotation={fEdge.rotation}
+            byPos={safeEdge + 1}
+            pairName={`${variables[fa]!.name} × ${variables[fb]!.name}`}
+            moderatorName={variables[mVarIdx]?.name ?? ""}
+            moderatorData={dataCols[mVarIdx] ?? []}
+            onChange={(m) => setEdge(safeTree, safeEdge, { tau: m })}
+          />
+        );
+      })()}
 
       {/* trivariate solid view — three variables at once (fixed isometric, hand-rolled canvas) */}
       {d >= 3 && (() => {
@@ -367,6 +436,15 @@ function domain(vals: number[]): [number, number] {
   const lo = q(0.02), hi = q(0.98);
   return hi > lo ? [lo, hi] : [lo - 1, lo + 1];
 }
+// Robust {lo, mid, hi} of a data column — the moderator's operating range for curve defaults + axes.
+function quantileAt(sorted: number[], p: number): number {
+  return sorted[Math.max(0, Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1))))] ?? 0;
+}
+function domainMid(vals: number[]): { lo: number; mid: number; hi: number } {
+  const [lo, hi] = domain(vals);
+  const s = [...vals].sort((a, b) => a - b);
+  return { lo, mid: quantileAt(s, 0.5), hi };
+}
 function Scatter(props: { xs: number[]; ys: number[] }) {
   const { xs, ys } = props;
   const [xl, xh] = domain(xs), [yl, yh] = domain(ys);
@@ -381,9 +459,9 @@ function Scatter(props: { xs: number[]; ys: number[] }) {
     </svg>
   );
 }
-function RankDensity(props: { xs: number[]; ys: number[] }) {
+function RankDensity(props: { xs: number[]; ys: number[]; grid?: number }) {
   const { xs, ys } = props;
-  const G = 26;
+  const G = props.grid ?? 26;
   const grid = new Float64Array(G * G); let mx = 0;
   for (let i = 0; i < xs.length; i += 1) {
     const gi = Math.min(G - 1, Math.floor(xs[i]! * G)), gj = Math.min(G - 1, Math.floor(ys[i]! * G));
@@ -401,6 +479,134 @@ function RankDensity(props: { xs: number[]; ys: number[] }) {
       <rect x={2} y={2} width={96} height={96} className="ca-frame" />
       {cells.map((c, i) => <rect key={i} x={c.x.toFixed(1)} y={c.y.toFixed(1)} width={cw.toFixed(2)} height={cw.toFixed(2)} className="ca-cell" fillOpacity={c.o.toFixed(3)} />)}
     </svg>
+  );
+}
+
+// --- rich conditional-function editor: τ(moderator) curve + morphing copula filmstrip ---
+// The curve plots the exact engine link (moderationTau); piecewise/spline expose draggable handles.
+// The filmstrip samples the resulting pair-copula at the moderator's p10/p50/p90 so you SEE the copula
+// morph across the conditioning variable (the non-simplified vine, made visible).
+function samplePairCloud(pc: PairCopula, n: number): { u: number[]; v: number[] } {
+  let s = 0x2545f491;                              // fixed seed → the SAME points warp across frames (a true morph)
+  const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  const u: number[] = [], v: number[] = [];
+  for (let i = 0; i < n; i += 1) { const [a, b] = samplePair(pc, rnd(), rnd()); u.push(a); v.push(b); }
+  return { u, v };
+}
+function MiniCopula(props: { pc: PairCopula }) {
+  // rank-space scatter — diagonal (positive τ) vs anti-diagonal (negative τ) reads instantly, where
+  // the gaussian copula's corner-peaked density does not in a small panel.
+  const { u, v } = useMemo(() => samplePairCloud(props.pc, 650), [props.pc.family, props.pc.tau, props.pc.rotation]);
+  return (
+    <svg viewBox="0 0 100 100" className="ca-svg">
+      <rect x={2} y={2} width={96} height={96} className="ca-frame" />
+      {u.map((ui, i) => <circle key={i} cx={(4 + ui * 92).toFixed(1)} cy={(96 - v[i]! * 92).toFixed(1)} r={0.8} className="ca-dot" />)}
+    </svg>
+  );
+}
+
+function ModerationCurve(props: {
+  moderation: Moderation; family: CopulaFamily; dom: { lo: number; mid: number; hi: number };
+  onPoint: (i: number, tau: number) => void; frames: Array<{ p: number; mv: number; tau: number }>;
+}) {
+  const { moderation, family, dom } = props;
+  const H = 100, m = 8;
+  const px = (x: number) => m + ((x - dom.lo) / (dom.hi - dom.lo + 1e-9)) * (100 - 2 * m);
+  const py = (t: number) => H - m - ((t + 1) / 2) * (H - 2 * m);        // τ ∈ [−1, 1]
+  const invPy = (sy: number) => Math.min(1, Math.max(-1, ((H - m - sy) / (H - 2 * m)) * 2 - 1));
+  const NS = 44;
+  const path = Array.from({ length: NS + 1 }, (_, i) => {
+    const x = dom.lo + (i / NS) * (dom.hi - dom.lo);
+    return `${i === 0 ? "M" : "L"} ${px(x).toFixed(1)} ${py(moderationTau(moderation, family, x)).toFixed(1)}`;
+  }).join(" ");
+  const mech = moderation.mechanism;
+  const draggable = !!mech && (mech.kind === "piecewise_linear" || mech.kind === "monotone_spline");
+  const points = mech?.points ?? [];
+  const ref = useRef<SVGSVGElement | null>(null);
+  const [dragI, setDragI] = useState<number | null>(null);
+  const moveTo = (clientY: number) => {
+    if (dragI === null || !ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    props.onPoint(dragI, invPy(((clientY - rect.top) / rect.height) * H));
+  };
+  return (
+    <svg ref={ref} viewBox="0 0 100 100" className={`ca-svg ca-curve${draggable ? " draggable" : ""}`}
+      onPointerMove={(e) => moveTo(e.clientY)} onPointerUp={() => setDragI(null)} onPointerLeave={() => setDragI(null)}>
+      <rect x={m} y={m} width={100 - 2 * m} height={H - 2 * m} className="ca-frame" />
+      <line x1={m} y1={py(0)} x2={100 - m} y2={py(0)} className="ca-curve-zero" />
+      {props.frames.map((f) => <line key={f.p} x1={px(f.mv).toFixed(1)} y1={m} x2={px(f.mv).toFixed(1)} y2={H - m} className="ca-curve-mark" />)}
+      <path d={path} className="ca-curve-line" />
+      {draggable && points.map((p, i) => (
+        <circle key={i} cx={px(p.x).toFixed(1)} cy={py(moderationTau(moderation, family, p.x)).toFixed(1)} r={2.8} className="ca-curve-handle"
+          onPointerDown={(e) => { e.stopPropagation(); (e.currentTarget as SVGCircleElement).setPointerCapture?.(e.pointerId); setDragI(i); }} />
+      ))}
+    </svg>
+  );
+}
+
+function ModerationPanel(props: {
+  moderation: Moderation; family: CopulaFamily; rotation: CopulaRotation; byPos: number;
+  pairName: string; moderatorName: string; moderatorData: number[]; onChange: (m: Moderation) => void;
+}) {
+  const { moderation, family, rotation, byPos, moderatorData } = props;
+  const kind = modKindOf(moderation);
+  const dom = useMemo(() => domainMid(moderatorData), [moderatorData]);
+  const sorted = useMemo(() => [...moderatorData].sort((a, b) => a - b), [moderatorData]);
+  const mech = moderation.mechanism;
+  const setKind = (k: ModKind) => props.onChange(k === "constant" ? { by: null, constant: 0.3 } : buildModeration(k, byPos, dom, moderation.constant));
+  const setParam = (key: keyof EdgeMechanism, value: number) => {
+    if (!mech) return;
+    props.onChange({ ...moderation, mechanism: normalizeEdgeMechanism({ ...mech, [key]: value, ...(key === "high" ? { low: -value } : {}) }) });
+  };
+  const setPoint = (i: number, tau: number) => {
+    if (!mech) return;
+    const points = mech.points.map((p, j) => (j === i ? { ...p, y: inverseTauLink(family, tau) } : p));
+    props.onChange({ ...moderation, mechanism: normalizeEdgeMechanism({ ...mech, points }) });
+  };
+  const prim = mech ? primaryParam(mech) : null;
+  const cen = mech ? centerParam(mech, dom) : null;
+  const frames = [0.1, 0.5, 0.9].map((p) => {
+    const mv = quantileAt(sorted, p);
+    return { p, mv, tau: moderationTau(moderation, family, mv) };
+  });
+  return (
+    <div className="ca-modpanel">
+      <div className="ca-cap">conditional function — <b>τ({props.moderatorName})</b> for {props.pairName} · the copula morphs with the moderator (a non-simplified vine)</div>
+      <div className="ca-modpanel-grid">
+        <div className="ca-modctl">
+          <label className="ca-modslider"><span>shape</span>
+            <select value={kind} onChange={(e) => setKind(e.target.value as ModKind)}>
+              {MOD_KINDS.map((k) => <option key={k} value={k}>{MOD_LABEL[k]}</option>)}
+            </select>
+          </label>
+          {prim && mech && (
+            <label className="ca-modslider"><span>{prim.label}</span>
+              <input type="range" min={prim.min} max={prim.max} step={prim.step} value={mech[prim.key] as number} onChange={(e) => setParam(prim.key, +e.target.value)} />
+              <em>{fmt(mech[prim.key] as number)}</em>
+            </label>
+          )}
+          {cen && mech && (
+            <label className="ca-modslider"><span>{cen.label}</span>
+              <input type="range" min={dom.lo} max={dom.hi} step={(dom.hi - dom.lo) / 100 || 0.01} value={mech[cen.key] as number} onChange={(e) => setParam(cen.key, +e.target.value)} />
+              <em>{fmt(mech[cen.key] as number, 1)}</em>
+            </label>
+          )}
+          {(kind === "piecewise" || kind === "spline") && <p className="ca-modhint">Drag the dots on the curve to set τ at each moderator value.</p>}
+        </div>
+        <div className="ca-curve-wrap">
+          <ModerationCurve moderation={moderation} family={family} dom={dom} onPoint={setPoint} frames={frames} />
+          <div className="ca-curve-axis"><span>{fmt(dom.lo, 1)}</span><span>{props.moderatorName} →</span><span>{fmt(dom.hi, 1)}</span></div>
+        </div>
+      </div>
+      <div className="ca-filmstrip">
+        {frames.map((f) => (
+          <div className="ca-film" key={f.p}>
+            <div className="ca-film-cap">{props.moderatorName} = {fmt(f.mv, 1)}<span> · τ {fmt(f.tau)}</span></div>
+            <MiniCopula pc={{ family, tau: f.tau, rotation }} />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

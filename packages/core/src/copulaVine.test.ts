@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { samplePair, sampleDVine, sampleDVineModerated, simpleEdge, tailDependence, type MixtureEdge, type PairCopula } from "./copulaVine";
+import { samplePair, sampleDVine, sampleDVineModerated, simpleEdge, tailDependence, moderationTau, type MixtureEdge, type PairCopula, type Moderation } from "./copulaVine";
 import { normalizeEdgeMechanism } from "./graph";
 import { buildDistributionQuantile } from "./distributions";
 
@@ -139,6 +139,22 @@ describe("copulaVine — moderated mixture edges (the complete model)", () => {
     }
     expect(kendall(loU, loV)).toBeLessThan(-0.1);   // low moderator → negative conditional dependence
     expect(kendall(hiU, hiV)).toBeGreaterThan(0.1); // high moderator → positive
+  });
+
+  it("moderationTau matches the sampler's link and is monotone for a linear mechanism", () => {
+    const constant: Moderation = { by: null, constant: 0.42 };
+    expect(moderationTau(constant, "gaussian", -3)).toBeCloseTo(0.42, 10); // by===null ⇒ flat
+    expect(moderationTau(constant, "gaussian", 3)).toBeCloseTo(0.42, 10);
+
+    const lin: Moderation = { by: 0, constant: 0, mechanism: normalizeEdgeMechanism({ kind: "linear", coefficient: 1.5 }) };
+    const lo = moderationTau(lin, "gaussian", -2), hi = moderationTau(lin, "gaussian", 2);
+    expect(lo).toBeLessThan(0); expect(hi).toBeGreaterThan(0);          // rises with the moderator
+    expect(hi).toBeGreaterThan(lo);
+    expect(hi).toBeLessThan(0.95); expect(lo).toBeGreaterThan(-0.95);   // tanh link keeps τ in (−0.95, 0.95)
+
+    // clayton/gumbel use the positive sigmoid link → τ ∈ (0.02, 0.98)
+    const claytonHi = moderationTau(lin, "clayton", 5);
+    expect(claytonHi).toBeGreaterThan(0.5); expect(claytonHi).toBeLessThan(0.98);
   });
 
   it("a mixture edge blends its components' dependence", () => {

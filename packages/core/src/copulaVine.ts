@@ -173,6 +173,13 @@ export function samplePair(pc: PairCopula, w1: number, w2: number): [number, num
   return [u, v];
 }
 
+/** The exact Kendall τ the engine assigns a moderated component at a given moderator DATA value,
+ * so a UI preview of the conditional curve (τ vs the conditioning variable) matches the sampler
+ * 1:1. `by === null` ⇒ constant; otherwise τ = tauLink(family, mechanism(moderatorValue)). */
+export function moderationTau(m: Moderation, family: CopulaFamily, moderatorValue: number): number {
+  return evalTau(m, family, () => moderatorValue);
+}
+
 /** [λ_L, λ_U] tail-dependence coefficients. */
 export function tailDependence(pc: PairCopula): [number, number] {
   let lL = 0, lU = 0;
