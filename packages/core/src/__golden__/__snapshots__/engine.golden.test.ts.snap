@@ -246,6 +246,32 @@ exports[`engine golden > college-earnings — simulation + do-contrasts are stab
 }
 `;
 
+exports[`engine golden > confounder-joint-copula — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Dose↑)−do(↓) on Recovery": 3.81315,
+  },
+  "nodes": {
+    "Dose": {
+      "mean": 4.982411,
+      "sd": 1.871062,
+    },
+    "Recovery": {
+      "mean": 4.006231,
+      "sd": 1.890927,
+    },
+    "Severity_A": {
+      "mean": -0.001309,
+      "sd": 0.983518,
+    },
+    "Severity_B": {
+      "mean": -0.005303,
+      "sd": 1.015213,
+    },
+  },
+}
+`;
+
 exports[`engine golden > continuous-dose-response — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {

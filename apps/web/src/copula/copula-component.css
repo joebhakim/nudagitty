@@ -1,0 +1,55 @@
+/* Self-contained styles for the CopulaAuthor component — vars scoped to .copula-author so it can be
+   mounted anywhere (the harness page or inside the app) without polluting body / :root. */
+.copula-author {
+  --ca-bg: #f7f8fa; --ca-panel: #fff; --ca-ink: #1a222b; --ca-muted: #5a6670; --ca-line: #e2e5e9;
+  --ca-accent: #2f7d6b; --ca-accent2: #2563aa; --ca-chip: #eef3f1; --ca-sel: #dcefe9;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--ca-ink);
+}
+@media (prefers-color-scheme: dark) {
+  .copula-author {
+    --ca-bg: #121619; --ca-panel: #1b2126; --ca-ink: #e7ecf0; --ca-muted: #93a1ac; --ca-line: #2c353c;
+    --ca-accent: #56b39c; --ca-accent2: #6fa8dc; --ca-chip: #23302c; --ca-sel: #24463d;
+  }
+}
+.copula-author * { box-sizing: border-box; }
+.ca-line { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px; background: var(--ca-panel); border: 1px solid var(--ca-line); border-radius: 10px; margin-bottom: 12px; }
+.ca-chip { flex: 1; min-width: 130px; border: 1px solid var(--ca-line); border-radius: 8px; padding: 7px 8px; background: var(--ca-bg); }
+.ca-chip-reorder { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+.ca-chip-reorder button { border: none; background: transparent; color: var(--ca-accent); cursor: pointer; font-size: 12px; padding: 0 4px; }
+.ca-chip-reorder button:disabled { opacity: 0.25; cursor: default; }
+.ca-chip-name { font-weight: 700; font-size: 13px; }
+.ca-chip select { width: 100%; padding: 3px 5px; border-radius: 6px; border: 1px solid var(--ca-line); background: var(--ca-panel); color: var(--ca-ink); font: inherit; font-size: 12px; }
+.ca-chip-marginal { font-size: 11.5px; color: var(--ca-muted); }
+.ca-tree { margin-bottom: 10px; }
+.ca-tree-label { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ca-accent); margin-bottom: 5px; }
+.ca-edges { display: flex; gap: 8px; flex-wrap: wrap; }
+.ca-edge { flex: 1; min-width: 150px; border: 1px solid var(--ca-line); border-radius: 8px; padding: 7px 9px; background: var(--ca-panel); cursor: pointer; }
+.ca-edge.active { border-color: var(--ca-accent); background: var(--ca-sel); }
+.ca-edge-title { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.ca-cond { color: var(--ca-accent2); }
+.ca-edge select { width: 100%; padding: 3px 5px; border-radius: 6px; border: 1px solid var(--ca-line); background: var(--ca-panel); color: var(--ca-ink); font: inherit; font-size: 12px; margin-bottom: 4px; }
+.ca-edge-tau { display: flex; align-items: center; gap: 6px; }
+.ca-edge-tau input { flex: 1; accent-color: var(--ca-accent); }
+.ca-edge-tau span { font-size: 11.5px; color: var(--ca-accent); font-variant-numeric: tabular-nums; min-width: 42px; }
+.ca-rot { display: flex; gap: 3px; margin-top: 4px; }
+.ca-rot button { flex: 1; border: 1px solid var(--ca-line); background: var(--ca-panel); color: var(--ca-ink); border-radius: 5px; padding: 2px; font-size: 10.5px; cursor: pointer; }
+.ca-rot button.on { background: var(--ca-sel); border-color: var(--ca-accent); color: var(--ca-accent); }
+.ca-mod { margin-top: 5px; border-top: 1px dashed var(--ca-line); padding-top: 5px; }
+.ca-mod-row { display: flex; gap: 5px; align-items: center; font-size: 11px; }
+.ca-mod-row select { flex: 1; margin: 0; }
+.ca-depth { display: flex; align-items: center; gap: 12px; margin: 6px 0; font-size: 12.5px; color: var(--ca-muted); }
+.ca-depth button { border: 1px solid var(--ca-line); background: var(--ca-panel); color: var(--ca-ink); border-radius: 7px; padding: 4px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.ca-depth button:disabled { opacity: 0.4; cursor: not-allowed; }
+.ca-note { font-size: 12px; color: var(--ca-muted); background: var(--ca-chip); border-radius: 8px; padding: 8px 12px; margin: 6px 0; }
+.ca-preview { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-top: 14px; align-items: start; }
+@media (max-width: 640px) { .ca-preview { grid-template-columns: 1fr; } }
+.ca-cap { font-size: 11.5px; color: var(--ca-muted); margin-bottom: 5px; }
+.ca-splom { display: grid; gap: 8px; }
+.ca-panel { border: 1px solid var(--ca-line); border-radius: 8px; padding: 5px; background: var(--ca-panel); cursor: pointer; }
+.ca-panel.active { border-color: var(--ca-accent); }
+.ca-panel-cap { font-size: 10.5px; color: var(--ca-muted); margin-bottom: 2px; font-variant-numeric: tabular-nums; }
+.ca-svg { width: 100%; height: auto; display: block; }
+.ca-frame { fill: none; stroke: var(--ca-line); }
+.ca-dot { fill: var(--ca-accent); opacity: 0.3; }
+.ca-cell { fill: var(--ca-accent); }
+.ca-rank-wrap { position: sticky; top: 12px; }

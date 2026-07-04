@@ -108,6 +108,7 @@ import { WhatIfStrategySurvivalCurve } from "./outputs/modules";
 import type { BasicOutputPunchline, BasicOutputPunchlineMetric, ComputedCompletedOutput } from "./outputs/modules";
 import { DisambiguationMap } from "./outputs/DisambiguationMap";
 import { DgpInspector } from "./outputs/DgpInspector";
+import { CopulaBlockEditor } from "./copula/CopulaBlockEditor";
 import { OverlapInspector } from "./outputs/OverlapInspector";
 import type { OutputContext } from "./outputs/types";
 import { DenouementPanel } from "./outputs/DenouementPanel";
@@ -1049,6 +1050,10 @@ export function App() {
               <button type="button" aria-label="Close data-generating process" onClick={() => setShowDgp(false)}><X size={16} /></button>
             </div>
             <DgpInspector document={document} simulation={simulation} onCorrelationChange={(rho) => commit(setCopulaCorrelation(document, rho))} />
+            <details className="dgp-copula-block">
+              <summary>Confounder joint — copula block</summary>
+              <CopulaBlockEditor key={activeExample?.id ?? "custom"} document={document} onCommit={commit} />
+            </details>
           </div>
         </div>
       )}

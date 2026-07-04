@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { buildDistributionQuantile, sampleDVine, ARCHIMEDEAN_FAMILIES } from "@nudagitty/core";
 import type { CopulaFamily, CopulaRotation, NodeDistribution, PairCopula } from "@nudagitty/core";
 import { defaultDistribution } from "../compute/distributionPlot";
+import "./copula-component.css";
 
 // ---------------------------------------------------------------------------
 // CopulaAuthor — the reusable dependence-authoring widget.
@@ -41,7 +42,8 @@ export function CopulaAuthor(props: {
   variables: CopulaVariable[];
   spec: VineSpec;
   onSpec: (spec: VineSpec) => void;
-  onMarginal: (variableIndex: number, marginal: NodeDistribution) => void;
+  onMarginal?: (variableIndex: number, marginal: NodeDistribution) => void;
+  marginalsReadOnly?: boolean;
 }) {
   const { variables, spec, onSpec } = props;
   const d = variables.length;
@@ -113,10 +115,12 @@ export function CopulaAuthor(props: {
               <span className="ca-chip-name">{variables[vi]!.name}</span>
               <button onClick={() => swap(p, p + 1)} disabled={p === d - 1} aria-label="move right">▶</button>
             </div>
-            <select value={variables[vi]!.marginal.kind}
-              onChange={(e) => props.onMarginal(vi, defaultDistribution(e.target.value as NodeDistribution["kind"]))}>
-              {MARGINAL_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-            </select>
+            {props.marginalsReadOnly
+              ? <div className="ca-chip-marginal">{variables[vi]!.marginal.kind}</div>
+              : <select value={variables[vi]!.marginal.kind}
+                  onChange={(e) => props.onMarginal?.(vi, defaultDistribution(e.target.value as NodeDistribution["kind"]))}>
+                  {MARGINAL_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+                </select>}
           </div>
         ))}
       </div>

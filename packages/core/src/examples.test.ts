@@ -21,6 +21,7 @@ describe("example catalog", () => {
       "positivity-correlated-confounders",
       "continuous-dose-response",
       "er-visits-count",
+      "confounder-joint-copula",
       "categorical-regimen",
       "birthweight-paradox",
       "obesity-paradox",

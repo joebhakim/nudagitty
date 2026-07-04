@@ -285,6 +285,24 @@ export function configureErVisitsCount(document: GraphDocument): GraphDocument {
   return document;
 }
 
+export function configureConfounderJointCopula(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 4000);
+  setContinuousVariable(document, "Severity_A", "First baseline confounder — sicker on axis A gets more dose AND recovers worse.", "z-score");
+  setContinuousVariable(document, "Severity_B", "Second baseline confounder — same story on a different axis.", "z-score");
+  setContinuousVariable(document, "Dose", "Continuous drug dose administered.", "mg");
+  setContinuousVariable(document, "Recovery", "Recovery score at follow-up.", "score");
+  setNode(document, "Severity_A", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Severity_B", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Dose", { intercept: 5, noise: { kind: "normal", mean: 0, sd: 0.8 } });
+  setNode(document, "Recovery", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setLinearCoefficient(document, "Severity_A", "Dose", 1.2);
+  setLinearCoefficient(document, "Severity_B", "Dose", 1.2);
+  setLinearCoefficient(document, "Severity_A", "Recovery", -2);
+  setLinearCoefficient(document, "Severity_B", "Recovery", -2);
+  setLinearCoefficient(document, "Dose", "Recovery", 0.8); // the true effect
+  return document;
+}
+
 export function configureCategoricalRegimen(document: GraphDocument): GraphDocument {
   setExampleSampleSize(document, 5000);
   setContinuousVariable(document, "Severity", "Baseline illness severity. Sicker patients are steered to the later regimens AND recover worse — the confounding.", "severity z-score");
