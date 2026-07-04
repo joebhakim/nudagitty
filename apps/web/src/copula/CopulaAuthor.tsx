@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { buildDistributionQuantile, sampleDVineModerated, simpleEdge, normalizeEdgeMechanism, ARCHIMEDEAN_FAMILIES } from "@nudagitty/core";
 import type { CopulaFamily, CopulaRotation, MixtureEdge, Moderation, NodeDistribution } from "@nudagitty/core";
 import { defaultDistribution } from "../compute/distributionPlot";
@@ -309,7 +309,7 @@ export function CopulaAuthor(props: {
         );
         return (
           <div className="ca-solid">
-            <div className="ca-cap">trivariate view — three variables at once, {space3 === "rank" ? "rank" : "data"} space · fixed isometric</div>
+            <div className="ca-cap">trivariate view — three variables at once, {space3 === "rank" ? "rank" : "data"} space · drag to rotate</div>
             <div className="ca-solid-controls">
               {axisSelect(0, ix, "X")}{axisSelect(1, iy, "Y")}{axisSelect(2, iz, "Z")}
               <div className="ca-solid-toggle" role="group" aria-label="space">
@@ -326,7 +326,7 @@ export function CopulaAuthor(props: {
               xs={cols3[ix] ?? []} ys={cols3[iy] ?? []} zs={cols3[iz] ?? []}
               space={space3} mode={mode3}
             />
-            <p className="ca-note">The 2D panels are shadows of this cube. <b>Data space</b> shows the realistic joint (marginals applied); <b>rank space</b> is the unit cube of pure dependence (the copula). <b>Density</b> bins the cloud into depth-sorted voxels. Fixed isometric for now — drag-to-rotate is a follow-up.</p>
+            <p className="ca-note">The 2D panels are shadows of this cube. <b>Data space</b> shows the realistic joint (marginals applied); <b>rank space</b> is the unit cube of pure dependence (the copula). <b>Density</b> bins the cloud into depth-sorted voxels. <b>Drag</b> to rotate; ⟳ resets to isometric.</p>
           </div>
         );
       })()}
@@ -424,6 +424,15 @@ function Trivariate3D(props: {
 }) {
   const { xs, ys, zs, space, mode } = props;
   const ref = useRef<HTMLCanvasElement | null>(null);
+  const [rot, setRot] = useState<{ yaw: number; pitch: number }>({ yaw: ISO_YAW, pitch: ISO_PITCH });
+  const drag = useRef<{ x: number; y: number } | null>(null);
+
+  // normalize once per data/space change — dragging re-renders shouldn't redo the sort.
+  const norm = useMemo(() => {
+    const rank = space === "rank";
+    const nx = normAxis(xs, rank), ny = normAxis(ys, rank), nz = normAxis(zs, rank);
+    return { nx, ny, nz, n: Math.min(nx.length, ny.length, nz.length) };
+  }, [xs, ys, zs, space]);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -443,12 +452,10 @@ function Trivariate3D(props: {
     const line = cs.getPropertyValue("--ca-line").trim() || "#e2e5e9";
     const muted = cs.getPropertyValue("--ca-muted").trim() || "#5a6670";
 
-    const rank = space === "rank";
-    const nx = normAxis(xs, rank), ny = normAxis(ys, rank), nz = normAxis(zs, rank);
-    const n = Math.min(nx.length, ny.length, nz.length);
+    const { nx, ny, nz, n } = norm;
 
     // projection: world coords x=right, y=up, z=toward-viewer; centered cube [-0.5,0.5]³.
-    const cy = Math.cos(ISO_YAW), sy = Math.sin(ISO_YAW), cp = Math.cos(ISO_PITCH), sp = Math.sin(ISO_PITCH);
+    const cy = Math.cos(rot.yaw), sy = Math.sin(rot.yaw), cp = Math.cos(rot.pitch), sp = Math.sin(rot.pitch);
     const pad = 30;
     const scale = (Math.min(W, H) * 0.5 - pad) / 0.78;
     const ox = W / 2, oy = H / 2;
@@ -537,7 +544,29 @@ function Trivariate3D(props: {
       }
       ctx.globalAlpha = 1;
     }
-  }, [xs, ys, zs, space, mode, props.nameX, props.nameY, props.nameZ]);
+  }, [norm, rot, mode, props.nameX, props.nameY, props.nameZ]);
 
-  return <div className="ca-solid-canvas-wrap"><canvas ref={ref} className="ca-solid-canvas" /></div>;
+  const onDown = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    drag.current = { x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!drag.current) return;
+    const dx = e.clientX - drag.current.x, dy = e.clientY - drag.current.y;
+    drag.current = { x: e.clientX, y: e.clientY };
+    setRot((r) => ({ yaw: r.yaw + dx * 0.012, pitch: Math.max(-1.45, Math.min(1.45, r.pitch - dy * 0.012)) }));
+  };
+  const onUp = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    drag.current = null;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
+  };
+  const reset = () => setRot({ yaw: ISO_YAW, pitch: ISO_PITCH });
+
+  return (
+    <div className="ca-solid-canvas-wrap">
+      <canvas ref={ref} className="ca-solid-canvas"
+        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} />
+      <button className="ca-solid-reset" onClick={reset} title="reset to isometric" aria-label="reset view">⟳</button>
+    </div>
+  );
 }
