@@ -14,24 +14,14 @@ function rootCovariates(document: GraphDocument): CopulaVariable[] {
     .map((n) => ({ id: n.id, name: n.label || n.id, marginal: normalizeNodeMechanism(document.simulation.nodes[n.id]).distribution }));
 }
 function defaultVine(d: number): VineSpec {
-  return { order: Array.from({ length: d }, (_, i) => i), depth: 1, trees: [Array.from({ length: d - 1 }, () => ({ family: "gaussian", tau: 0 }))] };
+  return { order: Array.from({ length: d }, (_, i) => i), depth: 1, trees: [Array.from({ length: d - 1 }, () => simpleEdge("gaussian", 0))] };
 }
 function blockToVine(block: CopulaBlock | undefined, vars: CopulaVariable[]): VineSpec | null {
   if (!block || block.nodes.length !== vars.length || !block.nodes.every((id, i) => id === vars[i]!.id)) return null;
-  return {
-    order: block.order,
-    depth: block.depth,
-    trees: block.edges.map((tree) => tree.map((edge) => { const c = edge.components[0]!; return { family: c.family, tau: c.tau.constant, rotation: c.rotation }; }))
-  };
+  return { order: block.order, depth: block.depth, trees: block.edges }; // VineSpec.trees IS MixtureEdge[][]
 }
 function vineToBlock(spec: VineSpec, nodeIds: string[]): CopulaBlock {
-  return {
-    id: "cov",
-    nodes: nodeIds,
-    order: spec.order,
-    depth: spec.depth,
-    edges: spec.trees.map((tree) => tree.map((pc) => simpleEdge(pc.family, pc.tau, pc.rotation ?? 0)))
-  };
+  return { id: "cov", nodes: nodeIds, order: spec.order, depth: spec.depth, edges: spec.trees };
 }
 
 export function CopulaBlockEditor(props: { document: GraphDocument; onCommit: (doc: GraphDocument) => void }) {

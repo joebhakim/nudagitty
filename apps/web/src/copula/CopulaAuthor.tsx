@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { buildDistributionQuantile, sampleDVine, ARCHIMEDEAN_FAMILIES } from "@nudagitty/core";
-import type { CopulaFamily, CopulaRotation, NodeDistribution, PairCopula } from "@nudagitty/core";
+import { buildDistributionQuantile, sampleDVineModerated, simpleEdge, normalizeEdgeMechanism, ARCHIMEDEAN_FAMILIES } from "@nudagitty/core";
+import type { CopulaFamily, CopulaRotation, MixtureEdge, Moderation, NodeDistribution } from "@nudagitty/core";
 import { defaultDistribution } from "../compute/distributionPlot";
 import "./copula-component.css";
 
@@ -13,7 +13,24 @@ import "./copula-component.css";
 // ---------------------------------------------------------------------------
 
 export interface CopulaVariable { id: string; name: string; marginal: NodeDistribution }
-export interface VineSpec { order: number[]; trees: PairCopula[][]; depth: number }
+export interface VineSpec { order: number[]; trees: MixtureEdge[][]; depth: number }
+
+type ModKind = "constant" | "linear" | "step";
+const CONST_TAU: Moderation = { by: null, constant: 0 };
+function modKindOf(m: Moderation): ModKind {
+  if (m.by === null || !m.mechanism) return "constant";
+  return m.mechanism.kind === "threshold" ? "step" : "linear";
+}
+// Build a Moderation for a conditional edge moderated by line-position `byPos`, strength `s`.
+function buildModeration(kind: ModKind, byPos: number, s: number, prevConst: number): Moderation {
+  if (kind === "constant") return { by: null, constant: prevConst || 0.3 };
+  if (kind === "linear") return { by: byPos, constant: 0, mechanism: normalizeEdgeMechanism({ kind: "linear", coefficient: s }) };
+  return { by: byPos, constant: 0, mechanism: normalizeEdgeMechanism({ kind: "threshold", threshold: 0, low: -s, high: s }) };
+}
+function modStrength(m: Moderation): number {
+  if (!m.mechanism) return 2;
+  return m.mechanism.kind === "threshold" ? m.mechanism.high : m.mechanism.coefficient;
+}
 
 const FAMILY_LABEL: Record<CopulaFamily, string> = {
   independence: "independence", gaussian: "Gaussian", frank: "Frank", clayton: "Clayton", gumbel: "Gumbel"
@@ -58,13 +75,14 @@ export function CopulaAuthor(props: {
     const uCols: number[][] = Array.from({ length: d }, () => []);
     const dataCols: number[][] = Array.from({ length: d }, () => []);
     const pseudoByEdge: Record<string, { u: number[]; v: number[] }> = {};
+    const positionQ = spec.order.map((vi) => quantiles[vi]!);
     for (const w of base) {
       const pseudo: Record<string, [number, number]> = {};
-      const pos = sampleDVine(spec.trees, w, pseudo);
+      const { u, data } = sampleDVineModerated(spec.trees, w, positionQ, pseudo);
       for (let p = 0; p < d; p += 1) {
         const vi = spec.order[p]!;
-        uCols[vi]!.push(pos[p]!);
-        dataCols[vi]!.push(quantiles[vi]!(pos[p]!));
+        uCols[vi]!.push(u[p]!);
+        dataCols[vi]!.push(data[p]!);
       }
       for (const key in pseudo) {
         (pseudoByEdge[key] ??= { u: [], v: [] });
@@ -75,14 +93,15 @@ export function CopulaAuthor(props: {
     return { uCols, dataCols, pseudoByEdge };
   }, [base, spec, quantiles, d]);
 
-  const setEdge = (tree: number, edge: number, patch: Partial<PairCopula>) => {
+  const edgeAt = (tree: number, edge: number): MixtureEdge => spec.trees[tree]?.[edge] ?? simpleEdge("independence", 0);
+  const setEdge = (tree: number, edge: number, patch: { family?: CopulaFamily; rotation?: CopulaRotation; tau?: Moderation }) => {
     const trees = spec.trees.map((t) => t.slice());
     while (trees.length <= tree) trees.push([]);
-    const cur = trees[tree]![edge] ?? { family: "independence", tau: 0 };
-    let next = { ...cur, ...patch };
-    if (ARCHIMEDEAN_FAMILIES.includes(next.family) && next.tau < 0.02) next = { ...next, tau: 0.3 };
-    if (!ARCHIMEDEAN_FAMILIES.includes(next.family)) next = { ...next, rotation: 0 };
-    trees[tree]![edge] = next;
+    const cur = trees[tree]![edge] ?? simpleEdge("independence", 0);
+    let comp = { ...cur.components[0]!, ...(patch.family !== undefined ? { family: patch.family } : {}), ...(patch.rotation !== undefined ? { rotation: patch.rotation } : {}), ...(patch.tau !== undefined ? { tau: patch.tau } : {}) };
+    if (ARCHIMEDEAN_FAMILIES.includes(comp.family) && comp.tau.by === null && comp.tau.constant < 0.02) comp = { ...comp, tau: { by: null, constant: 0.3 } };
+    if (!ARCHIMEDEAN_FAMILIES.includes(comp.family)) comp = { ...comp, rotation: 0 };
+    trees[tree]![edge] = { components: [comp], weights: [{ by: null, constant: 1 }] };
     onSpec({ ...spec, trees });
     setFocus([tree, edge]); // editing an edge focuses it, so the copula view follows
   };
@@ -137,26 +156,50 @@ export function CopulaAuthor(props: {
                 {Array.from({ length: edges }, (_, e) => {
                   const va = spec.order[e]!, vb = spec.order[e + tree + 1]!;
                   const between = spec.order.slice(e + 1, e + tree + 1).map((k) => variables[k]!.name).join(",");
-                  const pc = spec.trees[tree]?.[e] ?? { family: "independence" as CopulaFamily, tau: 0 };
-                  const arch = ARCHIMEDEAN_FAMILIES.includes(pc.family);
+                  const c0 = edgeAt(tree, e).components[0]!;
+                  const arch = ARCHIMEDEAN_FAMILIES.includes(c0.family);
                   const active = focus[0] === tree && focus[1] === e;
+                  const mk = modKindOf(c0.tau);
+                  const modByPos = e + 1;                       // the nearest conditioning variable
+                  const modName = variables[spec.order[modByPos]!]?.name ?? "";
                   return (
                     <div className={`ca-edge${active ? " active" : ""}`} key={e} onClick={() => setFocus([tree, e])}>
                       <div className="ca-edge-title">{variables[va]!.name} — {variables[vb]!.name}{tree > 0 && <span className="ca-cond"> | {between}</span>}</div>
-                      <select value={pc.family} onClick={(ev) => ev.stopPropagation()} onChange={(ev) => setEdge(tree, e, { family: ev.target.value as CopulaFamily })}>
+                      <select value={c0.family} onClick={(ev) => ev.stopPropagation()} onChange={(ev) => setEdge(tree, e, { family: ev.target.value as CopulaFamily })}>
                         {(["independence", "gaussian", "frank", "clayton", "gumbel"] as CopulaFamily[]).map((f) => <option key={f} value={f}>{FAMILY_LABEL[f]}</option>)}
                       </select>
-                      <div className="ca-edge-tau">
-                        <input type="range" min={arch ? 0.02 : -0.9} max={0.9} step={0.01} value={pc.tau}
-                          onClick={(ev) => ev.stopPropagation()}
-                          onChange={(ev) => setEdge(tree, e, { tau: +ev.target.value })} />
-                        <span>τ {fmt(pc.tau)}</span>
-                      </div>
-                      {arch && (
+                      {mk === "constant" ? (
+                        <div className="ca-edge-tau">
+                          <input type="range" min={arch ? 0.02 : -0.9} max={0.9} step={0.01} value={c0.tau.constant}
+                            onClick={(ev) => ev.stopPropagation()}
+                            onChange={(ev) => setEdge(tree, e, { tau: { by: null, constant: +ev.target.value } })} />
+                          <span>τ {fmt(c0.tau.constant)}</span>
+                        </div>
+                      ) : (
+                        <div className="ca-edge-tau">
+                          <input type="range" min={-4} max={4} step={0.1} value={modStrength(c0.tau)}
+                            onClick={(ev) => ev.stopPropagation()}
+                            onChange={(ev) => setEdge(tree, e, { tau: buildModeration(mk, modByPos, +ev.target.value, c0.tau.constant) })} />
+                          <span>{mk === "step" ? "±" : "slope"} {fmt(modStrength(c0.tau))}</span>
+                        </div>
+                      )}
+                      {arch && mk === "constant" && (
                         <div className="ca-rot" onClick={(ev) => ev.stopPropagation()}>
                           {[0, 90, 180, 270].map((r) => (
-                            <button key={r} className={(pc.rotation ?? 0) === r ? "on" : ""} onClick={() => setEdge(tree, e, { rotation: r as CopulaRotation })}>{r}°</button>
+                            <button key={r} className={(c0.rotation ?? 0) === r ? "on" : ""} onClick={() => setEdge(tree, e, { rotation: r as CopulaRotation })}>{r}°</button>
                           ))}
+                        </div>
+                      )}
+                      {tree > 0 && (
+                        <div className="ca-mod" onClick={(ev) => ev.stopPropagation()}>
+                          <div className="ca-mod-row">
+                            <span>τ&nbsp;by</span>
+                            <select value={mk} onChange={(ev) => setEdge(tree, e, { tau: buildModeration(ev.target.value as ModKind, modByPos, modStrength(c0.tau), c0.tau.constant) })}>
+                              <option value="constant">constant</option>
+                              <option value="linear">∿ {modName} (smooth)</option>
+                              <option value="step">⊐ {modName} (step)</option>
+                            </select>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -175,7 +218,7 @@ export function CopulaAuthor(props: {
       </div>
 
       {/* previews */}
-      <p className="ca-note">Simplified vine — each conditional copula is assumed not to vary with the conditioning values, so it is a single object, shown for the focused edge in <b>conditional-rank space</b> (the h-transformed pseudo-observations F(a|D), F(b|D)). The SPLOM is the <b>observable marginal</b> joint, which integrates over everything — so a conditional cell and its marginal panel differ.</p>
+      <p className="ca-note">Conditional edges can be <b>moderated</b> — set τ&nbsp;by the conditioning variable (a non-simplified vine: the sex/height case). The focused edge's density is the copula in <b>conditional-rank space</b> (the pseudo-observations F(a|D), F(b|D); moderator-averaged when moderated); the SPLOM is the <b>observable marginal</b> joint, which integrates over everything.</p>
       <div className="ca-preview">
         <div className="ca-splom-wrap">
           <div className="ca-cap">observable marginal joint — every pair, marginals applied</div>

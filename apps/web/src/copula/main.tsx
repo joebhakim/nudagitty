@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
+import { simpleEdge } from "@nudagitty/core";
 import type { NodeDistribution } from "@nudagitty/core";
 import { CopulaAuthor, type CopulaVariable, type VineSpec } from "./CopulaAuthor";
 import "./copula-author.css";
@@ -14,7 +15,7 @@ const INITIAL_VARS: CopulaVariable[] = [
 function initialSpec(d: number): VineSpec {
   return {
     order: Array.from({ length: d }, (_, i) => i),
-    trees: [Array.from({ length: d - 1 }, () => ({ family: "gaussian" as const, tau: 0.35 }))],
+    trees: [Array.from({ length: d - 1 }, () => simpleEdge("gaussian", 0.35))],
     depth: 1
   };
 }
