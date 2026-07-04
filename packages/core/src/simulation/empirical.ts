@@ -43,6 +43,37 @@ export interface EmpiricalSimulation {
   conditioning: SimulationConditioningSummary;
 }
 
+// Coupled root-block draws are expensive (per-sample vine h-inverse) but dose-INDEPENDENT: the
+// effect stack re-simulates the oracle do()-grid ~13× with the same seed, redrawing the identical
+// confounder block each time. Cache the transformed samples by (seed, sampleCount, block spec,
+// marginals). On a hit we still pull the SAME d×N uniforms from the shared rng so the forward pass
+// stays byte-identical (results unchanged — the golden net's block examples guard this).
+const blockDrawCache = new Map<string, Record<string, number[]>>();
+function drawBlockSamplesCached(
+  preparedBlocks: ReturnType<typeof prepareCopulaBlock>[],
+  sampleCount: number,
+  spec: SimulationSpec,
+  rng: () => number
+): Record<string, number[]> {
+  const marginals = preparedBlocks.flatMap((pb) => pb.block.nodes.map((id) => normalizeNodeMechanism(spec.nodes[id]).distribution));
+  const key = `${spec.seed || 1}:${sampleCount}:${JSON.stringify(preparedBlocks.map((pb) => pb.block))}:${JSON.stringify(marginals)}`;
+  const hit = blockDrawCache.get(key);
+  if (hit) {
+    // Replay the exact uniform consumption (d per block per sample) to keep the shared stream in lockstep.
+    const uniforms = sampleCount * preparedBlocks.reduce((acc, pb) => acc + pb.block.nodes.length, 0);
+    for (let i = 0; i < uniforms; i += 1) rng();
+    return hit;
+  }
+  const blockSamples: Record<string, number[]> = {};
+  for (const pb of preparedBlocks) for (const id of pb.block.nodes) blockSamples[id] = new Array<number>(sampleCount).fill(0);
+  for (let s = 0; s < sampleCount; s += 1) {
+    for (const pb of preparedBlocks) { const draw = drawCopulaBlockSample(pb, rng); for (const id in draw) blockSamples[id]![s] = draw[id]!; }
+  }
+  if (blockDrawCache.size > 64) blockDrawCache.clear();
+  blockDrawCache.set(key, blockSamples);
+  return blockSamples;
+}
+
 export function simulateEmpiricalDistributions(
   graph: GraphModel,
   spec: SimulationSpec,
@@ -69,11 +100,7 @@ export function simulateEmpiricalDistributions(
     if (compiled) {
       let intervention: Parameters<typeof runCompiledForward>[4];
       if (blocks.length > 0) {
-        const blockSamples: Record<string, number[]> = {};
-        for (const pb of preparedBlocks) for (const id of pb.block.nodes) blockSamples[id] = new Array<number>(sampleCount).fill(0);
-        for (let s = 0; s < sampleCount; s += 1) {
-          for (const pb of preparedBlocks) { const draw = drawCopulaBlockSample(pb, rng); for (const id in draw) blockSamples[id]![s] = draw[id]!; }
-        }
+        const blockSamples = drawBlockSamplesCached(preparedBlocks, sampleCount, spec, rng);
         intervention = (ctx) => (blockNodeIds.has(ctx.nodeId) ? (blockSamples[ctx.nodeId]?.[ctx.sampleIndex] ?? 0) : null);
       }
       const { samples } = runCompiledForward(compiled, spec, rng, sampleCount, intervention);
