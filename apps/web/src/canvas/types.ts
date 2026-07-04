@@ -3,6 +3,9 @@ import type { ModulationLink, ResultPendingState, SimulationDerivedCache } from 
 import type { Selection, ToolMode } from "../shared/appState";
 import type { WorkbenchMode } from "../shared/workbench";
 
+/** A pairwise copula coupling to draw on the canvas (a bidirected dependence link). */
+export interface CopulaCoupling { id: string; aId: string; bId: string; short: string; label: string }
+
 // Prop shape for the canvas surface. Extracted verbatim from the (now-deleted) legacy
 // GraphCanvas so FlowGraphCanvas/FlowGraphCanvasInner keep their exact prop type.
 export interface GraphCanvasProps {
@@ -17,6 +20,7 @@ export interface GraphCanvasProps {
   derived: SimulationDerivedCache;
   edgeMechanisms: Record<string, EdgeMechanism>;
   modulations: ModulationLink[];
+  copulaCouplings: CopulaCoupling[];
   disabledEdgeIds: Set<string>;
   highlightedEdges: Map<string, "causal" | "biasing">;
   ancestorIds: Set<string>;

@@ -750,3 +750,16 @@
   border-radius: 6px;
   font-size: 12px;
 }
+
+/* Copula couplings — dashed bidirected arcs between covariates sharing a copula block. */
+.copula-coupling-layer {
+  position: absolute; left: 0; top: 0; z-index: 4;
+  width: 100%; height: 100%; overflow: visible; pointer-events: none;
+}
+.copula-coupling-line {
+  fill: none; stroke: #9b6dd6; stroke-width: 1.6px; stroke-dasharray: 4 3; stroke-linecap: round; opacity: 0.7;
+}
+.copula-coupling-label {
+  fill: #9b6dd6; font-size: 10px; font-weight: 700; paint-order: stroke; stroke: var(--panel, #fff); stroke-width: 3px;
+}
+@media (prefers-color-scheme: dark) { .copula-coupling-label { stroke: #1b2126; } }

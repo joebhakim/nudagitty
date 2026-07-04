@@ -68,7 +68,7 @@ import {
 import { resultPendingActive, resultPendingShortLabel } from "../compute/relationSummary";
 import { PendingChip } from "../controls";
 import { useMediaQuery } from "../app/useMediaQuery";
-import type { GraphCanvasProps } from "./types";
+import type { CopulaCoupling, GraphCanvasProps } from "./types";
 
 const FLOW_NODE_TYPES = { graphNode: FlowGraphNode };
 const FLOW_EDGE_TYPES = { graphEdge: FlowGraphEdge };
@@ -250,6 +250,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
           {props.mode !== "basic" && <Controls className="canvas-zoom-controls react-flow-controls" showInteractive={false} />}
           <FlowGraphArrowLayer edges={computedEdges} />
           <FlowModulationLayer modulations={props.modulations} edges={computedEdges} nodesById={liveNodesById} />
+          <FlowCopulaLayer couplings={props.copulaCouplings} nodesById={liveNodesById} />
         </ReactFlow>
       </div>
       <button
@@ -465,6 +466,35 @@ function modulationVerb(baseline: number, gateCoefficient: number): string {
   if (ratio > 1.25) return "flips";
   if (ratio < 0.75) return "dampens";
   return "masks";
+}
+
+// Copula couplings: dashed bidirected arcs between covariates that share a copula block, labelled τ.
+// Makes the authored dependence a visible part of the DAG rather than a hidden simulation setting.
+function FlowCopulaLayer({ couplings, nodesById }: { couplings: CopulaCoupling[]; nodesById: Map<string, GraphNode> }) {
+  if (!couplings || couplings.length === 0) return null;
+  return (
+    <ViewportPortal>
+      <svg className="copula-coupling-layer" aria-hidden="true">
+        {couplings.map((c) => {
+          const a = nodesById.get(c.aId), b = nodesById.get(c.bId);
+          if (!a || !b) return null;
+          const pa = nodeBoundaryPoint(a, b.position, 6, { includeDistribution: false });
+          const pb = nodeBoundaryPoint(b, a.position, 6, { includeDistribution: false });
+          const mid = { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+          const dx = pb.x - pa.x, dy = pb.y - pa.y, len = Math.hypot(dx, dy) || 1;
+          const nx = -dy / len, ny = dx / len, bow = Math.min(30, len * 0.2);
+          const cx = mid.x + nx * bow, cy = mid.y + ny * bow;
+          return (
+            <g key={c.id} className="copula-coupling">
+              <title>{c.label}</title>
+              <path className="copula-coupling-line" d={`M ${pa.x} ${pa.y} Q ${cx} ${cy} ${pb.x} ${pb.y}`} />
+              <text className="copula-coupling-label" x={cx + nx * 7} y={cy + ny * 7} textAnchor="middle">{c.short}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </ViewportPortal>
+  );
 }
 
 function FlowModulationLayer({ modulations, edges, nodesById }: { modulations: ModulationLink[]; edges: FlowGraphEdge[]; nodesById: Map<string, GraphNode> }) {

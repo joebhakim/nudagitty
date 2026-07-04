@@ -204,6 +204,7 @@ import {
 } from "./compute/relationSummary";
 import { Checkbox, IconButton, ModuleFrame, RadioGroup, Section } from "./controls";
 import { FlowGraphCanvas } from "./canvas/FlowGraphCanvas";
+import type { CopulaCoupling } from "./canvas/types";
 import { SelectionEditor } from "./editors/VariableEditor";
 import { useMediaQuery } from "./app/useMediaQuery";
 import { BibliographyPanel, EffectPanel, ImplicationPanel, SummaryPanel } from "./panels/analysis";
@@ -336,6 +337,23 @@ export function App() {
 
   const { unifiedAdjustment, demoUnifiedAdjustment } = useUnifiedAdjustment(activeExample, computationDocument, covariateBasis, simulationDerived, activeOutputPair, defaultOutputPair);
   const { continuousEffect, categoricalEffect } = useContinuousEffect(activeExample, document.graph, document.simulation, simulation, activeOutputPair);
+  // Copula couplings (Tree-1 direct pairs) surfaced as bidirected arcs on the canvas.
+  const copulaCouplings = useMemo<CopulaCoupling[]>(() => {
+    const out: CopulaCoupling[] = [];
+    for (const block of document.simulation.copulaBlocks ?? []) {
+      const t1 = block.edges[0] ?? [];
+      for (let e = 0; e < t1.length; e += 1) {
+        const c0 = t1[e]?.components[0];
+        if (!c0 || c0.family === "independence") continue;
+        const moderated = c0.tau.by !== null;
+        const tau = moderated ? null : c0.tau.constant;
+        if (tau !== null && Math.abs(tau) < 0.03) continue;
+        const aId = block.nodes[block.order[e]!]!, bId = block.nodes[block.order[e + 1]!]!;
+        out.push({ id: `${block.id}:${e}`, aId, bId, short: moderated ? "τ~" : (tau! >= 0 ? "+" : "") + tau!.toFixed(2), label: `copula ${c0.family}${moderated ? " (moderated)" : ` · τ ${tau!.toFixed(2)}`}` });
+      }
+    }
+    return out;
+  }, [document.simulation.copulaBlocks]);
   const { overlapDiagnostic, positivity } = useOverlapDiagnostic(computationDocument);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
@@ -825,6 +843,7 @@ export function App() {
         derived={simulationDerived}
         edgeMechanisms={document.simulation.edges}
         modulations={modulations}
+        copulaCouplings={copulaCouplings}
         disabledEdgeIds={new Set(Object.entries(document.simulation.edges).filter(([, mechanism]) => !mechanism.enabled).map(([id]) => id))}
         highlightedEdges={highlightedEdges}
         ancestorIds={ancestorIds}
