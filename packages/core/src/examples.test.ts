@@ -29,6 +29,7 @@ describe("example catalog", () => {
       "bias-amplification-z",
       "table-2-fallacy",
       "suppressor-confounding",
+      "immortal-time-bias",
       "categorical-regimen",
       "birthweight-paradox",
       "obesity-paradox",

@@ -451,6 +451,20 @@ export function configureSuppressorConfounding(document: GraphDocument): GraphDo
   return document;
 }
 
+export function configureImmortalTimeBias(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 8000);
+  setBinaryVariable(document, "Survived_window", "Did the patient survive the initial window — long enough to receive treatment? Early deaths never get treated, so 'treated' quietly means 'survived long enough'.", "survived");
+  setBinaryVariable(document, "Treatment", "Whether treatment was started. Only patients still alive at the treatment time can be classified treated — the immortal time.", "treated");
+  setBinaryVariable(document, "Death", "Death by end of follow-up.", "death");
+  setNode(document, "Survived_window", { distribution: { kind: "bernoulli", p: 0.75 }, noise: ZERO_NOISE });
+  setLogitNode(document, "Treatment", -6);  // Survived_window=0 ⇒ logit −6 ⇒ p≈0 treated (early deaths untreated)
+  setLogitNode(document, "Death", 3);        // Survived_window=0 ⇒ logit +3 ⇒ p≈0.95 (they died early)
+  setLinearCoefficient(document, "Survived_window", "Treatment", 6);  // survivors: logit 0 ⇒ ~50% treated
+  setLinearCoefficient(document, "Survived_window", "Death", -4);      // survivors: logit −1 ⇒ ~27% later death
+  setLinearCoefficient(document, "Treatment", "Death", 0);            // the TRUE effect is null
+  return document;
+}
+
 export function configureCategoricalRegimen(document: GraphDocument): GraphDocument {
   setExampleSampleSize(document, 5000);
   setContinuousVariable(document, "Severity", "Baseline illness severity. Sicker patients are steered to the later regimens AND recover worse — the confounding.", "severity z-score");

@@ -23,6 +23,7 @@ export const VERIFIED_EXAMPLE_IDS: readonly string[] = [
   "bias-amplification-z",
   "table-2-fallacy",
   "suppressor-confounding",
+  "immortal-time-bias",
   "categorical-regimen",
   "er-visits-count",
   // Term disambiguation: the node-on-edge moderation primitive. Regime modulates an edge (dashed

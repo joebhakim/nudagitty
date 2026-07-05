@@ -612,6 +612,28 @@ exports[`engine golden > icu-mortality-triage — simulation + do-contrasts are 
 }
 `;
 
+exports[`engine golden > immortal-time-bias — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment=1)−do(0) on Death": 0,
+  },
+  "nodes": {
+    "Death": {
+      "mean": 0.430625,
+      "sd": 0.495164,
+    },
+    "Survived_window": {
+      "mean": 0.748625,
+      "sd": 0.433804,
+    },
+    "Treatment": {
+      "mean": 0.369125,
+      "sd": 0.482568,
+    },
+  },
+}
+`;
+
 exports[`engine golden > incrementality-uplift — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {

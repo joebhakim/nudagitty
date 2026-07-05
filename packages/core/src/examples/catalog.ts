@@ -4,7 +4,7 @@ import { datasetColumnIndex, datasetRows } from "../datasets";
 import { defaultEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "../graph";
 import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeInteraction, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "../types";
 import { HIV_CD4_SEQUENCE_VISITS, UNIT_NORMAL, ZERO_NOISE, addCopulaCovariates, addPlasmodeCovariates, applyWhatIfMetadata, binaryStrategies, dynamicLowRiskStrategy, exampleSeed, layoutExampleDocument, markExposures, prepareDocument, riskEstimand, setBinaryVariable, setContinuousVariable, setEdgeMechanism, setExampleSampleSize, setLinearCoefficient, setLogitNode, setNode, setSelection, setSmoothGate, setVariable, staticStrategy, survivalSpec } from "./builders";
-import { configureBerksonHospital, configureBirthweightParadox, configureCaseControlSelection, configureCategoricalRegimen, configureCatsHighriseSyndrome, configureCausalMlRefutation, configureChessIntelligencePractice, configureChessIntelligenceSimpleFlip, configureCollegeEarnings, configureBiasAmplificationZ, configureConfounderJointCopula, configureConfounderTripleCopula, configureContinuousDoseResponse, configureDiscreteMarginConfession, configureModeratedConfounding, configureSuppressorConfounding, configureTable2Fallacy, configureTailDependentConfounders, configureEducationMediation, configureErVisitsCount, configureEffectModificationCrossover, configureEffectModificationOrdinal, configureEpistasisCoatColor, configureFlexibleAdjustment, configureFrontDoorSmoking, configureGaltonExample, configureIcuMortalityTriage, configureIncrementalityUplift, configureInstrumentalEncouragement, configureJohnSnowCholera, configureLalondeGenerative, configureLalondeIndependent, configureLalondePlasmode, configureLalondeReplay, configureLordsParadox, configureMBiasAdjustment, configureMeasurementErrorLatent, configureMediationDirectTotal, configureModeratedMediation, configureObesityParadox, configureOpsRootCause, configureOtaGeneProgramTraits, configurePolicingEncounters, configurePolicyEventStudy, configurePositivityCorrelatedConfounders, configureRestaurantCollider, configureSimpsonSeverity, configureTargetTrialFollowup, configureTutoringScores, configureWhatIfCensoringIpcw, configureWhatIfDynamicGFormula, configureWhatIfHazardSelection, configureWhatIfHivCd4Variants, configureWhatIfIpwPseudopopulation, configureWhatIfNhefsMortalitySurvival, configureWhatIfNhefsWeightGain, configureWhatIfNhefsWeightGainConfounderDag, configureWhatIfNhefsWeightGainCopula, configureWhatIfNhefsWeightGainGenerative, configureWhatIfNhefsWeightGainPlasmode, configureWhatIfNhefsWeightGainPositivity, configureWhatIfSnaftSurvival, configureWhatIfTreatmentFeedback, configureWhatIfWeightGainGEstimation } from "./configurators";
+import { configureBerksonHospital, configureBirthweightParadox, configureCaseControlSelection, configureCategoricalRegimen, configureCatsHighriseSyndrome, configureCausalMlRefutation, configureChessIntelligencePractice, configureChessIntelligenceSimpleFlip, configureCollegeEarnings, configureBiasAmplificationZ, configureConfounderJointCopula, configureConfounderTripleCopula, configureContinuousDoseResponse, configureDiscreteMarginConfession, configureImmortalTimeBias, configureModeratedConfounding, configureSuppressorConfounding, configureTable2Fallacy, configureTailDependentConfounders, configureEducationMediation, configureErVisitsCount, configureEffectModificationCrossover, configureEffectModificationOrdinal, configureEpistasisCoatColor, configureFlexibleAdjustment, configureFrontDoorSmoking, configureGaltonExample, configureIcuMortalityTriage, configureIncrementalityUplift, configureInstrumentalEncouragement, configureJohnSnowCholera, configureLalondeGenerative, configureLalondeIndependent, configureLalondePlasmode, configureLalondeReplay, configureLordsParadox, configureMBiasAdjustment, configureMeasurementErrorLatent, configureMediationDirectTotal, configureModeratedMediation, configureObesityParadox, configureOpsRootCause, configureOtaGeneProgramTraits, configurePolicingEncounters, configurePolicyEventStudy, configurePositivityCorrelatedConfounders, configureRestaurantCollider, configureSimpsonSeverity, configureTargetTrialFollowup, configureTutoringScores, configureWhatIfCensoringIpcw, configureWhatIfDynamicGFormula, configureWhatIfHazardSelection, configureWhatIfHivCd4Variants, configureWhatIfIpwPseudopopulation, configureWhatIfNhefsMortalitySurvival, configureWhatIfNhefsWeightGain, configureWhatIfNhefsWeightGainConfounderDag, configureWhatIfNhefsWeightGainCopula, configureWhatIfNhefsWeightGainGenerative, configureWhatIfNhefsWeightGainPlasmode, configureWhatIfNhefsWeightGainPositivity, configureWhatIfSnaftSurvival, configureWhatIfTreatmentFeedback, configureWhatIfWeightGainGEstimation } from "./configurators";
 
 export const EXAMPLE_DOMAINS = [
   { id: "classic", label: "Classic DAG patterns", description: "Compact examples for teaching and fast bias checks." },
@@ -496,6 +496,20 @@ export const EXAMPLES: ExampleModel[] = [
   Severity -> Dose
   Severity -> Recovery
   Dose -> Recovery
+}`
+  },
+  {
+    id: "immortal-time-bias",
+    title: "Immortal time bias: the treated had to survive to be treated",
+    domain: "classic",
+    summary: "A pharmacoepi classic (Suissa; Hernán's DAG view). Treatment can only start in patients still alive at the treatment time — so 'treated' silently means 'survived long enough,' and that immortal early time makes the treated look protected (crude ≈ −27pp on death) even though treatment does NOTHING (true effect null). The fix is to align time-zero / adjust for surviving to treatment (the landmark), which returns the effect to null. Confounding by survival, hiding in the exposure definition.",
+    code: `dag {
+  Survived_window [adjusted,label="survived to treatment",pos="-0.4,-1.5"]
+  Treatment [exposure,label="treatment",pos="-1.3,0.2"]
+  Death [outcome,label="death",pos="1.3,0.8"]
+  Survived_window -> Treatment
+  Survived_window -> Death
+  Treatment -> Death
 }`
   },
   {
@@ -3045,6 +3059,7 @@ function configureClassicExample(document: GraphDocument, id: string): GraphDocu
   if (id === "bias-amplification-z") return configureBiasAmplificationZ(next);
   if (id === "table-2-fallacy") return configureTable2Fallacy(next);
   if (id === "suppressor-confounding") return configureSuppressorConfounding(next);
+  if (id === "immortal-time-bias") return configureImmortalTimeBias(next);
   if (id === "categorical-regimen") return configureCategoricalRegimen(next);
   if (id === "er-visits-count") return configureErVisitsCount(next);
   if (id === "birthweight-paradox") return configureBirthweightParadox(next);
