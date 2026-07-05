@@ -1,8 +1,10 @@
 import { parseModel } from "../parser";
 import { analyzeGraph } from "../analysis";
 import { datasetColumnIndex, datasetRows } from "../datasets";
-import { defaultEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "../graph";
-import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeInteraction, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "../types";
+import { defaultEdgeMechanism, normalizeEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "../graph";
+import { setCopulaBlock } from "../copula";
+import { simpleEdge } from "../copulaVine";
+import type { CopulaBlock, EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, MixtureEdge, NodeDistribution, NodeInteraction, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "../types";
 import { HIV_CD4_SEQUENCE_VISITS, UNIT_NORMAL, ZERO_NOISE, addCopulaCovariates, addPlasmodeCovariates, applyWhatIfMetadata, binaryStrategies, dynamicLowRiskStrategy, exampleSeed, layoutExampleDocument, markExposures, prepareDocument, riskEstimand, setBinaryVariable, setContinuousVariable, setEdgeMechanism, setExampleSampleSize, setLinearCoefficient, setLogitNode, setNode, setSelection, setSmoothGate, setVariable, staticStrategy, survivalSpec } from "./builders";
 
 export function configureFlexibleAdjustment(document: GraphDocument): GraphDocument {
@@ -322,6 +324,130 @@ export function configureConfounderTripleCopula(document: GraphDocument): GraphD
   setLinearCoefficient(document, "Severity", "Recovery", -1.4);
   setLinearCoefficient(document, "Comorbidity", "Recovery", -1.4);
   setLinearCoefficient(document, "Dose", "Recovery", 0.8); // the true effect
+  return document;
+}
+
+// --- New showcase examples (2026-07): copula/dependence sims + literature-grounded structures ---
+
+// A copula block over root covariates (nodes in vine order), with the given trees.
+function covariateBlock(nodeIds: string[], trees: MixtureEdge[][], depth = 1): CopulaBlock {
+  return { id: "cov", nodes: nodeIds, order: nodeIds.map((_, i) => i), depth, edges: trees };
+}
+
+export function configureTailDependentConfounders(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 4000);
+  setContinuousVariable(document, "Severity_A", "Baseline severity, axis A — Clayton-coupled to B, so when both are extreme-LOW they move together (lower-tail dependence).", "z-score");
+  setContinuousVariable(document, "Severity_B", "Baseline severity, axis B — the lower-tail partner of A.", "z-score");
+  setContinuousVariable(document, "Dose", "Continuous drug dose administered.", "mg");
+  setContinuousVariable(document, "Recovery", "Recovery score at follow-up.", "score");
+  setNode(document, "Severity_A", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Severity_B", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Dose", { intercept: 5, noise: { kind: "normal", mean: 0, sd: 0.8 } });
+  setNode(document, "Recovery", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setLinearCoefficient(document, "Severity_A", "Dose", 1.2);
+  setLinearCoefficient(document, "Severity_B", "Dose", 1.2);
+  setLinearCoefficient(document, "Severity_A", "Recovery", -2);
+  setLinearCoefficient(document, "Severity_B", "Recovery", -2);
+  setLinearCoefficient(document, "Dose", "Recovery", 0.8); // the true effect
+  return setCopulaBlock(document, covariateBlock(["Severity_A", "Severity_B"], [[simpleEdge("clayton", 0.5, 0)]]));
+}
+
+export function configureModeratedConfounding(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 5000);
+  setBinaryVariable(document, "Sex", "Biological sex (0/1). It MODERATES how Age and Smoking co-vary — the conditional copula's τ flips sign by Sex (a non-simplified vine).", "male");
+  setContinuousVariable(document, "Age", "Baseline age (z). Confounds the treatment; its dependence with Smoking depends on Sex.", "z-score");
+  setContinuousVariable(document, "Smoking", "Smoking intensity (z). Confounds the treatment.", "z-score");
+  setContinuousVariable(document, "Treatment", "Continuous treatment intensity.", "dose");
+  setContinuousVariable(document, "Outcome", "Outcome score.", "score");
+  setNode(document, "Sex", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Age", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Smoking", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Treatment", { intercept: 5, noise: { kind: "normal", mean: 0, sd: 0.9 } });
+  setNode(document, "Outcome", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setLinearCoefficient(document, "Sex", "Treatment", 0.8);
+  setLinearCoefficient(document, "Age", "Treatment", 1.0);
+  setLinearCoefficient(document, "Smoking", "Treatment", 1.0);
+  setLinearCoefficient(document, "Sex", "Outcome", -1.0);
+  setLinearCoefficient(document, "Age", "Outcome", -1.5);
+  setLinearCoefficient(document, "Smoking", "Outcome", -1.5);
+  setLinearCoefficient(document, "Treatment", "Outcome", 0.8); // the true effect
+  // Vine order [Age, Sex, Smoking]: Age–Smoking | Sex is a Tree-2 conditional edge whose τ is a step
+  // function of Sex — τ≈−0.68 for Sex=0, τ≈+0.79 for Sex=1 (the sex/height moderation, made concrete).
+  const moderated: MixtureEdge = {
+    components: [{ family: "gaussian", rotation: 0, tau: { by: 1, constant: 0, mechanism: normalizeEdgeMechanism({ kind: "threshold", threshold: 0.5, low: -0.9, high: 1.2 }) } }],
+    weights: [{ by: null, constant: 0 }]
+  };
+  const block: CopulaBlock = {
+    id: "cov", nodes: ["Age", "Sex", "Smoking"], order: [0, 1, 2], depth: 2,
+    edges: [[simpleEdge("independence", 0), simpleEdge("independence", 0)], [moderated]]
+  };
+  return setCopulaBlock(document, block);
+}
+
+export function configureDiscreteMarginConfession(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 5000);
+  setBinaryVariable(document, "Risk_A", "A binary risk factor (prevalence 30%). Its authored copula τ with Risk_B is a LATENT knob the point masses compress — the UNEQUAL prevalences cap the achievable association well below it (Fréchet–Hoeffding).", "present");
+  setBinaryVariable(document, "Risk_B", "A second binary risk factor (prevalence 70%) — the mismatched marginals are what bite: a 30% and a 70% binary can be at most ~0.43 correlated, no matter the authored τ.", "present");
+  setContinuousVariable(document, "Dose", "Continuous drug dose.", "mg");
+  setContinuousVariable(document, "Recovery", "Recovery score.", "score");
+  setNode(document, "Risk_A", { distribution: { kind: "bernoulli", p: 0.3 }, noise: ZERO_NOISE });
+  setNode(document, "Risk_B", { distribution: { kind: "bernoulli", p: 0.7 }, noise: ZERO_NOISE });
+  setNode(document, "Dose", { intercept: 5, noise: { kind: "normal", mean: 0, sd: 0.8 } });
+  setNode(document, "Recovery", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setLinearCoefficient(document, "Risk_A", "Dose", 1.5);
+  setLinearCoefficient(document, "Risk_B", "Dose", 1.5);
+  setLinearCoefficient(document, "Risk_A", "Recovery", -2);
+  setLinearCoefficient(document, "Risk_B", "Recovery", -2);
+  setLinearCoefficient(document, "Dose", "Recovery", 0.8); // the true effect
+  return setCopulaBlock(document, covariateBlock(["Risk_A", "Risk_B"], [[simpleEdge("gaussian", 0.8)]]));
+}
+
+export function configureBiasAmplificationZ(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 6000);
+  setContinuousVariable(document, "Z", "A near-instrument: a strong predictor of the exposure with no direct effect on the outcome. Tempting to 'adjust for everything' — but it AMPLIFIES the unmeasured bias.", "z-score");
+  setContinuousVariable(document, "U", "Unmeasured confounder of exposure and outcome (latent — cannot be adjusted).", "z-score", ["latent"]);
+  setContinuousVariable(document, "X", "Continuous exposure.", "dose");
+  setContinuousVariable(document, "Y", "Outcome.", "score");
+  setNode(document, "Z", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "U", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "X", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.5 } });
+  setNode(document, "Y", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setLinearCoefficient(document, "Z", "X", 2.0);
+  setLinearCoefficient(document, "U", "X", 1.0);
+  setLinearCoefficient(document, "U", "Y", 1.5);
+  setLinearCoefficient(document, "X", "Y", 0.8); // the true effect
+  return document;
+}
+
+export function configureTable2Fallacy(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 6000);
+  setContinuousVariable(document, "Confounder", "A baseline confounder of the primary exposure (adjust for this).", "z-score");
+  setContinuousVariable(document, "Drug", "The PRIMARY exposure whose effect you want.", "dose");
+  setContinuousVariable(document, "Blood_pressure", "A SECOND risk factor for the outcome — but it's a MEDIATOR of the drug (Drug → BP → Outcome). Its regression coefficient is NOT its total effect, and putting it in the model turns the drug's total effect into a direct effect.", "mmHg z");
+  setContinuousVariable(document, "Outcome", "Outcome.", "score");
+  setNode(document, "Confounder", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Drug", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setNode(document, "Blood_pressure", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setNode(document, "Outcome", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setLinearCoefficient(document, "Confounder", "Drug", 1.0);
+  setLinearCoefficient(document, "Confounder", "Outcome", 1.0);
+  setLinearCoefficient(document, "Drug", "Blood_pressure", 1.2);  // Drug → BP (a mediator)
+  setLinearCoefficient(document, "Blood_pressure", "Outcome", 0.7); // BP → Outcome
+  setLinearCoefficient(document, "Drug", "Outcome", 0.5);          // Drug direct — total = 0.5 + 1.2*0.7 = 1.34
+  return document;
+}
+
+export function configureSuppressorConfounding(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 6000);
+  setContinuousVariable(document, "Severity", "A SUPPRESSOR confounder: sicker patients get MORE of the drug but recover WORSE, so crudely the drug looks useless — its true benefit is masked.", "z-score");
+  setContinuousVariable(document, "Dose", "Continuous drug dose.", "mg");
+  setContinuousVariable(document, "Recovery", "Recovery score.", "score");
+  setNode(document, "Severity", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Dose", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setNode(document, "Recovery", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 1 } });
+  setLinearCoefficient(document, "Severity", "Dose", 1.5);
+  setLinearCoefficient(document, "Severity", "Recovery", -2.0);
+  setLinearCoefficient(document, "Dose", "Recovery", 0.8); // true +0.8, but crude ≈ −0.1 (sign-reversed)
   return document;
 }
 

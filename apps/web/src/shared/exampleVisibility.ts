@@ -17,6 +17,12 @@ export const VERIFIED_EXAMPLE_IDS: readonly string[] = [
   "continuous-dose-response",
   "confounder-joint-copula",
   "confounder-triple-copula",
+  "tail-dependent-confounders",
+  "moderated-confounding",
+  "discrete-margin-confession",
+  "bias-amplification-z",
+  "table-2-fallacy",
+  "suppressor-confounding",
   "categorical-regimen",
   "er-visits-count",
   // Term disambiguation: the node-on-edge moderation primitive. Regime modulates an edge (dashed

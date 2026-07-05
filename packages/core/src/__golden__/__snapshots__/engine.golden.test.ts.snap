@@ -22,6 +22,32 @@ exports[`engine golden > berkson-hospital — simulation + do-contrasts are stab
 }
 `;
 
+exports[`engine golden > bias-amplification-z — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(X↑)−do(↓) on Y": 4.705188,
+  },
+  "nodes": {
+    "U": {
+      "mean": 0.016746,
+      "sd": 1.004121,
+    },
+    "X": {
+      "mean": 0.033659,
+      "sd": 2.279791,
+    },
+    "Y": {
+      "mean": 0.046373,
+      "sd": 3.009474,
+    },
+    "Z": {
+      "mean": 0.00879,
+      "sd": 1.005157,
+    },
+  },
+}
+`;
+
 exports[`engine golden > birthweight-paradox — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {
@@ -319,6 +345,32 @@ exports[`engine golden > continuous-dose-response — simulation + do-contrasts 
     "Severity": {
       "mean": -0.032935,
       "sd": 1.006903,
+    },
+  },
+}
+`;
+
+exports[`engine golden > discrete-margin-confession — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Dose↑)−do(↓) on Recovery": 2.985742,
+  },
+  "nodes": {
+    "Dose": {
+      "mean": 6.546476,
+      "sd": 1.400129,
+    },
+    "Recovery": {
+      "mean": 3.174548,
+      "sd": 1.336567,
+    },
+    "Risk_A": {
+      "mean": 0.3068,
+      "sd": 0.461166,
+    },
+    "Risk_B": {
+      "mean": 0.716,
+      "sd": 0.450937,
     },
   },
 }
@@ -1007,6 +1059,36 @@ exports[`engine golden > mediation-direct-total — simulation + do-contrasts ar
 }
 `;
 
+exports[`engine golden > moderated-confounding — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Treatment↑)−do(↓) on Outcome": 3.399214,
+  },
+  "nodes": {
+    "Age": {
+      "mean": -0.035648,
+      "sd": 1.011595,
+    },
+    "Outcome": {
+      "mean": 3.84265,
+      "sd": 1.639371,
+    },
+    "Sex": {
+      "mean": 0.5068,
+      "sd": 0.499954,
+    },
+    "Smoking": {
+      "mean": 0.002411,
+      "sd": 0.999533,
+    },
+    "Treatment": {
+      "mean": 5.363336,
+      "sd": 1.751442,
+    },
+  },
+}
+`;
+
 exports[`engine golden > moderated-mediation — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {
@@ -1342,6 +1424,80 @@ exports[`engine golden > simpson-severity — simulation + do-contrasts are stab
     "Treatment": {
       "mean": 0.521875,
       "sd": 0.499521,
+    },
+  },
+}
+`;
+
+exports[`engine golden > suppressor-confounding — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Dose↑)−do(↓) on Recovery": 3.582107,
+  },
+  "nodes": {
+    "Dose": {
+      "mean": -0.066108,
+      "sd": 1.763589,
+    },
+    "Recovery": {
+      "mean": 0.010365,
+      "sd": 1.519396,
+    },
+    "Severity": {
+      "mean": -0.031358,
+      "sd": 1.001997,
+    },
+  },
+}
+`;
+
+exports[`engine golden > table-2-fallacy — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Drug↑)−do(↓) on Outcome": 4.860933,
+  },
+  "nodes": {
+    "Blood_pressure": {
+      "mean": 0.003664,
+      "sd": 1.976599,
+    },
+    "Confounder": {
+      "mean": 0.000129,
+      "sd": 0.995761,
+    },
+    "Drug": {
+      "mean": 0.006135,
+      "sd": 1.418705,
+    },
+    "Outcome": {
+      "mean": -0.001454,
+      "sd": 2.943425,
+    },
+  },
+}
+`;
+
+exports[`engine golden > tail-dependent-confounders — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Dose↑)−do(↓) on Recovery": 4.884938,
+  },
+  "nodes": {
+    "Dose": {
+      "mean": 4.982124,
+      "sd": 2.349331,
+    },
+    "Recovery": {
+      "mean": 4.020026,
+      "sd": 2.250878,
+    },
+    "Severity_A": {
+      "mean": -0.002774,
+      "sd": 1.001541,
+    },
+    "Severity_B": {
+      "mean": -0.014163,
+      "sd": 0.995368,
     },
   },
 }

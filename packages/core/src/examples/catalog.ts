@@ -4,7 +4,7 @@ import { datasetColumnIndex, datasetRows } from "../datasets";
 import { defaultEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "../graph";
 import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeInteraction, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "../types";
 import { HIV_CD4_SEQUENCE_VISITS, UNIT_NORMAL, ZERO_NOISE, addCopulaCovariates, addPlasmodeCovariates, applyWhatIfMetadata, binaryStrategies, dynamicLowRiskStrategy, exampleSeed, layoutExampleDocument, markExposures, prepareDocument, riskEstimand, setBinaryVariable, setContinuousVariable, setEdgeMechanism, setExampleSampleSize, setLinearCoefficient, setLogitNode, setNode, setSelection, setSmoothGate, setVariable, staticStrategy, survivalSpec } from "./builders";
-import { configureBerksonHospital, configureBirthweightParadox, configureCaseControlSelection, configureCategoricalRegimen, configureCatsHighriseSyndrome, configureCausalMlRefutation, configureChessIntelligencePractice, configureChessIntelligenceSimpleFlip, configureCollegeEarnings, configureConfounderJointCopula, configureConfounderTripleCopula, configureContinuousDoseResponse, configureEducationMediation, configureErVisitsCount, configureEffectModificationCrossover, configureEffectModificationOrdinal, configureEpistasisCoatColor, configureFlexibleAdjustment, configureFrontDoorSmoking, configureGaltonExample, configureIcuMortalityTriage, configureIncrementalityUplift, configureInstrumentalEncouragement, configureJohnSnowCholera, configureLalondeGenerative, configureLalondeIndependent, configureLalondePlasmode, configureLalondeReplay, configureLordsParadox, configureMBiasAdjustment, configureMeasurementErrorLatent, configureMediationDirectTotal, configureModeratedMediation, configureObesityParadox, configureOpsRootCause, configureOtaGeneProgramTraits, configurePolicingEncounters, configurePolicyEventStudy, configurePositivityCorrelatedConfounders, configureRestaurantCollider, configureSimpsonSeverity, configureTargetTrialFollowup, configureTutoringScores, configureWhatIfCensoringIpcw, configureWhatIfDynamicGFormula, configureWhatIfHazardSelection, configureWhatIfHivCd4Variants, configureWhatIfIpwPseudopopulation, configureWhatIfNhefsMortalitySurvival, configureWhatIfNhefsWeightGain, configureWhatIfNhefsWeightGainConfounderDag, configureWhatIfNhefsWeightGainCopula, configureWhatIfNhefsWeightGainGenerative, configureWhatIfNhefsWeightGainPlasmode, configureWhatIfNhefsWeightGainPositivity, configureWhatIfSnaftSurvival, configureWhatIfTreatmentFeedback, configureWhatIfWeightGainGEstimation } from "./configurators";
+import { configureBerksonHospital, configureBirthweightParadox, configureCaseControlSelection, configureCategoricalRegimen, configureCatsHighriseSyndrome, configureCausalMlRefutation, configureChessIntelligencePractice, configureChessIntelligenceSimpleFlip, configureCollegeEarnings, configureBiasAmplificationZ, configureConfounderJointCopula, configureConfounderTripleCopula, configureContinuousDoseResponse, configureDiscreteMarginConfession, configureModeratedConfounding, configureSuppressorConfounding, configureTable2Fallacy, configureTailDependentConfounders, configureEducationMediation, configureErVisitsCount, configureEffectModificationCrossover, configureEffectModificationOrdinal, configureEpistasisCoatColor, configureFlexibleAdjustment, configureFrontDoorSmoking, configureGaltonExample, configureIcuMortalityTriage, configureIncrementalityUplift, configureInstrumentalEncouragement, configureJohnSnowCholera, configureLalondeGenerative, configureLalondeIndependent, configureLalondePlasmode, configureLalondeReplay, configureLordsParadox, configureMBiasAdjustment, configureMeasurementErrorLatent, configureMediationDirectTotal, configureModeratedMediation, configureObesityParadox, configureOpsRootCause, configureOtaGeneProgramTraits, configurePolicingEncounters, configurePolicyEventStudy, configurePositivityCorrelatedConfounders, configureRestaurantCollider, configureSimpsonSeverity, configureTargetTrialFollowup, configureTutoringScores, configureWhatIfCensoringIpcw, configureWhatIfDynamicGFormula, configureWhatIfHazardSelection, configureWhatIfHivCd4Variants, configureWhatIfIpwPseudopopulation, configureWhatIfNhefsMortalitySurvival, configureWhatIfNhefsWeightGain, configureWhatIfNhefsWeightGainConfounderDag, configureWhatIfNhefsWeightGainCopula, configureWhatIfNhefsWeightGainGenerative, configureWhatIfNhefsWeightGainPlasmode, configureWhatIfNhefsWeightGainPositivity, configureWhatIfSnaftSurvival, configureWhatIfTreatmentFeedback, configureWhatIfWeightGainGEstimation } from "./configurators";
 
 export const EXAMPLE_DOMAINS = [
   { id: "classic", label: "Classic DAG patterns", description: "Compact examples for teaching and fast bias checks." },
@@ -394,6 +394,107 @@ export const EXAMPLES: ExampleModel[] = [
   Age -> Recovery
   Severity -> Recovery
   Comorbidity -> Recovery
+  Dose -> Recovery
+}`
+  },
+  {
+    id: "tail-dependent-confounders",
+    title: "Tail-dependent confounders (Clayton copula)",
+    domain: "classic",
+    summary: "Ships PRE-COUPLED: the two baseline confounders share a Clayton copula — lower-tail dependence, so when both are extreme-LOW they move together. That concentrates patients in the low-low corner, where the dose piles up and exposure OVERLAP / positivity strains, while the g-computation / oracle do()-effect still holds at +0.8. Open Σ → the Joint Lab to see the Clayton copula and rotate it; the tail is where positivity breaks.",
+    code: `dag {
+  Severity_A [adjusted,label="severity A",pos="-1.6,-1.4"]
+  Severity_B [adjusted,label="severity B",pos="0.4,-1.6"]
+  Dose [exposure,label="drug dose (mg)",pos="-1.3,0.2"]
+  Recovery [outcome,label="recovery score",pos="1.3,0.9"]
+  Severity_A -> Dose
+  Severity_B -> Dose
+  Severity_A -> Recovery
+  Severity_B -> Recovery
+  Dose -> Recovery
+}`
+  },
+  {
+    id: "moderated-confounding",
+    title: "Moderated confounding: dependence that varies by sex",
+    domain: "classic",
+    summary: "Ships with a NON-SIMPLIFIED vine: the copula between Age and Smoking is CONDITIONED on Sex — τ ≈ −0.68 for one sex and ≈ +0.79 for the other (the classic 'does age's dependence on smoking vary with sex?'). Open Σ → the Joint Lab, focus the Age–Smoking | Sex conditional edge, and watch the curve editor + morphing filmstrip flip the dependence by Sex. The do()-effect of the treatment stays +0.8 throughout.",
+    code: `dag {
+  Age [adjusted,label="age (z)",pos="-2.0,-1.4"]
+  Sex [adjusted,label="sex",pos="-0.2,-1.9"]
+  Smoking [adjusted,label="smoking (z)",pos="1.6,-1.4"]
+  Treatment [exposure,label="treatment",pos="-1.3,0.3"]
+  Outcome [outcome,label="outcome",pos="1.4,1.0"]
+  Age -> Treatment
+  Sex -> Treatment
+  Smoking -> Treatment
+  Age -> Outcome
+  Sex -> Outcome
+  Smoking -> Outcome
+  Treatment -> Outcome
+}`
+  },
+  {
+    id: "discrete-margin-confession",
+    title: "What the atoms hide: coupling two binary confounders",
+    domain: "classic",
+    summary: "Two BINARY confounders (30% and 70% prevalence), coupled with an authored Gaussian τ = 0.8. But binary marginals are point masses, so Sklar's copula is unidentified across the gaps and the MISMATCHED prevalences cap the achievable association at ≈ 0.43 — the achieved correlation lands near 0.42, far below the latent knob (Fréchet–Hoeffding). Note the point-mass badges on the nodes; open Σ → the Joint Lab and hit '⚠ what the atoms hide' to see authored τ vs the achieved τ_b and the cap. The do()-effect is unaffected (+0.8).",
+    code: `dag {
+  Risk_A [adjusted,label="risk A",pos="-1.6,-1.4"]
+  Risk_B [adjusted,label="risk B",pos="0.4,-1.6"]
+  Dose [exposure,label="drug dose (mg)",pos="-1.3,0.2"]
+  Recovery [outcome,label="recovery score",pos="1.3,0.9"]
+  Risk_A -> Dose
+  Risk_B -> Dose
+  Risk_A -> Recovery
+  Risk_B -> Recovery
+  Dose -> Recovery
+}`
+  },
+  {
+    id: "bias-amplification-z",
+    title: "Bias amplification: adjusting for a near-instrument (Z-bias)",
+    domain: "classic",
+    summary: "The counterintuitive one: Z strongly predicts the exposure but has no direct outcome effect (a near-instrument), while an UNMEASURED U confounds X and Y. 'Adjust for everything' says condition on Z — but that AMPLIFIES the unmeasured bias instead of reducing it (Pearl; Myers et al.; Ding et al.). Watch the adjusted-for-Z estimate drift FURTHER from the +0.8 truth than the crude one. More covariates is not always better.",
+    code: `dag {
+  Z [adjusted,label="Z (near-instrument)",pos="-2.3,-0.2"]
+  U [latent,label="U (unmeasured)",pos="0.2,-1.7"]
+  X [exposure,label="exposure X",pos="-1.2,0.5"]
+  Y [outcome,label="outcome Y",pos="1.5,0.6"]
+  Z -> X
+  U -> X
+  U -> Y
+  X -> Y
+}`
+  },
+  {
+    id: "table-2-fallacy",
+    title: "The Table 2 fallacy: a mediator masquerading as a covariate",
+    domain: "classic",
+    summary: "Blood pressure looks like just another risk factor you'd throw into the model — but it's a MEDIATOR of the drug (Drug → BP → Outcome). Its regression coefficient is not its total effect, and controlling for it silently turns the DRUG's total effect (+1.34) into a direct effect (+0.5). Toggle the effect between total and direct to see the gap: reading every coefficient in one 'Table 2' as a causal effect is a fallacy (Westreich & Greenland 2013).",
+    code: `dag {
+  Confounder [adjusted,label="confounder",pos="-1.5,-1.5"]
+  Drug [exposure,label="drug",pos="-1.7,0.3"]
+  Blood_pressure [label="blood pressure",pos="0.2,-0.3"]
+  Outcome [outcome,label="outcome",pos="1.7,0.9"]
+  Confounder -> Drug
+  Confounder -> Outcome
+  Drug -> Blood_pressure
+  Blood_pressure -> Outcome
+  Drug -> Outcome
+}`
+  },
+  {
+    id: "suppressor-confounding",
+    title: "Negative (suppressor) confounding: the crude sign is wrong",
+    domain: "classic",
+    summary: "The mirror image of textbook confounding. Sicker patients get MORE of the drug (Severity → Dose) but recover WORSE (Severity → Recovery), so the confounding pulls the crude estimate DOWN through zero — crudely the drug looks useless or even harmful (≈ −0.1). Adjust for severity (or intervene) and its true benefit appears: +0.8. Confounding doesn't only inflate effects; it can suppress or reverse them.",
+    code: `dag {
+  Severity [adjusted,label="baseline severity",pos="-0.4,-1.5"]
+  Dose [exposure,label="drug dose (mg)",pos="-1.3,0.2"]
+  Recovery [outcome,label="recovery score",pos="1.3,0.8"]
+  Severity -> Dose
+  Severity -> Recovery
   Dose -> Recovery
 }`
   },
@@ -2938,6 +3039,12 @@ function configureClassicExample(document: GraphDocument, id: string): GraphDocu
   if (id === "continuous-dose-response") return configureContinuousDoseResponse(next);
   if (id === "confounder-joint-copula") return configureConfounderJointCopula(next);
   if (id === "confounder-triple-copula") return configureConfounderTripleCopula(next);
+  if (id === "tail-dependent-confounders") return configureTailDependentConfounders(next);
+  if (id === "moderated-confounding") return configureModeratedConfounding(next);
+  if (id === "discrete-margin-confession") return configureDiscreteMarginConfession(next);
+  if (id === "bias-amplification-z") return configureBiasAmplificationZ(next);
+  if (id === "table-2-fallacy") return configureTable2Fallacy(next);
+  if (id === "suppressor-confounding") return configureSuppressorConfounding(next);
   if (id === "categorical-regimen") return configureCategoricalRegimen(next);
   if (id === "er-visits-count") return configureErVisitsCount(next);
   if (id === "birthweight-paradox") return configureBirthweightParadox(next);
