@@ -211,7 +211,7 @@ import {
 } from "./compute/relationSummary";
 import { Checkbox, IconButton, ModuleFrame, RadioGroup, Section } from "./controls";
 import { FlowGraphCanvas } from "./canvas/FlowGraphCanvas";
-import type { CopulaCoupling } from "./canvas/types";
+import type { CopulaCloud, CopulaCoupling } from "./canvas/types";
 import { SelectionEditor } from "./editors/VariableEditor";
 import { useMediaQuery } from "./app/useMediaQuery";
 import { BibliographyPanel, EffectPanel, ImplicationPanel, SummaryPanel } from "./panels/analysis";
@@ -367,6 +367,30 @@ export function App() {
       }
     }
     return out;
+  }, [document.simulation.copulaBlocks]);
+
+  // Each copula block as a "shared hidden causes" cloud (the latent projection): the coupled nodes are
+  // the cloud's children; any conditioning variable of a MODERATED edge feeds into the cloud instead.
+  const copulaClouds = useMemo<CopulaCloud[]>(() => {
+    const clouds: CopulaCloud[] = [];
+    for (const block of document.simulation.copulaBlocks ?? []) {
+      const coupled = new Set<string>();
+      const moderators = new Set<string>();
+      for (let t = 0; t < block.edges.length; t += 1) {
+        const tree = block.edges[t] ?? [];
+        for (let e = 0; e < tree.length; e += 1) {
+          const c0 = tree[e]?.components[0];
+          if (!c0 || c0.family === "independence") continue;
+          const a = block.nodes[block.order[e]!], b = block.nodes[block.order[e + t + 1]!];
+          if (a) coupled.add(a);
+          if (b) coupled.add(b);
+          for (let m = e + 1; m <= e + t; m += 1) { const mid = block.nodes[block.order[m]!]; if (mid) moderators.add(mid); }
+          if (c0.tau.by !== null) { const mid = block.nodes[block.order[c0.tau.by]!]; if (mid) moderators.add(mid); }
+        }
+      }
+      if (coupled.size > 0) clouds.push({ id: block.id, nodeIds: [...coupled], moderatorIds: [...moderators].filter((m) => !coupled.has(m)), label: "shared hidden causes" });
+    }
+    return clouds;
   }, [document.simulation.copulaBlocks]);
 
   // Root covariates (confounders) — the nodes a copula block may couple: roots that aren't the
@@ -897,6 +921,7 @@ export function App() {
         edgeMechanisms={document.simulation.edges}
         modulations={modulations}
         copulaCouplings={copulaCouplings}
+        copulaClouds={copulaClouds}
         disabledEdgeIds={new Set(Object.entries(document.simulation.edges).filter(([, mechanism]) => !mechanism.enabled).map(([id]) => id))}
         highlightedEdges={highlightedEdges}
         ancestorIds={ancestorIds}

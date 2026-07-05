@@ -6,6 +6,10 @@ import type { WorkbenchMode } from "../shared/workbench";
 /** A pairwise copula coupling to draw on the canvas (a bidirected dependence link). */
 export interface CopulaCoupling { id: string; aId: string; bId: string; short: string; label: string }
 
+/** A copula block rendered as a "shared hidden causes" cloud (the latent projection of the coupling):
+ *  faded arrows to each coupled node; a moderator (if any) feeds INTO the cloud. A view, not a model node. */
+export interface CopulaCloud { id: string; nodeIds: string[]; moderatorIds: string[]; label: string }
+
 // Prop shape for the canvas surface. Extracted verbatim from the (now-deleted) legacy
 // GraphCanvas so FlowGraphCanvas/FlowGraphCanvasInner keep their exact prop type.
 export interface GraphCanvasProps {
@@ -21,6 +25,7 @@ export interface GraphCanvasProps {
   edgeMechanisms: Record<string, EdgeMechanism>;
   modulations: ModulationLink[];
   copulaCouplings: CopulaCoupling[];
+  copulaClouds: CopulaCloud[];
   disabledEdgeIds: Set<string>;
   highlightedEdges: Map<string, "causal" | "biasing">;
   ancestorIds: Set<string>;

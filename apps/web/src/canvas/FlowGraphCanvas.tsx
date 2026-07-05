@@ -68,7 +68,7 @@ import {
 import { resultPendingActive, resultPendingShortLabel } from "../compute/relationSummary";
 import { PendingChip } from "../controls";
 import { useMediaQuery } from "../app/useMediaQuery";
-import type { CopulaCoupling, GraphCanvasProps } from "./types";
+import type { CopulaCloud, CopulaCoupling, GraphCanvasProps } from "./types";
 
 const FLOW_NODE_TYPES = { graphNode: FlowGraphNode };
 const FLOW_EDGE_TYPES = { graphEdge: FlowGraphEdge };
@@ -248,6 +248,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} />
           {props.mode !== "basic" && <Controls className="canvas-zoom-controls react-flow-controls" showInteractive={false} />}
+          <FlowCopulaCloudLayer clouds={props.copulaClouds} nodesById={liveNodesById} onEdit={props.onOpenJointLab} />
           <FlowGraphArrowLayer edges={computedEdges} />
           <FlowModulationLayer modulations={props.modulations} edges={computedEdges} nodesById={liveNodesById} />
           <FlowCopulaLayer couplings={props.copulaCouplings} nodesById={liveNodesById} onEdit={props.onOpenJointLab} onSelect={props.onSelectCoupling} selectedId={props.selection?.kind === "coupling" ? props.selection.id : null} interactive={props.tool === "select"} />
@@ -480,6 +481,44 @@ function modulationVerb(baseline: number, gateCoefficient: number): string {
   if (ratio > 1.25) return "flips";
   if (ratio < 0.75) return "dampens";
   return "masks";
+}
+
+// Copula block as a "shared hidden causes" cloud — the latent projection of the coupling made visible.
+// A VIEW of the block (no model node): faded arrows from the cloud to each coupled covariate; a
+// moderator of a non-simplified edge feeds INTO the cloud. Click to edit in the Joint Lab. The precise
+// pairwise structure stays in the dashed arcs (FlowCopulaLayer) underneath, so partial blocks read right.
+function FlowCopulaCloudLayer({ clouds, nodesById, onEdit }: { clouds: CopulaCloud[]; nodesById: Map<string, GraphNode>; onEdit?: () => void }) {
+  if (!clouds || clouds.length === 0) return null;
+  return (
+    <ViewportPortal>
+      <svg className="copula-cloud-layer">
+        {clouds.map((cloud) => {
+          const nodes = cloud.nodeIds.map((id) => nodesById.get(id)).filter((n): n is GraphNode => Boolean(n));
+          if (nodes.length === 0) return null;
+          const xs = nodes.map((n) => n.position.x);
+          const cx = xs.reduce((s, x) => s + x, 0) / xs.length;
+          const minY = Math.min(...nodes.map((n) => n.position.y));
+          const spread = Math.max(...xs) - Math.min(...xs);
+          const center = { x: cx, y: minY - 78 };             // float above the coupled nodes
+          const W = Math.max(56, spread * 0.5);
+          const bumps = [
+            { dx: 0, dy: 4, r: 28 }, { dx: -W, dy: 8, r: 20 }, { dx: W, dy: 8, r: 20 },
+            { dx: -W * 0.5, dy: -11, r: 22 }, { dx: W * 0.5, dy: -11, r: 22 }
+          ];
+          return (
+            <g key={cloud.id} className="copula-cloud" onClick={onEdit ? (e) => { e.stopPropagation(); onEdit(); } : undefined}>
+              <title>{cloud.label} — this copula block is the latent common cause these variables share (a bidirected structure). Click to edit it in the Joint Lab.</title>
+              {nodes.map((n) => { const p = nodeBoundaryPoint(n, center, 7, { includeDistribution: false }); return <line key={`c-${n.id}`} className="copula-cloud-link" x1={center.x} y1={center.y + 16} x2={p.x} y2={p.y} />; })}
+              {cloud.moderatorIds.map((mid) => { const m = nodesById.get(mid); if (!m) return null; const p = nodeBoundaryPoint(m, center, 7, { includeDistribution: false }); return <line key={`m-${mid}`} className="copula-cloud-mod" x1={p.x} y1={p.y} x2={center.x} y2={center.y + 8} />; })}
+              {bumps.map((b, i) => <circle key={i} className="copula-cloud-body" cx={center.x + b.dx} cy={center.y + b.dy} r={b.r} />)}
+              <text className="copula-cloud-label" x={center.x} y={center.y + 2} textAnchor="middle">hidden causes</text>
+              <circle className="copula-cloud-hit" cx={center.x} cy={center.y} r={Math.max(32, W + 8)} />
+            </g>
+          );
+        })}
+      </svg>
+    </ViewportPortal>
+  );
 }
 
 // Copula couplings: dashed bidirected arcs between covariates that share a copula block, labelled τ.
