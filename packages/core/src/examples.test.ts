@@ -30,6 +30,8 @@ describe("example catalog", () => {
       "table-2-fallacy",
       "suppressor-confounding",
       "immortal-time-bias",
+      "glut4-dose-response",
+      "receptor-synergy-copula",
       "categorical-regimen",
       "birthweight-paradox",
       "obesity-paradox",
@@ -175,7 +177,9 @@ describe("example catalog", () => {
       "what-if-censoring-ipcw": "what-if-censoring-ipcw",
       "what-if-dynamic-g-formula": "what-if-dynamic-g-formula",
       "what-if-snaft-survival": "what-if-snaft-survival",
-      "chess-intelligence-practice-simple-flip": "chess-intelligence-practice-simple-flip"
+      "chess-intelligence-practice-simple-flip": "chess-intelligence-practice-simple-flip",
+      "glut4-dose-response": "effect-modification",
+      "receptor-synergy-copula": "effect-modification"
     });
   });
 

@@ -4,7 +4,7 @@ import { datasetColumnIndex, datasetRows } from "../datasets";
 import { defaultEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "../graph";
 import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeInteraction, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "../types";
 import { HIV_CD4_SEQUENCE_VISITS, UNIT_NORMAL, ZERO_NOISE, addCopulaCovariates, addPlasmodeCovariates, applyWhatIfMetadata, binaryStrategies, dynamicLowRiskStrategy, exampleSeed, layoutExampleDocument, markExposures, prepareDocument, riskEstimand, setBinaryVariable, setContinuousVariable, setEdgeMechanism, setExampleSampleSize, setLinearCoefficient, setLogitNode, setNode, setSelection, setSmoothGate, setVariable, staticStrategy, survivalSpec } from "./builders";
-import { configureBerksonHospital, configureBirthweightParadox, configureCaseControlSelection, configureCategoricalRegimen, configureCatsHighriseSyndrome, configureCausalMlRefutation, configureChessIntelligencePractice, configureChessIntelligenceSimpleFlip, configureCollegeEarnings, configureBiasAmplificationZ, configureConfounderJointCopula, configureConfounderTripleCopula, configureContinuousDoseResponse, configureDiscreteMarginConfession, configureImmortalTimeBias, configureModeratedConfounding, configureSuppressorConfounding, configureTable2Fallacy, configureTailDependentConfounders, configureEducationMediation, configureErVisitsCount, configureEffectModificationCrossover, configureEffectModificationOrdinal, configureEpistasisCoatColor, configureFlexibleAdjustment, configureFrontDoorSmoking, configureGaltonExample, configureIcuMortalityTriage, configureIncrementalityUplift, configureInstrumentalEncouragement, configureJohnSnowCholera, configureLalondeGenerative, configureLalondeIndependent, configureLalondePlasmode, configureLalondeReplay, configureLordsParadox, configureMBiasAdjustment, configureMeasurementErrorLatent, configureMediationDirectTotal, configureModeratedMediation, configureObesityParadox, configureOpsRootCause, configureOtaGeneProgramTraits, configurePolicingEncounters, configurePolicyEventStudy, configurePositivityCorrelatedConfounders, configureRestaurantCollider, configureSimpsonSeverity, configureTargetTrialFollowup, configureTutoringScores, configureWhatIfCensoringIpcw, configureWhatIfDynamicGFormula, configureWhatIfHazardSelection, configureWhatIfHivCd4Variants, configureWhatIfIpwPseudopopulation, configureWhatIfNhefsMortalitySurvival, configureWhatIfNhefsWeightGain, configureWhatIfNhefsWeightGainConfounderDag, configureWhatIfNhefsWeightGainCopula, configureWhatIfNhefsWeightGainGenerative, configureWhatIfNhefsWeightGainPlasmode, configureWhatIfNhefsWeightGainPositivity, configureWhatIfSnaftSurvival, configureWhatIfTreatmentFeedback, configureWhatIfWeightGainGEstimation } from "./configurators";
+import { configureBerksonHospital, configureBirthweightParadox, configureCaseControlSelection, configureCategoricalRegimen, configureCatsHighriseSyndrome, configureCausalMlRefutation, configureChessIntelligencePractice, configureChessIntelligenceSimpleFlip, configureCollegeEarnings, configureBiasAmplificationZ, configureConfounderJointCopula, configureConfounderTripleCopula, configureContinuousDoseResponse, configureDiscreteMarginConfession, configureGlut4DoseResponse, configureImmortalTimeBias, configureModeratedConfounding, configureReceptorSynergyCopula, configureSuppressorConfounding, configureTable2Fallacy, configureTailDependentConfounders, configureEducationMediation, configureErVisitsCount, configureEffectModificationCrossover, configureEffectModificationOrdinal, configureEpistasisCoatColor, configureFlexibleAdjustment, configureFrontDoorSmoking, configureGaltonExample, configureIcuMortalityTriage, configureIncrementalityUplift, configureInstrumentalEncouragement, configureJohnSnowCholera, configureLalondeGenerative, configureLalondeIndependent, configureLalondePlasmode, configureLalondeReplay, configureLordsParadox, configureMBiasAdjustment, configureMeasurementErrorLatent, configureMediationDirectTotal, configureModeratedMediation, configureObesityParadox, configureOpsRootCause, configureOtaGeneProgramTraits, configurePolicingEncounters, configurePolicyEventStudy, configurePositivityCorrelatedConfounders, configureRestaurantCollider, configureSimpsonSeverity, configureTargetTrialFollowup, configureTutoringScores, configureWhatIfCensoringIpcw, configureWhatIfDynamicGFormula, configureWhatIfHazardSelection, configureWhatIfHivCd4Variants, configureWhatIfIpwPseudopopulation, configureWhatIfNhefsMortalitySurvival, configureWhatIfNhefsWeightGain, configureWhatIfNhefsWeightGainConfounderDag, configureWhatIfNhefsWeightGainCopula, configureWhatIfNhefsWeightGainGenerative, configureWhatIfNhefsWeightGainPlasmode, configureWhatIfNhefsWeightGainPositivity, configureWhatIfSnaftSurvival, configureWhatIfTreatmentFeedback, configureWhatIfWeightGainGEstimation } from "./configurators";
 
 export const EXAMPLE_DOMAINS = [
   { id: "classic", label: "Classic DAG patterns", description: "Compact examples for teaching and fast bias checks." },
@@ -510,6 +510,38 @@ export const EXAMPLES: ExampleModel[] = [
   Survived_window -> Treatment
   Survived_window -> Death
   Treatment -> Death
+}`
+  },
+  {
+    id: "glut4-dose-response",
+    title: "GLUT4 gates the response: effect the average hides",
+    domain: "classic",
+    outputModule: "effect-modification",
+    summary: "GLUT4 receptor density controls whether insulin therapy does anything: in high-GLUT4 (sensitive) patients the response is large, in low-GLUT4 (insulin-resistant) patients it's ~nil. The MARGINAL effect (a single average) says 'the therapy helps' and hides that a whole subgroup gets nothing — and it would mis-transport to a more-resistant population. The modifier controls the mechanism (the dose-response), not a confounder. A first cut with one gate; letting GLUT4 shift the WHOLE curve (EC50/Emax/slope) is the deeper move.",
+    code: `dag {
+  GLUT4_high [pos="0.5,-1.3"]
+  Insulin_therapy [exposure,label="insulin therapy",pos="-0.2,0.1"]
+  Glucose_uptake [outcome,label="glucose uptake",pos="1.3,0.1"]
+  Insulin_therapy -> Glucose_uptake
+}`
+  },
+  {
+    id: "receptor-synergy-copula",
+    title: "When the copula hides a crossover (non-simplified vine)",
+    domain: "classic",
+    outputModule: "effect-modification",
+    summary: "The drug works only when two receptor subunits are BOTH high (an A·B synergy). Whether they co-occur is set by genotype — which flips the A–B copula from +0.82 to −0.82 (a NON-simplified vine). So the drug is a big help in one genotype and a net harm in the other, while the marginal effect is ~null. A SIMPLIFIED vine (assuming the coupling is genotype-independent) would report that flat marginal in BOTH subgroups — erasing a sign-flip that decides who to treat. Open Σ → the Joint Lab and flatten the moderation to 'constant' to watch the crossover collapse into the (wrong) simplified answer.",
+    code: `dag {
+  Receptor_A [adjusted,label="receptor A",pos="-2.0,-1.4"]
+  Genotype [adjusted,label="genotype",pos="-0.2,-1.95"]
+  Receptor_B [adjusted,label="receptor B",pos="1.6,-1.4"]
+  Synergy [latent,label="A·B synergy",pos="-0.3,-0.5"]
+  Drug [exposure,label="drug",pos="-1.6,0.6"]
+  Response [outcome,label="response",pos="1.5,1.0"]
+  Receptor_A -> Synergy
+  Receptor_B -> Synergy
+  Drug -> Response
+  Synergy -> Response
 }`
   },
   {
@@ -3060,6 +3092,8 @@ function configureClassicExample(document: GraphDocument, id: string): GraphDocu
   if (id === "table-2-fallacy") return configureTable2Fallacy(next);
   if (id === "suppressor-confounding") return configureSuppressorConfounding(next);
   if (id === "immortal-time-bias") return configureImmortalTimeBias(next);
+  if (id === "glut4-dose-response") return configureGlut4DoseResponse(next);
+  if (id === "receptor-synergy-copula") return configureReceptorSynergyCopula(next);
   if (id === "categorical-regimen") return configureCategoricalRegimen(next);
   if (id === "er-visits-count") return configureErVisitsCount(next);
   if (id === "birthweight-paradox") return configureBirthweightParadox(next);

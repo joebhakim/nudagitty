@@ -465,6 +465,52 @@ export function configureImmortalTimeBias(document: GraphDocument): GraphDocumen
   return document;
 }
 
+export function configureGlut4DoseResponse(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 6000);
+  setBinaryVariable(document, "GLUT4_high", "GLUT4 receptor density: high (insulin-sensitive) vs low (insulin-resistant). It gates whether the therapy does anything — the dose-response depends on it. (A single gate here; the FULL curve control — EC50/Emax/slope by GLUT4 — is a deeper tooling step.)", "high density");
+  setBinaryVariable(document, "Insulin_therapy", "Randomized insulin therapy — no confounding, so any subgroup difference is genuine effect modification.", "treated");
+  setContinuousVariable(document, "Glucose_uptake", "Glucose-uptake response. Insulin raises it sharply where GLUT4 is high, but barely at all in insulin-resistant (low-GLUT4) patients.", "z-score");
+  setNode(document, "GLUT4_high", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Insulin_therapy", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Glucose_uptake", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.5 } });
+  setLinearCoefficient(document, "Insulin_therapy", "Glucose_uptake", 0.15); // residual effect in resistant patients
+  setSmoothGate(document, "Glucose_uptake", "Insulin_therapy", "GLUT4_high", 1.1, 0.5, 8); // +1.1 extra where GLUT4 high
+  return document;
+}
+
+export function configureReceptorSynergyCopula(document: GraphDocument): GraphDocument {
+  setExampleSampleSize(document, 7000);
+  setContinuousVariable(document, "Receptor_A", "Expression of receptor subunit A — coupled to B, but HOW depends on genotype (a non-simplified vine).", "z-score");
+  setBinaryVariable(document, "Genotype", "Genotype: it co-regulates the two subunits (τ>0) or anti-regulates them (τ<0) — it MODERATES the A–B copula.", "variant");
+  setContinuousVariable(document, "Receptor_B", "Expression of receptor subunit B — coupled to A, sign set by genotype.", "z-score");
+  setContinuousVariable(document, "Synergy", "Composite biomarker A·B: the drug works only when BOTH subunits are high together (synergy).", "a.u.", ["latent"]);
+  setBinaryVariable(document, "Drug", "Randomized drug — no confounding, so any subgroup effect is genuine.", "treated");
+  setContinuousVariable(document, "Response", "Clinical response.", "z-score");
+  setNode(document, "Receptor_A", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Genotype", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Receptor_B", { distribution: UNIT_NORMAL, noise: ZERO_NOISE });
+  setNode(document, "Synergy", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.05 }, interactions: [{ id: "syn-AB", kind: "product", left: "Receptor_A", right: "Receptor_B", coefficient: 1 }] });
+  setNode(document, "Drug", { distribution: { kind: "bernoulli", p: 0.5 }, noise: ZERO_NOISE });
+  setNode(document, "Response", { intercept: 0, noise: { kind: "normal", mean: 0, sd: 0.5 }, interactions: [
+    { id: "drug-syn", kind: "product", left: "Drug", right: "Synergy", coefficient: 2 },                                       // drug acts only via A·B synergy
+    { id: "facet-tag", kind: "smooth_gated", source: "Drug", gate: "Genotype", coefficient: 0, threshold: 0.5, steepness: 8 }  // coef 0 no-op: tags Genotype as the moderator so the effect faceting reveals the copula-driven crossover
+  ] });
+  setLinearCoefficient(document, "Receptor_A", "Synergy", 0); // Synergy = pure product (parents present, linear part zeroed)
+  setLinearCoefficient(document, "Receptor_B", "Synergy", 0);
+  setLinearCoefficient(document, "Synergy", "Response", 0);   // Response reads Synergy only through the Drug×Synergy product
+  setLinearCoefficient(document, "Drug", "Response", 0.1);    // small main effect
+  // Non-simplified vine [Receptor_A, Genotype, Receptor_B]: A–B | Genotype flips τ≈+0.82 ↔ −0.82 by genotype.
+  const moderated: MixtureEdge = {
+    components: [{ family: "gaussian", rotation: 0, tau: { by: 1, constant: 0, mechanism: normalizeEdgeMechanism({ kind: "threshold", threshold: 0.5, low: 1.3, high: -1.3 }) } }],
+    weights: [{ by: null, constant: 0 }]
+  };
+  const block: CopulaBlock = {
+    id: "cov", nodes: ["Receptor_A", "Genotype", "Receptor_B"], order: [0, 1, 2], depth: 2,
+    edges: [[simpleEdge("independence", 0), simpleEdge("independence", 0)], [moderated]]
+  };
+  return setCopulaBlock(document, block);
+}
+
 export function configureCategoricalRegimen(document: GraphDocument): GraphDocument {
   setExampleSampleSize(document, 5000);
   setContinuousVariable(document, "Severity", "Baseline illness severity. Sicker patients are steered to the later regimens AND recover worse — the confounding.", "severity z-score");

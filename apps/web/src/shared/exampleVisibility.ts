@@ -24,6 +24,8 @@ export const VERIFIED_EXAMPLE_IDS: readonly string[] = [
   "table-2-fallacy",
   "suppressor-confounding",
   "immortal-time-bias",
+  "glut4-dose-response",
+  "receptor-synergy-copula",
   "categorical-regimen",
   "er-visits-count",
   // Term disambiguation: the node-on-edge moderation primitive. Regime modulates an edge (dashed

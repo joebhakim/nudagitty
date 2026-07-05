@@ -586,6 +586,28 @@ exports[`engine golden > galton-regression — simulation + do-contrasts are sta
 }
 `;
 
+exports[`engine golden > glut4-dose-response — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Insulin_therapy=1)−do(0) on Glucose_uptake": 0.7,
+  },
+  "nodes": {
+    "GLUT4_high": {
+      "mean": 0.4985,
+      "sd": 0.499998,
+    },
+    "Glucose_uptake": {
+      "mean": 0.347408,
+      "sd": 0.712304,
+    },
+    "Insulin_therapy": {
+      "mean": 0.498167,
+      "sd": 0.499997,
+    },
+  },
+}
+`;
+
 exports[`engine golden > icu-mortality-triage — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {
@@ -1402,6 +1424,40 @@ exports[`engine golden > positivity-correlated-confounders — simulation + do-c
     "Treatment": {
       "mean": 0.49575,
       "sd": 0.499982,
+    },
+  },
+}
+`;
+
+exports[`engine golden > receptor-synergy-copula — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(Drug=1)−do(0) on Response": 0.034541,
+  },
+  "nodes": {
+    "Drug": {
+      "mean": 0.506,
+      "sd": 0.499964,
+    },
+    "Genotype": {
+      "mean": 0.514857,
+      "sd": 0.499779,
+    },
+    "Receptor_A": {
+      "mean": -0.015299,
+      "sd": 1.008355,
+    },
+    "Receptor_B": {
+      "mean": -0.020025,
+      "sd": 1.007331,
+    },
+    "Response": {
+      "mean": 0.030242,
+      "sd": 2.401218,
+    },
+    "Synergy": {
+      "mean": -0.033385,
+      "sd": 1.675051,
     },
   },
 }
