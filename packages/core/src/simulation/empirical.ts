@@ -101,7 +101,11 @@ export function simulateEmpiricalDistributions(
       let intervention: Parameters<typeof runCompiledForward>[4];
       if (blocks.length > 0) {
         const blockSamples = drawBlockSamplesCached(preparedBlocks, sampleCount, spec, rng);
-        intervention = (ctx) => (blockNodeIds.has(ctx.nodeId) ? (blockSamples[ctx.nodeId]?.[ctx.sampleIndex] ?? 0) : null);
+        // A do()-override on a coupled node MUST win over the copula draw and sever its coupling: the
+        // copula is a latent common cause (a bidirected edge), so do(X) cuts that edge at X. Returning
+        // null here lets runCompiledForward apply the override; the other coupled nodes keep their
+        // (marginal) coupled draws, now independent of the forced constant — exactly ADMG do() semantics.
+        intervention = (ctx) => (blockNodeIds.has(ctx.nodeId) && !Object.hasOwn(spec.overrides, ctx.nodeId) ? (blockSamples[ctx.nodeId]?.[ctx.sampleIndex] ?? 0) : null);
       }
       const { samples } = runCompiledForward(compiled, spec, rng, sampleCount, intervention);
       const logWeights = new Array<number>(sampleCount).fill(0);
