@@ -250,7 +250,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
           {props.mode !== "basic" && <Controls className="canvas-zoom-controls react-flow-controls" showInteractive={false} />}
           <FlowGraphArrowLayer edges={computedEdges} />
           <FlowModulationLayer modulations={props.modulations} edges={computedEdges} nodesById={liveNodesById} />
-          <FlowCopulaLayer couplings={props.copulaCouplings} nodesById={liveNodesById} onEdit={props.onOpenJointLab} />
+          <FlowCopulaLayer couplings={props.copulaCouplings} nodesById={liveNodesById} onEdit={props.onOpenJointLab} onSelect={props.onSelectCoupling} selectedId={props.selection?.kind === "coupling" ? props.selection.id : null} interactive={props.tool === "select"} />
         </ReactFlow>
       </div>
       <button
@@ -263,7 +263,9 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
       </button>
       {legendOpen && <FlowGraphLegend showNoise={props.showNoiseNodes} />}
       {props.mode !== "basic" && <div className="canvas-status">
-        <span>{props.tool === "edge" ? (props.edgeSource ? `connect from ${props.edgeSource}` : "click a source variable") : "double-click canvas to add variable"}</span>
+        <span>{props.tool === "edge" ? (props.edgeSource ? `connect from ${props.edgeSource}` : "click a source variable")
+          : props.tool === "couple" ? (props.edgeSource ? `couple from ${props.edgeSource} — click another confounder` : "click two confounders to couple")
+          : "double-click canvas to add variable"}</span>
       </div>}
       {resultPendingActive(props.pending) && (
         <div className="canvas-computation-status" role="status">
@@ -482,12 +484,13 @@ function modulationVerb(baseline: number, gateCoefficient: number): string {
 
 // Copula couplings: dashed bidirected arcs between covariates that share a copula block, labelled τ.
 // Makes the authored dependence a visible part of the DAG rather than a hidden simulation setting.
-function FlowCopulaLayer({ couplings, nodesById, onEdit }: { couplings: CopulaCoupling[]; nodesById: Map<string, GraphNode>; onEdit?: () => void }) {
+function FlowCopulaLayer({ couplings, nodesById, onEdit, onSelect, selectedId, interactive: interactiveMode = true }: { couplings: CopulaCoupling[]; nodesById: Map<string, GraphNode>; onEdit?: () => void; onSelect?: (id: string) => void; selectedId?: string | null; interactive?: boolean }) {
   if (!couplings || couplings.length === 0) return null;
-  const editable = Boolean(onEdit);
+  // Arcs take pointer events only in select mode, so node clicks pass through while drawing couplings.
+  const interactive = interactiveMode && Boolean(onEdit || onSelect);
   return (
     <ViewportPortal>
-      <svg className={`copula-coupling-layer${editable ? " editable" : ""}`} aria-hidden={editable ? undefined : "true"}>
+      <svg className={`copula-coupling-layer${interactive ? " editable" : ""}`} aria-hidden={interactive ? undefined : "true"}>
         {couplings.map((c) => {
           const a = nodesById.get(c.aId), b = nodesById.get(c.bId);
           if (!a || !b) return null;
@@ -498,11 +501,14 @@ function FlowCopulaLayer({ couplings, nodesById, onEdit }: { couplings: CopulaCo
           const nx = -dy / len, ny = dx / len, bow = Math.min(30, len * 0.2);
           const cx = mid.x + nx * bow, cy = mid.y + ny * bow;
           const d = `M ${pa.x} ${pa.y} Q ${cx} ${cy} ${pb.x} ${pb.y}`;
+          const selected = selectedId === c.id;
           return (
-            <g key={c.id} className="copula-coupling" onClick={onEdit ? (e) => { e.stopPropagation(); onEdit(); } : undefined}>
-              <title>{editable ? `${c.label} — click to edit in the Joint Lab` : c.label}</title>
+            <g key={c.id} className={`copula-coupling${selected ? " selected" : ""}`}
+              onClick={onSelect ? (e) => { e.stopPropagation(); onSelect(c.id); } : undefined}
+              onDoubleClick={onEdit ? (e) => { e.stopPropagation(); onEdit(); } : undefined}>
+              <title>{interactive ? `${c.label} — click to select, double-click to edit in the Joint Lab` : c.label}</title>
               {/* wide transparent hit-target so the thin dashed arc is easy to click */}
-              {editable && <path className="copula-coupling-hit" d={d} />}
+              {interactive && <path className="copula-coupling-hit" d={d} />}
               <path className="copula-coupling-line" d={d} />
               <text className="copula-coupling-label" x={cx + nx * 7} y={cy + ny * 7} textAnchor="middle">{c.short}</text>
             </g>

@@ -33,6 +33,8 @@ export interface GraphCanvasProps {
   onEdgeClick: (id: string) => void;
   onEdgeControl: (edge: GraphEdge) => void;
   onResample: () => void;
-  /** Open the Joint Lab to edit the confounder joint (e.g. clicking a coupling arc). */
+  /** Open the Joint Lab to edit the confounder joint (e.g. double-clicking a coupling arc). */
   onOpenJointLab?: () => void;
+  /** Select a coupling arc (single click) so it can be deleted / highlighted. */
+  onSelectCoupling?: (id: string) => void;
 }

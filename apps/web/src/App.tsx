@@ -29,6 +29,7 @@ import {
   Share2,
   Sigma,
   Spline,
+  Waypoints,
   Blend,
   CircleDashed,
   BookOpen,
@@ -43,6 +44,11 @@ import {
   addEdge,
   addNode,
   setCopulaCorrelation,
+  setCopulaBlock,
+  withCoupling,
+  withoutCoupling,
+  simpleEdge,
+  directedParents,
   analyzeGraph,
   classifyConditioned,
   createNewNodeId,
@@ -217,6 +223,11 @@ import { BasicExampleTabs, DemoResultPanel } from "./panels/demo";
 
 
 
+// Order-independent id for a coupling arc, so canvas selection matches regardless of vine direction.
+function couplingId(blockId: string, a: string, b: string): string {
+  return `${blockId}:${[a, b].sort().join("~")}`;
+}
+
 export function App() {
   const document = useWorkbenchStore((state) => state.document);
   const history = useWorkbenchStore((state) => state.history);
@@ -267,6 +278,7 @@ export function App() {
   const [showExplanation, setShowExplanation] = useState(false);
   const [showDgp, setShowDgp] = useState(false);
   const [showJointLab, setShowJointLab] = useState(false);
+  const [couplingHint, setCouplingHint] = useState<string | null>(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [showOverlap, setShowOverlap] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
@@ -351,11 +363,44 @@ export function App() {
         const tau = moderated ? null : c0.tau.constant;
         if (tau !== null && Math.abs(tau) < 0.03) continue;
         const aId = block.nodes[block.order[e]!]!, bId = block.nodes[block.order[e + 1]!]!;
-        out.push({ id: `${block.id}:${e}`, aId, bId, short: moderated ? "τ~" : (tau! >= 0 ? "+" : "") + tau!.toFixed(2), label: `copula ${c0.family}${moderated ? " (moderated)" : ` · τ ${tau!.toFixed(2)}`}` });
+        out.push({ id: couplingId(block.id, aId, bId), aId, bId, short: moderated ? "τ~" : (tau! >= 0 ? "+" : "") + tau!.toFixed(2), label: `copula ${c0.family}${moderated ? " (moderated)" : ` · τ ${tau!.toFixed(2)}`}` });
       }
     }
     return out;
   }, [document.simulation.copulaBlocks]);
+
+  // Root covariates (confounders) — the nodes a copula block may couple: roots that aren't the
+  // exposure/outcome/latent. Mirrors CopulaBlockEditor.rootCovariates so canvas + Joint Lab agree.
+  const rootCovariateIds = useMemo(() => document.graph.nodes
+    .filter((node) => directedParents(document.graph, node.id).length === 0 && !node.roles.exposure && !node.roles.outcome && !node.roles.latent)
+    .map((node) => node.id), [document.graph]);
+
+  const createOrSelectCoupling = useCallback((target: string) => {
+    if (!rootCovariateIds.includes(target)) {
+      setCouplingHint("Couplings connect two root covariates (confounders). Pick one of those.");
+      setEdgeSource(null);
+      return;
+    }
+    if (!edgeSource) { setEdgeSource(target); setCouplingHint(null); return; }
+    if (edgeSource === target) { setEdgeSource(null); return; }
+    const block = document.simulation.copulaBlocks?.[0] ?? null;
+    const result = withCoupling(block, rootCovariateIds, edgeSource, target, simpleEdge("gaussian", 0.4));
+    setEdgeSource(null);
+    if (!result.ok) { setCouplingHint(result.reason); return; }
+    setCouplingHint(null);
+    trackAnalyticsEvent("graph_action", { action: "add_coupling" });
+    commit(setCopulaBlock(document, result.block));
+    setSelection({ kind: "coupling", id: couplingId(result.block.id, edgeSource, target) });
+  }, [commit, document, edgeSource, rootCovariateIds, setEdgeSource, setSelection]);
+
+  const selectCoupling = useCallback((id: string) => setSelection({ kind: "coupling", id }), [setSelection]);
+  const deleteCouplingById = useCallback((id: string) => {
+    const block = document.simulation.copulaBlocks?.[0];
+    const coupling = copulaCouplings.find((c) => c.id === id);
+    if (!block || !coupling) return;
+    commit(setCopulaBlock(document, withoutCoupling(block, rootCovariateIds, coupling.aId, coupling.bId)));
+    setSelection(null);
+  }, [commit, copulaCouplings, document, rootCovariateIds, setSelection]);
   const { overlapDiagnostic, positivity } = useOverlapDiagnostic(computationDocument);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
@@ -394,6 +439,8 @@ export function App() {
         redo();
       } else if (event.key === "Escape") {
         setSelection(null);
+        setEdgeSource(null);
+        setCouplingHint(null);
       } else if (event.key === "Delete" || event.key.toLowerCase() === "d") {
         event.preventDefault();
         deleteSelection();
@@ -431,8 +478,12 @@ export function App() {
       deleteNodeById(selection.id);
       return;
     }
+    if (selection.kind === "coupling") {
+      deleteCouplingById(selection.id);
+      return;
+    }
     deleteEdgeById(selection.id);
-  }, [deleteEdgeById, deleteNodeById, selection]);
+  }, [deleteCouplingById, deleteEdgeById, deleteNodeById, selection]);
 
   const toggleRole = useCallback((nodeId: string, role: keyof NodeRoleFlags) => {
     const node = findNode(document.graph, nodeId);
@@ -854,12 +905,14 @@ export function App() {
         onSelect={setSelection}
         onAddNode={addNodeAt}
         onMoveNode={(id, position) => replaceGraph(updateNode(document.graph, id, { position }))}
-        onNodeClick={(id) => tool === "edge" ? createOrSelectEdge(id) : selectNode(id)}
+        onNodeClick={(id) => tool === "edge" ? createOrSelectEdge(id) : tool === "couple" ? createOrSelectCoupling(id) : selectNode(id)}
         onEdgeClick={selectEdge}
         onEdgeControl={(edge) => replaceGraph(upsertEdge(document.graph, edge))}
         onResample={resample}
         onOpenJointLab={() => setShowJointLab(true)}
+        onSelectCoupling={selectCoupling}
       />
+      {couplingHint && <div className="couple-hint error" role="status">{couplingHint}</div>}
     </Panel>
   );
 
@@ -1001,6 +1054,7 @@ export function App() {
           <IconButton label="Select" active={tool === "select"} onClick={() => setTool("select")}><MousePointer2 size={18} /></IconButton>
           <IconButton label="Variable" active={tool === "node"} onClick={() => setTool("node")}><CirclePlus size={18} /></IconButton>
           <IconButton label="Connect" active={tool === "edge"} onClick={() => setTool("edge")}><ArrowRight size={18} /></IconButton>
+          <IconButton label="Couple (confounder dependence)" active={tool === "couple"} onClick={() => { setTool(tool === "couple" ? "select" : "couple"); setEdgeSource(null); setCouplingHint(null); }}><Waypoints size={18} /></IconButton>
           <IconButton label="Delete" onClick={deleteSelection} disabled={!selection}><Trash2 size={18} /></IconButton>
           <IconButton label="Undo" onClick={undo} disabled={history.length === 0}><Undo2 size={18} /></IconButton>
           <IconButton label="Redo" onClick={redo} disabled={future.length === 0}><Redo2 size={18} /></IconButton>

@@ -763,6 +763,13 @@
   fill: none; stroke: #9b6dd6; stroke-width: 1.6px; stroke-dasharray: 4 3; stroke-linecap: round; opacity: 0.7;
 }
 .copula-coupling-layer.editable .copula-coupling:hover .copula-coupling-line { opacity: 1; stroke-width: 2.4px; }
+.copula-coupling.selected .copula-coupling-line { opacity: 1; stroke-width: 3px; stroke-dasharray: none; }
+.copula-coupling.selected .copula-coupling-label { fill: #7b4fc0; font-weight: 800; }
+.canvas-panel { position: relative; }
+.couple-hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: 460px; z-index: 6;
+  font-size: 12px; padding: 7px 14px; border-radius: 999px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  text-align: center; pointer-events: none; background: rgba(123, 79, 192, 0.94); color: #fff; }
+.couple-hint.error { background: rgba(180, 35, 31, 0.95); }
 .copula-coupling-label {
   fill: #9b6dd6; font-size: 10px; font-weight: 700; paint-order: stroke; stroke: var(--panel, #fff); stroke-width: 3px;
 }
