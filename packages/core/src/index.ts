@@ -14,4 +14,5 @@ export * from "./continuousEffect";
 export * from "./categoricalEffect";
 export * from "./copulaVine";
 export * from "./copulaBlockEdit";
+export * from "./dataframe";
 export { buildDistributionQuantile } from "./distributions";

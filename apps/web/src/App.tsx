@@ -30,6 +30,7 @@ import {
   Sigma,
   Spline,
   Waypoints,
+  Table,
   Blend,
   CircleDashed,
   BookOpen,
@@ -108,6 +109,7 @@ import type { RiskBin, ScatterPoint } from "./charts/CategoryOutcomePlot";
 import { chartFrame, niceTicks, paddedDomain } from "./charts/chartFrame";
 import { startEngagementMilestones, trackAnalyticsEvent, trackDenouementViewed, trackEditCommitted, trackInfoOverlayOpened, trackOperationSet } from "./analytics";
 import { applyOperation, deriveOperation } from "./shared/operations";
+import { DataTablePanel } from "./data/DataTablePanel";
 import { displayNodeName } from "./outputs/estimand";
 import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
 import { NodeNamesProvider } from "./shared/NodeNames";
@@ -281,6 +283,7 @@ export function App() {
   const [couplingHint, setCouplingHint] = useState<string | null>(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [showOverlap, setShowOverlap] = useState(false);
+  const [showData, setShowData] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
   const {
     visibleGraph,
@@ -1095,6 +1098,7 @@ export function App() {
             <IconButton label="Data-generating process" pressed={showDgp} onClick={() => setShowDgp((open) => !open)}><Sigma size={18} /></IconButton>
             <IconButton label="Glossary" pressed={showGlossary} onClick={() => setShowGlossary((open) => !open)}><BookOpen size={18} /></IconButton>
             <IconButton label="Overlap / positivity" pressed={showOverlap} badge={positivity === "ok" ? null : positivity} onClick={() => setShowOverlap((open) => !open)}><Blend size={18} /></IconButton>
+            <IconButton label="Data — the simulated sample" pressed={showData} onClick={() => setShowData((open) => !open)}><Table size={18} /></IconButton>
             <IconButton label="Joint Lab — confounder dependence" pressed={showJointLab} onClick={() => setShowJointLab((open) => !open)}><Spline size={18} /></IconButton>
             <IconButton label="Implicit noise nodes" pressed={showNoiseNodes} onClick={() => setShowNoiseNodes(!showNoiseNodes)}><CircleDashed size={18} /></IconButton>
             <input
@@ -1164,6 +1168,17 @@ export function App() {
               <button type="button" aria-label="Close Joint Lab" onClick={() => setShowJointLab(false)}><X size={16} /></button>
             </div>
             <CopulaBlockEditor key={activeExample?.id ?? "custom"} document={document} onCommit={commit} />
+          </div>
+        </div>
+      )}
+      {showData && (
+        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Simulated data table" onClick={() => setShowData(false)}>
+          <div className="explanation-modal wide" onClick={(event) => event.stopPropagation()}>
+            <div className="explanation-modal-header">
+              <strong>Data — the simulated sample · {activeExample?.title ?? document.title}</strong>
+              <button type="button" aria-label="Close data table" onClick={() => setShowData(false)}><X size={16} /></button>
+            </div>
+            <DataTablePanel graph={document.graph} simulation={simulation} title={activeExample?.title ?? document.title} />
           </div>
         </div>
       )}
