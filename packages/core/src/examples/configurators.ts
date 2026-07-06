@@ -302,7 +302,8 @@ export function configureConfounderJointCopula(document: GraphDocument): GraphDo
   setLinearCoefficient(document, "Severity_A", "Recovery", -2);
   setLinearCoefficient(document, "Severity_B", "Recovery", -2);
   setLinearCoefficient(document, "Dose", "Recovery", 0.8); // the true effect
-  return document;
+  // Ships PRE-COUPLED (Gaussian τ=0.5) so the confounder joint is visible on load; drag it in the Joint Lab.
+  return setCopulaBlock(document, covariateBlock(["Severity_A", "Severity_B"], [[simpleEdge("gaussian", 0.5)]]));
 }
 
 export function configureConfounderTripleCopula(document: GraphDocument): GraphDocument {

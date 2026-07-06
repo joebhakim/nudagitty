@@ -299,6 +299,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} />
           {props.mode !== "basic" && <Controls className="canvas-zoom-controls react-flow-controls" showInteractive={false} />}
+          <FlowCopulaCloudLinks clouds={props.copulaClouds} nodesById={liveNodesById} />
           <FlowGraphArrowLayer edges={computedEdges} />
           <FlowModulationLayer modulations={props.modulations} edges={computedEdges} nodesById={liveNodesById} />
           <FlowCopulaLayer couplings={props.copulaCouplings} nodesById={liveNodesById} onEdit={props.onOpenJointLab} onSelect={props.onSelectCoupling} selectedId={props.selection?.kind === "coupling" ? props.selection.id : null} interactive={props.tool === "select"} />
@@ -531,6 +532,33 @@ function modulationVerb(baseline: number, gateCoefficient: number): string {
   if (ratio > 1.25) return "flips";
   if (ratio < 0.75) return "dampens";
   return "masks";
+}
+
+// Dotted "latent projection" links from a copula-block cloud NODE down to each coupled covariate
+// (U → Cᵢ), plus a moderator of a non-simplified edge feeding INTO the cloud. The cloud centre matches
+// the FlowCopulaCloudNode's position (centroid-x of the coupled nodes, min-y − 100). The inter-node
+// coupling itself is the dashed τ arc drawn by FlowCopulaLayer.
+function FlowCopulaCloudLinks({ clouds, nodesById }: { clouds: CopulaCloud[]; nodesById: Map<string, GraphNode> }) {
+  if (!clouds || clouds.length === 0) return null;
+  return (
+    <ViewportPortal>
+      <svg className="copula-cloud-links" aria-hidden="true">
+        {clouds.map((cloud) => {
+          const coupled = cloud.nodeIds.map((id) => nodesById.get(id)).filter((n): n is GraphNode => Boolean(n));
+          if (coupled.length === 0) return null;
+          const cx = coupled.reduce((sum, n) => sum + n.position.x, 0) / coupled.length;
+          const minY = Math.min(...coupled.map((n) => n.position.y));
+          const center = { x: cx, y: minY - 100 };
+          return (
+            <g key={cloud.id}>
+              {coupled.map((n) => { const p = nodeBoundaryPoint(n, center, 6, { includeDistribution: false }); return <line key={`c-${n.id}`} className="copula-cloud-link" x1={center.x} y1={center.y + 30} x2={p.x} y2={p.y} />; })}
+              {cloud.moderatorIds.map((mid) => { const m = nodesById.get(mid); if (!m) return null; const p = nodeBoundaryPoint(m, center, 6, { includeDistribution: false }); return <line key={`m-${mid}`} className="copula-cloud-mod" x1={p.x} y1={p.y} x2={center.x} y2={center.y + 14} />; })}
+            </g>
+          );
+        })}
+      </svg>
+    </ViewportPortal>
+  );
 }
 
 // Copula couplings: dashed bidirected arcs between covariates that share a copula block, labelled τ.

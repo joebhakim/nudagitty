@@ -366,7 +366,7 @@ export const EXAMPLES: ExampleModel[] = [
     id: "confounder-joint-copula",
     title: "The confounder joint: couple the covariates",
     domain: "dependence",
-    summary: "Two independent baseline confounders drive a continuous dose and the outcome. Open Σ (DGP) → Confounder joint and drag the copula τ to couple them: positive coupling concentrates the confounding (crude estimate drifts, overlap strains); the g-computation / oracle do()-effect stays +0.8. The joint is a knob orthogonal to the truth — the whole point of controlling joints.",
+    summary: "Two baseline confounders drive a continuous dose and the outcome, COUPLED out of the box by a Gaussian copula (τ=0.5) — see the 'shared hidden causes' cloud over them. Open Σ (DGP) → Confounder joint and drag the τ: more coupling concentrates the confounding (crude estimate drifts, overlap strains); dialing it to zero decouples them. The g-computation / oracle do()-effect stays +0.8 throughout — the joint is a knob orthogonal to the truth, the whole point of controlling joints.",
     code: `dag {
   Severity_A [adjusted,label="severity A",pos="-1.6,-1.4"]
   Severity_B [adjusted,label="severity B",pos="0.4,-1.6"]

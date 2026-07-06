@@ -275,24 +275,24 @@ exports[`engine golden > college-earnings — simulation + do-contrasts are stab
 exports[`engine golden > confounder-joint-copula — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {
-    "do(Dose↑)−do(↓) on Recovery": 3.81315,
+    "do(Dose↑)−do(↓) on Recovery": 4.785576,
   },
   "nodes": {
     "Dose": {
-      "mean": 4.982411,
-      "sd": 1.871062,
+      "mean": 4.985832,
+      "sd": 2.324847,
     },
     "Recovery": {
-      "mean": 4.006231,
-      "sd": 1.890927,
+      "mean": 3.982257,
+      "sd": 2.231388,
     },
     "Severity_A": {
-      "mean": -0.001309,
-      "sd": 0.983518,
+      "mean": 0.00596,
+      "sd": 0.988953,
     },
     "Severity_B": {
-      "mean": -0.005303,
-      "sd": 1.015213,
+      "mean": -0.003283,
+      "sd": 0.979089,
     },
   },
 }
