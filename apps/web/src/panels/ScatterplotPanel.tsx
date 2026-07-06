@@ -120,6 +120,17 @@ export function ScatterplotPanel(props: {
   if (nodes.length < 2) return <p className="muted">Add at least two variables to compare simulated observations.</p>;
   const demoVariant = props.variant === "demo";
 
+  // No causal question yet (no exposure AND outcome marked): show an empty prompt rather than plotting
+  // an arbitrary guessed pair — which, for a fresh import, was the latent resample source vs a covariate.
+  if (!hasRolePairOptions) {
+    return (
+      <div className={demoVariant ? "scatterplot-panel demo-scatterplot scatter-empty" : "scatterplot-panel scatter-empty"} aria-busy={resultPendingActive(props.pending)}>
+        <p className="scatter-empty-title">Mark an exposure and an outcome</p>
+        <p className="scatter-empty-hint muted">Click a variable on the canvas, then turn on <b>exposure</b> — and <b>outcome</b> on another — in its “Use this variable” toggles. Their relationship will appear here.</p>
+      </div>
+    );
+  }
+
   return (
     <div className={demoVariant ? "scatterplot-panel demo-scatterplot" : "scatterplot-panel"} aria-busy={resultPendingActive(props.pending)}>
       {!demoVariant && <div className="pairwise-relation-header">

@@ -60,8 +60,10 @@
   color: var(--text, #223);
 }
 .tutorial-next { background: #6b40b0; border-color: #6b40b0; color: #fff; }
-.tutorial-next:hover { background: #5a2fa0; }
+.tutorial-next:hover:not(:disabled) { background: #5a2fa0; }
+.tutorial-next:disabled { background: #c9bce0; border-color: #c9bce0; color: #f3eefb; cursor: default; }
 .tutorial-back:disabled { opacity: 0.4; cursor: default; }
+.tutorial-gate-hint { margin: 0; font-size: 12px; color: #8b63c8; font-weight: 600; text-align: right; }
 .tutorial-dots { display: flex; gap: 5px; }
 .tutorial-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--border, #d0d0dc); }
 .tutorial-dots span.on { background: #6b40b0; }

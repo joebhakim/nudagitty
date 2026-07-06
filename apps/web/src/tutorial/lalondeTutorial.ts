@@ -31,7 +31,7 @@ export const LALONDE_TUTORIAL: TutorialStep[] = [
     id: "roles",
     title: "State the causal question",
     instruction:
-      "Click the treat variable and mark it the Exposure; click re78 (1978 earnings) and mark it the Outcome. Now the model knows what effect you're after: did training raise earnings?",
+      "Click the treat variable on the canvas — its editor opens. Under “Use this variable”, turn on exposure. Then click re78 (1978 earnings) and turn on outcome. Now the model knows the effect you're after: did training raise earnings?",
     advanceOn: (ctx: TutorialCtx) => Boolean(findNode(ctx.document, LALONDE_TREATMENT)?.roles.exposure) && Boolean(findNode(ctx.document, LALONDE_OUTCOME)?.roles.outcome)
   },
   {

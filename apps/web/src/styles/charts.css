@@ -4,6 +4,20 @@
   gap: 8px;
 }
 
+/* No-causal-question empty state (no exposure+outcome marked yet). */
+.scatterplot-panel.scatter-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 180px;
+  padding: 24px 20px;
+  text-align: center;
+}
+.scatter-empty-title { margin: 0; font-size: 14px; font-weight: 600; }
+.scatter-empty-hint { margin: 0; font-size: 12.5px; line-height: 1.5; max-width: 44ch; }
+
 /* The compact pairwise body must CONSTRAIN its chart (flex column), not scroll it
    — otherwise the chart takes its natural aspect-ratio height and overflows the
    panel, clipping the x-axis. */

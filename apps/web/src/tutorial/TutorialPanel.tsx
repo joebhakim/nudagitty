@@ -6,12 +6,16 @@ export function TutorialPanel(props: {
   step: TutorialStep;
   index: number;
   total: number;
+  requiresAction: boolean;
   onNext: () => void;
   onBack: () => void;
   onExit: () => void;
   onAction: (stepId: string) => void;
 }) {
   const isLast = props.index === props.total - 1;
+  // A step with a completion predicate must be DONE to advance (the controller auto-advances the moment
+  // it is) — so Next is blocked until then. Informational steps keep a free Next.
+  const gated = props.requiresAction && !isLast;
   return (
     <div className="tutorial-panel" role="dialog" aria-label="Tutorial">
       <div className="tutorial-panel-head">
@@ -23,12 +27,13 @@ export function TutorialPanel(props: {
       {props.step.actionLabel && (
         <button type="button" className="tutorial-action" onClick={() => props.onAction(props.step.id)}>{props.step.actionLabel}</button>
       )}
+      {gated && <p className="tutorial-gate-hint">Do this step to continue.</p>}
       <div className="tutorial-nav">
         <button type="button" className="tutorial-back" disabled={props.index === 0} onClick={props.onBack}>← Back</button>
         <div className="tutorial-dots" aria-hidden="true">
           {Array.from({ length: props.total }, (_, i) => <span key={i} className={i === props.index ? "on" : ""} />)}
         </div>
-        <button type="button" className="tutorial-next" onClick={isLast ? props.onExit : props.onNext}>{isLast ? "Finish ✓" : "Next →"}</button>
+        <button type="button" className="tutorial-next" disabled={gated} onClick={isLast ? props.onExit : props.onNext}>{isLast ? "Finish ✓" : "Next →"}</button>
       </div>
     </div>
   );

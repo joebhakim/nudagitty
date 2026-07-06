@@ -30,6 +30,7 @@ export function TutorialController(props: {
         step={current}
         index={props.step}
         total={props.steps.length}
+        requiresAction={Boolean(current.advanceOn)}
         onNext={() => props.onGoto(Math.min(props.step + 1, props.steps.length - 1))}
         onBack={() => props.onGoto(Math.max(props.step - 1, 0))}
         onExit={props.onExit}
