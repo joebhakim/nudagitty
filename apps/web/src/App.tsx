@@ -474,6 +474,39 @@ export function App() {
     commit(setCopulaBlock(document, withoutCoupling(block, rootCovariateIds, coupling.aId, coupling.bId)));
     setSelection(null);
   }, [commit, copulaCouplings, document, rootCovariateIds, setSelection]);
+  // Multi-select group actions (from the canvas action bar). Each folds into ONE commit.
+  const wireManyToTarget = useCallback((sourceIds: string[], targetId: string) => {
+    let graph = document.graph;
+    for (const source of sourceIds) {
+      if (source === targetId || !graph.nodes.some((node) => node.id === source)) continue;
+      graph = upsertEdge(graph, { id: edgeId(source, targetId, "directed"), source, target: targetId, kind: "directed" });
+    }
+    replaceGraph(graph);
+  }, [document.graph, replaceGraph]);
+  const adjustMany = useCallback((ids: string[]) => {
+    let graph = document.graph;
+    for (const id of ids) {
+      const node = graph.nodes.find((candidate) => candidate.id === id);
+      if (node && !node.roles.adjusted) graph = setNodeRole(graph, id, "adjusted", true);
+    }
+    replaceGraph(graph);
+  }, [document.graph, replaceGraph]);
+  const deleteMany = useCallback((ids: string[]) => {
+    let graph = document.graph;
+    for (const id of ids) graph = deleteNode(graph, id);
+    replaceGraph(graph);
+  }, [document.graph, replaceGraph]);
+  const coupleMany = useCallback((ids: string[]) => {
+    const couplable = ids.filter((id) => rootCovariateIds.includes(id));
+    if (couplable.length < 2) { setCouplingHint("Grouping into a shared cloud needs ≥2 root covariates (not the exposure/outcome)."); return; }
+    let block = document.simulation.copulaBlocks?.[0] ?? null;
+    for (let i = 0; i < couplable.length - 1; i += 1) {
+      const result = withCoupling(block, rootCovariateIds, couplable[i]!, couplable[i + 1]!, simpleEdge("gaussian", 0.4));
+      if (result.ok) block = result.block;
+    }
+    if (block) commit(setCopulaBlock(document, block));
+  }, [commit, document, rootCovariateIds, setCouplingHint]);
+
   const dataOrphans = useMemo(() => orphanDataColumns(document), [document]);
   const { overlapDiagnostic, positivity } = useOverlapDiagnostic(computationDocument);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
@@ -995,6 +1028,10 @@ export function App() {
         onResample={resample}
         onOpenJointLab={(source) => openJointLab(source?.kind)}
         onSelectCoupling={selectCoupling}
+        onWireMany={wireManyToTarget}
+        onAdjustMany={adjustMany}
+        onCoupleMany={coupleMany}
+        onDeleteMany={deleteMany}
       />
       {couplingHint && <div className="couple-hint error" role="status">{couplingHint}</div>}
     </Panel>

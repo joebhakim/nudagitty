@@ -69,6 +69,7 @@ import { resultPendingActive, resultPendingShortLabel } from "../compute/relatio
 import { PendingChip } from "../controls";
 import { useMediaQuery } from "../app/useMediaQuery";
 import type { JointSourceCloud, CopulaCoupling, GraphCanvasProps } from "./types";
+import { MultiSelectBar } from "./MultiSelectBar";
 
 const FLOW_NODE_TYPES = { graphNode: FlowGraphNode, copulaCloud: FlowCopulaCloudNode };
 const FLOW_EDGE_TYPES = { graphEdge: FlowGraphEdge };
@@ -119,8 +120,30 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
   const viewportSignature = useMemo(() => graphViewportSignature(props.graph), [props.graph]);
   // Structural "this could be an IV!" hint — advisory; never assigns the role.
   const candidateInstrumentIds = useMemo(() => new Set(candidateInstruments(props.graph)), [props.graph]);
+  // Selection is a SINGLE source of truth: `selectedIds`, fed by react-flow's node-change events
+  // (single-click, shift-click, marquee) and read straight into each node's `selected`. No fighting
+  // between react-flow's own selection and the model-data sync. `wireArmed` = the pick-a-target step.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [wireArmed, setWireArmed] = useState(false);
+  const selectedRef = useRef<Set<string>>(selectedIds);
+  selectedRef.current = selectedIds;
+  const wireArmedRef = useRef(false);
+  wireArmedRef.current = wireArmed;
+  const clearMulti = useCallback(() => { setWireArmed(false); setSelectedIds(new Set()); props.onSelect(null); }, [props.onSelect]);
+  // The node's own click handler (below) routes here with the modifier state — react-flow's own
+  // onNodeClick never fires because the node stops propagation. Plain click = single; shift/⌘ = toggle;
+  // while wire-armed, a click picks the target and wires all selected into it.
+  const handleNodeSelect = useCallback((id: string, event: React.MouseEvent) => {
+    if (wireArmedRef.current) { props.onWireMany?.([...selectedRef.current], id); clearMulti(); return; }
+    if (event.shiftKey || event.metaKey || event.ctrlKey) {
+      setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+      return;
+    }
+    setSelectedIds(new Set([id]));
+    props.onNodeClick(id);
+  }, [clearMulti, props.onWireMany, props.onNodeClick]);
   const computedNodes = useMemo<FlowGraphNode[]>(() => props.graph.nodes.map((node) => {
-    const selected = props.selection?.kind === "node" && props.selection.id === node.id;
+    const selected = selectedIds.has(node.id);
     return {
       id: node.id,
       type: "graphNode",
@@ -144,13 +167,13 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         summary: props.derived.nodes.get(node.id),
         candidateInstrument: candidateInstrumentIds.has(node.id),
         showNoise: props.showNoiseNodes,
-        onNodeClick: props.onNodeClick
+        onNodeClick: handleNodeSelect
       },
       selected,
       draggable: true,
       focusable: true
     };
-  }), [candidateInstrumentIds, props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.onNodeClick, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values, props.showNoiseNodes]);
+  }), [candidateInstrumentIds, handleNodeSelect, selectedIds, props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values, props.showNoiseNodes]);
   const [nodes, setNodes] = useState<FlowGraphNode[]>(computedNodes);
   const [legendOpen, setLegendOpen] = useState(false);
   const [cloudPositions, setCloudPositions] = useState<Record<string, { x: number; y: number }>>({});
@@ -248,8 +271,11 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
   }), [denseEdges, hiddenNodeIds, liveNodesById, props.disabledEdgeIds, props.edgeMechanisms, props.graph.edges, props.highlightedEdges, props.onEdgeClick, props.selection]);
 
   useEffect(() => {
-    setNodes(computedNodes);
+    setNodes(computedNodes); // computedNodes.selected already reflects selectedIds — no merge needed
   }, [computedNodes]);
+
+  // With ≥2 selected, the multi-select bar owns the stage — clear the single-node editor.
+  useEffect(() => { if (selectedIds.size >= 2) props.onSelect(null); }, [selectedIds, props.onSelect]);
 
   useEffect(() => {
     if (!panZoom || !frameRef.current || props.graph.nodes.length === 0) return undefined;
@@ -276,7 +302,9 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
   }, [flow, panZoom, props.graph.nodes, props.mode, viewportSignature, props.jointSources]);
 
   const onNodesChange = useCallback((changes: NodeChange<AnyFlowNode>[]) => {
-    // Cloud drags update their own aesthetic position; everything else drives the model node state.
+    // Cloud drags update their own aesthetic position; selection is driven explicitly by onNodeClick
+    // (this app manages selection itself — react-flow's own select events aren't emitted here), so
+    // SELECT changes are dropped and everything else drives the model node state.
     const cloudMoves: Record<string, { x: number; y: number }> = {};
     for (const change of changes) {
       if (change.type === "position" && change.id.startsWith("cloud:") && change.position) cloudMoves[change.id] = change.position;
@@ -284,7 +312,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
     if (Object.keys(cloudMoves).length > 0) setCloudPositions((prev) => ({ ...prev, ...cloudMoves }));
     setNodes((items) => {
       const ids = new Set(items.map((item) => item.id));
-      const modelChanges = changes.filter((change) => !("id" in change) || ids.has(change.id)) as NodeChange<FlowGraphNode>[];
+      const modelChanges = changes.filter((change) => change.type !== "select" && (!("id" in change) || ids.has(change.id))) as NodeChange<FlowGraphNode>[];
       return applyNodeChanges(modelChanges, items);
     });
   }, []);
@@ -294,6 +322,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
     const point = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
     props.onAddNode(point);
   }, [flow, props]);
+
 
   return (
     <section className="canvas-shell flow-canvas-shell" aria-label="Graph editor">
@@ -316,7 +345,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
           zoomOnPinch={!touchScrollViewport}
           zoomOnScroll={!touchScrollViewport}
           onNodesChange={onNodesChange}
-          onNodeClick={(_, node) => props.tool === "edge" ? props.onNodeClick(node.id) : props.onNodeClick(node.id)}
+          selectionKeyCode={null}
           onNodeDragStop={(_, node) => props.onMoveNode(node.id, flowNodePositionToGraphPoint(node.position))}
           onEdgeClick={(_, edge) => props.onEdgeClick(edge.id)}
           onPaneClick={(event) => {
@@ -334,6 +363,17 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
           <FlowModulationLayer modulations={props.modulations} edges={computedEdges} nodesById={liveNodesById} />
           <FlowCopulaLayer couplings={props.copulaCouplings} nodesById={liveNodesById} onEdit={props.onOpenJointLab} onSelect={props.onSelectCoupling} selectedId={props.selection?.kind === "coupling" ? props.selection.id : null} interactive={props.tool === "select"} />
         </ReactFlow>
+        {selectedIds.size >= 2 && (
+          <MultiSelectBar
+            count={selectedIds.size}
+            wireArmed={wireArmed}
+            onWire={() => setWireArmed(true)}
+            onAdjust={() => { props.onAdjustMany?.([...selectedRef.current]); clearMulti(); }}
+            onCouple={() => { props.onCoupleMany?.([...selectedRef.current]); clearMulti(); }}
+            onDelete={() => { props.onDeleteMany?.([...selectedRef.current]); clearMulti(); }}
+            onClear={clearMulti}
+          />
+        )}
       </div>
       <button
         type="button"
@@ -420,7 +460,7 @@ function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
   ].filter(Boolean).join(" ");
   const handleSelect = (event: React.MouseEvent) => {
     event.stopPropagation();
-    onNodeClick(node.id);
+    onNodeClick(node.id, event);
   };
   return (
     <div

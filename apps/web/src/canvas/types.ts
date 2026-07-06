@@ -56,4 +56,9 @@ export interface GraphCanvasProps {
   onOpenJointLab?: (source?: { id: string; kind: "copula" | "plasmode" }) => void;
   /** Select a coupling arc (single click) so it can be deleted / highlighted. */
   onSelectCoupling?: (id: string) => void;
+  /** Multi-select group actions (Shift+drag / Shift-click selects ≥2 nodes → the action bar). */
+  onWireMany?: (sourceIds: string[], targetId: string) => void;
+  onAdjustMany?: (ids: string[]) => void;
+  onCoupleMany?: (ids: string[]) => void;
+  onDeleteMany?: (ids: string[]) => void;
 }
