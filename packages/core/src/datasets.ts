@@ -34,7 +34,7 @@ const runtimeDatasets: Record<string, CovariateDataset> = {};
 export function registerRuntimeDataset(name: string, dataset: CovariateDataset): void {
   runtimeDatasets[name] = dataset;
 }
-function lookupDataset(name: string | undefined): CovariateDataset | undefined {
+export function lookupDataset(name: string | undefined): CovariateDataset | undefined {
   if (!name) return undefined;
   return runtimeDatasets[name] ?? DATASETS[name];
 }

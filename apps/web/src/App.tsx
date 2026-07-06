@@ -49,6 +49,7 @@ import {
   setCopulaBlock,
   orphanDataColumns,
   plasmodeSources,
+  setPlasmodeJointMode,
   withCoupling,
   withoutCoupling,
   simpleEdge,
@@ -412,7 +413,9 @@ export function App() {
     return clouds;
   }, [document]);
   const hasCopulaSource = jointSources.some((cloud) => cloud.kind === "copula");
-  const hasPlasmodeSource = jointSources.some((cloud) => cloud.kind === "plasmode");
+  // Any plasmode wiring — true even when the joint is BROKEN (independent per-covariate sources, no cloud),
+  // so the Plasmode tab stays reachable to restore the shared joint.
+  const hasPlasmodeSource = useMemo(() => plasmodeSources(document).length > 0, [document]);
   // Open the Joint / DGM editor. A clicked cloud routes to its mechanism tab; otherwise default to the
   // mechanism actually present (so a plasmode-only model doesn't land on an empty Copula tab).
   const openJointLab = useCallback((mechanism?: "copula" | "plasmode") => {
@@ -1212,7 +1215,7 @@ export function App() {
             </div>
             {jointLabTab === "copula"
               ? <CopulaBlockEditor key={activeExample?.id ?? "custom"} document={document} onCommit={commit} />
-              : <PlasmodeSourcePanel document={document} />}
+              : <PlasmodeSourcePanel document={document} onSetJointMode={(dataset, mode) => commit(setPlasmodeJointMode(document, dataset, mode))} />}
           </div>
         </div>
       )}

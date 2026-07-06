@@ -2,15 +2,27 @@ import { documentDatasets, plasmodeSources } from "@nudagitty/core";
 import type { GraphDocument } from "@nudagitty/core";
 import "./plasmode-source.css";
 
+type JointMode = "shared" | "independent";
+
 // The Plasmode tab of the Joint / DGM editor: the empirical mechanism for the confounder joint. Where
-// the Copula tab AUTHORS a parametric dependence, this one just reports the wiring — which covariates
-// are drawn from the same real rows (so their joint is exactly empirical) and which columns are unused.
-export function PlasmodeSourcePanel(props: { document: GraphDocument }) {
-  const sources = plasmodeSources(props.document).filter((source) => source.covariates.length >= 2);
+// the Copula tab AUTHORS a parametric dependence, this one reports the wiring AND exposes the one knob
+// that matters — shared vs independent resampling (the mirror of dragging a copula's τ to zero).
+export function PlasmodeSourcePanel(props: { document: GraphDocument; onSetJointMode: (dataset: string, mode: JointMode) => void }) {
   const orphansByDataset = new Map(documentDatasets(props.document).map((entry) => [entry.dataset, entry.orphanColumns]));
   const labelOf = (id: string) => props.document.graph.nodes.find((node) => node.id === id)?.label ?? id;
 
-  if (sources.length === 0) {
+  // Group every plasmode covariate by its dataset (a dataset in "shared" mode has one source feeding all;
+  // in "independent" mode it has one source per covariate). This survives both states, unlike per-source.
+  const byDataset = new Map<string, { covariates: Array<{ nodeId: string; column: string }>; sourceCount: number }>();
+  for (const source of plasmodeSources(props.document)) {
+    let entry = byDataset.get(source.dataset);
+    if (!entry) { entry = { covariates: [], sourceCount: 0 }; byDataset.set(source.dataset, entry); }
+    entry.covariates.push(...source.covariates);
+    entry.sourceCount += 1;
+  }
+  const datasets = [...byDataset.entries()].filter(([, entry]) => entry.covariates.length >= 1);
+
+  if (datasets.length === 0) {
     return (
       <div className="plasmode-panel plasmode-panel--empty">
         <p className="plasmode-empty-title">No plasmode source in this model.</p>
@@ -26,23 +38,38 @@ export function PlasmodeSourcePanel(props: { document: GraphDocument }) {
   return (
     <div className="plasmode-panel">
       <p className="plasmode-lede">
-        These covariates are resampled from the <b>same real row</b> of a dataset, so their joint dependence is
-        <b> exactly empirical</b> — the real correlations, tail behaviour and discrete structure, with no copula to author.
+        These covariates are resampled from real rows of a dataset. Draw them from the <b>same</b> row and their joint
+        dependence is <b>exactly empirical</b> (real correlations, tails, discrete structure); draw each from its own row
+        and the marginals stay real but the <b>joint is broken</b> — the empirical analogue of a copula’s τ.
       </p>
-      {sources.map((source) => {
-        const orphans = orphansByDataset.get(source.dataset) ?? [];
+      {datasets.map(([dataset, entry]) => {
+        const mode: JointMode = entry.sourceCount === 1 && entry.covariates.length >= 2 ? "shared" : "independent";
+        const canToggle = entry.covariates.length >= 2;
+        const orphans = orphansByDataset.get(dataset) ?? [];
         return (
-          <div key={source.sourceId} className="plasmode-source">
+          <div key={dataset} className="plasmode-source">
             <div className="plasmode-source-head">
-              <strong>{source.dataset}</strong>
-              <span>{source.covariates.length} covariates from one shared row source</span>
+              <strong>{dataset}</strong>
+              <span>{entry.covariates.length} covariates{canToggle ? "" : " (need ≥2 for a joint)"}</span>
             </div>
+            {canToggle && (
+              <div className="plasmode-mode" role="group" aria-label="Resample joint mode">
+                <span className="plasmode-mode-label">Joint</span>
+                <div className="plasmode-mode-seg">
+                  <button type="button" className={mode === "shared" ? "active" : ""} aria-pressed={mode === "shared"}
+                    onClick={() => mode !== "shared" && props.onSetJointMode(dataset, "shared")}>shared</button>
+                  <button type="button" className={mode === "independent" ? "active" : ""} aria-pressed={mode === "independent"}
+                    onClick={() => mode !== "independent" && props.onSetJointMode(dataset, "independent")}>independent</button>
+                </div>
+                <span className="plasmode-mode-hint">{mode === "shared" ? "one shared row → the exact real joint" : "one row each → real marginals, joint broken"}</span>
+              </div>
+            )}
             <table className="plasmode-map">
               <thead>
                 <tr><th>Node</th><th aria-hidden="true"></th><th>Data column</th></tr>
               </thead>
               <tbody>
-                {source.covariates.map((covariate) => (
+                {entry.covariates.map((covariate) => (
                   <tr key={covariate.nodeId}>
                     <td className="plasmode-node">{labelOf(covariate.nodeId)}</td>
                     <td className="plasmode-arrow">←</td>
@@ -53,13 +80,17 @@ export function PlasmodeSourcePanel(props: { document: GraphDocument }) {
             </table>
             {orphans.length > 0 && (
               <div className="plasmode-orphans">
-                ⚠ {orphans.length} column{orphans.length === 1 ? "" : "s"} in <b>{source.dataset}</b> {orphans.length === 1 ? "isn't" : "aren't"} wired
+                ⚠ {orphans.length} column{orphans.length === 1 ? "" : "s"} in <b>{dataset}</b> {orphans.length === 1 ? "isn't" : "aren't"} wired
                 to a node: <b>{orphans.join(", ")}</b>. Add nodes for them (or import again) to bring them into the model.
               </div>
             )}
           </div>
         );
       })}
+      <p className="plasmode-bridge">
+        Swap the mechanism itself — <b>fit a copula</b> from these rows, or resample a fitted copula — needs
+        <i> joints-from-data</i>, coming in a later pass.
+      </p>
     </div>
   );
 }

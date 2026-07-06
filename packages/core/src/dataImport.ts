@@ -1,8 +1,8 @@
 import type { DataFrame } from "./dataframe";
 import type { GraphDocument, GraphNode } from "./types";
-import { createGraphDocument, createNode, edgeId, reconcileSimulationSpec } from "./graph";
+import { cloneDocument, createGraphDocument, createNode, edgeId, reconcileSimulationSpec } from "./graph";
 import { addPlasmodeCovariates, layoutExampleDocument, setBinaryVariable, setContinuousVariable, setVariable } from "./examples/builders";
-import { registerRuntimeDataset } from "./datasets";
+import { lookupDataset, registerRuntimeDataset } from "./datasets";
 import { dataFrameToDataset } from "./dataframe";
 
 // Turn a column name into a valid, unique node id (keep the original as the label).
@@ -56,5 +56,53 @@ export function documentFromDataFrame(df: DataFrame, options?: { title?: string;
   document.simulation = reconcileSimulationSpec(document.graph, document.simulation);
   const laidOut = layoutExampleDocument(document); // proper pixel-scale layout (raw positions are logical units)
   laidOut.simulation.datasets = { [datasetName]: dataset }; // travels with the doc → reaches the sim worker
+  return laidOut;
+}
+
+// Switch how a dataset's plasmode covariates share their resample source — the empirical mechanism knob,
+// the mirror of dragging a copula's τ to zero. "shared": one row-index feeds every covariate, so each drawn
+// observation is a whole real row (the exact joint). "independent": each covariate gets its OWN row-index,
+// so the marginals stay exactly real but the joint is broken (the confounders are shuffled apart). Rebuilds
+// the source node(s) + table_lookup edges from the covariate→column mapping, then re-lays-out.
+export function setPlasmodeJointMode(input: GraphDocument, dataset: string, mode: "shared" | "independent"): GraphDocument {
+  const document = cloneDocument(input);
+  const columns = lookupDataset(dataset)?.columns ?? [];
+  const covariates: Array<{ id: string; column: string }> = [];
+  const seen = new Set<string>();
+  const oldSources = new Set<string>();
+  for (const edge of document.graph.edges) {
+    const mechanism = document.simulation.edges[edge.id];
+    if (mechanism?.kind !== "table_lookup" || mechanism.dataset !== dataset) continue;
+    oldSources.add(edge.source);
+    if (!seen.has(edge.target)) { seen.add(edge.target); covariates.push({ id: edge.target, column: columns[mechanism.dataColumn ?? 0] ?? `column ${mechanism.dataColumn ?? 0}` }); }
+  }
+  if (covariates.length === 0) return input;
+  const datasets = document.simulation.datasets; // carry the (possibly imported) table so it still reaches the worker
+
+  // Drop the old row-index sources and their lookup edges (sources are pure row-index latents → every out-edge is a lookup).
+  document.graph.nodes = document.graph.nodes.filter((node) => !oldSources.has(node.id));
+  document.graph.edges = document.graph.edges.filter((edge) => !oldSources.has(edge.source));
+  for (const id of oldSources) delete document.simulation.nodes[id];
+
+  const taken = new Set(document.graph.nodes.map((node) => node.id));
+  // Create a row-index source node + the directed source→covariate edges, THEN attach the table_lookup
+  // mechanisms (setEdgeMechanism no-ops unless the graph edge already exists).
+  const addSource = (id: string, label: string, fed: Array<{ id: string; column: string }>) => {
+    const source = createNode(id, { x: 0, y: 0 }, { latent: true });
+    source.label = label;
+    document.graph.nodes.push(source);
+    setContinuousVariable(document, id, "Resample index over the dataset rows (unobserved).", "row");
+    for (const covariate of fed) document.graph.edges.push({ id: edgeId(id, covariate.id, "directed"), source: id, target: covariate.id, kind: "directed" });
+    addPlasmodeCovariates(document, id, dataset, fed);
+  };
+  if (mode === "shared") {
+    addSource(sanitizeId(`${dataset}_rows`, taken), `${dataset} rows (resample)`, covariates);
+  } else {
+    for (const covariate of covariates) addSource(sanitizeId(`Src_${covariate.id}`, taken), `${covariate.id} row (resample)`, [covariate]);
+  }
+
+  document.simulation = reconcileSimulationSpec(document.graph, document.simulation);
+  const laidOut = layoutExampleDocument(document);
+  if (datasets) laidOut.simulation.datasets = datasets;
   return laidOut;
 }
