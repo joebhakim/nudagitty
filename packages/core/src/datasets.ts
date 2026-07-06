@@ -53,17 +53,19 @@ export function datasetColumnIndex(name: string, column: string): number {
 // normalized on load) to avoid a graph-normalize dependency here.
 // The plasmode "joint sources" in a document: every node that fans out to covariates via table_lookup
 // edges. Each is the empirical analogue of a copula block — one hidden row-identity that couples the
-// covariates by making them read the same real row. `nodeIds` are the covariates it feeds.
-export function plasmodeSources(document: GraphDocument): Array<{ sourceId: string; dataset: string; nodeIds: string[] }> {
-  const bySource = new Map<string, { dataset: string; nodeIds: string[] }>();
+// covariates by making them read the same real row. `covariates` are the fed nodes + the column each reads.
+export function plasmodeSources(document: GraphDocument): Array<{ sourceId: string; dataset: string; covariates: Array<{ nodeId: string; column: string }> }> {
+  const bySource = new Map<string, { dataset: string; covariates: Array<{ nodeId: string; column: string }> }>();
   for (const edge of document.graph.edges) {
     const mechanism = document.simulation.edges[edge.id];
     if (mechanism?.kind !== "table_lookup" || !mechanism.dataset) continue;
+    const columns = lookupDataset(mechanism.dataset)?.columns ?? [];
+    const column = columns[mechanism.dataColumn ?? 0] ?? `column ${mechanism.dataColumn ?? 0}`;
     let entry = bySource.get(edge.source);
-    if (!entry) { entry = { dataset: mechanism.dataset, nodeIds: [] }; bySource.set(edge.source, entry); }
-    entry.nodeIds.push(edge.target);
+    if (!entry) { entry = { dataset: mechanism.dataset, covariates: [] }; bySource.set(edge.source, entry); }
+    entry.covariates.push({ nodeId: edge.target, column });
   }
-  return [...bySource].map(([sourceId, value]) => ({ sourceId, dataset: value.dataset, nodeIds: value.nodeIds }));
+  return [...bySource].map(([sourceId, value]) => ({ sourceId, dataset: value.dataset, covariates: value.covariates }));
 }
 
 export function documentDatasets(document: GraphDocument): Array<{ dataset: string; allColumns: string[]; wiredColumns: string[]; orphanColumns: string[] }> {

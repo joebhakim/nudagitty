@@ -1,0 +1,39 @@
+/* Joint / DGM mechanism tabs (Copula · Plasmode) — shared editor chrome. */
+.jointdgm-tabs { display: flex; gap: 4px; margin: 2px 0 14px; border-bottom: 1px solid var(--border, #e2e2ea); }
+.jointdgm-tab { appearance: none; background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--text-muted, #778); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; margin-bottom: -1px; }
+.jointdgm-tab:hover { color: var(--text, #223); }
+.jointdgm-tab.active { color: #6b40b0; border-bottom-color: #9b6dd6; }
+.jointdgm-dot { width: 6px; height: 6px; border-radius: 50%; background: #9b6dd6; display: inline-block; }
+.jointdgm-dot--plasmode { background: #1f8a6d; }
+@media (prefers-color-scheme: dark) {
+  .jointdgm-tabs { border-bottom-color: #34343e; }
+  .jointdgm-tab.active { color: #c9adf0; border-bottom-color: #a983e0; }
+  .jointdgm-dot { background: #a983e0; }
+  .jointdgm-dot--plasmode { background: #4fd0a8; }
+}
+
+.plasmode-panel { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px 2px; }
+.plasmode-lede { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-muted, #556); }
+.plasmode-panel--empty { align-items: flex-start; gap: 8px; padding: 12px 4px; }
+.plasmode-empty-title { margin: 0; font-weight: 600; font-size: 14px; }
+.plasmode-empty-hint { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-muted, #667); max-width: 62ch; }
+
+.plasmode-source { border: 1px solid var(--border, #e2e2ea); border-radius: 8px; padding: 12px 14px; background: var(--surface-1, #fbfbfd); }
+.plasmode-source-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.plasmode-source-head strong { font-size: 14px; }
+.plasmode-source-head span { font-size: 12px; color: var(--text-muted, #778); }
+
+.plasmode-map { border-collapse: collapse; font-size: 13px; }
+.plasmode-map th { text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted, #889); padding: 2px 12px 6px 0; }
+.plasmode-map td { padding: 3px 12px 3px 0; }
+.plasmode-node { font-weight: 600; }
+.plasmode-arrow { color: #1f8a6d; font-weight: 700; padding: 0 6px !important; }
+.plasmode-col { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-muted, #667); }
+
+.plasmode-orphans { margin-top: 10px; font-size: 12px; line-height: 1.45; color: #8a5a1f; background: #fdf3e3; border: 1px solid #f0d9b5; border-radius: 6px; padding: 8px 10px; }
+
+@media (prefers-color-scheme: dark) {
+  .plasmode-source { border-color: #34343e; background: #1b1b22; }
+  .plasmode-arrow { color: #4fd0a8; }
+  .plasmode-orphans { color: #e6b978; background: #2e2413; border-color: #4a3b1e; }
+}

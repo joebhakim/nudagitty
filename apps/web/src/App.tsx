@@ -113,6 +113,7 @@ import { chartFrame, niceTicks, paddedDomain } from "./charts/chartFrame";
 import { startEngagementMilestones, trackAnalyticsEvent, trackDenouementViewed, trackEditCommitted, trackInfoOverlayOpened, trackOperationSet } from "./analytics";
 import { applyOperation, deriveOperation } from "./shared/operations";
 import { DataTablePanel } from "./data/DataTablePanel";
+import { PlasmodeSourcePanel } from "./data/PlasmodeSourcePanel";
 import { ImportDataModal } from "./data/ImportDataModal";
 import { displayNodeName } from "./outputs/estimand";
 import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
@@ -284,6 +285,7 @@ export function App() {
   const [showExplanation, setShowExplanation] = useState(false);
   const [showDgp, setShowDgp] = useState(false);
   const [showJointLab, setShowJointLab] = useState(false);
+  const [jointLabTab, setJointLabTab] = useState<"copula" | "plasmode">("copula");
   const [couplingHint, setCouplingHint] = useState<string | null>(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [showOverlap, setShowOverlap] = useState(false);
@@ -404,11 +406,19 @@ export function App() {
     for (const source of plasmodeSources(document)) {
       // A cloud represents a SHARED joint — needs ≥2 coupled covariates. A single-target source (e.g. the
       // independent variant's per-covariate `Src_*` nodes) has no joint to show, so it stays a plain node.
-      if (source.nodeIds.length < 2) continue;
-      clouds.push({ id: `plasmode:${source.sourceId}`, kind: "plasmode", nodeIds: source.nodeIds, moderatorIds: [], label: "shared hidden causes", sublabel: "real rows", sourceId: source.sourceId });
+      if (source.covariates.length < 2) continue;
+      clouds.push({ id: `plasmode:${source.sourceId}`, kind: "plasmode", nodeIds: source.covariates.map((c) => c.nodeId), moderatorIds: [], label: "shared hidden causes", sublabel: "real rows", sourceId: source.sourceId });
     }
     return clouds;
   }, [document]);
+  const hasCopulaSource = jointSources.some((cloud) => cloud.kind === "copula");
+  const hasPlasmodeSource = jointSources.some((cloud) => cloud.kind === "plasmode");
+  // Open the Joint / DGM editor. A clicked cloud routes to its mechanism tab; otherwise default to the
+  // mechanism actually present (so a plasmode-only model doesn't land on an empty Copula tab).
+  const openJointLab = useCallback((mechanism?: "copula" | "plasmode") => {
+    setJointLabTab(mechanism ?? (hasCopulaSource ? "copula" : hasPlasmodeSource ? "plasmode" : "copula"));
+    setShowJointLab(true);
+  }, [hasCopulaSource, hasPlasmodeSource]);
 
   // Root covariates (confounders) — the nodes a copula block may couple: roots that aren't the
   // exposure/outcome/latent. Mirrors CopulaBlockEditor.rootCovariates so canvas + Joint Lab agree.
@@ -961,7 +971,7 @@ export function App() {
         onEdgeClick={selectEdge}
         onEdgeControl={(edge) => replaceGraph(upsertEdge(document.graph, edge))}
         onResample={resample}
-        onOpenJointLab={() => setShowJointLab(true)}
+        onOpenJointLab={(source) => openJointLab(source?.kind)}
         onSelectCoupling={selectCoupling}
       />
       {couplingHint && <div className="couple-hint error" role="status">{couplingHint}</div>}
@@ -1124,7 +1134,7 @@ export function App() {
             <IconButton label="Glossary" pressed={showGlossary} onClick={() => setShowGlossary((open) => !open)}><BookOpen size={18} /></IconButton>
             <IconButton label="Overlap / positivity" pressed={showOverlap} badge={positivity === "ok" ? null : positivity} onClick={() => setShowOverlap((open) => !open)}><Blend size={18} /></IconButton>
             <IconButton label="Data — the current sample" pressed={showData} badge={dataOrphans.length > 0 ? "warning" : null} onClick={() => setShowData((open) => !open)}><Table size={18} /></IconButton>
-            <IconButton label="Joint Lab — confounder dependence" pressed={showJointLab} onClick={() => setShowJointLab((open) => !open)}><Spline size={18} /></IconButton>
+            <IconButton label="Joint / DGM — the confounder joint" pressed={showJointLab} onClick={() => showJointLab ? setShowJointLab(false) : openJointLab()}><Spline size={18} /></IconButton>
             <IconButton label="Implicit noise nodes" pressed={showNoiseNodes} onClick={() => setShowNoiseNodes(!showNoiseNodes)}><CircleDashed size={18} /></IconButton>
             <input
               ref={snapshotInputRef}
@@ -1181,18 +1191,28 @@ export function App() {
               <button type="button" aria-label="Close data-generating process" onClick={() => setShowDgp(false)}><X size={16} /></button>
             </div>
             <DgpInspector document={document} simulation={simulation} onCorrelationChange={(rho) => commit(setCopulaCorrelation(document, rho))} />
-            <button className="dgp-jointlab-open" onClick={() => { setShowDgp(false); setShowJointLab(true); }}>⚭ Open the Joint Lab — author the confounder joint →</button>
+            <button className="dgp-jointlab-open" onClick={() => { setShowDgp(false); openJointLab(); }}>⚭ Open the Joint / DGM editor — author the confounder joint →</button>
           </div>
         </div>
       )}
       {showJointLab && (
-        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Joint Lab" onClick={() => setShowJointLab(false)}>
+        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Joint / DGM editor" onClick={() => setShowJointLab(false)}>
           <div className="explanation-modal wide" onClick={(event) => event.stopPropagation()}>
             <div className="explanation-modal-header">
-              <strong>Joint Lab — the confounder joint · {activeExample?.title ?? document.title}</strong>
-              <button type="button" aria-label="Close Joint Lab" onClick={() => setShowJointLab(false)}><X size={16} /></button>
+              <strong>Joint / DGM — the confounder joint · {activeExample?.title ?? document.title}</strong>
+              <button type="button" aria-label="Close Joint / DGM editor" onClick={() => setShowJointLab(false)}><X size={16} /></button>
             </div>
-            <CopulaBlockEditor key={activeExample?.id ?? "custom"} document={document} onCommit={commit} />
+            <div className="jointdgm-tabs" role="tablist" aria-label="Joint mechanism">
+              <button type="button" role="tab" aria-selected={jointLabTab === "copula"} className={`jointdgm-tab${jointLabTab === "copula" ? " active" : ""}`} onClick={() => setJointLabTab("copula")}>
+                Copula{hasCopulaSource ? <span className="jointdgm-dot" aria-hidden="true" /> : null}
+              </button>
+              <button type="button" role="tab" aria-selected={jointLabTab === "plasmode"} className={`jointdgm-tab${jointLabTab === "plasmode" ? " active" : ""}`} onClick={() => setJointLabTab("plasmode")}>
+                Plasmode{hasPlasmodeSource ? <span className="jointdgm-dot jointdgm-dot--plasmode" aria-hidden="true" /> : null}
+              </button>
+            </div>
+            {jointLabTab === "copula"
+              ? <CopulaBlockEditor key={activeExample?.id ?? "custom"} document={document} onCommit={commit} />
+              : <PlasmodeSourcePanel document={document} />}
           </div>
         </div>
       )}
