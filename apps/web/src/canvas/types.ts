@@ -6,9 +6,22 @@ import type { WorkbenchMode } from "../shared/workbench";
 /** A pairwise copula coupling to draw on the canvas (a bidirected dependence link). */
 export interface CopulaCoupling { id: string; aId: string; bId: string; short: string; label: string }
 
-/** A copula block rendered as a "shared hidden causes" cloud (the latent projection of the coupling):
- *  faded arrows to each coupled node; a moderator (if any) feeds INTO the cloud. A view, not a model node. */
-export interface CopulaCloud { id: string; nodeIds: string[]; moderatorIds: string[]; label: string }
+/** A "joint source" cloud: the shared hidden origin of a set of covariates' dependence, rendered
+ *  identically whether the mechanism is a copula block (parametric — the latent projection of the
+ *  coupling) or a plasmode row-source (empirical — resample real rows). Faded arrows to each coupled
+ *  node; a moderator (if any) feeds INTO the cloud. A VIEW, not a model node — for plasmode, `sourceId`
+ *  names the real latent node this cloud stands in for (hidden from the canvas with its table_lookup edges). */
+export interface JointSourceCloud {
+  id: string;
+  kind: "copula" | "plasmode";
+  nodeIds: string[];
+  moderatorIds: string[];
+  label: string;
+  /** Short mechanism tag shown under the label (e.g. "copula" vs "real rows"). */
+  sublabel?: string;
+  /** Plasmode only: the real latent source node this cloud replaces on the canvas. */
+  sourceId?: string;
+}
 
 // Prop shape for the canvas surface. Extracted verbatim from the (now-deleted) legacy
 // GraphCanvas so FlowGraphCanvas/FlowGraphCanvasInner keep their exact prop type.
@@ -25,7 +38,7 @@ export interface GraphCanvasProps {
   edgeMechanisms: Record<string, EdgeMechanism>;
   modulations: ModulationLink[];
   copulaCouplings: CopulaCoupling[];
-  copulaClouds: CopulaCloud[];
+  jointSources: JointSourceCloud[];
   disabledEdgeIds: Set<string>;
   highlightedEdges: Map<string, "causal" | "biasing">;
   ancestorIds: Set<string>;
@@ -38,8 +51,9 @@ export interface GraphCanvasProps {
   onEdgeClick: (id: string) => void;
   onEdgeControl: (edge: GraphEdge) => void;
   onResample: () => void;
-  /** Open the Joint Lab to edit the confounder joint (e.g. double-clicking a coupling arc). */
-  onOpenJointLab?: () => void;
+  /** Open the Joint / DGM editor for the confounder joint. Passing a joint source routes to its
+   *  mechanism tab; called with no arg (e.g. double-clicking a coupling arc) opens the default tab. */
+  onOpenJointLab?: (source?: { id: string; kind: "copula" | "plasmode" }) => void;
   /** Select a coupling arc (single click) so it can be deleted / highlighted. */
   onSelectCoupling?: (id: string) => void;
 }

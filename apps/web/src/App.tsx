@@ -48,6 +48,7 @@ import {
   setCopulaCorrelation,
   setCopulaBlock,
   orphanDataColumns,
+  plasmodeSources,
   withCoupling,
   withoutCoupling,
   simpleEdge,
@@ -216,7 +217,7 @@ import {
 } from "./compute/relationSummary";
 import { Checkbox, IconButton, ModuleFrame, RadioGroup, Section } from "./controls";
 import { FlowGraphCanvas } from "./canvas/FlowGraphCanvas";
-import type { CopulaCloud, CopulaCoupling } from "./canvas/types";
+import type { JointSourceCloud, CopulaCoupling } from "./canvas/types";
 import { SelectionEditor } from "./editors/VariableEditor";
 import { useMediaQuery } from "./app/useMediaQuery";
 import { BibliographyPanel, EffectPanel, ImplicationPanel, SummaryPanel } from "./panels/analysis";
@@ -376,10 +377,13 @@ export function App() {
     return out;
   }, [document.simulation.copulaBlocks]);
 
-  // Each copula block as a "shared hidden causes" cloud (the latent projection): the coupled nodes are
-  // the cloud's children; any conditioning variable of a MODERATED edge feeds into the cloud instead.
-  const copulaClouds = useMemo<CopulaCloud[]>(() => {
-    const clouds: CopulaCloud[] = [];
+  // The document's "joint sources" as clouds — one unified visual for however the covariates' shared
+  // dependence is generated. Two mechanisms today: a COPULA block (parametric — the latent projection
+  // of the coupling; coupled nodes are children, a moderated edge's conditioner feeds INTO the cloud)
+  // and a PLASMODE row-source (empirical — a latent node fanning table_lookup edges to the covariates).
+  // Both render as the same cloud; plasmode's real source node + edges are hidden by the canvas.
+  const jointSources = useMemo<JointSourceCloud[]>(() => {
+    const clouds: JointSourceCloud[] = [];
     for (const block of document.simulation.copulaBlocks ?? []) {
       const coupled = new Set<string>();
       const moderators = new Set<string>();
@@ -395,10 +399,16 @@ export function App() {
           if (c0.tau.by !== null) { const mid = block.nodes[block.order[c0.tau.by]!]; if (mid) moderators.add(mid); }
         }
       }
-      if (coupled.size > 0) clouds.push({ id: block.id, nodeIds: [...coupled], moderatorIds: [...moderators].filter((m) => !coupled.has(m)), label: "shared hidden causes" });
+      if (coupled.size > 0) clouds.push({ id: block.id, kind: "copula", nodeIds: [...coupled], moderatorIds: [...moderators].filter((m) => !coupled.has(m)), label: "shared hidden causes", sublabel: "copula" });
+    }
+    for (const source of plasmodeSources(document)) {
+      // A cloud represents a SHARED joint — needs ≥2 coupled covariates. A single-target source (e.g. the
+      // independent variant's per-covariate `Src_*` nodes) has no joint to show, so it stays a plain node.
+      if (source.nodeIds.length < 2) continue;
+      clouds.push({ id: `plasmode:${source.sourceId}`, kind: "plasmode", nodeIds: source.nodeIds, moderatorIds: [], label: "shared hidden causes", sublabel: "real rows", sourceId: source.sourceId });
     }
     return clouds;
-  }, [document.simulation.copulaBlocks]);
+  }, [document]);
 
   // Root covariates (confounders) — the nodes a copula block may couple: roots that aren't the
   // exposure/outcome/latent. Mirrors CopulaBlockEditor.rootCovariates so canvas + Joint Lab agree.
@@ -938,7 +948,7 @@ export function App() {
         edgeMechanisms={document.simulation.edges}
         modulations={modulations}
         copulaCouplings={copulaCouplings}
-        copulaClouds={copulaClouds}
+        jointSources={jointSources}
         disabledEdgeIds={new Set(Object.entries(document.simulation.edges).filter(([, mechanism]) => !mechanism.enabled).map(([id]) => id))}
         highlightedEdges={highlightedEdges}
         ancestorIds={ancestorIds}

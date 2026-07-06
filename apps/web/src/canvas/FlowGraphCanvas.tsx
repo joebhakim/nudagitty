@@ -68,31 +68,35 @@ import {
 import { resultPendingActive, resultPendingShortLabel } from "../compute/relationSummary";
 import { PendingChip } from "../controls";
 import { useMediaQuery } from "../app/useMediaQuery";
-import type { CopulaCloud, CopulaCoupling, GraphCanvasProps } from "./types";
+import type { JointSourceCloud, CopulaCoupling, GraphCanvasProps } from "./types";
 
 const FLOW_NODE_TYPES = { graphNode: FlowGraphNode, copulaCloud: FlowCopulaCloudNode };
 const FLOW_EDGE_TYPES = { graphEdge: FlowGraphEdge };
 
 type FlowGraphNode = FlowNode<FlowGraphNodeData, "graphNode">;
-type FlowCloudNode = FlowNode<{ label: string; onEdit?: () => void; nodeCount: number }, "copulaCloud">;
+type FlowCloudNode = FlowNode<{ label: string; sublabel?: string; kind: "copula" | "plasmode"; onEdit?: () => void; nodeCount: number }, "copulaCloud">;
 type AnyFlowNode = FlowGraphNode | FlowCloudNode;
 type FlowGraphEdge = FlowEdge<FlowGraphEdgeData, "graphEdge">;
 
 const CLOUD_NODE_W = 168;
 const CLOUD_NODE_H = 112;
 
-// A copula block rendered as a real (synthetic) node via the node engine: a cloud shape instead of a
+// A "joint source" rendered as a real (synthetic) node via the node engine: a cloud shape instead of a
 // circle/square, ~3× a normal node. It's a VIEW (id "cloud:…", not in the model graph, non-draggable);
-// its position tracks the coupled covariates. Click → the Joint Lab.
+// its position tracks the coupled covariates. Both mechanisms use it — a COPULA block (parametric) or a
+// PLASMODE row-source (empirical, the real latent node hidden behind it). Click → the Joint / DGM editor.
 function FlowCopulaCloudNode(props: FlowNodeProps<FlowCloudNode>) {
-  const { label, onEdit } = props.data;
+  const { label, sublabel, kind, onEdit } = props.data;
+  const title = kind === "plasmode"
+    ? `${label} — these variables come from the same real rows (a plasmode source), so their joint is exact. Click to edit it in the Joint / DGM editor.`
+    : `${label} — the latent common cause these variables share (a copula block, the ↔ / bidirected structure). Click to edit it in the Joint / DGM editor.`;
   return (
-    <div className="copula-cloud-node" onClick={onEdit ? (event) => { event.stopPropagation(); onEdit(); } : undefined}
-      title={`${label} — the latent common cause these variables share (a copula block, the ↔ / bidirected structure). Click to edit it in the Joint Lab.`}>
+    <div className={`copula-cloud-node copula-cloud-node--${kind}`} onClick={onEdit ? (event) => { event.stopPropagation(); onEdit(); } : undefined} title={title}>
       <svg viewBox="0 0 640 512" className="copula-cloud-node-svg" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
         <path className="copula-cloud-shape" d="M537.6 226.6c4.1-10.7 6.4-22.4 6.4-34.6 0-53-43-96-96-96-19.7 0-38.1 6-53.3 16.2C367 64.2 315.3 32 256 32c-88.4 0-160 71.6-160 160 0 2.7 .1 5.4 .2 8.1C40.2 219.8 0 273.2 0 336c0 79.5 64.5 144 144 144h368c70.7 0 128-57.3 128-128 0-61.9-44-113.6-102.4-125.4z" />
       </svg>
       <span className="copula-cloud-node-label">{label}</span>
+      {sublabel ? <span className="copula-cloud-node-sublabel">{sublabel}</span> : null}
     </div>
   );
 }
@@ -168,14 +172,22 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
     return live;
   }, [nodes, nodesById, props.graph.nodes]);
 
-  // Synthetic cloud nodes (one per copula block), floating above their coupled covariates by default but
+  // Plasmode joint sources hide their REAL latent node + its table_lookup edges — the cloud stands in
+  // for them (so copula and plasmode read as the same object). Copula sources have no node to hide.
+  const hiddenNodeIds = useMemo(() => {
+    const hidden = new Set<string>();
+    for (const cloud of props.jointSources) if (cloud.kind === "plasmode" && cloud.sourceId) hidden.add(cloud.sourceId);
+    return hidden;
+  }, [props.jointSources]);
+
+  // Synthetic cloud nodes (one per joint source), floating above their coupled covariates by default but
   // freely DRAGGABLE (aesthetic only) — a manual drag position (kept in `cloudPositions`) overrides the
   // computed one. Appended to the render prop only (not the model `nodes` state), so model sync is untouched.
   const cloudLayout = useMemo(() => {
-    if (!props.copulaClouds || props.copulaClouds.length === 0) return [] as Array<{ cloud: CopulaCloud; position: { x: number; y: number }; center: { x: number; y: number } }>;
+    if (!props.jointSources || props.jointSources.length === 0) return [] as Array<{ cloud: JointSourceCloud; position: { x: number; y: number }; center: { x: number; y: number } }>;
     const centerOf = (id: string) => { const n = nodes.find((item) => item.id === id); return n ? { x: n.position.x + FLOW_NODE_CENTER_X, y: n.position.y + FLOW_NODE_CENTER_Y } : null; };
-    const out: Array<{ cloud: CopulaCloud; position: { x: number; y: number }; center: { x: number; y: number } }> = [];
-    for (const cloud of props.copulaClouds) {
+    const out: Array<{ cloud: JointSourceCloud; position: { x: number; y: number }; center: { x: number; y: number } }> = [];
+    for (const cloud of props.jointSources) {
       const centers = cloud.nodeIds.map(centerOf).filter((c): c is { x: number; y: number } => Boolean(c));
       if (centers.length === 0) continue;
       const cx = centers.reduce((sum, c) => sum + c.x, 0) / centers.length;
@@ -184,18 +196,24 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
       out.push({ cloud, position, center: { x: position.x + CLOUD_NODE_W / 2, y: position.y + CLOUD_NODE_H / 2 } });
     }
     return out;
-  }, [props.copulaClouds, nodes, cloudPositions]);
+  }, [props.jointSources, nodes, cloudPositions]);
   const cloudNodes = useMemo<FlowCloudNode[]>(() => cloudLayout.map(({ cloud, position }) => ({
     id: `cloud:${cloud.id}`,
     type: "copulaCloud",
     position,
     width: CLOUD_NODE_W, height: CLOUD_NODE_H,
-    data: { label: cloud.label, onEdit: props.onOpenJointLab, nodeCount: cloud.nodeIds.length },
+    data: {
+      label: cloud.label, sublabel: cloud.sublabel, kind: cloud.kind, nodeCount: cloud.nodeIds.length,
+      onEdit: props.onOpenJointLab ? () => props.onOpenJointLab!({ id: cloud.id, kind: cloud.kind }) : undefined
+    },
     draggable: true, selectable: false, connectable: false, deletable: false, focusable: false
   })), [cloudLayout, props.onOpenJointLab]);
-  const allNodes = useMemo<AnyFlowNode[]>(() => (cloudNodes.length > 0 ? [...cloudNodes, ...nodes] : nodes), [cloudNodes, nodes]);
+  const allNodes = useMemo<AnyFlowNode[]>(() => {
+    const visible = hiddenNodeIds.size > 0 ? nodes.filter((node) => !hiddenNodeIds.has(node.id)) : nodes;
+    return cloudNodes.length > 0 ? [...cloudNodes, ...visible] : visible;
+  }, [cloudNodes, nodes, hiddenNodeIds]);
 
-  const computedEdges = useMemo<FlowGraphEdge[]>(() => props.graph.edges.map((edge) => {
+  const computedEdges = useMemo<FlowGraphEdge[]>(() => props.graph.edges.filter((edge) => !hiddenNodeIds.has(edge.source) && !hiddenNodeIds.has(edge.target)).map((edge) => {
     const source = liveNodesById.get(edge.source);
     const target = liveNodesById.get(edge.target);
     const mechanism = normalizeEdgeMechanism(props.edgeMechanisms[edge.id]);
@@ -227,7 +245,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         onSelect: props.onEdgeClick
       }
     };
-  }), [denseEdges, liveNodesById, props.disabledEdgeIds, props.edgeMechanisms, props.graph.edges, props.highlightedEdges, props.onEdgeClick, props.selection]);
+  }), [denseEdges, hiddenNodeIds, liveNodesById, props.disabledEdgeIds, props.edgeMechanisms, props.graph.edges, props.highlightedEdges, props.onEdgeClick, props.selection]);
 
   useEffect(() => {
     setNodes(computedNodes);
@@ -240,8 +258,8 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
       if (!rect || rect.width <= 0 || rect.height <= 0) return;
       const positions = props.graph.nodes.map((node) => graphPointToFlowPoint(node.position));
       const minX = Math.min(...positions.map((point) => point.x));
-      // Copula-block clouds float above their covariates — reserve room so the fit frames them too.
-      const cloudPad = (props.copulaClouds?.length ?? 0) > 0 ? 132 : 0;
+      // Joint-source clouds float above their covariates — reserve room so the fit frames them too.
+      const cloudPad = (props.jointSources?.length ?? 0) > 0 ? 132 : 0;
       const minY = Math.min(...positions.map((point) => point.y)) - cloudPad;
       const maxX = Math.max(...positions.map((point) => point.x + FLOW_NODE_WIDTH));
       const maxY = Math.max(...positions.map((point) => point.y + FLOW_NODE_HEIGHT));
@@ -255,7 +273,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
       void flow.setViewport(viewport);
     }, 0);
     return undefined;
-  }, [flow, panZoom, props.graph.nodes, props.mode, viewportSignature, props.copulaClouds]);
+  }, [flow, panZoom, props.graph.nodes, props.mode, viewportSignature, props.jointSources]);
 
   const onNodesChange = useCallback((changes: NodeChange<AnyFlowNode>[]) => {
     // Cloud drags update their own aesthetic position; everything else drives the model node state.
@@ -550,7 +568,7 @@ function modulationVerb(baseline: number, gateCoefficient: number): string {
 // (U → Cᵢ), plus a moderator of a non-simplified edge feeding INTO the cloud. The cloud centre matches
 // the FlowCopulaCloudNode's position (centroid-x of the coupled nodes, min-y − 100). The inter-node
 // coupling itself is the dashed τ arc drawn by FlowCopulaLayer.
-function FlowCopulaCloudLinks({ layout, nodesById }: { layout: Array<{ cloud: CopulaCloud; center: { x: number; y: number } }>; nodesById: Map<string, GraphNode> }) {
+function FlowCopulaCloudLinks({ layout, nodesById }: { layout: Array<{ cloud: JointSourceCloud; center: { x: number; y: number } }>; nodesById: Map<string, GraphNode> }) {
   if (!layout || layout.length === 0) return null;
   return (
     <ViewportPortal>

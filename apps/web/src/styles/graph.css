@@ -763,11 +763,16 @@
 .copula-cloud-node-svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .copula-cloud-shape { fill: #ede4fb; stroke: #9b6dd6; stroke-width: 10px; stroke-dasharray: 20 14; stroke-linecap: round; }
 .copula-cloud-node:hover .copula-cloud-shape { fill: #e4d5f8; stroke-width: 12px; }
-.copula-cloud-node-label { position: absolute; top: 52%; left: 0; right: 0; transform: translateY(-50%); text-align: center; font-size: 12px; font-weight: 700; color: #6b40b0; letter-spacing: 0.01em; pointer-events: none; padding: 0 14px; line-height: 1.15; }
+.copula-cloud-node-label { position: absolute; top: 48%; left: 0; right: 0; transform: translateY(-50%); text-align: center; font-size: 12px; font-weight: 700; color: #6b40b0; letter-spacing: 0.01em; pointer-events: none; padding: 0 14px; line-height: 1.15; }
+/* Mechanism tag under the label — the ONE visible difference between a copula and a plasmode cloud. */
+.copula-cloud-node-sublabel { position: absolute; top: 68%; left: 0; right: 0; text-align: center; font-size: 8.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; pointer-events: none; color: #8b63c8; opacity: 0.9; }
+.copula-cloud-node--plasmode .copula-cloud-node-sublabel { color: #1f8a6d; }
 @media (prefers-color-scheme: dark) {
   .copula-cloud-shape { fill: #2a2140; stroke: #a983e0; }
   .copula-cloud-node:hover .copula-cloud-shape { fill: #342a4e; }
   .copula-cloud-node-label { color: #c9adf0; }
+  .copula-cloud-node-sublabel { color: #b590e8; }
+  .copula-cloud-node--plasmode .copula-cloud-node-sublabel { color: #4fd0a8; }
 }
 
 .copula-coupling-layer {

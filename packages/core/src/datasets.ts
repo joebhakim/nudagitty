@@ -51,6 +51,21 @@ export function datasetColumnIndex(name: string, column: string): number {
 // `table_lookup` edge) vs left ORPHAN (present in the data but absent from the DAG). Powers the
 // data-table "N columns aren't in the DAG" check. Reads mechanism kinds off the raw spec (already
 // normalized on load) to avoid a graph-normalize dependency here.
+// The plasmode "joint sources" in a document: every node that fans out to covariates via table_lookup
+// edges. Each is the empirical analogue of a copula block — one hidden row-identity that couples the
+// covariates by making them read the same real row. `nodeIds` are the covariates it feeds.
+export function plasmodeSources(document: GraphDocument): Array<{ sourceId: string; dataset: string; nodeIds: string[] }> {
+  const bySource = new Map<string, { dataset: string; nodeIds: string[] }>();
+  for (const edge of document.graph.edges) {
+    const mechanism = document.simulation.edges[edge.id];
+    if (mechanism?.kind !== "table_lookup" || !mechanism.dataset) continue;
+    let entry = bySource.get(edge.source);
+    if (!entry) { entry = { dataset: mechanism.dataset, nodeIds: [] }; bySource.set(edge.source, entry); }
+    entry.nodeIds.push(edge.target);
+  }
+  return [...bySource].map(([sourceId, value]) => ({ sourceId, dataset: value.dataset, nodeIds: value.nodeIds }));
+}
+
 export function documentDatasets(document: GraphDocument): Array<{ dataset: string; allColumns: string[]; wiredColumns: string[]; orphanColumns: string[] }> {
   const wired = new Map<string, Set<number>>();
   for (const edge of document.graph.edges) {
