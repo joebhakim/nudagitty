@@ -31,6 +31,7 @@ import {
   Spline,
   Waypoints,
   Table,
+  FileUp,
   Blend,
   CircleDashed,
   BookOpen,
@@ -111,6 +112,7 @@ import { chartFrame, niceTicks, paddedDomain } from "./charts/chartFrame";
 import { startEngagementMilestones, trackAnalyticsEvent, trackDenouementViewed, trackEditCommitted, trackInfoOverlayOpened, trackOperationSet } from "./analytics";
 import { applyOperation, deriveOperation } from "./shared/operations";
 import { DataTablePanel } from "./data/DataTablePanel";
+import { ImportDataModal } from "./data/ImportDataModal";
 import { displayNodeName } from "./outputs/estimand";
 import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
 import { NodeNamesProvider } from "./shared/NodeNames";
@@ -285,6 +287,7 @@ export function App() {
   const [showGlossary, setShowGlossary] = useState(false);
   const [showOverlap, setShowOverlap] = useState(false);
   const [showData, setShowData] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
   const {
     visibleGraph,
@@ -857,6 +860,15 @@ export function App() {
     setSelection(null);
   }, [closePaperNetwork, commit, setActiveExampleId, setSelection]);
 
+  const importDataDocument = useCallback((nextDocument: GraphDocument) => {
+    trackAnalyticsEvent("graph_action", { action: "import_csv" });
+    closePaperNetwork();
+    commit(nextDocument);
+    setActiveExampleId(null);
+    setSelection(null);
+    setShowImport(false);
+  }, [closePaperNetwork, commit, setActiveExampleId, setSelection]);
+
   const exportGraphSvg = useCallback(() => {
     trackAnalyticsEvent("export_clicked", { format: "svg" });
     exportSvg();
@@ -1095,6 +1107,7 @@ export function App() {
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} onOpenGlossary={() => setShowGlossary(true)} />
           </> : <>
             {!presentationActive && <IconButton label="New" onClick={createNewDocument}><FilePlus2 size={18} /></IconButton>}
+            {!presentationActive && <IconButton label="Import data (CSV → nodes)" onClick={() => setShowImport(true)}><FileUp size={18} /></IconButton>}
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} onOpenGlossary={() => setShowGlossary(true)} />
             <IconButton label="Explain this example" pressed={showExplanation} onClick={() => setShowExplanation((open) => { if (!open) trackInfoOverlayOpened("explanation"); return !open; })}><Info size={18} /></IconButton>
             <IconButton label="Data-generating process" pressed={showDgp} onClick={() => setShowDgp((open) => !open)}><Sigma size={18} /></IconButton>
@@ -1173,8 +1186,19 @@ export function App() {
           </div>
         </div>
       )}
+      {showImport && (
+        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Import data" onClick={() => setShowImport(false)}>
+          <div className="explanation-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="explanation-modal-header">
+              <strong>Import data — CSV → nodes</strong>
+              <button type="button" aria-label="Close import" onClick={() => setShowImport(false)}><X size={16} /></button>
+            </div>
+            <ImportDataModal onImport={importDataDocument} onClose={() => setShowImport(false)} />
+          </div>
+        </div>
+      )}
       {showData && (
-        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Simulated data table" onClick={() => setShowData(false)}>
+        <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Data table" onClick={() => setShowData(false)}>
           <div className="explanation-modal wide" onClick={(event) => event.stopPropagation()}>
             <div className="explanation-modal-header">
               <strong>Data — the current sample · {activeExample?.title ?? document.title}</strong>

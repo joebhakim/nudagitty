@@ -1,3 +1,5 @@
+import type { CovariateDataset } from "./data/dataset";
+
 export type GraphKind = "dag" | "digraph" | "mag" | "pdag" | "pag" | "graph";
 
 export type EdgeKind =
@@ -372,6 +374,9 @@ export interface SimulationSpec {
   selections: Record<string, SimulationSelectionCondition>;
   /** Optional copula blocks coupling root-covariate marginals; absent/empty ⇒ independent draws. */
   copulaBlocks?: CopulaBlock[];
+  /** Imported/session datasets carried WITH the spec so `table_lookup` resolves them across threads
+   * (the sim runs in a worker with its own module instance — a global registry wouldn't reach it). */
+  datasets?: Record<string, CovariateDataset>;
 }
 
 export type SimulationSelectionOperator = "at_least" | "at_most" | "between" | "one_of";

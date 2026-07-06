@@ -1,6 +1,7 @@
 import { topologicalOrder } from "../analysis";
 import { createSeededRandomSource, sampleDistribution } from "../distributions";
 import { directedParents, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel } from "../graph";
+import { registerRuntimeDataset } from "../datasets";
 import type {
   GraphModel,
   NodeDistribution,
@@ -37,6 +38,9 @@ export interface SimulationInterventionContext {
 export type SimulationIntervention = (context: SimulationInterventionContext) => number | null | undefined;
 
 export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?: SimulationResult): SimulationResult {
+  // Spec-carried datasets (imported CSVs) → the runtime registry, so `table_lookup` resolves them
+  // here — including in a worker thread, which has its own module instance and empty global registry.
+  if (spec.datasets) for (const [name, dataset] of Object.entries(spec.datasets)) registerRuntimeDataset(name, dataset);
   const diagnostics: string[] = [];
   if (graph.kind !== "dag" && graph.kind !== "digraph") diagnostics.push("Simulation is only enabled for DAG-like graphs.");
   if (graph.edges.some((edge) => edge.kind !== "directed")) diagnostics.push("Simulation ignores non-directed edges.");

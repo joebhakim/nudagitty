@@ -63,6 +63,7 @@ export interface CompiledNodePlan {
   ordinalThr: number[];
   categorical: boolean;
   catLevels: number;
+  rawLookup: boolean;
   isRoot: boolean;
   rootSampler: FastSampler;
   binaryNonBernoulliRoot: boolean;
@@ -108,22 +109,30 @@ export function compileModel(graph: GraphModel, spec: SimulationSpec, order: str
     const riskFn: (eta: number) => number = (combiner === "bernoulli_logit" || combiner === "bounded_logistic") ? sigmoid : (eta) => clamp01(link(eta));
     if (parents.length === 0) {
       const binaryNonBernoulliRoot = binary && mechanism.distribution.kind !== "bernoulli";
-      plan.push({ id, out, binary, count, ordinal, ordinalThr, categorical, catLevels, isRoot: true, rootSampler: compileDistributionSampler(mechanism.distribution), binaryNonBernoulliRoot, intercept: 0, edgeParents: [], edgeFns: [], absorbParents: [], absorbFns: [], interactions: [], noiseSampler: identity, riskFn, combineFn: link, variable });
+      plan.push({ id, out, binary, count, ordinal, ordinalThr, categorical, catLevels, rawLookup: false, isRoot: true, rootSampler: compileDistributionSampler(mechanism.distribution), binaryNonBernoulliRoot, intercept: 0, edgeParents: [], edgeFns: [], absorbParents: [], absorbFns: [], interactions: [], noiseSampler: identity, riskFn, combineFn: link, variable });
       continue;
     }
     const edgeParents: number[] = []; const edgeFns: Array<(x: number) => number> = [];
     const absorbParents: number[] = []; const absorbFns: Array<(x: number) => number> = [];
+    let anyEdge = false;
+    let allTableLookup = true;
     for (const parent of parents) {
       const edge = graph.edges.find((candidate) => candidate.kind === "directed" && candidate.source === parent && candidate.target === id);
       if (!edge) continue;
       const edgeMechanism = normalizeEdgeMechanism(spec.edges[edge.id]);
       if (!edgeMechanism.enabled) continue;
+      anyEdge = true;
+      if (edgeMechanism.kind !== "table_lookup") allTableLookup = false;
       const fn = compileEdgeFn(edgeMechanism);
       const pIdx = index.get(parent) ?? 0;
       if (edgeMechanism.kind === "absorbing") { absorbParents.push(pIdx); absorbFns.push(fn); }
       else { edgeParents.push(pIdx); edgeFns.push(fn); }
     }
-    plan.push({ id, out, binary, count, ordinal, ordinalThr, categorical, catLevels, isRoot: false, rootSampler: identity, binaryNonBernoulliRoot: false, intercept: mechanism.intercept, edgeParents, edgeFns, absorbParents, absorbFns, interactions: mechanism.interactions.map((interaction) => compileInteractionFn(interaction, index)), noiseSampler: compileDistributionSampler(mechanism.noise), riskFn, combineFn: link, variable });
+    // Plasmode passthrough: a node fed ONLY by table_lookup (with no interactions/noise) reads the REAL
+    // cell value — pass it through raw instead of running it through the response family (which would
+    // re-sample a binary/categorical/ordinal from the value and break the exact real joint).
+    const rawLookup = anyEdge && allTableLookup && mechanism.interactions.length === 0;
+    plan.push({ id, out, binary, count, ordinal, ordinalThr, categorical, catLevels, rawLookup, isRoot: false, rootSampler: identity, binaryNonBernoulliRoot: false, intercept: mechanism.intercept, edgeParents, edgeFns, absorbParents, absorbFns, interactions: mechanism.interactions.map((interaction) => compileInteractionFn(interaction, index)), noiseSampler: compileDistributionSampler(mechanism.noise), riskFn, combineFn: link, variable });
   }
   return { plan, index };
 }
@@ -167,7 +176,15 @@ export function runCompiledForward(compiled: CompiledModel, spec: SimulationSpec
         for (let j = 0; j < ix.length; j += 1) interactionSum += ix[j]!(vals);
         const noise = n.noiseSampler(rng);
         eta = eta + (interactionSum + noise);
-        if (n.binary) {
+        if (n.rawLookup && !n.binary) {
+          // the value IS the looked-up cell — pass it through instead of re-sampling from the response
+          // family (binary already passes through via its own path, and keeping it there preserves the
+          // rng stream / golden for existing plasmode examples).
+          if (n.categorical) v = Math.min(n.catLevels - 1, Math.max(0, Math.round(eta)));
+          else if (n.ordinal) v = Math.min(n.ordinalThr.length, Math.max(0, Math.round(eta)));
+          else if (n.count) v = Math.max(0, Math.round(eta));
+          else v = eta;
+        } else if (n.binary) {
           const laterRisk = n.riskFn(eta);
           let pNoEvent = 1;
           const ap = n.absorbParents; const af = n.absorbFns;

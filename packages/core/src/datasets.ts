@@ -28,12 +28,23 @@ export const DATASETS: Record<string, CovariateDataset> = {
   "lalonde-synthetic": LALONDE_SYNTHETIC
 };
 
+// User-imported tables live here (session-only, not embedded/persisted). Lookups check this first,
+// so a `table_lookup` edge pointing at an imported dataset resolves just like an embedded one.
+const runtimeDatasets: Record<string, CovariateDataset> = {};
+export function registerRuntimeDataset(name: string, dataset: CovariateDataset): void {
+  runtimeDatasets[name] = dataset;
+}
+function lookupDataset(name: string | undefined): CovariateDataset | undefined {
+  if (!name) return undefined;
+  return runtimeDatasets[name] ?? DATASETS[name];
+}
+
 export function datasetRows(name: string | undefined): number[][] {
-  return (name ? DATASETS[name]?.rows : undefined) ?? [];
+  return lookupDataset(name)?.rows ?? [];
 }
 
 export function datasetColumnIndex(name: string, column: string): number {
-  return DATASETS[name]?.columns.indexOf(column) ?? -1;
+  return lookupDataset(name)?.columns.indexOf(column) ?? -1;
 }
 
 // Audit which columns of the datasets a document draws from are actually wired to a node (via a
@@ -52,7 +63,7 @@ export function documentDatasets(document: GraphDocument): Array<{ dataset: stri
   }
   const out: Array<{ dataset: string; allColumns: string[]; wiredColumns: string[]; orphanColumns: string[] }> = [];
   for (const [dataset, indices] of wired) {
-    const allColumns = DATASETS[dataset]?.columns ?? [];
+    const allColumns = lookupDataset(dataset)?.columns ?? [];
     out.push({
       dataset,
       allColumns,
