@@ -70,11 +70,32 @@ import { PendingChip } from "../controls";
 import { useMediaQuery } from "../app/useMediaQuery";
 import type { CopulaCloud, CopulaCoupling, GraphCanvasProps } from "./types";
 
-const FLOW_NODE_TYPES = { graphNode: FlowGraphNode };
+const FLOW_NODE_TYPES = { graphNode: FlowGraphNode, copulaCloud: FlowCopulaCloudNode };
 const FLOW_EDGE_TYPES = { graphEdge: FlowGraphEdge };
 
 type FlowGraphNode = FlowNode<FlowGraphNodeData, "graphNode">;
+type FlowCloudNode = FlowNode<{ label: string; onEdit?: () => void; nodeCount: number }, "copulaCloud">;
+type AnyFlowNode = FlowGraphNode | FlowCloudNode;
 type FlowGraphEdge = FlowEdge<FlowGraphEdgeData, "graphEdge">;
+
+const CLOUD_NODE_W = 168;
+const CLOUD_NODE_H = 112;
+
+// A copula block rendered as a real (synthetic) node via the node engine: a cloud shape instead of a
+// circle/square, ~3× a normal node. It's a VIEW (id "cloud:…", not in the model graph, non-draggable);
+// its position tracks the coupled covariates. Click → the Joint Lab.
+function FlowCopulaCloudNode(props: FlowNodeProps<FlowCloudNode>) {
+  const { label, onEdit } = props.data;
+  return (
+    <div className="copula-cloud-node" onClick={onEdit ? (event) => { event.stopPropagation(); onEdit(); } : undefined}
+      title={`${label} — the latent common cause these variables share (a copula block, the ↔ / bidirected structure). Click to edit it in the Joint Lab.`}>
+      <svg viewBox="0 0 640 512" className="copula-cloud-node-svg" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <path className="copula-cloud-shape" d="M537.6 226.6c4.1-10.7 6.4-22.4 6.4-34.6 0-53-43-96-96-96-19.7 0-38.1 6-53.3 16.2C367 64.2 315.3 32 256 32c-88.4 0-160 71.6-160 160 0 2.7 .1 5.4 .2 8.1C40.2 219.8 0 273.2 0 336c0 79.5 64.5 144 144 144h368c70.7 0 128-57.3 128-128 0-61.9-44-113.6-102.4-125.4z" />
+      </svg>
+      <span className="copula-cloud-node-label">{label}</span>
+    </div>
+  );
+}
 
 export function FlowGraphCanvas(props: GraphCanvasProps) {
   return (
@@ -144,6 +165,30 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
     return live;
   }, [nodes, nodesById, props.graph.nodes]);
 
+  // Synthetic cloud nodes (one per copula block), positioned above their coupled covariates. Appended
+  // to the render prop only (not the model `nodes` state), so drag / selection / model sync are untouched.
+  const cloudNodes = useMemo<FlowCloudNode[]>(() => {
+    if (!props.copulaClouds || props.copulaClouds.length === 0) return [];
+    const centerOf = (id: string) => { const n = nodes.find((item) => item.id === id); return n ? { x: n.position.x + FLOW_NODE_CENTER_X, y: n.position.y + FLOW_NODE_CENTER_Y } : null; };
+    const out: FlowCloudNode[] = [];
+    for (const cloud of props.copulaClouds) {
+      const centers = cloud.nodeIds.map(centerOf).filter((c): c is { x: number; y: number } => Boolean(c));
+      if (centers.length === 0) continue;
+      const cx = centers.reduce((sum, c) => sum + c.x, 0) / centers.length;
+      const topY = Math.min(...centers.map((c) => c.y));
+      out.push({
+        id: `cloud:${cloud.id}`,
+        type: "copulaCloud",
+        position: { x: cx - CLOUD_NODE_W / 2, y: topY - 100 - CLOUD_NODE_H / 2 },
+        width: CLOUD_NODE_W, height: CLOUD_NODE_H,
+        data: { label: cloud.label, onEdit: props.onOpenJointLab, nodeCount: cloud.nodeIds.length },
+        draggable: false, selectable: false, connectable: false, deletable: false, focusable: false
+      });
+    }
+    return out;
+  }, [props.copulaClouds, props.onOpenJointLab, nodes]);
+  const allNodes = useMemo<AnyFlowNode[]>(() => (cloudNodes.length > 0 ? [...cloudNodes, ...nodes] : nodes), [cloudNodes, nodes]);
+
   const computedEdges = useMemo<FlowGraphEdge[]>(() => props.graph.edges.map((edge) => {
     const source = liveNodesById.get(edge.source);
     const target = liveNodesById.get(edge.target);
@@ -189,7 +234,9 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
       if (!rect || rect.width <= 0 || rect.height <= 0) return;
       const positions = props.graph.nodes.map((node) => graphPointToFlowPoint(node.position));
       const minX = Math.min(...positions.map((point) => point.x));
-      const minY = Math.min(...positions.map((point) => point.y));
+      // Copula-block clouds float above their covariates — reserve room so the fit frames them too.
+      const cloudPad = (props.copulaClouds?.length ?? 0) > 0 ? 132 : 0;
+      const minY = Math.min(...positions.map((point) => point.y)) - cloudPad;
       const maxX = Math.max(...positions.map((point) => point.x + FLOW_NODE_WIDTH));
       const maxY = Math.max(...positions.map((point) => point.y + FLOW_NODE_HEIGHT));
       const graphWidth = Math.max(1, maxX - minX);
@@ -202,10 +249,14 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
       void flow.setViewport(viewport);
     }, 0);
     return undefined;
-  }, [flow, panZoom, props.graph.nodes, props.mode, viewportSignature]);
+  }, [flow, panZoom, props.graph.nodes, props.mode, viewportSignature, props.copulaClouds]);
 
-  const onNodesChange = useCallback((changes: NodeChange<FlowGraphNode>[]) => {
-    setNodes((items) => applyNodeChanges(changes, items));
+  const onNodesChange = useCallback((changes: NodeChange<AnyFlowNode>[]) => {
+    setNodes((items) => {
+      const ids = new Set(items.map((item) => item.id));
+      const modelChanges = changes.filter((change) => !("id" in change) || ids.has(change.id)) as NodeChange<FlowGraphNode>[];
+      return applyNodeChanges(modelChanges, items);
+    });
   }, []);
   const onCanvasDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target;
@@ -217,9 +268,9 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
   return (
     <section className="canvas-shell flow-canvas-shell" aria-label="Graph editor">
       <div ref={frameRef} className="flow-canvas-frame" role="application" aria-label="Editable causal graph" onDoubleClick={onCanvasDoubleClick}>
-        <ReactFlow<FlowGraphNode, FlowGraphEdge>
+        <ReactFlow<AnyFlowNode, FlowGraphEdge>
           className={`graph-canvas flow-graph-canvas ${denseEdges ? "dense-edges" : ""}`}
-          nodes={nodes}
+          nodes={allNodes}
           edges={computedEdges}
           nodeTypes={FLOW_NODE_TYPES}
           edgeTypes={FLOW_EDGE_TYPES}
@@ -248,7 +299,6 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} />
           {props.mode !== "basic" && <Controls className="canvas-zoom-controls react-flow-controls" showInteractive={false} />}
-          <FlowCopulaCloudLayer clouds={props.copulaClouds} nodesById={liveNodesById} onEdit={props.onOpenJointLab} />
           <FlowGraphArrowLayer edges={computedEdges} />
           <FlowModulationLayer modulations={props.modulations} edges={computedEdges} nodesById={liveNodesById} />
           <FlowCopulaLayer couplings={props.copulaCouplings} nodesById={liveNodesById} onEdit={props.onOpenJointLab} onSelect={props.onSelectCoupling} selectedId={props.selection?.kind === "coupling" ? props.selection.id : null} interactive={props.tool === "select"} />
@@ -481,44 +531,6 @@ function modulationVerb(baseline: number, gateCoefficient: number): string {
   if (ratio > 1.25) return "flips";
   if (ratio < 0.75) return "dampens";
   return "masks";
-}
-
-// Copula block as a "shared hidden causes" cloud — the latent projection of the coupling made visible.
-// A VIEW of the block (no model node): faded arrows from the cloud to each coupled covariate; a
-// moderator of a non-simplified edge feeds INTO the cloud. Click to edit in the Joint Lab. The precise
-// pairwise structure stays in the dashed arcs (FlowCopulaLayer) underneath, so partial blocks read right.
-function FlowCopulaCloudLayer({ clouds, nodesById, onEdit }: { clouds: CopulaCloud[]; nodesById: Map<string, GraphNode>; onEdit?: () => void }) {
-  if (!clouds || clouds.length === 0) return null;
-  return (
-    <ViewportPortal>
-      <svg className="copula-cloud-layer">
-        {clouds.map((cloud) => {
-          const nodes = cloud.nodeIds.map((id) => nodesById.get(id)).filter((n): n is GraphNode => Boolean(n));
-          if (nodes.length === 0) return null;
-          const xs = nodes.map((n) => n.position.x);
-          const cx = xs.reduce((s, x) => s + x, 0) / xs.length;
-          const minY = Math.min(...nodes.map((n) => n.position.y));
-          const spread = Math.max(...xs) - Math.min(...xs);
-          const center = { x: cx, y: minY - 78 };             // float above the coupled nodes
-          const W = Math.max(56, spread * 0.5);
-          const bumps = [
-            { dx: 0, dy: 4, r: 28 }, { dx: -W, dy: 8, r: 20 }, { dx: W, dy: 8, r: 20 },
-            { dx: -W * 0.5, dy: -11, r: 22 }, { dx: W * 0.5, dy: -11, r: 22 }
-          ];
-          return (
-            <g key={cloud.id} className="copula-cloud" onClick={onEdit ? (e) => { e.stopPropagation(); onEdit(); } : undefined}>
-              <title>{cloud.label} — this copula block is the latent common cause these variables share (a bidirected structure). Click to edit it in the Joint Lab.</title>
-              {nodes.map((n) => { const p = nodeBoundaryPoint(n, center, 7, { includeDistribution: false }); return <line key={`c-${n.id}`} className="copula-cloud-link" x1={center.x} y1={center.y + 16} x2={p.x} y2={p.y} />; })}
-              {cloud.moderatorIds.map((mid) => { const m = nodesById.get(mid); if (!m) return null; const p = nodeBoundaryPoint(m, center, 7, { includeDistribution: false }); return <line key={`m-${mid}`} className="copula-cloud-mod" x1={p.x} y1={p.y} x2={center.x} y2={center.y + 8} />; })}
-              {bumps.map((b, i) => <circle key={i} className="copula-cloud-body" cx={center.x + b.dx} cy={center.y + b.dy} r={b.r} />)}
-              <text className="copula-cloud-label" x={center.x} y={center.y + 2} textAnchor="middle">hidden causes</text>
-              <circle className="copula-cloud-hit" cx={center.x} cy={center.y} r={Math.max(32, W + 8)} />
-            </g>
-          );
-        })}
-      </svg>
-    </ViewportPortal>
-  );
 }
 
 // Copula couplings: dashed bidirected arcs between covariates that share a copula block, labelled τ.
