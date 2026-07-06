@@ -8,6 +8,8 @@ import { configureBerksonHospital, configureBirthweightParadox, configureCaseCon
 
 export const EXAMPLE_DOMAINS = [
   { id: "classic", label: "Classic DAG patterns", description: "Compact examples for teaching and fast bias checks." },
+  { id: "dependence", label: "Dependence & copulas", description: "Authoring the JOINT dependence of confounders — copulas and vines, tail dependence, moderation (non-simplified vines), and what discrete margins hide. The joint is a knob orthogonal to the causal truth." },
+  { id: "pitfalls", label: "Confounding & bias pitfalls", description: "Ways naive comparisons and adjustment mislead — bias amplification by a near-instrument, the Table 2 fallacy, negative (suppressor) confounding, and immortal time bias." },
   { id: "epidemiology", label: "Epidemiology / public health", description: "Target trial thinking, censoring, measurement, selection, and negative controls." },
   { id: "econometrics", label: "Econometrics / public policy", description: "IV, DiD, RD, synthetic control, panel timing, placebos, and exclusion restrictions." },
   { id: "product", label: "Product / experimentation / marketing", description: "A/B tests, incrementality, geolift, uplift, guardrails, and spillovers." },
@@ -363,7 +365,7 @@ export const EXAMPLES: ExampleModel[] = [
   {
     id: "confounder-joint-copula",
     title: "The confounder joint: couple the covariates",
-    domain: "classic",
+    domain: "dependence",
     summary: "Two independent baseline confounders drive a continuous dose and the outcome. Open Σ (DGP) → Confounder joint and drag the copula τ to couple them: positive coupling concentrates the confounding (crude estimate drifts, overlap strains); the g-computation / oracle do()-effect stays +0.8. The joint is a knob orthogonal to the truth — the whole point of controlling joints.",
     code: `dag {
   Severity_A [adjusted,label="severity A",pos="-1.6,-1.4"]
@@ -380,7 +382,7 @@ export const EXAMPLES: ExampleModel[] = [
   {
     id: "confounder-triple-copula",
     title: "The confounder joint: three coupled covariates",
-    domain: "classic",
+    domain: "dependence",
     summary: "Three baseline confounders drive a continuous dose and the outcome. With THREE covariates the vine gains a conditional (Tree-2) edge — so in Σ (DGP) → Confounder joint you can not only couple the covariates but MODERATE the coupling (make one pair's dependence vary with the third: a non-simplified vine), and the trivariate 3D view lights up. Adjust the joint however you like; the g-computation / oracle do()-effect holds at +0.8.",
     code: `dag {
   Age [adjusted,label="age (z)",pos="-2.0,-1.5"]
@@ -400,7 +402,7 @@ export const EXAMPLES: ExampleModel[] = [
   {
     id: "tail-dependent-confounders",
     title: "Tail-dependent confounders (Clayton copula)",
-    domain: "classic",
+    domain: "dependence",
     summary: "Ships PRE-COUPLED: the two baseline confounders share a Clayton copula — lower-tail dependence, so when both are extreme-LOW they move together. That concentrates patients in the low-low corner, where the dose piles up and exposure OVERLAP / positivity strains, while the g-computation / oracle do()-effect still holds at +0.8. Open Σ → the Joint Lab to see the Clayton copula and rotate it; the tail is where positivity breaks.",
     code: `dag {
   Severity_A [adjusted,label="severity A",pos="-1.6,-1.4"]
@@ -417,7 +419,7 @@ export const EXAMPLES: ExampleModel[] = [
   {
     id: "moderated-confounding",
     title: "Moderated confounding: dependence that varies by sex",
-    domain: "classic",
+    domain: "dependence",
     summary: "Ships with a NON-SIMPLIFIED vine: the copula between Age and Smoking is CONDITIONED on Sex — τ ≈ −0.68 for one sex and ≈ +0.79 for the other (the classic 'does age's dependence on smoking vary with sex?'). Open Σ → the Joint Lab, focus the Age–Smoking | Sex conditional edge, and watch the curve editor + morphing filmstrip flip the dependence by Sex. The do()-effect of the treatment stays +0.8 throughout.",
     code: `dag {
   Age [adjusted,label="age (z)",pos="-2.0,-1.4"]
@@ -437,7 +439,7 @@ export const EXAMPLES: ExampleModel[] = [
   {
     id: "discrete-margin-confession",
     title: "What the atoms hide: coupling two binary confounders",
-    domain: "classic",
+    domain: "dependence",
     summary: "Two BINARY confounders (30% and 70% prevalence), coupled with an authored Gaussian τ = 0.8. But binary marginals are point masses, so Sklar's copula is unidentified across the gaps and the MISMATCHED prevalences cap the achievable association at ≈ 0.43 — the achieved correlation lands near 0.42, far below the latent knob (Fréchet–Hoeffding). Note the point-mass badges on the nodes; open Σ → the Joint Lab and hit '⚠ what the atoms hide' to see authored τ vs the achieved τ_b and the cap. The do()-effect is unaffected (+0.8).",
     code: `dag {
   Risk_A [adjusted,label="risk A",pos="-1.6,-1.4"]
@@ -454,7 +456,7 @@ export const EXAMPLES: ExampleModel[] = [
   {
     id: "bias-amplification-z",
     title: "Bias amplification: adjusting for a near-instrument (Z-bias)",
-    domain: "classic",
+    domain: "pitfalls",
     summary: "The counterintuitive one: Z strongly predicts the exposure but has no direct outcome effect (a near-instrument), while an UNMEASURED U confounds X and Y. 'Adjust for everything' says condition on Z — but that AMPLIFIES the unmeasured bias instead of reducing it (Pearl; Myers et al.; Ding et al.). Watch the adjusted-for-Z estimate drift FURTHER from the +0.8 truth than the crude one. More covariates is not always better.",
     code: `dag {
   Z [adjusted,label="Z (near-instrument)",pos="-2.3,-0.2"]
@@ -470,7 +472,7 @@ export const EXAMPLES: ExampleModel[] = [
   {
     id: "table-2-fallacy",
     title: "The Table 2 fallacy: a mediator masquerading as a covariate",
-    domain: "classic",
+    domain: "pitfalls",
     summary: "Blood pressure looks like just another risk factor you'd throw into the model — but it's a MEDIATOR of the drug (Drug → BP → Outcome). Its regression coefficient is not its total effect, and controlling for it silently turns the DRUG's total effect (+1.34) into a direct effect (+0.5). Toggle the effect between total and direct to see the gap: reading every coefficient in one 'Table 2' as a causal effect is a fallacy (Westreich & Greenland 2013).",
     code: `dag {
   Confounder [adjusted,label="confounder",pos="-1.5,-1.5"]
@@ -487,7 +489,7 @@ export const EXAMPLES: ExampleModel[] = [
   {
     id: "suppressor-confounding",
     title: "Negative (suppressor) confounding: the crude sign is wrong",
-    domain: "classic",
+    domain: "pitfalls",
     summary: "The mirror image of textbook confounding. Sicker patients get MORE of the drug (Severity → Dose) but recover WORSE (Severity → Recovery), so the confounding pulls the crude estimate DOWN through zero — crudely the drug looks useless or even harmful (≈ −0.1). Adjust for severity (or intervene) and its true benefit appears: +0.8. Confounding doesn't only inflate effects; it can suppress or reverse them.",
     code: `dag {
   Severity [adjusted,label="baseline severity",pos="-0.4,-1.5"]
@@ -501,7 +503,7 @@ export const EXAMPLES: ExampleModel[] = [
   {
     id: "immortal-time-bias",
     title: "Immortal time bias: the treated had to survive to be treated",
-    domain: "classic",
+    domain: "pitfalls",
     summary: "A pharmacoepi classic (Suissa; Hernán's DAG view). Treatment can only start in patients still alive at the treatment time — so 'treated' silently means 'survived long enough,' and that immortal early time makes the treated look protected (crude ≈ −27pp on death) even though treatment does NOTHING (true effect null). The fix is to align time-zero / adjust for surviving to treatment (the landmark), which returns the effect to null. Confounding by survival, hiding in the exposure definition.",
     code: `dag {
   Survived_window [adjusted,label="survived to treatment",pos="-0.4,-1.5"]
@@ -515,7 +517,7 @@ export const EXAMPLES: ExampleModel[] = [
   {
     id: "glut4-dose-response",
     title: "GLUT4 gates the response: effect the average hides",
-    domain: "classic",
+    domain: "disambiguation",
     outputModule: "effect-modification",
     summary: "GLUT4 receptor density controls whether insulin therapy does anything: in high-GLUT4 (sensitive) patients the response is large, in low-GLUT4 (insulin-resistant) patients it's ~nil. The MARGINAL effect (a single average) says 'the therapy helps' and hides that a whole subgroup gets nothing — and it would mis-transport to a more-resistant population. The modifier controls the mechanism (the dose-response), not a confounder. A first cut with one gate; letting GLUT4 shift the WHOLE curve (EC50/Emax/slope) is the deeper move.",
     code: `dag {
@@ -528,7 +530,7 @@ export const EXAMPLES: ExampleModel[] = [
   {
     id: "receptor-synergy-copula",
     title: "When the copula hides a crossover (non-simplified vine)",
-    domain: "classic",
+    domain: "dependence",
     outputModule: "effect-modification",
     summary: "The drug works only when two receptor subunits are BOTH high (an A·B synergy). Whether they co-occur is set by genotype — which flips the A–B copula from +0.82 to −0.82 (a NON-simplified vine). So the drug is a big help in one genotype and a net harm in the other, while the marginal effect is ~null. A SIMPLIFIED vine (assuming the coupling is genotype-independent) would report that flat marginal in BOTH subgroups — erasing a sign-flip that decides who to treat. Open Σ → the Joint Lab and flatten the moderation to 'constant' to watch the crossover collapse into the (wrong) simplified answer.",
     code: `dag {
@@ -3083,17 +3085,6 @@ function configureClassicExample(document: GraphDocument, id: string): GraphDocu
   if (id === "restaurant-collider") return configureRestaurantCollider(next);
   if (id === "positivity-correlated-confounders") return configurePositivityCorrelatedConfounders(next);
   if (id === "continuous-dose-response") return configureContinuousDoseResponse(next);
-  if (id === "confounder-joint-copula") return configureConfounderJointCopula(next);
-  if (id === "confounder-triple-copula") return configureConfounderTripleCopula(next);
-  if (id === "tail-dependent-confounders") return configureTailDependentConfounders(next);
-  if (id === "moderated-confounding") return configureModeratedConfounding(next);
-  if (id === "discrete-margin-confession") return configureDiscreteMarginConfession(next);
-  if (id === "bias-amplification-z") return configureBiasAmplificationZ(next);
-  if (id === "table-2-fallacy") return configureTable2Fallacy(next);
-  if (id === "suppressor-confounding") return configureSuppressorConfounding(next);
-  if (id === "immortal-time-bias") return configureImmortalTimeBias(next);
-  if (id === "glut4-dose-response") return configureGlut4DoseResponse(next);
-  if (id === "receptor-synergy-copula") return configureReceptorSynergyCopula(next);
   if (id === "categorical-regimen") return configureCategoricalRegimen(next);
   if (id === "er-visits-count") return configureErVisitsCount(next);
   if (id === "birthweight-paradox") return configureBirthweightParadox(next);
@@ -3145,5 +3136,17 @@ function configurePractitionerExample(document: GraphDocument, id: string): Grap
   if (id === "education-mediation") return configureEducationMediation(next);
   if (id === "chess-intelligence-practice") return configureChessIntelligencePractice(next);
   if (id === "chess-intelligence-practice-simple-flip") return configureChessIntelligenceSimpleFlip(next);
+  // Dependence / copula + pitfalls + GLUT4 (moved out of the "classic" domain; same prep, so identical output).
+  if (id === "confounder-joint-copula") return configureConfounderJointCopula(next);
+  if (id === "confounder-triple-copula") return configureConfounderTripleCopula(next);
+  if (id === "tail-dependent-confounders") return configureTailDependentConfounders(next);
+  if (id === "moderated-confounding") return configureModeratedConfounding(next);
+  if (id === "discrete-margin-confession") return configureDiscreteMarginConfession(next);
+  if (id === "receptor-synergy-copula") return configureReceptorSynergyCopula(next);
+  if (id === "bias-amplification-z") return configureBiasAmplificationZ(next);
+  if (id === "table-2-fallacy") return configureTable2Fallacy(next);
+  if (id === "suppressor-confounding") return configureSuppressorConfounding(next);
+  if (id === "immortal-time-bias") return configureImmortalTimeBias(next);
+  if (id === "glut4-dose-response") return configureGlut4DoseResponse(next);
   return next;
 }
