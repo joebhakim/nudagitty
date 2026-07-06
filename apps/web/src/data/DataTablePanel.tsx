@@ -13,9 +13,10 @@ function cellText(column: DataColumn, index: number): string {
 }
 
 // Phase 1 of the data-table rework: the simulated sample as an actual typed table + CSV export.
-export function DataTablePanel(props: { graph: GraphModel; simulation: SimulationResult; title?: string }) {
+export function DataTablePanel(props: { graph: GraphModel; simulation: SimulationResult; title?: string; orphanColumns?: string[] }) {
   const df = useMemo(() => dataFrameFromSimulation(props.graph, props.simulation), [props.graph, props.simulation]);
   const previewRows = Math.min(df.nRows, 200);
+  const orphans = props.orphanColumns ?? [];
   const download = () => {
     const csv = dataFrameToCsv(df);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -29,9 +30,14 @@ export function DataTablePanel(props: { graph: GraphModel; simulation: Simulatio
   if (df.columns.length === 0) return <p className="data-table-empty">No variables to show yet.</p>;
   return (
     <div className="data-table-panel">
+      {orphans.length > 0 && (
+        <div className="data-orphan-warning">
+          ⚠ {orphans.length} column{orphans.length === 1 ? "" : "s"} in the source data {orphans.length === 1 ? "isn't" : "aren't"} in the DAG (unused): <b>{orphans.join(", ")}</b>. Add nodes for them, or they're dropped from the generated data.
+        </div>
+      )}
       <div className="data-table-head">
-        <span>{df.columns.length} variables × {df.nRows.toLocaleString()} simulated rows{df.nRows > previewRows ? ` — showing the first ${previewRows}` : ""}</span>
-        <button type="button" className="data-download" onClick={download}>⭳ Download CSV ({df.nRows.toLocaleString()} rows)</button>
+        <span>{df.columns.length} variables × {df.nRows.toLocaleString()} rows{df.nRows > previewRows ? ` — showing the first ${previewRows}` : ""}</span>
+        <button type="button" className="data-download" onClick={download}>⭳ Download CSV</button>
       </div>
       <div className="data-table-scroll">
         <table className="data-table">

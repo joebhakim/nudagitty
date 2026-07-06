@@ -19,8 +19,10 @@ export interface DataFrame {
   nRows: number;
 }
 
-/** Materialize a simulation result as a data frame — one column per node, one row per drawn sample. */
-export function dataFrameFromSimulation(graph: GraphModel, result: SimulationResult, options?: { nodeIds?: string[] }): DataFrame {
+/** Materialize a simulation result as a data frame — one OBSERVED column per node, one row per sample.
+ * Latent nodes are excluded by default: they are unobserved (a real confounder, or a plasmode
+ * row-index source) and so aren't part of "the data". Pass `includeLatent` to keep them. */
+export function dataFrameFromSimulation(graph: GraphModel, result: SimulationResult, options?: { nodeIds?: string[]; includeLatent?: boolean }): DataFrame {
   const ids = options?.nodeIds ?? graph.nodes.map((node) => node.id);
   const columns: DataColumn[] = [];
   let nRows = 0;
@@ -28,6 +30,7 @@ export function dataFrameFromSimulation(graph: GraphModel, result: SimulationRes
     const node = graph.nodes.find((candidate) => candidate.id === id);
     const state = result.nodeStates[id];
     if (!node || !state) continue;
+    if (node.roles.latent && !options?.includeLatent) continue;
     const variable = normalizeVariableModel(node.variable);
     const values = state.empirical.samples ?? [];
     nRows = Math.max(nRows, values.length);

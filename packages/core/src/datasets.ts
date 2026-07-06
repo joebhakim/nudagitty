@@ -1,4 +1,5 @@
 import type { CovariateDataset } from "./data/dataset";
+import type { GraphDocument } from "./types";
 import { NHEFS_COVARIATES } from "./data/nhefs";
 import { NHEFS_SYNTHETIC } from "./data/nhefs-synthetic";
 import { IHDP_DATASET } from "./data/ihdp";
@@ -33,4 +34,36 @@ export function datasetRows(name: string | undefined): number[][] {
 
 export function datasetColumnIndex(name: string, column: string): number {
   return DATASETS[name]?.columns.indexOf(column) ?? -1;
+}
+
+// Audit which columns of the datasets a document draws from are actually wired to a node (via a
+// `table_lookup` edge) vs left ORPHAN (present in the data but absent from the DAG). Powers the
+// data-table "N columns aren't in the DAG" check. Reads mechanism kinds off the raw spec (already
+// normalized on load) to avoid a graph-normalize dependency here.
+export function documentDatasets(document: GraphDocument): Array<{ dataset: string; allColumns: string[]; wiredColumns: string[]; orphanColumns: string[] }> {
+  const wired = new Map<string, Set<number>>();
+  for (const edge of document.graph.edges) {
+    const mechanism = document.simulation.edges[edge.id];
+    if (mechanism?.kind === "table_lookup" && mechanism.dataset) {
+      let columns = wired.get(mechanism.dataset);
+      if (!columns) { columns = new Set(); wired.set(mechanism.dataset, columns); }
+      columns.add(mechanism.dataColumn ?? 0);
+    }
+  }
+  const out: Array<{ dataset: string; allColumns: string[]; wiredColumns: string[]; orphanColumns: string[] }> = [];
+  for (const [dataset, indices] of wired) {
+    const allColumns = DATASETS[dataset]?.columns ?? [];
+    out.push({
+      dataset,
+      allColumns,
+      wiredColumns: allColumns.filter((_, i) => indices.has(i)),
+      orphanColumns: allColumns.filter((_, i) => !indices.has(i))
+    });
+  }
+  return out;
+}
+
+/** Columns present in the document's source data but not represented by any node (across all datasets). */
+export function orphanDataColumns(document: GraphDocument): string[] {
+  return documentDatasets(document).flatMap((entry) => entry.orphanColumns);
 }

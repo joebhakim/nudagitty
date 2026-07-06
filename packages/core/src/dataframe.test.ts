@@ -17,6 +17,17 @@ describe("dataframe", () => {
     for (const col of df.columns) expect(col.values.length).toBe(df.nRows);
   });
 
+  it("excludes latent nodes (unobserved / plasmode index) from the data by default", () => {
+    const doc = exampleDocument("lalonde-dgm-plasmode")!; // has a latent Row_source plasmode index
+    const result = runSimulation(doc.graph, doc.simulation);
+    const df = dataFrameFromSimulation(doc.graph, result);
+    expect(df.columns.some((c) => /row|resample/i.test(c.name))).toBe(false); // the row-index source is gone
+    const latentIds = doc.graph.nodes.filter((n) => n.roles.latent).map((n) => n.label || n.id);
+    expect(latentIds.length).toBeGreaterThan(0);
+    const withLatent = dataFrameFromSimulation(doc.graph, result, { includeLatent: true });
+    expect(withLatent.columns.length).toBe(df.columns.length + latentIds.length); // opt-in brings them back
+  });
+
   it("exports CSV with a header, category labels, and one line per row", () => {
     const doc = exampleDocument("simpson-severity")!;
     const result = runSimulation(doc.graph, doc.simulation);

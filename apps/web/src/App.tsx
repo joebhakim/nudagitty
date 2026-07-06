@@ -46,6 +46,7 @@ import {
   addNode,
   setCopulaCorrelation,
   setCopulaBlock,
+  orphanDataColumns,
   withCoupling,
   withoutCoupling,
   simpleEdge,
@@ -428,6 +429,7 @@ export function App() {
     commit(setCopulaBlock(document, withoutCoupling(block, rootCovariateIds, coupling.aId, coupling.bId)));
     setSelection(null);
   }, [commit, copulaCouplings, document, rootCovariateIds, setSelection]);
+  const dataOrphans = useMemo(() => orphanDataColumns(document), [document]);
   const { overlapDiagnostic, positivity } = useOverlapDiagnostic(computationDocument);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
 
@@ -1098,7 +1100,7 @@ export function App() {
             <IconButton label="Data-generating process" pressed={showDgp} onClick={() => setShowDgp((open) => !open)}><Sigma size={18} /></IconButton>
             <IconButton label="Glossary" pressed={showGlossary} onClick={() => setShowGlossary((open) => !open)}><BookOpen size={18} /></IconButton>
             <IconButton label="Overlap / positivity" pressed={showOverlap} badge={positivity === "ok" ? null : positivity} onClick={() => setShowOverlap((open) => !open)}><Blend size={18} /></IconButton>
-            <IconButton label="Data — the simulated sample" pressed={showData} onClick={() => setShowData((open) => !open)}><Table size={18} /></IconButton>
+            <IconButton label="Data — the current sample" pressed={showData} badge={dataOrphans.length > 0 ? "warning" : null} onClick={() => setShowData((open) => !open)}><Table size={18} /></IconButton>
             <IconButton label="Joint Lab — confounder dependence" pressed={showJointLab} onClick={() => setShowJointLab((open) => !open)}><Spline size={18} /></IconButton>
             <IconButton label="Implicit noise nodes" pressed={showNoiseNodes} onClick={() => setShowNoiseNodes(!showNoiseNodes)}><CircleDashed size={18} /></IconButton>
             <input
@@ -1175,10 +1177,10 @@ export function App() {
         <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Simulated data table" onClick={() => setShowData(false)}>
           <div className="explanation-modal wide" onClick={(event) => event.stopPropagation()}>
             <div className="explanation-modal-header">
-              <strong>Data — the simulated sample · {activeExample?.title ?? document.title}</strong>
+              <strong>Data — the current sample · {activeExample?.title ?? document.title}</strong>
               <button type="button" aria-label="Close data table" onClick={() => setShowData(false)}><X size={16} /></button>
             </div>
-            <DataTablePanel graph={document.graph} simulation={simulation} title={activeExample?.title ?? document.title} />
+            <DataTablePanel graph={document.graph} simulation={simulation} title={activeExample?.title ?? document.title} orphanColumns={dataOrphans} />
           </div>
         </div>
       )}
