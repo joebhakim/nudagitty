@@ -32,6 +32,7 @@ import {
   Waypoints,
   Table,
   FileUp,
+  GraduationCap,
   Blend,
   CircleDashed,
   BookOpen,
@@ -116,6 +117,8 @@ import { applyOperation, deriveOperation } from "./shared/operations";
 import { DataTablePanel } from "./data/DataTablePanel";
 import { PlasmodeSourcePanel } from "./data/PlasmodeSourcePanel";
 import { ImportDataModal } from "./data/ImportDataModal";
+import { TutorialController } from "./tutorial/TutorialController";
+import { LALONDE_TUTORIAL, LALONDE_CONFOUNDERS, LALONDE_TREATMENT, LALONDE_OUTCOME } from "./tutorial/lalondeTutorial";
 import { displayNodeName } from "./outputs/estimand";
 import { EstimandFormula, NodeName } from "./outputs/EstimandFormula";
 import { NodeNamesProvider } from "./shared/NodeNames";
@@ -287,6 +290,7 @@ export function App() {
   const [showDgp, setShowDgp] = useState(false);
   const [showJointLab, setShowJointLab] = useState(false);
   const [jointLabTab, setJointLabTab] = useState<"copula" | "plasmode">("copula");
+  const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [couplingHint, setCouplingHint] = useState<string | null>(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [showOverlap, setShowOverlap] = useState(false);
@@ -422,6 +426,21 @@ export function App() {
     setJointLabTab(mechanism ?? (hasCopulaSource ? "copula" : hasPlasmodeSource ? "plasmode" : "copula"));
     setShowJointLab(true);
   }, [hasCopulaSource, hasPlasmodeSource]);
+
+  // Tutorial per-step helper: the "wire the confounders" one-click (16 edges by hand is the tour's
+  // roughest step). Adds each confounder → treatment and → outcome, then commits once.
+  const runTutorialAction = useCallback((stepId: string) => {
+    if (stepId !== "wire") return;
+    let graph = document.graph;
+    const has = (id: string) => graph.nodes.some((node) => node.id === id);
+    for (const confounder of LALONDE_CONFOUNDERS) {
+      if (!has(confounder)) continue;
+      for (const target of [LALONDE_TREATMENT, LALONDE_OUTCOME]) {
+        if (has(target)) graph = upsertEdge(graph, { id: edgeId(confounder, target, "directed"), source: confounder, target, kind: "directed" });
+      }
+    }
+    replaceGraph(graph);
+  }, [document.graph, replaceGraph]);
 
   // Root covariates (confounders) — the nodes a copula block may couple: roots that aren't the
   // exposure/outcome/latent. Mirrors CopulaBlockEditor.rootCovariates so canvas + Joint Lab agree.
@@ -1131,6 +1150,7 @@ export function App() {
           </> : <>
             {!presentationActive && <IconButton label="New" onClick={createNewDocument}><FilePlus2 size={18} /></IconButton>}
             {!presentationActive && <IconButton label="Import data (CSV → nodes)" onClick={() => setShowImport(true)}><FileUp size={18} /></IconButton>}
+            {!presentationActive && <IconButton label="Take the tour" pressed={tutorialStep !== null} onClick={() => setTutorialStep((step) => (step === null ? 0 : null))}><GraduationCap size={18} /></IconButton>}
             <ExampleMenu mode={workbenchMode} activeExampleId={activeExampleId} onSelect={loadExample} onOpenGlossary={() => setShowGlossary(true)} />
             <IconButton label="Explain this example" pressed={showExplanation} onClick={() => setShowExplanation((open) => { if (!open) trackInfoOverlayOpened("explanation"); return !open; })}><Info size={18} /></IconButton>
             <IconButton label="Data-generating process" pressed={showDgp} onClick={() => setShowDgp((open) => !open)}><Sigma size={18} /></IconButton>
@@ -1218,6 +1238,16 @@ export function App() {
               : <PlasmodeSourcePanel document={document} onSetJointMode={(dataset, mode) => commit(setPlasmodeJointMode(document, dataset, mode))} />}
           </div>
         </div>
+      )}
+      {tutorialStep !== null && (
+        <TutorialController
+          steps={LALONDE_TUTORIAL}
+          step={tutorialStep}
+          ctx={{ document, showJointLab, jointSources }}
+          onGoto={(index) => setTutorialStep(index)}
+          onExit={() => setTutorialStep(null)}
+          onAction={runTutorialAction}
+        />
       )}
       {showImport && (
         <div className="explanation-overlay" role="dialog" aria-modal="true" aria-label="Import data" onClick={() => setShowImport(false)}>
