@@ -149,6 +149,9 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
   }), [candidateInstrumentIds, props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.onNodeClick, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values, props.showNoiseNodes]);
   const [nodes, setNodes] = useState<FlowGraphNode[]>(computedNodes);
   const [legendOpen, setLegendOpen] = useState(false);
+  const [cloudPositions, setCloudPositions] = useState<Record<string, { x: number; y: number }>>({});
+  // Forget manual cloud placements when the graph structure changes (e.g. a new example loads).
+  useEffect(() => { setCloudPositions({}); }, [viewportSignature]);
 
   const liveNodesById = useMemo(() => {
     const live = new Map<string, GraphNode>();
@@ -165,28 +168,31 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
     return live;
   }, [nodes, nodesById, props.graph.nodes]);
 
-  // Synthetic cloud nodes (one per copula block), positioned above their coupled covariates. Appended
-  // to the render prop only (not the model `nodes` state), so drag / selection / model sync are untouched.
-  const cloudNodes = useMemo<FlowCloudNode[]>(() => {
-    if (!props.copulaClouds || props.copulaClouds.length === 0) return [];
+  // Synthetic cloud nodes (one per copula block), floating above their coupled covariates by default but
+  // freely DRAGGABLE (aesthetic only) — a manual drag position (kept in `cloudPositions`) overrides the
+  // computed one. Appended to the render prop only (not the model `nodes` state), so model sync is untouched.
+  const cloudLayout = useMemo(() => {
+    if (!props.copulaClouds || props.copulaClouds.length === 0) return [] as Array<{ cloud: CopulaCloud; position: { x: number; y: number }; center: { x: number; y: number } }>;
     const centerOf = (id: string) => { const n = nodes.find((item) => item.id === id); return n ? { x: n.position.x + FLOW_NODE_CENTER_X, y: n.position.y + FLOW_NODE_CENTER_Y } : null; };
-    const out: FlowCloudNode[] = [];
+    const out: Array<{ cloud: CopulaCloud; position: { x: number; y: number }; center: { x: number; y: number } }> = [];
     for (const cloud of props.copulaClouds) {
       const centers = cloud.nodeIds.map(centerOf).filter((c): c is { x: number; y: number } => Boolean(c));
       if (centers.length === 0) continue;
       const cx = centers.reduce((sum, c) => sum + c.x, 0) / centers.length;
       const topY = Math.min(...centers.map((c) => c.y));
-      out.push({
-        id: `cloud:${cloud.id}`,
-        type: "copulaCloud",
-        position: { x: cx - CLOUD_NODE_W / 2, y: topY - 100 - CLOUD_NODE_H / 2 },
-        width: CLOUD_NODE_W, height: CLOUD_NODE_H,
-        data: { label: cloud.label, onEdit: props.onOpenJointLab, nodeCount: cloud.nodeIds.length },
-        draggable: false, selectable: false, connectable: false, deletable: false, focusable: false
-      });
+      const position = cloudPositions[`cloud:${cloud.id}`] ?? { x: cx - CLOUD_NODE_W / 2, y: topY - 100 - CLOUD_NODE_H / 2 };
+      out.push({ cloud, position, center: { x: position.x + CLOUD_NODE_W / 2, y: position.y + CLOUD_NODE_H / 2 } });
     }
     return out;
-  }, [props.copulaClouds, props.onOpenJointLab, nodes]);
+  }, [props.copulaClouds, nodes, cloudPositions]);
+  const cloudNodes = useMemo<FlowCloudNode[]>(() => cloudLayout.map(({ cloud, position }) => ({
+    id: `cloud:${cloud.id}`,
+    type: "copulaCloud",
+    position,
+    width: CLOUD_NODE_W, height: CLOUD_NODE_H,
+    data: { label: cloud.label, onEdit: props.onOpenJointLab, nodeCount: cloud.nodeIds.length },
+    draggable: true, selectable: false, connectable: false, deletable: false, focusable: false
+  })), [cloudLayout, props.onOpenJointLab]);
   const allNodes = useMemo<AnyFlowNode[]>(() => (cloudNodes.length > 0 ? [...cloudNodes, ...nodes] : nodes), [cloudNodes, nodes]);
 
   const computedEdges = useMemo<FlowGraphEdge[]>(() => props.graph.edges.map((edge) => {
@@ -252,6 +258,12 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
   }, [flow, panZoom, props.graph.nodes, props.mode, viewportSignature, props.copulaClouds]);
 
   const onNodesChange = useCallback((changes: NodeChange<AnyFlowNode>[]) => {
+    // Cloud drags update their own aesthetic position; everything else drives the model node state.
+    const cloudMoves: Record<string, { x: number; y: number }> = {};
+    for (const change of changes) {
+      if (change.type === "position" && change.id.startsWith("cloud:") && change.position) cloudMoves[change.id] = change.position;
+    }
+    if (Object.keys(cloudMoves).length > 0) setCloudPositions((prev) => ({ ...prev, ...cloudMoves }));
     setNodes((items) => {
       const ids = new Set(items.map((item) => item.id));
       const modelChanges = changes.filter((change) => !("id" in change) || ids.has(change.id)) as NodeChange<FlowGraphNode>[];
@@ -299,7 +311,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.1} />
           {props.mode !== "basic" && <Controls className="canvas-zoom-controls react-flow-controls" showInteractive={false} />}
-          <FlowCopulaCloudLinks clouds={props.copulaClouds} nodesById={liveNodesById} />
+          <FlowCopulaCloudLinks layout={cloudLayout} nodesById={liveNodesById} />
           <FlowGraphArrowLayer edges={computedEdges} />
           <FlowModulationLayer modulations={props.modulations} edges={computedEdges} nodesById={liveNodesById} />
           <FlowCopulaLayer couplings={props.copulaCouplings} nodesById={liveNodesById} onEdit={props.onOpenJointLab} onSelect={props.onSelectCoupling} selectedId={props.selection?.kind === "coupling" ? props.selection.id : null} interactive={props.tool === "select"} />
@@ -538,17 +550,14 @@ function modulationVerb(baseline: number, gateCoefficient: number): string {
 // (U → Cᵢ), plus a moderator of a non-simplified edge feeding INTO the cloud. The cloud centre matches
 // the FlowCopulaCloudNode's position (centroid-x of the coupled nodes, min-y − 100). The inter-node
 // coupling itself is the dashed τ arc drawn by FlowCopulaLayer.
-function FlowCopulaCloudLinks({ clouds, nodesById }: { clouds: CopulaCloud[]; nodesById: Map<string, GraphNode> }) {
-  if (!clouds || clouds.length === 0) return null;
+function FlowCopulaCloudLinks({ layout, nodesById }: { layout: Array<{ cloud: CopulaCloud; center: { x: number; y: number } }>; nodesById: Map<string, GraphNode> }) {
+  if (!layout || layout.length === 0) return null;
   return (
     <ViewportPortal>
       <svg className="copula-cloud-links" aria-hidden="true">
-        {clouds.map((cloud) => {
+        {layout.map(({ cloud, center }) => {
           const coupled = cloud.nodeIds.map((id) => nodesById.get(id)).filter((n): n is GraphNode => Boolean(n));
           if (coupled.length === 0) return null;
-          const cx = coupled.reduce((sum, n) => sum + n.position.x, 0) / coupled.length;
-          const minY = Math.min(...coupled.map((n) => n.position.y));
-          const center = { x: cx, y: minY - 100 };
           return (
             <g key={cloud.id}>
               {coupled.map((n) => { const p = nodeBoundaryPoint(n, center, 6, { includeDistribution: false }); return <line key={`c-${n.id}`} className="copula-cloud-link" x1={center.x} y1={center.y + 30} x2={p.x} y2={p.y} />; })}
