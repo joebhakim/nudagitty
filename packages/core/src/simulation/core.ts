@@ -87,6 +87,7 @@ export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?
     }
     let value = mechanism.intercept;
     const nodeContributions: StructuralContribution[] = [];
+    let lookupContribution: number | null = null;
     for (const parent of parents) {
       const edge = activeGraph.edges.find((candidate) => candidate.kind === "directed" && candidate.source === parent && candidate.target === id);
       if (!edge) continue;
@@ -96,8 +97,12 @@ export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?
       contributions[edge.id] = contribution;
       const absorbing = edgeMechanism.kind === "absorbing";
       nodeContributions.push({ value: contribution, absorbing });
+      if (edgeMechanism.kind === "table_lookup") lookupContribution = contribution;
       if (!absorbing) value += contribution;
     }
+    // Plasmode: a node read from data (a table_lookup edge, no interactions) IS the cell value — ignore
+    // the other structural edges (the causal DAG for adjustment, not a regenerating model). Matches compiled.
+    if (lookupContribution !== null && mechanism.interactions.length === 0) value = mechanism.intercept + lookupContribution;
     const interaction = interactionContribution(values, mechanism);
     const noise = sampleDistribution(mechanism.noise, rng);
     value += interaction + noise;
@@ -206,6 +211,7 @@ export function runIntervenedEmpiricalSimulation(graph: GraphModel, spec: Simula
         }
         const nodeContributions: StructuralContribution[] = [];
         let value = mechanism.intercept;
+        let lookupContribution: number | null = null;
         for (const parent of parents) {
           const edge = activeGraph.edges.find((candidate) => candidate.kind === "directed" && candidate.source === parent && candidate.target === id);
           if (!edge) continue;
@@ -214,8 +220,10 @@ export function runIntervenedEmpiricalSimulation(graph: GraphModel, spec: Simula
           const contribution = edgeContribution(values[parent] ?? 0, edgeMechanism);
           const absorbing = edgeMechanism.kind === "absorbing";
           nodeContributions.push({ value: contribution, absorbing });
+          if (edgeMechanism.kind === "table_lookup") lookupContribution = contribution;
           if (!absorbing) value += contribution;
         }
+        if (lookupContribution !== null && mechanism.interactions.length === 0) value = mechanism.intercept + lookupContribution;
         const interaction = interactionContribution(values, mechanism);
         const noise = sampleDistribution(mechanism.noise, rng);
         value += interaction + noise;
