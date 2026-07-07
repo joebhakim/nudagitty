@@ -13,6 +13,16 @@
 }
 
 .plasmode-panel { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px 2px; }
+.plasmode-fit { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid #b79ae0; background: #f6f1fd; border-radius: 9px; }
+.plasmode-fit-copy { display: flex; flex-direction: column; gap: 3px; }
+.plasmode-fit-copy strong { font-size: 13.5px; color: #5a2fa0; }
+.plasmode-fit-copy span { font-size: 12px; line-height: 1.45; color: var(--text-muted, #667); }
+.plasmode-fit-go { flex: 0 0 auto; align-self: center; appearance: none; border: none; background: #6b40b0; color: #fff; font-size: 13px; font-weight: 700; border-radius: 8px; padding: 9px 16px; cursor: pointer; white-space: nowrap; }
+.plasmode-fit-go:hover { background: #5a2fa0; }
+@media (prefers-color-scheme: dark) {
+  .plasmode-fit { background: #241b38; border-color: #4a3b66; }
+  .plasmode-fit-copy strong { color: #c9adf0; }
+}
 .plasmode-lede { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-muted, #556); }
 .plasmode-panel--empty { align-items: flex-start; gap: 8px; padding: 12px 4px; }
 .plasmode-empty-title { margin: 0; font-weight: 600; font-size: 14px; }

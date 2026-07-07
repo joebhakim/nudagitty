@@ -51,6 +51,8 @@ import {
   orphanDataColumns,
   plasmodeSources,
   setPlasmodeJointMode,
+  fitDgpFromData,
+  fittableDgp,
   withCoupling,
   withoutCoupling,
   simpleEdge,
@@ -1272,7 +1274,7 @@ export function App() {
             </div>
             {jointLabTab === "copula"
               ? <CopulaBlockEditor key={activeExample?.id ?? "custom"} document={document} onCommit={commit} />
-              : <PlasmodeSourcePanel document={document} onSetJointMode={(dataset, mode) => commit(setPlasmodeJointMode(document, dataset, mode))} />}
+              : <PlasmodeSourcePanel document={document} onSetJointMode={(dataset, mode) => commit(setPlasmodeJointMode(document, dataset, mode))} fittable={fittableDgp(document)} onFitDgp={() => commit(fitDgpFromData(document))} />}
           </div>
         </div>
       )}

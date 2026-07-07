@@ -7,7 +7,7 @@ type JointMode = "shared" | "independent";
 // The Plasmode tab of the Joint / DGM editor: the empirical mechanism for the confounder joint. Where
 // the Copula tab AUTHORS a parametric dependence, this one reports the wiring AND exposes the one knob
 // that matters — shared vs independent resampling (the mirror of dragging a copula's τ to zero).
-export function PlasmodeSourcePanel(props: { document: GraphDocument; onSetJointMode: (dataset: string, mode: JointMode) => void }) {
+export function PlasmodeSourcePanel(props: { document: GraphDocument; onSetJointMode: (dataset: string, mode: JointMode) => void; fittable?: boolean; onFitDgp?: () => void }) {
   const orphansByDataset = new Map(documentDatasets(props.document).map((entry) => [entry.dataset, entry.orphanColumns]));
   const labelOf = (id: string) => props.document.graph.nodes.find((node) => node.id === id)?.label ?? id;
 
@@ -37,6 +37,15 @@ export function PlasmodeSourcePanel(props: { document: GraphDocument; onSetJoint
 
   return (
     <div className="plasmode-panel">
+      {props.fittable && (
+        <div className="plasmode-fit">
+          <div className="plasmode-fit-copy">
+            <strong>Learn the causal edges from data</strong>
+            <span>Keep the covariates real, but FIT every variable you've drawn arrows into — logistic for a binary treatment, least-squares for a continuous outcome. The arrows become learned coefficients and the fitted effect is the DGP's known truth, which adjustment should recover.</span>
+          </div>
+          <button type="button" className="plasmode-fit-go" onClick={props.onFitDgp}>Learn the DGP →</button>
+        </div>
+      )}
       <p className="plasmode-lede">
         These covariates are resampled from real rows of a dataset. Draw them from the <b>same</b> row and their joint
         dependence is <b>exactly empirical</b> (real correlations, tails, discrete structure); draw each from its own row
