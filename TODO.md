@@ -19,9 +19,11 @@ axes — the old whole-node "From data / Fit / Author" toggle conflated them.
       *Marginal:* "from data" for a data node (a stated fact + the observed shape, with an
       "author a parametric marginal instead" escape); *Dependence:* the edge list, each
       **Not-learned / Fitted 📌 / Authored ✎**, plus "fit all". Drop the whole-node mode toggle. *(task #91)*
-- [ ] **Wire-time model-type prompt.** Drawing (or bulk-wiring) an edge into a data variable pauses:
-      "You're giving `treat` a dependence — model: **logistic** (binary). [Learn from data] [Leave unlearned]"
-      → fits per-node (joint over its parents). Not silent inert edges. *(task #91)*
+- [x] **Wire-time model-type prompt.** DONE — wiring an edge into a still-reading data variable pops a
+      non-blocking card: "<node> is a data variable — its new arrow is not learned yet. [Fit <node> from
+      data (logistic|linear) →] [Leave not learned]". Model type inferred from the target's family.
+      Verified: Hispanic→In_program shows "(logistic)". *(task #91)*
+      - [ ] follow-up: fire once for a bulk multi-wire (currently per completed edge); mobile placement.
 - [x] **Marginal-preserving fit — binary.** VERIFIED already preserved: the logistic MLE with a fitted
       intercept makes the mean predicted probability equal the empirical rate, and Bernoulli(rate) IS the
       whole marginal. (lalonde-recover-rct In_program: read 0.063 → fit 0.066 vs empirical 0.069.) No extra

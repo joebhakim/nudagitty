@@ -55,6 +55,7 @@ import {
   fitDgpFromData,
   fittableDgp,
   nodeProvenance,
+  nodeGenerates,
   edgeProvenance,
   pinKeyElement,
   pinKeys,
@@ -307,6 +308,8 @@ export function App() {
   const [jointLabTab, setJointLabTab] = useState<"copula" | "plasmode">("copula");
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [couplingHint, setCouplingHint] = useState<string | null>(null);
+  // When you wire an edge INTO a data variable, its dependence lands "not learned" — offer to fit it.
+  const [wirePrompt, setWirePrompt] = useState<string | null>(null);
   const [showGlossary, setShowGlossary] = useState(false);
   const [showOverlap, setShowOverlap] = useState(false);
   const [showData, setShowData] = useState(false);
@@ -660,6 +663,7 @@ export function App() {
   const createOrSelectEdge = useCallback((target: string) => {
     if (!edgeSource) {
       setEdgeSource(target);
+      setWirePrompt(null);
       return;
     }
     if (edgeSource === target) {
@@ -672,7 +676,9 @@ export function App() {
     selectEdge(id);
     setEdgeSource(null);
     replaceGraph(graph);
-  }, [document.graph, edgeSource, replaceGraph, selectEdge]);
+    // Wiring into a still-reading data variable adds a NOT-LEARNED dependence — pause and offer to fit it.
+    setWirePrompt(nodeProvenance(document, target) === "data" && !nodeGenerates(document, target) ? target : null);
+  }, [document, edgeSource, replaceGraph, selectEdge]);
 
   const updateModelFromText = useCallback(() => {
     const parsed = parseModel(modelText, document.title);
@@ -1080,6 +1086,20 @@ export function App() {
         onDeleteMany={deleteMany}
       />
       {couplingHint && <div className="couple-hint error" role="status">{couplingHint}</div>}
+      {wirePrompt && (() => {
+        const wired = document.graph.nodes.find((n) => n.id === wirePrompt);
+        if (!wired) return null;
+        const model = normalizeVariableModel(wired.variable).valueType === "binary" ? "logistic" : "linear (OLS)";
+        return (
+          <div className="wire-prompt" role="status">
+            <span><b>{wired.label}</b> is a data variable — its new arrow is <b>not learned</b> yet.</span>
+            <div className="wire-prompt-actions">
+              <button type="button" className="wp-fit" onClick={() => { commit(setNodeDataMode(document, wirePrompt, "fit")); setWirePrompt(null); }}>Fit {wired.label} from data ({model}) →</button>
+              <button type="button" className="wp-leave" onClick={() => setWirePrompt(null)}>Leave not learned</button>
+            </div>
+          </div>
+        );
+      })()}
     </Panel>
   );
 
