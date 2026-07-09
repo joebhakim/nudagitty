@@ -1125,6 +1125,28 @@
 button.prov-chip { cursor: pointer; }
 .prov-chip.pinned { color: #6b40b0; border-color: #c9b6e6; background: #f3ecfc; }
 .prov-chip.authored { color: #c08a2e; }
-.generation-fit { align-self: flex-start; appearance: none; border: none; background: #6b40b0; color: #fff; font-size: 12.5px; font-weight: 700; border-radius: 7px; padding: 7px 13px; cursor: pointer; }
+.generation-fit { align-self: flex-start; appearance: none; border: none; background: #6b40b0; color: #fff; font-size: 12.5px; font-weight: 700; border-radius: 7px; padding: 7px 13px; cursor: pointer; margin-top: 8px; }
 .generation-fit:hover { background: #5a2fa0; }
 @media (prefers-color-scheme: dark) { .generation-equation { border-color: #34343e; background: #1b1b22; } .prov-chip.pinned { background: #2a2140; border-color: #4a3b66; color: #c9adf0; } }
+
+/* Marginal (from data) — a stated fact, separate from the learned dependence. */
+.marginal-row { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 10px; font-size: 12px; line-height: 1.4; flex-wrap: wrap; }
+.prov-badge { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; }
+.prov-badge.data { color: #0d6b52; background: #d8f2ea; border: 1px solid #9ed9c6; }
+
+/* Dependence — the per-edge learned part. */
+.dependence-block { display: flex; flex-direction: column; }
+.dependence-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 5px; }
+.dependence-head > strong { font-size: 12px; }
+.dependence-head > .muted { font-size: 11px; }
+.gen-notlearned { flex: 1 1 auto; font-size: 11.5px; font-style: italic; }
+
+/* Per-number 3-state dependence control: ∅ not-learned · 📌 fitted · ✎ authored. */
+.dep-control { flex: 0 0 auto; display: inline-flex; border: 1px solid var(--border, #d8d8e2); border-radius: 6px; overflow: hidden; }
+.dep-control button { appearance: none; background: none; border: none; padding: 2px 6px; font-size: 11px; line-height: 1.6; color: var(--text-muted, #99a); cursor: pointer; }
+.dep-control button + button { border-left: 1px solid var(--border, #d8d8e2); }
+.dep-control button.active { color: #fff; cursor: default; }
+.dep-control button:nth-child(1).active { background: #9aa0b4; }
+.dep-control button:nth-child(2).active { background: #6b40b0; }
+.dep-control button:nth-child(3).active { background: #c08a2e; }
+@media (prefers-color-scheme: dark) { .prov-badge.data { color: #7fe3c6; background: #123028; border-color: #2c5a4c; } .dep-control { border-color: #34343e; } .dep-control button + button { border-left-color: #34343e; } }

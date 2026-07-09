@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   cloneDocument,
   reconcilePins,
+  syncGenerativeState,
   serializeModel,
   withGraph
 } from "@nudagitty/core";
@@ -65,8 +66,9 @@ type WorkbenchStore = {
 };
 
 function commitState(state: WorkbenchStore, next: GraphDocument): Partial<WorkbenchStore> {
-  // Live provenance: re-fit every pinned number from the current data + DAG; `changed` drives the flash.
-  const { document, changed } = reconcilePins(next);
+  // Live provenance: keep each data node's read/generate state in sync with its learned numbers, then
+  // re-fit every pinned number from the current data + DAG; `changed` drives the flash.
+  const { document, changed } = reconcilePins(syncGenerativeState(next));
   return {
     history: [...state.history.slice(-80), cloneDocument(state.document)],
     future: [],

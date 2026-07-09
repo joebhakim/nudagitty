@@ -64,7 +64,8 @@ export function defaultGraphDocumentMetadata(): GraphDocumentMetadata {
       survivalOutputs: []
     },
     sources: [],
-    pins: []
+    pins: [],
+    authored: []
   };
 }
 

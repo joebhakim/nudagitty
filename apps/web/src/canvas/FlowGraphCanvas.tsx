@@ -274,7 +274,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         semantic: props.highlightedEdges.get(edge.id),
         enabled,
         denseEdges,
-        pinned: props.edgeProvenanceById.get(edge.id) === "pinned",
+        pinned: props.edgeProvenanceById.get(edge.id) === "fitted",
         onSelect: props.onEdgeClick
       },
       className: `prov-${props.edgeProvenanceById.get(edge.id) ?? "authored"}${flashing.edgeIds.has(edge.id) ? " prov-flash" : ""}`
@@ -381,9 +381,10 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         {marqueeBox && <div className="canvas-marquee" style={{ left: marqueeBox.left, top: marqueeBox.top, width: marqueeBox.width, height: marqueeBox.height }} />}
         {props.showProvenance && (
           <div className="provenance-legend" aria-label="Provenance">
-            <span><i className="prov-swatch prov-authored" />authored</span>
             <span><i className="prov-swatch prov-data" />from data</span>
-            <span><i className="prov-swatch prov-pinned" />fitted 📌</span>
+            <span><i className="prov-swatch prov-fitted" />fitted 📌</span>
+            <span><i className="prov-swatch prov-authored" />authored ✎</span>
+            <span><i className="prov-swatch prov-not-learned" />not learned</span>
           </div>
         )}
         <ReactFlow<AnyFlowNode, FlowGraphEdge>

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { candidateInstruments, classifyConditioned, nodeDataMode, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, pinKeys } from "@nudagitty/core";
+import { candidateInstruments, classifyConditioned, nodeGenerates, nodeProvenance, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, pinKeys } from "@nudagitty/core";
 import type {
   AnalysisOperation,
   EdgeMechanism,
@@ -267,6 +267,7 @@ export function SelectionEditor(props: {
   onSetDataMode: (nodeId: string, mode: "read" | "fit" | "author") => void;
   onPinNumber: (key: string) => void;
   onUnpinKey: (key: string) => void;
+  onUnlearnNumber: (key: string) => void;
 }) {
   if (props.mode === "basic") return <BasicSelectionEditor {...props} />;
   if (props.node) return <VariableEditor
@@ -287,6 +288,7 @@ export function SelectionEditor(props: {
     onCoefficient={props.onCoefficient}
     onPinNumber={props.onPinNumber}
     onUnpinKey={props.onUnpinKey}
+    onUnlearnNumber={props.onUnlearnNumber}
   />;
   if (props.edge) return <EdgeEditor
     edge={props.edge}
@@ -422,14 +424,27 @@ export function BasicEdgeEditor(props: Parameters<typeof SelectionEditor>[0] & {
   );
 }
 
-// A per-number provenance chip. Non-data numbers are always authored (✎). For a data node each number
-// can be toggled between fitted (📌, click to override) and authored (✎, click to fit from data).
-function ProvChip(props: { pins: string[]; keyStr: string; fittable: boolean; onPin: (k: string) => void; onUnpin: (k: string) => void }) {
-  const pinned = props.pins.includes(props.keyStr);
-  if (!props.fittable) return <span className="prov-chip authored" title="authored value">✎</span>;
-  return pinned
-    ? <button type="button" className="prov-chip pinned" title="fitted from data — click to override (author)" onClick={() => props.onUnpin(props.keyStr)}>📌</button>
-    : <button type="button" className="prov-chip authored" title="authored — click to fit this from data" onClick={() => props.onPin(props.keyStr)}>✎</button>;
+type DepState = "not-learned" | "fitted" | "authored";
+function depStateOf(document: GraphDocument, keyStr: string): DepState {
+  if (document.metadata.pins.includes(keyStr)) return "fitted";
+  if (document.metadata.authored.includes(keyStr)) return "authored";
+  return "not-learned";
+}
+
+// A per-number dependence control for a DATA node: not-learned (∅, structural only) / fitted (📌, from data) /
+// authored (✎, you set it). For a from-scratch node numbers are always authored — a static chip.
+function DepControl(props: {
+  state: DepState; keyStr: string; isData: boolean;
+  onFit: (k: string) => void; onAuthor: (k: string) => void; onUnlearn: (k: string) => void;
+}) {
+  if (!props.isData) return <span className="prov-chip authored" title="authored value">✎</span>;
+  return (
+    <div className="dep-control" role="group" aria-label="dependence provenance">
+      <button type="button" className={props.state === "not-learned" ? "active" : ""} title="not learned — structural only, no number" onClick={() => props.onUnlearn(props.keyStr)}>∅</button>
+      <button type="button" className={props.state === "fitted" ? "active" : ""} title="fitted from data" onClick={() => props.onFit(props.keyStr)}>📌</button>
+      <button type="button" className={props.state === "authored" ? "active" : ""} title="authored — you set this number" onClick={() => props.onAuthor(props.keyStr)}>✎</button>
+    </div>
+  );
 }
 
 export function VariableEditor(props: {
@@ -450,6 +465,7 @@ export function VariableEditor(props: {
   onCoefficient: (edge: GraphEdge, coefficient: number) => void;
   onPinNumber: (key: string) => void;
   onUnpinKey: (key: string) => void;
+  onUnlearnNumber: (key: string) => void;
 }) {
   const node = props.node;
   const variable = normalizeVariableModel(node.variable);
@@ -525,68 +541,90 @@ export function VariableEditor(props: {
 
       <div className="selection-editor-body">
         {(() => {
-          const dataMode = nodeDataMode(props.document, node.id);
-          const fittable = dataMode !== null;
+          const isData = nodeProvenance(props.document, node.id) === "data"; // marginal comes from the data column
+          const generates = nodeGenerates(props.document, node.id);
           const parentEdges = props.document.graph.edges
             .filter((e) => e.target === node.id && e.kind === "directed" && normalizeEdgeMechanism(props.document.simulation.edges[e.id]).kind !== "table_lookup")
             .map((e) => {
               const em = normalizeEdgeMechanism(props.document.simulation.edges[e.id]);
               const parent = props.document.graph.nodes.find((n) => n.id === e.source);
-              return { edge: e, label: parent?.label ?? e.source, coef: em.kind === "linear" ? em.coefficient : null, kind: em.kind };
+              return { edge: e, label: parent?.label ?? e.source, coef: em.kind === "linear" ? em.coefficient : null, kind: em.kind, key: pinKeys.edge(e.id) };
             });
-          const pins = props.document.metadata.pins;
+          const isBinary = variable.valueType === "binary";
+          const dep = (k: string) => depStateOf(props.document, k);
+          const depProps = { isData, onFit: props.onPinNumber, onAuthor: props.onUnpinKey, onUnlearn: props.onUnlearnNumber };
+          const learnedKeys = [pinKeys.intercept(node.id), ...(isBinary ? [] : [pinKeys.noise(node.id)]), ...parentEdges.map((p) => p.key)];
+          const allFitted = learnedKeys.every((k) => dep(k) === "fitted");
+          const interceptState = dep(pinKeys.intercept(node.id));
+          const noiseState = dep(pinKeys.noise(node.id));
           return (
             <div className="selection-editor-block generation-block">
-              <div className="generation-head">
-                <strong>Generation</strong>
-                {dataMode && (
-                  <div className="data-mode-seg" role="group" aria-label="Value source">
-                    <button type="button" className={dataMode === "read" ? "active" : ""} onClick={() => props.onSetDataMode(node.id, "read")}>From data</button>
-                    {parentEdges.length > 0 && <button type="button" className={dataMode === "fit" ? "active" : ""} onClick={() => props.onSetDataMode(node.id, "fit")}>Fit</button>}
-                    <button type="button" className={dataMode === "author" ? "active" : ""} onClick={() => props.onSetDataMode(node.id, "author")}>Author</button>
-                  </div>
-                )}
-              </div>
-              {dataMode === "read" ? (
-                <p className="muted generation-read">Replays the real <b>{node.label}</b> column — its values (and joint) are exactly the data. Switch to <b>Fit</b> (learn its equation) or <b>Author</b> (set it yourself) to model it.</p>
+              <div className="generation-head"><strong>Generation</strong></div>
+              {/* MARGINAL — for a data node the distribution is, and stays, the observed column. */}
+              {isData && (
+                <div className="marginal-row">
+                  <span className="prov-badge data">from data</span>
+                  <span className="muted"><b>{node.label}</b>&rsquo;s marginal is the observed column — not authored.</span>
+                </div>
+              )}
+              {!isData && !isRoot && (
+                <label className="field">
+                  <span>type</span>
+                  <select value={variable.valueType} onChange={(event) => changeFamily(event.target.value as VariableModel["valueType"])}>
+                    {VARIABLE_TYPES.map(([kind, label]) => (<option value={kind} key={kind} disabled={!REALIZED_FAMILIES.has(kind) && kind !== variable.valueType}>{label}{REALIZED_FAMILIES.has(kind) ? "" : " (planned)"}</option>))}
+                  </select>
+                </label>
+              )}
+              {isRoot ? (
+                // A root has no parents → no dependence. A data root simply IS its column; a from-scratch root is authored.
+                isData ? null : (
+                  <DistributionEditor label="distribution" distribution={mechanism.distribution} allowedKinds={FAMILY_DISTRIBUTIONS[variable.valueType]} onChange={onRootDistributionChange} />
+                )
               ) : (
-                <div className="generation-body">
-                  <label className="field">
-                    <span>type</span>
-                    <select value={variable.valueType} onChange={(event) => changeFamily(event.target.value as VariableModel["valueType"])}>
-                      {VARIABLE_TYPES.map(([kind, label]) => (<option value={kind} key={kind} disabled={!REALIZED_FAMILIES.has(kind) && kind !== variable.valueType}>{label}{REALIZED_FAMILIES.has(kind) ? "" : " (planned)"}</option>))}
-                    </select>
-                  </label>
-                  {isRoot ? (
-                    <DistributionEditor label="distribution" distribution={mechanism.distribution} allowedKinds={FAMILY_DISTRIBUTIONS[variable.valueType]} onChange={onRootDistributionChange} />
-                  ) : (
-                    <div className="generation-equation">
-                      <div className="generation-term">
-                        <TactileNumberField label="intercept" value={mechanism.intercept} step={0.1} nudge={1} onChange={(intercept) => props.onMechanism(node.id, { intercept })} />
-                        <ProvChip pins={pins} keyStr={pinKeys.intercept(node.id)} fittable={fittable} onPin={props.onPinNumber} onUnpin={props.onUnpinKey} />
-                      </div>
-                      {parentEdges.map((p) => (
-                        <div className="generation-term" key={p.edge.id}>
-                          <span className="gen-parent">{p.label} ×</span>
-                          {p.coef !== null
+                <div className="dependence-block">
+                  <div className="dependence-head">
+                    <strong>Dependence</strong>
+                    {isData && <span className="muted">{generates ? "modeled on its parents" : "not learned"}</span>}
+                  </div>
+                  {isData && !generates && (
+                    <p className="muted generation-read">The arrows into <b>{node.label}</b> are <b>structural only — not yet learned</b>. <b>Fit</b> them from the data (📌) or <b>author</b> a number (✎) to make {node.label} depend on its parents; until then {node.label} stays the observed column.</p>
+                  )}
+                  <div className="generation-equation">
+                    <div className="generation-term">
+                      {isData && interceptState === "not-learned"
+                        ? <span className="gen-notlearned muted">intercept — not learned</span>
+                        : <TactileNumberField label="intercept" value={mechanism.intercept} step={0.1} nudge={1} onChange={(intercept) => props.onMechanism(node.id, { intercept })} />}
+                      <DepControl {...depProps} state={interceptState} keyStr={pinKeys.intercept(node.id)} />
+                    </div>
+                    {parentEdges.map((p) => (
+                      <div className="generation-term" key={p.edge.id}>
+                        <span className="gen-parent">{p.label} ×</span>
+                        {isData && dep(p.key) === "not-learned"
+                          ? <span className="gen-notlearned muted">not learned</span>
+                          : p.coef !== null
                             ? <TactileNumberField label="" value={p.coef} step={0.1} nudge={1} onChange={(v) => props.onCoefficient(p.edge, v)} />
                             : <span className="gen-curve muted">{p.kind} curve — select the edge</span>}
-                          <ProvChip pins={pins} keyStr={pinKeys.edge(p.edge.id)} fittable={fittable} onPin={props.onPinNumber} onUnpin={props.onUnpinKey} />
-                        </div>
-                      ))}
+                        <DepControl {...depProps} state={dep(p.key)} keyStr={p.key} />
+                      </div>
+                    ))}
+                    {(generates || !isData) && (
                       <label className="field">
                         <span>combiner</span>
                         <select value={mechanism.combiner} onChange={(event) => props.onMechanism(node.id, { combiner: event.target.value as NodeCombinerKind })}>
                           {NODE_COMBINERS.map((item) => <option value={item.kind} key={item.kind}>{item.label}</option>)}
                         </select>
                       </label>
+                    )}
+                    {!isBinary && (
                       <div className="generation-term">
-                        <DistributionEditor label="noise" distribution={mechanism.noise} onChange={(noise) => props.onMechanism(node.id, { noise })} />
-                        <ProvChip pins={pins} keyStr={pinKeys.noise(node.id)} fittable={fittable} onPin={props.onPinNumber} onUnpin={props.onUnpinKey} />
+                        {isData && noiseState === "not-learned"
+                          ? <span className="gen-notlearned muted">noise — not learned</span>
+                          : <DistributionEditor label="noise" distribution={mechanism.noise} onChange={(noise) => props.onMechanism(node.id, { noise })} />}
+                        <DepControl {...depProps} state={noiseState} keyStr={pinKeys.noise(node.id)} />
                       </div>
-                    </div>
-                  )}
-                  {fittable && parentEdges.length > 0 && dataMode !== "fit" && <button type="button" className="generation-fit" onClick={() => props.onSetDataMode(node.id, "fit")}>Fit all from data →</button>}
+                    )}
+                  </div>
+                  {isData && parentEdges.length > 0 && !allFitted && <button type="button" className="generation-fit" onClick={() => props.onSetDataMode(node.id, "fit")}>Fit all from data →</button>}
                 </div>
               )}
             </div>

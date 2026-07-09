@@ -136,21 +136,21 @@ export function pinNodeEquation(input: GraphDocument, nodeId: string): GraphDocu
   pins.add(interceptKey(nodeId));
   if (normalizeVariableModel(document.graph.nodes.find((n) => n.id === nodeId)!.variable).valueType !== "binary") pins.add(noiseKey(nodeId));
   document.metadata.pins = [...pins];
+  document.metadata.authored = document.metadata.authored.filter((k) => !pins.has(k)); // fitted wins over authored
   return document;
 }
 
 // Remove one number's pin — it keeps its last-fit value but is now AUTHORED (your override).
 export function unpinNumber(input: GraphDocument, key: string): GraphDocument {
   if (!input.metadata.pins.includes(key)) return input;
-  const document = cloneDocument(input);
-  document.metadata.pins = document.metadata.pins.filter((k) => k !== key);
-  return document;
+  return authorNumber(input, key);
 }
 
 // Live reconcile: re-fit every pinned number from the current data + DAG (offset-regression, so pinned
 // coefficients are estimated holding the authored ones fixed). Returns the changed keys for the flash.
 export function reconcilePins(input: GraphDocument): { document: GraphDocument; changed: string[] } {
   const pinSet = new Set(input.metadata.pins ?? []);
+  const authoredSet = new Set(input.metadata.authored ?? []);
   if (pinSet.size === 0) return { document: input, changed: [] };
   if (input.simulation.datasets) for (const [name, ds] of Object.entries(input.simulation.datasets)) registerRuntimeDataset(name, ds);
   const document = cloneDocument(input);
@@ -171,7 +171,8 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
     if (rows.length < 4) continue;
     const drawn = drawnDataParents(document, nodeId);
     const pinnedEdges = drawn.filter((e) => pinSet.has(edgeKey(e.id)));
-    const authoredEdges = drawn.filter((e) => !pinSet.has(edgeKey(e.id)));
+    // Only AUTHORED parents contribute a fixed offset; NOT-LEARNED parents (in neither set) are excluded.
+    const authoredEdges = drawn.filter((e) => authoredSet.has(edgeKey(e.id)));
     if (pinnedEdges.length === 0 && !pinSet.has(interceptKey(nodeId)) && !pinSet.has(noiseKey(nodeId))) continue;
     const isBinary = normalizeVariableModel(node.variable).valueType === "binary";
     const fitIntercept = pinSet.has(interceptKey(nodeId));
@@ -211,27 +212,69 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
   return { document, changed };
 }
 
-// ---------- provenance queries (for the visual overlay) ----------
-export type Provenance = "authored" | "data" | "pinned";
+// ---------- provenance queries ----------
+export type Provenance = "data" | "not-learned" | "fitted" | "authored";
 
-/** A node's dominant provenance: reads-from-data (enabled lookup), else pinned (any fitted param), else authored. */
+/** A node's MARGINAL provenance — a data column's marginal is always empirical; a from-scratch node's is authored. */
 export function nodeProvenance(document: GraphDocument, nodeId: string): Provenance {
-  const col = nodeColumn(document, nodeId);
-  if (col?.enabled) return "data";
-  const pins = document.metadata.pins;
-  if (pins.includes(interceptKey(nodeId)) || pins.includes(noiseKey(nodeId))) return "pinned";
-  for (const edge of document.graph.edges) if (edge.target === nodeId && pins.includes(edgeKey(edge.id))) return "pinned";
+  return nodeColumn(document, nodeId) ? "data" : "authored";
+}
+
+/** An edge's DEPENDENCE provenance: fitted (in pins), authored (explicitly set), data (a lookup read),
+ *  or "not-learned" — drawn into a data node but neither fitted nor authored (structural only, no number). */
+export function edgeProvenance(document: GraphDocument, edgeId: string): Provenance {
+  if (document.metadata.pins.includes(edgeKey(edgeId))) return "fitted";
+  if (document.metadata.authored.includes(edgeKey(edgeId))) return "authored";
+  if (normalizeEdgeMechanism(document.simulation.edges[edgeId]).kind === "table_lookup") return "data";
+  const edge = document.graph.edges.find((e) => e.id === edgeId);
+  if (edge && nodeColumn(document, edge.target)) return "not-learned";
   return "authored";
 }
 
-/** An edge's coefficient provenance: pinned (fit), else data (a lookup, or points into a node still reading), else authored. */
-export function edgeProvenance(document: GraphDocument, edgeId: string): Provenance {
-  if (document.metadata.pins.includes(edgeKey(edgeId))) return "pinned";
-  const mech = normalizeEdgeMechanism(document.simulation.edges[edgeId]);
-  if (mech.kind === "table_lookup") return "data";
-  const edge = document.graph.edges.find((e) => e.id === edgeId);
-  if (edge) { const col = nodeColumn(document, edge.target); if (col?.enabled) return "data"; }
-  return "authored";
+/** True once a data node has ANY fitted/authored equation number (⇒ it GENERATES rather than reads its column). */
+export function nodeGenerates(document: GraphDocument, nodeId: string): boolean {
+  if (!nodeColumn(document, nodeId)) return true; // a from-scratch node always generates
+  const learned = [...document.metadata.pins, ...document.metadata.authored];
+  return learned.some((key) => {
+    const el = pinKeyElement(key);
+    if (!el) return false;
+    if (el.kind === "node") return el.id === nodeId;
+    return document.graph.edges.find((e) => e.id === el.id)?.target === nodeId;
+  });
+}
+
+/** Keep each data node's table_lookup ENABLED (reads) while all its numbers are not-learned, DISABLED (generates)
+ *  once any is fitted/authored. Runs on every commit so the read/generate state can't drift from the provenance. */
+export function syncGenerativeState(input: GraphDocument): GraphDocument {
+  const document = cloneDocument(input);
+  let changed = false;
+  for (const node of document.graph.nodes) {
+    const col = nodeColumn(document, node.id);
+    if (!col) continue;
+    const shouldRead = !nodeGenerates(document, node.id);
+    if (col.enabled !== shouldRead) {
+      document.simulation.edges[col.lookupEdgeId] = { ...normalizeEdgeMechanism(document.simulation.edges[col.lookupEdgeId]), enabled: shouldRead };
+      changed = true;
+    }
+  }
+  return changed ? document : input;
+}
+
+/** Mark ONE number as AUTHORED (you set it) — removes any fit pin; the node then generates from it. */
+export function authorNumber(input: GraphDocument, key: string): GraphDocument {
+  const document = cloneDocument(input);
+  document.metadata.pins = document.metadata.pins.filter((k) => k !== key);
+  if (!document.metadata.authored.includes(key)) document.metadata.authored = [...document.metadata.authored, key];
+  return document;
+}
+
+/** Return ONE number to NOT-LEARNED (structural only) — removes it from both pins and authored. */
+export function unlearnNumber(input: GraphDocument, key: string): GraphDocument {
+  if (!input.metadata.pins.includes(key) && !input.metadata.authored.includes(key)) return input;
+  const document = cloneDocument(input);
+  document.metadata.pins = document.metadata.pins.filter((k) => k !== key);
+  document.metadata.authored = document.metadata.authored.filter((k) => k !== key);
+  return document;
 }
 
 /** Resolve a pin key to the canvas element it marks (for the change-flash). */
@@ -249,7 +292,13 @@ export function nodeDataMode(document: GraphDocument, nodeId: string): NodeDataM
   const col = nodeColumn(document, nodeId);
   if (!col) return null;
   if (col.enabled) return "read";
-  return nodeProvenance(document, nodeId) === "pinned" ? "fit" : "author";
+  const pinnedHere = document.metadata.pins.some((key) => {
+    const el = pinKeyElement(key);
+    if (el?.kind === "node") return el.id === nodeId;
+    if (el?.kind === "edge") return document.graph.edges.find((e) => e.id === el.id)?.target === nodeId;
+    return false;
+  });
+  return pinnedHere ? "fit" : "author";
 }
 
 /** Drop every pin belonging to a node (its intercept/noise + its incoming edge coefficients). */
@@ -284,6 +333,7 @@ export function pinNumber(input: GraphDocument, key: string): GraphDocument {
   const document = cloneDocument(input);
   const col = nodeColumn(document, nodeId);
   if (col?.enabled) document.simulation.edges[col.lookupEdgeId] = { ...normalizeEdgeMechanism(document.simulation.edges[col.lookupEdgeId]), enabled: false };
+  document.metadata.authored = document.metadata.authored.filter((k) => k !== key);
   if (!document.metadata.pins.includes(key)) document.metadata.pins = [...document.metadata.pins, key];
   return reconcilePins(document).document;
 }
@@ -291,9 +341,7 @@ export function pinNumber(input: GraphDocument, key: string): GraphDocument {
 /** Unpin ONE number (→ authored; keeps its last value). */
 export function unpinKey(input: GraphDocument, key: string): GraphDocument {
   if (!input.metadata.pins.includes(key)) return input;
-  const document = cloneDocument(input);
-  document.metadata.pins = document.metadata.pins.filter((k) => k !== key);
-  return document;
+  return authorNumber(input, key);
 }
 
 /** Pin-key builders so the UI doesn't hardcode the format. */
@@ -305,9 +353,10 @@ export const pinKeys = {
 
 /** Editing a pinned number detaches it (→ authored, your override). Used by the editors' change handlers. */
 export function unpinForNode(input: GraphDocument, nodeId: string): GraphDocument {
-  if (!input.metadata.pins.some((key) => { const el = pinKeyElement(key); return el?.kind === "node" && el.id === nodeId; })) return input;
-  const document = cloneDocument(input);
-  document.metadata.pins = document.metadata.pins.filter((key) => { const el = pinKeyElement(key); return !(el?.kind === "node" && el.id === nodeId); });
+  const toAuthor = input.metadata.pins.filter((key) => { const el = pinKeyElement(key); return el?.kind === "node" && el.id === nodeId; });
+  if (toAuthor.length === 0) return input;
+  let document = input;
+  for (const key of toAuthor) document = authorNumber(document, key);
   return document;
 }
 

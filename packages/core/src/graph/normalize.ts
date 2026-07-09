@@ -139,7 +139,8 @@ export function normalizeGraphDocumentMetadata(metadata: Partial<GraphDocumentMe
         };
       }).filter((source) => source.id)
       : [],
-    pins: Array.isArray(raw.pins) ? raw.pins.filter((pin): pin is string => typeof pin === "string") : []
+    pins: Array.isArray(raw.pins) ? raw.pins.filter((pin): pin is string => typeof pin === "string") : [],
+    authored: Array.isArray(raw.authored) ? raw.authored.filter((key): key is string => typeof key === "string") : []
   };
 }
 

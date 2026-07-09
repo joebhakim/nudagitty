@@ -57,8 +57,10 @@ import {
   nodeProvenance,
   edgeProvenance,
   pinKeyElement,
+  pinKeys,
   setNodeDataMode,
-  unpinForNode,
+  authorNumber,
+  unlearnNumber,
   pinNumber,
   unpinKey,
   withCoupling,
@@ -810,7 +812,7 @@ export function App() {
     const overrides = { ...document.simulation.overrides };
     const nextVariable = normalizeVariableModel(findNode(graph, nodeId)?.variable);
     if (nextVariable.valueType === "binary" && Object.hasOwn(overrides, nodeId)) overrides[nodeId] = coerceBinary(overrides[nodeId] ?? 0);
-    commit(unpinForNode({ // editing intercept / noise / distribution authors them (unpin), so the edit sticks
+    let nextDoc: GraphDocument = {
       ...withGraph(document, graph),
       simulation: {
         ...document.simulation,
@@ -820,7 +822,11 @@ export function App() {
         },
         overrides
       }
-    }, nodeId));
+    };
+    // Editing a number AUTHORS just that number (so the edit sticks and it stops being fitted/not-learned).
+    if ("intercept" in patch) nextDoc = authorNumber(nextDoc, pinKeys.intercept(nodeId));
+    if ("noise" in patch) nextDoc = authorNumber(nextDoc, pinKeys.noise(nodeId));
+    commit(nextDoc);
   }, [commit, document]);
 
   const updateVariableModel = useCallback((nodeId: string, variable: VariableModel) => {
@@ -863,12 +869,11 @@ export function App() {
   const updateEdgeMechanism = useCallback((edge: GraphEdge, patch: Partial<EdgeMechanism>) => {
     trackEditCommitted("edge");
     const current = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
-    // Editing the coefficient/form authors it (unpin) so it sticks; a pure enable-toggle stays pinned.
+    // Editing the coefficient/form AUTHORS the edge (so it sticks and leaves not-learned/fitted);
+    // a pure enable-toggle leaves its provenance alone.
     const onlyEnabled = Object.keys(patch).length === 1 && "enabled" in patch;
-    const pins = onlyEnabled ? document.metadata.pins : document.metadata.pins.filter((key) => key !== `e:${edge.id}`);
-    commit({
+    let nextDoc: GraphDocument = {
       ...document,
-      metadata: { ...document.metadata, pins },
       simulation: {
         ...document.simulation,
         edges: {
@@ -876,7 +881,9 @@ export function App() {
           [edge.id]: normalizeEdgeMechanism({ ...current, ...patch })
         }
       }
-    });
+    };
+    if (!onlyEnabled) nextDoc = authorNumber(nextDoc, pinKeys.edge(edge.id));
+    commit(nextDoc);
   }, [commit, document]);
 
   const updateEdgeCoefficient = useCallback((edge: GraphEdge, coefficient: number) => {
@@ -1026,6 +1033,7 @@ export function App() {
             onSetDataMode={(id, mode) => commit(setNodeDataMode(document, id, mode))}
             onPinNumber={(key) => commit(pinNumber(document, key))}
             onUnpinKey={(key) => commit(unpinKey(document, key))}
+            onUnlearnNumber={(key) => commit(unlearnNumber(document, key))}
           />
         </ModuleFrame>
       </aside>
