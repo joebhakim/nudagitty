@@ -58,7 +58,7 @@ export function plasmodeSources(document: GraphDocument): Array<{ sourceId: stri
   const bySource = new Map<string, { dataset: string; covariates: Array<{ nodeId: string; column: string }> }>();
   for (const edge of document.graph.edges) {
     const mechanism = document.simulation.edges[edge.id];
-    if (mechanism?.kind !== "table_lookup" || !mechanism.dataset) continue;
+    if (mechanism?.kind !== "table_lookup" || !mechanism.dataset || mechanism.enabled === false) continue; // a DISABLED lookup = a fitted node that now generates → not a data-read covariate
     const columns = lookupDataset(mechanism.dataset)?.columns ?? [];
     const column = columns[mechanism.dataColumn ?? 0] ?? `column ${mechanism.dataColumn ?? 0}`;
     let entry = bySource.get(edge.source);
