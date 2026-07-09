@@ -1133,6 +1133,7 @@ button.prov-chip { cursor: pointer; }
 .marginal-row { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 10px; font-size: 12px; line-height: 1.4; flex-wrap: wrap; }
 .prov-badge { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; }
 .prov-badge.data { color: #0d6b52; background: #d8f2ea; border: 1px solid #9ed9c6; }
+.prov-badge.modeled { color: #8a5a12; background: #f6ecd8; border: 1px solid #e0c48f; }
 
 /* Dependence — the per-edge learned part. */
 .dependence-block { display: flex; flex-direction: column; }
@@ -1149,4 +1150,4 @@ button.prov-chip { cursor: pointer; }
 .dep-control button:nth-child(1).active { background: #9aa0b4; }
 .dep-control button:nth-child(2).active { background: #6b40b0; }
 .dep-control button:nth-child(3).active { background: #c08a2e; }
-@media (prefers-color-scheme: dark) { .prov-badge.data { color: #7fe3c6; background: #123028; border-color: #2c5a4c; } .dep-control { border-color: #34343e; } .dep-control button + button { border-left-color: #34343e; } }
+@media (prefers-color-scheme: dark) { .prov-badge.data { color: #7fe3c6; background: #123028; border-color: #2c5a4c; } .prov-badge.modeled { color: #e0b877; background: #302610; border-color: #5a4a24; } .dep-control { border-color: #34343e; } .dep-control button + button { border-left-color: #34343e; } }

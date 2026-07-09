@@ -22,14 +22,19 @@ axes — the old whole-node "From data / Fit / Author" toggle conflated them.
 - [ ] **Wire-time model-type prompt.** Drawing (or bulk-wiring) an edge into a data variable pauses:
       "You're giving `treat` a dependence — model: **logistic** (binary). [Learn from data] [Leave unlearned]"
       → fits per-node (joint over its parents). Not silent inert edges. *(task #91)*
-- [ ] **Marginal-preserving fit.** *(task #92)*
-  - [ ] **binary** — fit logistic + **calibrate the intercept** so the generated rate = the real rate
-        exactly (1-D solve; cheap). Do this with the redesign.
-  - [ ] **continuous** — route the fitted linear predictor through the **empirical marginal** via NORTA
-        (`copula_marginal` + `buildDistributionQuantile`). Heavy: needs an empirical-quantile distribution
-        primitive; the coefficient becomes a *latent dependence loading* (not a $-slope) and the exact
-        conditional joint is replaced by the modeled one (marginals + the covariate block stay exact).
-        Own pass.
+- [x] **Marginal-preserving fit — binary.** VERIFIED already preserved: the logistic MLE with a fitted
+      intercept makes the mean predicted probability equal the empirical rate, and Bernoulli(rate) IS the
+      whole marginal. (lalonde-recover-rct In_program: read 0.063 → fit 0.066 vs empirical 0.069.) No extra
+      calibration needed. The editor badge says "from data (rate preserved)" for a fitted binary node. *(#92)*
+- [ ] **Marginal-preserving fit — continuous (NORTA).** OLS preserves the fitted continuous node's MEAN
+      (verified: Earnings_78 20232 → 20555 vs 20502) but NOT the shape — additive-normal noise makes a
+      symmetric Gaussian, wrong for skewed/zero-inflated earnings. `copula_marginal` already IS the NORTA
+      transform (η → Φ → F⁻¹); the missing piece is an **`empirical` NodeDistribution kind** (sorted-sample
+      inverse-CDF) to use as F. Then fit on the normal-score scale (coef = latent loading, not a $-slope),
+      set combiner=`copula_marginal` + the empirical marginal. Heavy/own pass: the new dist kind ripples
+      through normalize / sampleDistribution / inverseMarginalCdf / analytic / **golden** / share-URL
+      (samples bloat the compact URL — store a downsample or a ref). Until then the editor honestly shows
+      a "modeled" badge for a fitted continuous node. *(#92)*
 - [ ] **Residual-independence / exogeneity diagnostic.** *(task #90)* After fitting `Y ~ X` in additive-noise
       mode, show residuals-vs-fitted + residuals-vs-each-parent + an **HSIC / distance-correlation**
       independence score. Fail ⇒ flag *"the exogenous-noise assumption (ε⊥X) looks violated — enrich the

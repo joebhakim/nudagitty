@@ -560,13 +560,22 @@ export function VariableEditor(props: {
           return (
             <div className="selection-editor-block generation-block">
               <div className="generation-head"><strong>Generation</strong></div>
-              {/* MARGINAL — for a data node the distribution is, and stays, the observed column. */}
-              {isData && (
-                <div className="marginal-row">
-                  <span className="prov-badge data">from data</span>
-                  <span className="muted"><b>{node.label}</b>&rsquo;s marginal is the observed column — not authored.</span>
-                </div>
-              )}
+              {/* MARGINAL — reading (or binary) reproduces the observed column exactly; a fitted CONTINUOUS
+                  node currently matches the mean but not the full shape (exact-shape NORTA is planned). */}
+              {isData && (() => {
+                const marginalFromData = !generates || isBinary;
+                return marginalFromData ? (
+                  <div className="marginal-row">
+                    <span className="prov-badge data">from data</span>
+                    <span className="muted"><b>{node.label}</b>&rsquo;s marginal is the observed column{generates ? " (its rate is preserved by the fit)" : " — not authored"}.</span>
+                  </div>
+                ) : (
+                  <div className="marginal-row">
+                    <span className="prov-badge modeled">modeled</span>
+                    <span className="muted"><b>{node.label}</b> is generated from the fit — its <b>mean</b> matches the data, but the full marginal shape is approximate (exact-shape preservation is planned).</span>
+                  </div>
+                );
+              })()}
               {!isData && !isRoot && (
                 <label className="field">
                   <span>type</span>
