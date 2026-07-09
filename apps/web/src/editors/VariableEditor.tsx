@@ -644,20 +644,19 @@ export function VariableEditor(props: {
                   )}
                   <div className="generation-equation">
                     <div className="generation-term">
+                      <div className="gen-term-head"><span className="gen-term-name">intercept</span><DepControl {...depProps} state={interceptState} keyStr={pinKeys.intercept(node.id)} /></div>
                       {isData && interceptState === "not-learned"
-                        ? <span className="gen-notlearned muted">intercept — not learned</span>
-                        : <TactileNumberField label="intercept" value={mechanism.intercept} step={0.1} nudge={1} onChange={(intercept) => props.onMechanism(node.id, { intercept })} />}
-                      <DepControl {...depProps} state={interceptState} keyStr={pinKeys.intercept(node.id)} />
+                        ? <span className="gen-notlearned muted">not learned</span>
+                        : <TactileNumberField label="" value={mechanism.intercept} step={0.1} nudge={1} onChange={(intercept) => props.onMechanism(node.id, { intercept })} />}
                     </div>
                     {parentEdges.map((p) => (
                       <div className="generation-term" key={p.edge.id}>
-                        <span className="gen-parent">{p.label} ×</span>
+                        <div className="gen-term-head"><span className="gen-term-name">{p.label} ×</span><DepControl {...depProps} state={dep(p.key)} keyStr={p.key} /></div>
                         {isData && dep(p.key) === "not-learned"
                           ? <span className="gen-notlearned muted">not learned</span>
                           : p.coef !== null
                             ? <TactileNumberField label="" value={p.coef} step={0.1} nudge={1} onChange={(v) => props.onCoefficient(p.edge, v)} />
                             : <span className="gen-curve muted">{p.kind} curve — select the edge</span>}
-                        <DepControl {...depProps} state={dep(p.key)} keyStr={p.key} />
                       </div>
                     ))}
                     {(generates || !isData) && (
@@ -670,10 +669,10 @@ export function VariableEditor(props: {
                     )}
                     {!isBinary && (
                       <div className="generation-term">
+                        <div className="gen-term-head"><span className="gen-term-name">noise</span><DepControl {...depProps} state={noiseState} keyStr={pinKeys.noise(node.id)} /></div>
                         {isData && noiseState === "not-learned"
-                          ? <span className="gen-notlearned muted">noise — not learned</span>
-                          : <DistributionEditor label="noise" distribution={mechanism.noise} onChange={(noise) => props.onMechanism(node.id, { noise })} />}
-                        <DepControl {...depProps} state={noiseState} keyStr={pinKeys.noise(node.id)} />
+                          ? <span className="gen-notlearned muted">not learned</span>
+                          : <DistributionEditor label="" distribution={mechanism.noise} onChange={(noise) => props.onMechanism(node.id, { noise })} />}
                       </div>
                     )}
                   </div>
