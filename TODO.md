@@ -51,6 +51,8 @@ axes — the old whole-node "From data / Fit / Author" toggle conflated them.
 
 - [ ] Literal **📌 on the canvas edge coefficient labels** (they render in a separate layer; `data.pinned`
       is already plumbed — just needs the glyph). Line color carries provenance there for now.
+- [x] Node marginal **markers + split legend** DONE (commit e9080f4): teal mini-table = data-derived, amber
+      ƒ = model-defined/ex-nihilo; legend split into Nodes vs Edges groups.
 - [ ] Mixed-node **dominant-provenance nuance** on the canvas node tint (a part-fitted node shows one color).
 - [ ] Reconsider the **"Learn the DGP →" wording** — may overclaim. Consider "Fit this DGP to the data" +
       a "given your DAG + functional forms + no hidden confounders" caveat.
