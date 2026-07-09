@@ -1109,3 +1109,22 @@
 .data-mode-seg button + button { border-left: 1px solid var(--border, #d8d8e2); }
 .data-mode-seg button.active { background: #6b40b0; color: #fff; cursor: default; }
 .node-data-mode p { margin: 2px 0 0; font-size: 11.5px; line-height: 1.4; }
+
+/* Unified "Generation" element — mode + generative params + per-number provenance chips. */
+.generation-block { margin-bottom: 12px; }
+.generation-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.generation-head > strong { font-size: 12px; }
+.generation-read { margin: 2px 0 0; font-size: 12px; line-height: 1.45; }
+.generation-body { display: flex; flex-direction: column; gap: 8px; }
+.generation-equation { display: flex; flex-direction: column; gap: 6px; padding: 7px 9px; border: 1px solid var(--border, #e2e2ea); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
+.generation-term { display: flex; align-items: center; gap: 8px; }
+.generation-term .tactile-number-field { flex: 1 1 auto; }
+.gen-parent { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.gen-curve { font-size: 11.5px; flex: 1 1 auto; }
+.prov-chip { flex: 0 0 auto; min-width: 22px; height: 21px; display: inline-flex; align-items: center; justify-content: center; border-radius: 5px; font-size: 11px; border: 1px solid transparent; background: none; padding: 0 4px; }
+button.prov-chip { cursor: pointer; }
+.prov-chip.pinned { color: #6b40b0; border-color: #c9b6e6; background: #f3ecfc; }
+.prov-chip.authored { color: #c08a2e; }
+.generation-fit { align-self: flex-start; appearance: none; border: none; background: #6b40b0; color: #fff; font-size: 12.5px; font-weight: 700; border-radius: 7px; padding: 7px 13px; cursor: pointer; }
+.generation-fit:hover { background: #5a2fa0; }
+@media (prefers-color-scheme: dark) { .generation-equation { border-color: #34343e; background: #1b1b22; } .prov-chip.pinned { background: #2a2140; border-color: #4a3b66; color: #c9adf0; } }

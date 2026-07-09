@@ -59,6 +59,8 @@ import {
   pinKeyElement,
   setNodeDataMode,
   unpinForNode,
+  pinNumber,
+  unpinKey,
   withCoupling,
   withoutCoupling,
   simpleEdge,
@@ -1022,6 +1024,8 @@ export function App() {
             onEdgeMechanism={updateEdgeMechanism}
             onDeleteEdge={deleteEdgeById}
             onSetDataMode={(id, mode) => commit(setNodeDataMode(document, id, mode))}
+            onPinNumber={(key) => commit(pinNumber(document, key))}
+            onUnpinKey={(key) => commit(unpinKey(document, key))}
           />
         </ModuleFrame>
       </aside>

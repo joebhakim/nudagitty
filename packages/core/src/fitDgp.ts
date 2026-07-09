@@ -275,6 +275,34 @@ export function setNodeDataMode(input: GraphDocument, nodeId: string, mode: Node
   return document;
 }
 
+/** Pin ONE number to a data fit (the node switches to generate if it was reading). Reconciles. */
+export function pinNumber(input: GraphDocument, key: string): GraphDocument {
+  const el = pinKeyElement(key);
+  if (!el) return input;
+  const nodeId = el.kind === "node" ? el.id : input.graph.edges.find((e) => e.id === el.id)?.target;
+  if (!nodeId) return input;
+  const document = cloneDocument(input);
+  const col = nodeColumn(document, nodeId);
+  if (col?.enabled) document.simulation.edges[col.lookupEdgeId] = { ...normalizeEdgeMechanism(document.simulation.edges[col.lookupEdgeId]), enabled: false };
+  if (!document.metadata.pins.includes(key)) document.metadata.pins = [...document.metadata.pins, key];
+  return reconcilePins(document).document;
+}
+
+/** Unpin ONE number (→ authored; keeps its last value). */
+export function unpinKey(input: GraphDocument, key: string): GraphDocument {
+  if (!input.metadata.pins.includes(key)) return input;
+  const document = cloneDocument(input);
+  document.metadata.pins = document.metadata.pins.filter((k) => k !== key);
+  return document;
+}
+
+/** Pin-key builders so the UI doesn't hardcode the format. */
+export const pinKeys = {
+  edge: (edgeId: string) => `e:${edgeId}`,
+  intercept: (nodeId: string) => `ni:${nodeId}`,
+  noise: (nodeId: string) => `nn:${nodeId}`
+};
+
 /** Editing a pinned number detaches it (→ authored, your override). Used by the editors' change handlers. */
 export function unpinForNode(input: GraphDocument, nodeId: string): GraphDocument {
   if (!input.metadata.pins.some((key) => { const el = pinKeyElement(key); return el?.kind === "node" && el.id === nodeId; })) return input;
