@@ -448,30 +448,51 @@ function DepControl(props: {
   );
 }
 
-// The ANM residual-independence check on a fitted continuous node: dCor(ε, each parent) + residuals-vs-fitted.
-// A refutation, not a confirmation — high dependence means the additive-noise spec (ε⊥X) is suspect.
+// RESIT (Peters et al. 2014) residual diagnostics on a fitted continuous node. Distance correlation ≡ HSIC
+// (Sejdinovic 2013), significance by permutation. Three tests: exogeneity ε⊥X, homoskedasticity via
+// dCor(ε²,X), and residual non-Gaussianity (Jarque–Bera). Refutations, not confirmations.
 function ResidualCheck({ d }: { d: ResidualDiagnostic }) {
   if (!d.available) return null;
+  const pFloor = 1 / (d.perms + 1);
+  const fmtP = (p: number) => (p <= pFloor + 1e-9 ? `<${pFloor.toFixed(3)}` : `=${p.toFixed(3)}`);
   const pct = (v: number) => `${Math.min(100, Math.round((v / 0.35) * 100))}%`;
-  const verdictText = d.verdict === "ok"
-    ? "Residuals look independent of the parents — the additive-noise assumption ε ⊥ X holds, as far as distance correlation can tell."
+  const flagged = (p: number) => p < 0.05;
+  const verdictLabel = d.verdict === "ok" ? "exogenous ✓" : d.verdict === "weak" ? "borderline" : "endogenous ⚠";
+  const lead = d.verdict === "ok"
+    ? <>Residuals look <b>independent</b> of the parents (dCor {d.independence.dcor.toFixed(2)}, p&nbsp;{fmtP(d.independence.pValue)}) — the additive-noise assumption ε ⊥ X holds, as far as this test can tell.</>
     : d.verdict === "weak"
-      ? <>Residuals show <b>mild dependence</b> on <b>{d.worst?.label}</b> — the additive-noise fit is a rough approximation. A richer functional form (or a missing confounder) may be at work.</>
-      : <>Residuals <b>depend on {d.worst?.label}</b> (dCor {d.maxDistanceCorr.toFixed(2)}) — the exogenous-noise assumption <b>ε ⊥ X looks violated</b>. Enrich the functional form, or suspect an unmeasured confounder.</>;
-  // residuals-vs-fitted scatter bounds
+      ? <>Residuals show <b>borderline dependence</b> on the parents (dCor {d.independence.dcor.toFixed(2)}, p&nbsp;{fmtP(d.independence.pValue)}); worst&nbsp;= <b>{d.worst?.label}</b>. The additive-noise fit is a rough approximation.</>
+      : <>Residuals <b>depend on the parents</b> (dCor {d.independence.dcor.toFixed(2)}, p&nbsp;{fmtP(d.independence.pValue)}); worst&nbsp;= <b>{d.worst?.label}</b>. The exogenous-noise assumption <b>ε ⊥ X looks violated</b> — enrich the functional form, or suspect an unmeasured confounder.</>;
   const W = 230, H = 96, pad = 4;
-  const fx = d.points.map((p) => p.fitted), ry = d.points.map((p) => p.residual);
+  const fx = d.points.map((p) => p.fitted);
   const fmin = Math.min(...fx), fmax = Math.max(...fx);
-  const rabs = Math.max(1e-9, ...ry.map((v) => Math.abs(v)));
+  const rabs = Math.max(1e-9, ...d.points.map((p) => Math.abs(p.residual)));
   const sx = (f: number) => pad + ((f - fmin) / Math.max(1e-9, fmax - fmin)) * (W - 2 * pad);
   const sy = (r: number) => H / 2 - (r / rabs) * (H / 2 - pad);
   return (
     <div className={`residual-check verdict-${d.verdict}`}>
       <div className="residual-head">
         <strong>Residual check</strong>
-        <span className="residual-verdict">{d.verdict === "ok" ? "independent ✓" : d.verdict === "weak" ? "mild dependence" : "dependence ⚠"}</span>
+        <span className="residual-verdict">{verdictLabel}</span>
       </div>
-      <p className="muted">{verdictText}</p>
+      <p className="muted">{lead}</p>
+      {d.identifiabilityWarning && (
+        <p className="residual-identif">⚠ Linear fit + roughly <b>Gaussian</b> residuals — the causal direction is <b>not identifiable</b> here (both directions fit equally). This test only has power under nonlinearity or non-Gaussian noise.</p>
+      )}
+      <div className="residual-tests">
+        <div className={`rtest ${flagged(d.independence.pValue) ? "fail" : "pass"}`}>
+          <span className="rt-name">exogeneity (ε ⊥ X)</span>
+          <span className="rt-stat">dCor {d.independence.dcor.toFixed(2)}, p&nbsp;{fmtP(d.independence.pValue)}</span>
+        </div>
+        <div className={`rtest ${flagged(d.heteroskedasticity.pValue) ? "fail" : "pass"}`}>
+          <span className="rt-name">homoskedasticity (ε² ⊥ X)</span>
+          <span className="rt-stat">dCor {d.heteroskedasticity.dcor.toFixed(2)}, p&nbsp;{fmtP(d.heteroskedasticity.pValue)}</span>
+        </div>
+        <div className={`rtest ${flagged(d.normality.pValue) ? "warn" : "pass"}`}>
+          <span className="rt-name">Gaussian noise (Jarque–Bera)</span>
+          <span className="rt-stat">skew {d.normality.skewness.toFixed(1)}, exk {d.normality.excessKurtosis.toFixed(1)}, p&nbsp;{d.normality.pValue < 0.001 ? "<0.001" : `=${d.normality.pValue.toFixed(3)}`}</span>
+        </div>
+      </div>
       <svg className="residual-scatter" viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="residuals vs fitted">
         <line x1={pad} y1={H / 2} x2={W - pad} y2={H / 2} className="resid-zero" />
         {d.points.map((p, i) => <circle key={i} cx={sx(p.fitted)} cy={sy(p.residual)} r={1.4} className="resid-dot" />)}
@@ -485,7 +506,7 @@ function ResidualCheck({ d }: { d: ResidualDiagnostic }) {
           </div>
         ))}
       </div>
-      <p className="muted residual-foot">dCor(ε, parent): 0 ⇒ independent. OLS makes residuals <i>linearly</i> orthogonal to the parents, so this <b>nonlinear</b> test is what can still catch a mis-specified mechanism.</p>
+      <p className="muted residual-foot">Distance correlation (≡ HSIC), permutation p over {d.perms} shuffles, n&nbsp;=&nbsp;{d.n}. OLS forces residuals <i>linearly</i> orthogonal to X, so this <b>nonlinear</b> test (RESIT) is what still catches a mis-specified mechanism.</p>
     </div>
   );
 }

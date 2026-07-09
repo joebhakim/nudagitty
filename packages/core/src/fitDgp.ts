@@ -370,23 +370,40 @@ export function fitDgpFromData(input: GraphDocument): GraphDocument {
   return reconcilePins(document).document;
 }
 
-// ---------- residual-independence (exogeneity) diagnostic ----------
-// After an additive-noise fit y = intercept + Σβx + ε, the ANM identifiability assumption is ε ⊥ X.
-// OLS forces ε LINEARLY orthogonal to X (corr(ε,xⱼ)≈0 always), so a linear test is powerless — we use
-// DISTANCE CORRELATION, which is 0 iff independent and catches nonlinearity / heteroskedasticity. A high
-// score refutes the additive-noise spec: enrich the functional form, or suspect an unmeasured confounder.
-// (Powerless under linear-Gaussian; needs non-Gaussianity/nonlinearity to bite — earnings qualify.)
+// ---------- residual-independence (exogeneity) diagnostics ----------
+// This is RESIT (Peters et al. 2014, JMLR 15): after an additive-noise fit y = intercept + Σβx + ε, the
+// ANM identifiability assumption is ε ⊥ X. OLS forces ε LINEARLY orthogonal to X (corr(ε,xⱼ)≈0 always),
+// so a linear test is powerless — we use DISTANCE CORRELATION (Székely), which equals HSIC with a distance
+// kernel (Sejdinovic et al. 2013) and is 0 iff independent. Significance is a PERMUTATION test (the exact
+// null). We report: (1) JOINT ε⊥X (the RESIT test) + per-parent breakdown; (2) heteroskedasticity via
+// dCor(ε², X); (3) residual non-Gaussianity (Jarque–Bera). CAVEAT: a LINEAR fit with GAUSSIAN residuals is
+// the non-identifiable case (both directions fit) — the test is powerless there; nonlinearity or
+// non-Gaussianity (LiNGAM) is what gives it teeth.
 export interface ResidualParentCheck { nodeId: string; label: string; distanceCorr: number; }
+export interface DcorTest { dcor: number; pValue: number; }
+export interface NormalityCheck { skewness: number; excessKurtosis: number; jarqueBera: number; pValue: number; }
 export interface ResidualDiagnostic {
   available: boolean;
   n: number;
+  perms: number;
   parents: ResidualParentCheck[];
   points: { fitted: number; residual: number }[];
-  maxDistanceCorr: number;
+  independence: DcorTest;        // joint dCor(ε, X) — the RESIT exogeneity test
+  heteroskedasticity: DcorTest;  // joint dCor(ε², X) — variance-dependence (catches the hourglass)
+  normality: NormalityCheck;     // Jarque–Bera on ε
+  linear: boolean;               // every parent edge is linear
+  identifiabilityWarning: boolean; // linear fit + Gaussian residuals ⇒ direction not identifiable
   worst: ResidualParentCheck | null;
   verdict: "ok" | "weak" | "violated";
 }
 
+// Deterministic RNG (seeded) so the permutation p-value is stable across renders (no flicker).
+function lcg(seed: number): () => number {
+  let s = seed >>> 0 || 1;
+  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+// Double-centred Euclidean-distance matrix (Székely) of a UNIVARIATE series.
 function centeredDistanceMatrix(v: number[]): number[][] {
   const n = v.length;
   const d = Array.from({ length: n }, () => new Array<number>(n).fill(0));
@@ -400,23 +417,81 @@ function centeredDistanceMatrix(v: number[]): number[][] {
   return a;
 }
 
-/** Distance correlation ∈ [0,1]: 0 iff X ⊥ Y, sensitive to any (incl. nonlinear) dependence. */
-export function distanceCorrelation(x: number[], y: number[]): number {
-  const n = x.length;
-  if (n < 4) return 0;
-  const a = centeredDistanceMatrix(x);
-  const b = centeredDistanceMatrix(y);
-  let dcov = 0, dvx = 0, dvy = 0;
-  for (let i = 0; i < n; i += 1) for (let j = 0; j < n; j += 1) { dcov += a[i]![j]! * b[i]![j]!; dvx += a[i]![j]! * a[i]![j]!; dvy += b[i]![j]! * b[i]![j]!; }
-  const inv = 1 / (n * n);
-  const denom = Math.sqrt(dvx * inv * dvy * inv);
-  if (denom < 1e-12) return 0;
-  return Math.sqrt(Math.max(0, dcov * inv) / denom);
+// Same, for a MULTIVARIATE X (each column z-scored so no column dominates the Euclidean distance).
+function centeredDistanceMatrixMulti(cols: number[][], n: number): number[][] {
+  const z = cols.map((c) => {
+    let m = 0; for (let i = 0; i < n; i += 1) m += c[i]!; m /= n;
+    let v = 0; for (let i = 0; i < n; i += 1) { const dd = c[i]! - m; v += dd * dd; }
+    const sd = Math.sqrt(v / n) || 1;
+    return c.map((x) => (x - m) / sd);
+  });
+  const d = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+  const rowMean = new Array<number>(n).fill(0);
+  let grand = 0;
+  for (let i = 0; i < n; i += 1) for (let j = 0; j < n; j += 1) {
+    let s = 0; for (let k = 0; k < z.length; k += 1) { const dd = z[k]![i]! - z[k]![j]!; s += dd * dd; }
+    const val = Math.sqrt(s); d[i]![j] = val; rowMean[i]! += val; grand += val;
+  }
+  for (let i = 0; i < n; i += 1) rowMean[i]! /= n;
+  grand /= n * n;
+  const a = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+  for (let i = 0; i < n; i += 1) for (let j = 0; j < n; j += 1) a[i]![j] = d[i]![j]! - rowMean[i]! - rowMean[j]! + grand;
+  return a;
 }
 
-/** ANM residual-independence check on a fitted CONTINUOUS data node: dCor(ε, each parent) + residuals-vs-fitted. */
-export function residualDiagnostics(document: GraphDocument, nodeId: string, cap = 300): ResidualDiagnostic {
-  const empty: ResidualDiagnostic = { available: false, n: 0, parents: [], points: [], maxDistanceCorr: 0, worst: null, verdict: "ok" };
+function frob(a: number[][], b: number[][], n: number): number {
+  let s = 0; for (let i = 0; i < n; i += 1) for (let j = 0; j < n; j += 1) s += a[i]![j]! * b[i]![j]!;
+  return s;
+}
+
+/** Distance correlation ∈ [0,1] from two double-centred matrices (dVarY is permutation-invariant). */
+function dcorFrom(a: number[][], b: number[][], n: number): number {
+  const denom = Math.sqrt(frob(a, a, n) * frob(b, b, n));
+  return denom < 1e-12 ? 0 : Math.sqrt(Math.max(0, frob(a, b, n)) / denom);
+}
+
+/** Distance correlation ∈ [0,1] of two UNIVARIATE series: 0 iff independent (Székely). */
+export function distanceCorrelation(x: number[], y: number[]): number {
+  if (x.length < 4) return 0;
+  return dcorFrom(centeredDistanceMatrix(x), centeredDistanceMatrix(y), x.length);
+}
+
+/** dCor + PERMUTATION p-value: shuffle the pairing R times (breaks dependence) → exact null. Both matrices
+ *  are pre-centred; permuting only re-pairs, so dVarX/dVarY stay fixed and only the cross term recomputes. */
+function dcorPermTest(a: number[][], b: number[][], n: number, perms: number, seed: number): DcorTest {
+  const dvx = frob(a, a, n), dvy = frob(b, b, n);
+  const denom = Math.sqrt(dvx * dvy);
+  if (denom < 1e-12) return { dcor: 0, pValue: 1 };
+  const stat = Math.sqrt(Math.max(0, frob(a, b, n)) / denom);
+  const rng = lcg(seed);
+  const perm = Array.from({ length: n }, (_, i) => i);
+  let ge = 1; // +1 for the observed statistic itself (Monte-Carlo p-value)
+  for (let r = 0; r < perms; r += 1) {
+    for (let i = n - 1; i > 0; i -= 1) { const j = Math.floor(rng() * (i + 1)); const t = perm[i]!; perm[i] = perm[j]!; perm[j] = t; }
+    let num = 0;
+    for (let i = 0; i < n; i += 1) { const arow = a[i]!, brow = b[perm[i]!]!; for (let j = 0; j < n; j += 1) num += arow[j]! * brow[perm[j]!]!; }
+    if (Math.sqrt(Math.max(0, num) / denom) >= stat - 1e-12) ge += 1;
+  }
+  return { dcor: stat, pValue: ge / (perms + 1) };
+}
+
+/** Jarque–Bera non-Gaussianity of the residuals: JB = n/6·(S² + (K−3)²/4) ~ χ²₂ ⇒ p = e^(−JB/2). */
+function jarqueBera(v: number[]): NormalityCheck {
+  const n = v.length;
+  let m = 0; for (const x of v) m += x; m /= n;
+  let m2 = 0, m3 = 0, m4 = 0;
+  for (const x of v) { const d = x - m, d2 = d * d; m2 += d2; m3 += d2 * d; m4 += d2 * d2; }
+  m2 /= n; m3 /= n; m4 /= n;
+  const sd = Math.sqrt(m2) || 1;
+  const skewness = m3 / (sd * sd * sd);
+  const excessKurtosis = m2 > 0 ? m4 / (m2 * m2) - 3 : 0;
+  const jarqueBeraStat = (n / 6) * (skewness * skewness + (excessKurtosis * excessKurtosis) / 4);
+  return { skewness, excessKurtosis, jarqueBera: jarqueBeraStat, pValue: Math.exp(-jarqueBeraStat / 2) };
+}
+
+/** RESIT-style residual diagnostics on a fitted CONTINUOUS data node. */
+export function residualDiagnostics(document: GraphDocument, nodeId: string, cap = 220, perms = 199): ResidualDiagnostic {
+  const empty: ResidualDiagnostic = { available: false, n: 0, perms, parents: [], points: [], independence: { dcor: 0, pValue: 1 }, heteroskedasticity: { dcor: 0, pValue: 1 }, normality: { skewness: 0, excessKurtosis: 0, jarqueBera: 0, pValue: 1 }, linear: true, identifiabilityWarning: false, worst: null, verdict: "ok" };
   const node = document.graph.nodes.find((n) => n.id === nodeId);
   const col = nodeColumn(document, nodeId);
   if (!node || !col) return empty;
@@ -431,7 +506,7 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
     .map((edge) => {
       const pc = nodeColumn(document, edge.source);
       const em = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
-      return { edge, col: pc, coef: em.kind === "linear" ? em.coefficient : 0, label: document.graph.nodes.find((n) => n.id === edge.source)?.label ?? edge.source };
+      return { edge, col: pc, coef: em.kind === "linear" ? em.coefficient : 0, kind: em.kind, label: document.graph.nodes.find((n) => n.id === edge.source)?.label ?? edge.source };
     })
     .filter((p): p is typeof p & { col: NonNullable<typeof p.col> } => Boolean(p.col));
   if (parentCols.length === 0) return empty;
@@ -442,15 +517,20 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
   const stride = Math.max(1, Math.floor(rows.length / cap));
   const idx: number[] = [];
   for (let i = 0; i < rows.length; i += stride) idx.push(i);
+  const n = idx.length;
   const rs = idx.map((i) => resid[i]!);
-  const parents: ResidualParentCheck[] = parentCols.map((p) => ({
-    nodeId: p.edge.source,
-    label: p.label,
-    distanceCorr: distanceCorrelation(rs, idx.map((i) => rows[i]![p.col.dataColumn] ?? 0))
-  }));
+  const parentSeries = parentCols.map((p) => idx.map((i) => rows[i]![p.col.dataColumn] ?? 0));
+
+  const parents: ResidualParentCheck[] = parentCols.map((p, k) => ({ nodeId: p.edge.source, label: p.label, distanceCorr: distanceCorrelation(rs, parentSeries[k]!) }));
   const worst = parents.reduce<ResidualParentCheck | null>((w, p) => (!w || p.distanceCorr > w.distanceCorr ? p : w), null);
-  const maxDistanceCorr = worst?.distanceCorr ?? 0;
-  const verdict = maxDistanceCorr < 0.12 ? "ok" : maxDistanceCorr < 0.22 ? "weak" : "violated";
+
+  const aX = centeredDistanceMatrixMulti(parentSeries, n);
+  const independence = dcorPermTest(aX, centeredDistanceMatrix(rs), n, perms, 0x1a2b3c);
+  const heteroskedasticity = dcorPermTest(aX, centeredDistanceMatrix(rs.map((r) => r * r)), n, perms, 0x4d5e6f);
+  const normality = jarqueBera(rs);
+  const linear = parentCols.every((p) => p.kind === "linear");
+  const identifiabilityWarning = linear && normality.pValue > 0.1; // linear + Gaussian residuals ⇒ unidentifiable
+  const verdict = independence.pValue >= 0.1 ? "ok" : independence.pValue >= 0.01 ? "weak" : "violated";
   const points = idx.map((i) => ({ fitted: fitted[i]!, residual: resid[i]! }));
-  return { available: true, n: idx.length, parents, points, maxDistanceCorr, worst, verdict };
+  return { available: true, n, perms, parents, points, independence, heteroskedasticity, normality, linear, identifiabilityWarning, worst, verdict };
 }
