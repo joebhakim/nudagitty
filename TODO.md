@@ -35,14 +35,15 @@ axes — the old whole-node "From data / Fit / Author" toggle conflated them.
       through normalize / sampleDistribution / inverseMarginalCdf / analytic / **golden** / share-URL
       (samples bloat the compact URL — store a downsample or a ref). Until then the editor honestly shows
       a "modeled" badge for a fitted continuous node. *(#92)*
-- [ ] **Residual-independence / exogeneity diagnostic.** *(task #90)* After fitting `Y ~ X` in additive-noise
-      mode, show residuals-vs-fitted + residuals-vs-each-parent + an **HSIC / distance-correlation**
-      independence score. Fail ⇒ flag *"the exogenous-noise assumption (ε⊥X) looks violated — enrich the
-      functional form, or suspect an unmeasured confounder,"* pointing at the offending parent. This is the
-      **additive-noise-model spec/identifiability test** (LiNGAM / nonlinear-ANM): a **refutation, not a
-      confirmation**, and **powerless in the linear-Gaussian case** (needs non-Gaussianity/nonlinearity to
-      bite — earnings qualify). Makes additive-noise the honest, *falsifiable* default vs NORTA (which can't
-      be caught being wrong).
+- [x] **Residual-independence / exogeneity diagnostic.** *(task #90)* DONE — `residualDiagnostics` +
+      `distanceCorrelation` in fitDgp.ts; `ResidualCheck` panel in the node editor for a fitted continuous
+      node: residuals-vs-fitted scatter + per-parent **distance correlation** bars + an ok/weak/violated
+      verdict naming the worst parent. Uses dCor (not linear corr, which OLS forces to ~0) so it catches
+      nonlinear/heteroskedastic dependence — a refutation, powerless under linear-Gaussian. Verified on
+      lalonde-recover-rct Earnings_78: verdict "weak", worst=education (0.19), earnings '74/'75 elevated —
+      the skewed/zero-inflated earnings break additive-normal noise, exactly as expected.
+      - [ ] follow-up: also surface it in a top-level diagnostics panel (not only the node editor); add
+            dCor(ε², parent) as an explicit heteroskedasticity row; permutation p-value for the verdict.
 
 ## 2. Provenance Phase 2b — remaining polish (minor)
 

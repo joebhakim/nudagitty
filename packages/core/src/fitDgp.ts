@@ -369,3 +369,88 @@ export function fitDgpFromData(input: GraphDocument): GraphDocument {
   }
   return reconcilePins(document).document;
 }
+
+// ---------- residual-independence (exogeneity) diagnostic ----------
+// After an additive-noise fit y = intercept + Σβx + ε, the ANM identifiability assumption is ε ⊥ X.
+// OLS forces ε LINEARLY orthogonal to X (corr(ε,xⱼ)≈0 always), so a linear test is powerless — we use
+// DISTANCE CORRELATION, which is 0 iff independent and catches nonlinearity / heteroskedasticity. A high
+// score refutes the additive-noise spec: enrich the functional form, or suspect an unmeasured confounder.
+// (Powerless under linear-Gaussian; needs non-Gaussianity/nonlinearity to bite — earnings qualify.)
+export interface ResidualParentCheck { nodeId: string; label: string; distanceCorr: number; }
+export interface ResidualDiagnostic {
+  available: boolean;
+  n: number;
+  parents: ResidualParentCheck[];
+  points: { fitted: number; residual: number }[];
+  maxDistanceCorr: number;
+  worst: ResidualParentCheck | null;
+  verdict: "ok" | "weak" | "violated";
+}
+
+function centeredDistanceMatrix(v: number[]): number[][] {
+  const n = v.length;
+  const d = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+  const rowMean = new Array<number>(n).fill(0);
+  let grand = 0;
+  for (let i = 0; i < n; i += 1) for (let j = 0; j < n; j += 1) { const val = Math.abs(v[i]! - v[j]!); d[i]![j] = val; rowMean[i]! += val; grand += val; }
+  for (let i = 0; i < n; i += 1) rowMean[i]! /= n;
+  grand /= n * n;
+  const a = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+  for (let i = 0; i < n; i += 1) for (let j = 0; j < n; j += 1) a[i]![j] = d[i]![j]! - rowMean[i]! - rowMean[j]! + grand;
+  return a;
+}
+
+/** Distance correlation ∈ [0,1]: 0 iff X ⊥ Y, sensitive to any (incl. nonlinear) dependence. */
+export function distanceCorrelation(x: number[], y: number[]): number {
+  const n = x.length;
+  if (n < 4) return 0;
+  const a = centeredDistanceMatrix(x);
+  const b = centeredDistanceMatrix(y);
+  let dcov = 0, dvx = 0, dvy = 0;
+  for (let i = 0; i < n; i += 1) for (let j = 0; j < n; j += 1) { dcov += a[i]![j]! * b[i]![j]!; dvx += a[i]![j]! * a[i]![j]!; dvy += b[i]![j]! * b[i]![j]!; }
+  const inv = 1 / (n * n);
+  const denom = Math.sqrt(dvx * inv * dvy * inv);
+  if (denom < 1e-12) return 0;
+  return Math.sqrt(Math.max(0, dcov * inv) / denom);
+}
+
+/** ANM residual-independence check on a fitted CONTINUOUS data node: dCor(ε, each parent) + residuals-vs-fitted. */
+export function residualDiagnostics(document: GraphDocument, nodeId: string, cap = 300): ResidualDiagnostic {
+  const empty: ResidualDiagnostic = { available: false, n: 0, parents: [], points: [], maxDistanceCorr: 0, worst: null, verdict: "ok" };
+  const node = document.graph.nodes.find((n) => n.id === nodeId);
+  const col = nodeColumn(document, nodeId);
+  if (!node || !col) return empty;
+  if (normalizeVariableModel(node.variable).valueType === "binary") return empty;
+  if (!nodeGenerates(document, nodeId)) return empty; // only meaningful once a model is fit/authored
+  const drawn = drawnDataParents(document, nodeId);
+  if (drawn.length === 0) return empty;
+  const rows = datasetRows(col.dataset);
+  if (rows.length < 20) return empty;
+  const mech = normalizeNodeMechanism(document.simulation.nodes[nodeId]);
+  const parentCols = drawn
+    .map((edge) => {
+      const pc = nodeColumn(document, edge.source);
+      const em = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
+      return { edge, col: pc, coef: em.kind === "linear" ? em.coefficient : 0, label: document.graph.nodes.find((n) => n.id === edge.source)?.label ?? edge.source };
+    })
+    .filter((p): p is typeof p & { col: NonNullable<typeof p.col> } => Boolean(p.col));
+  if (parentCols.length === 0) return empty;
+
+  const y = rows.map((r) => r[col.dataColumn] ?? 0);
+  const fitted = rows.map((r) => mech.intercept + parentCols.reduce((s, p) => s + p.coef * (r[p.col.dataColumn] ?? 0), 0));
+  const resid = y.map((yi, i) => yi - fitted[i]!);
+  const stride = Math.max(1, Math.floor(rows.length / cap));
+  const idx: number[] = [];
+  for (let i = 0; i < rows.length; i += stride) idx.push(i);
+  const rs = idx.map((i) => resid[i]!);
+  const parents: ResidualParentCheck[] = parentCols.map((p) => ({
+    nodeId: p.edge.source,
+    label: p.label,
+    distanceCorr: distanceCorrelation(rs, idx.map((i) => rows[i]![p.col.dataColumn] ?? 0))
+  }));
+  const worst = parents.reduce<ResidualParentCheck | null>((w, p) => (!w || p.distanceCorr > w.distanceCorr ? p : w), null);
+  const maxDistanceCorr = worst?.distanceCorr ?? 0;
+  const verdict = maxDistanceCorr < 0.12 ? "ok" : maxDistanceCorr < 0.22 ? "weak" : "violated";
+  const points = idx.map((i) => ({ fitted: fitted[i]!, residual: resid[i]! }));
+  return { available: true, n: idx.length, parents, points, maxDistanceCorr, worst, verdict };
+}
