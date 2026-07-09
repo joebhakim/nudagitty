@@ -28,15 +28,14 @@ axes — the old whole-node "From data / Fit / Author" toggle conflated them.
       intercept makes the mean predicted probability equal the empirical rate, and Bernoulli(rate) IS the
       whole marginal. (lalonde-recover-rct In_program: read 0.063 → fit 0.066 vs empirical 0.069.) No extra
       calibration needed. The editor badge says "from data (rate preserved)" for a fitted binary node. *(#92)*
-- [ ] **Marginal-preserving fit — continuous (NORTA).** OLS preserves the fitted continuous node's MEAN
-      (verified: Earnings_78 20232 → 20555 vs 20502) but NOT the shape — additive-normal noise makes a
-      symmetric Gaussian, wrong for skewed/zero-inflated earnings. `copula_marginal` already IS the NORTA
-      transform (η → Φ → F⁻¹); the missing piece is an **`empirical` NodeDistribution kind** (sorted-sample
-      inverse-CDF) to use as F. Then fit on the normal-score scale (coef = latent loading, not a $-slope),
-      set combiner=`copula_marginal` + the empirical marginal. Heavy/own pass: the new dist kind ripples
-      through normalize / sampleDistribution / inverseMarginalCdf / analytic / **golden** / share-URL
-      (samples bloat the compact URL — store a downsample or a ref). Until then the editor honestly shows
-      a "modeled" badge for a fitted continuous node. *(#92)*
+- [~] **Marginal-preserving fit — continuous (NORTA). DECIDED: SKIP** (2026-07). It's un-falsifiable (you
+      can never catch it being wrong), the coefficient becomes an un-interpretable latent loading (bad for a
+      teaching tool), and it's heavy (new `empirical` dist kind → normalize/sample/inverseMarginalCdf/
+      analytic/**golden**/share-URL churn). The additive-noise fit + the residual test below is the honest,
+      *falsifiable* alternative and is already shipped; the "modeled" badge keeps the continuous case honest.
+      The one real downside (a fitted earnings marginal that can go negative) is better fixed cheaply with a
+      positive/skewed **family link** (`gamma_log` / `positive_softplus`, already exist) than with NORTA.
+      Revisit only if a user specifically needs exact continuous shapes. *(#92 — parked)*
 - [x] **Residual-independence / exogeneity diagnostic.** *(task #90)* DONE — `residualDiagnostics` +
       `distanceCorrelation` in fitDgp.ts; `ResidualCheck` panel in the node editor for a fitted continuous
       node: residuals-vs-fitted scatter + per-parent **distance correlation** bars + an ok/weak/violated
@@ -44,8 +43,13 @@ axes — the old whole-node "From data / Fit / Author" toggle conflated them.
       nonlinear/heteroskedastic dependence — a refutation, powerless under linear-Gaussian. Verified on
       lalonde-recover-rct Earnings_78: verdict "weak", worst=education (0.19), earnings '74/'75 elevated —
       the skewed/zero-inflated earnings break additive-normal noise, exactly as expected.
-      - [ ] follow-up: also surface it in a top-level diagnostics panel (not only the node editor); add
-            dCor(ε², parent) as an explicit heteroskedasticity row; permutation p-value for the verdict.
+- [x] **Residual test SET rounded out** (commit 215067c) — web-validated against the literature. It IS
+      RESIT (Peters et al. 2014); dCor ≡ HSIC (Sejdinovic et al. 2013). Now three tests: (1) **joint**
+      ε⊥X dCor + **permutation p-value** (was eyeballed; also was only pairwise); (2) **heteroskedasticity**
+      dCor(ε²,X)+p (catches the hourglass BP misses); (3) **non-Gaussianity** Jarque–Bera; + a
+      **linear-Gaussian identifiability warning** (the powerless case). Verdict from the joint p-value.
+      - [ ] follow-up: lift into a top-level diagnostics panel (not only the node editor); optional
+            Breusch–Pagan as a familiar named alternative; Ramsey RESET for functional form.
 
 ## 2. Provenance Phase 2b — remaining polish (minor)
 
