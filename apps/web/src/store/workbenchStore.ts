@@ -40,6 +40,8 @@ type WorkbenchStore = {
   modelDirty: boolean;
   scatterPair: ScatterPair;
   changedPins: string[];
+  showProvenance: boolean;
+  toggleProvenance: () => void;
   commit: (next: GraphDocument) => void;
   undo: () => void;
   redo: () => void;
@@ -101,6 +103,8 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
   modelDirty: false,
   scatterPair: defaultScatterPair(initialDocument.graph),
   changedPins: [],
+  showProvenance: false,
+  toggleProvenance: () => set((state) => ({ showProvenance: !state.showProvenance })),
   commit: (next) => set((state) => commitState(state, next)),
   undo: () => set((state) => {
     const previous = state.history.at(-1);

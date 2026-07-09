@@ -33,6 +33,7 @@ import {
   Table,
   FileUp,
   GraduationCap,
+  Palette,
   Blend,
   CircleDashed,
   BookOpen,
@@ -53,6 +54,9 @@ import {
   setPlasmodeJointMode,
   fitDgpFromData,
   fittableDgp,
+  nodeProvenance,
+  edgeProvenance,
+  pinKeyElement,
   withCoupling,
   withoutCoupling,
   simpleEdge,
@@ -250,6 +254,9 @@ export function App() {
   const edgeSource = useWorkbenchStore((state) => state.edgeSource);
   const viewMode = useWorkbenchStore((state) => state.viewMode);
   const effectKind = useWorkbenchStore((state) => state.effectKind);
+  const showProvenance = useWorkbenchStore((state) => state.showProvenance);
+  const toggleProvenance = useWorkbenchStore((state) => state.toggleProvenance);
+  const changedPins = useWorkbenchStore((state) => state.changedPins);
   const bibliographyTopic = useWorkbenchStore((state) => state.bibliographyTopic);
   const showCausal = useWorkbenchStore((state) => state.showCausal);
   const showBiasing = useWorkbenchStore((state) => state.showBiasing);
@@ -509,6 +516,20 @@ export function App() {
     if (block) commit(setCopulaBlock(document, block));
   }, [commit, document, rootCovariateIds, setCouplingHint]);
 
+  // Provenance overlay: each node/edge's origin (authored / read-from-data / pinned-by-fit) + the
+  // elements whose pinned numbers just moved (for the change flash).
+  const provenance = useMemo(() => {
+    const nodes = new Map<string, ReturnType<typeof nodeProvenance>>();
+    const edges = new Map<string, ReturnType<typeof edgeProvenance>>();
+    for (const node of document.graph.nodes) nodes.set(node.id, nodeProvenance(document, node.id));
+    for (const edge of document.graph.edges) edges.set(edge.id, edgeProvenance(document, edge.id));
+    return { nodes, edges };
+  }, [document]);
+  const changedElements = useMemo(() => {
+    const nodeIds = new Set<string>(); const edgeIds = new Set<string>();
+    for (const key of changedPins) { const el = pinKeyElement(key); if (el?.kind === "node") nodeIds.add(el.id); else if (el?.kind === "edge") edgeIds.add(el.id); }
+    return { nodeIds, edgeIds };
+  }, [changedPins]);
   const dataOrphans = useMemo(() => orphanDataColumns(document), [document]);
   const { overlapDiagnostic, positivity } = useOverlapDiagnostic(computationDocument);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
@@ -1016,6 +1037,10 @@ export function App() {
         modulations={modulations}
         copulaCouplings={copulaCouplings}
         jointSources={jointSources}
+        showProvenance={showProvenance}
+        nodeProvenanceById={provenance.nodes}
+        edgeProvenanceById={provenance.edges}
+        changedElements={changedElements}
         disabledEdgeIds={new Set(Object.entries(document.simulation.edges).filter(([, mechanism]) => !mechanism.enabled).map(([id]) => id))}
         highlightedEdges={highlightedEdges}
         ancestorIds={ancestorIds}
@@ -1197,6 +1222,7 @@ export function App() {
             <IconButton label="Overlap / positivity" pressed={showOverlap} badge={positivity === "ok" ? null : positivity} onClick={() => setShowOverlap((open) => !open)}><Blend size={18} /></IconButton>
             <IconButton label="Data — the current sample" pressed={showData} badge={dataOrphans.length > 0 ? "warning" : null} onClick={() => setShowData((open) => !open)}><Table size={18} /></IconButton>
             <IconButton label="Joint / DGM — the confounder joint" pressed={showJointLab} onClick={() => showJointLab ? setShowJointLab(false) : openJointLab()}><Spline size={18} /></IconButton>
+            <IconButton label="Provenance — colour each number by origin (authored / data / fitted)" pressed={showProvenance} onClick={toggleProvenance}><Palette size={18} /></IconButton>
             <IconButton label="Implicit noise nodes" pressed={showNoiseNodes} onClick={() => setShowNoiseNodes(!showNoiseNodes)}><CircleDashed size={18} /></IconButton>
             <input
               ref={snapshotInputRef}

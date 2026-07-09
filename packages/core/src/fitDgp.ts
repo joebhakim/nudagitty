@@ -211,6 +211,36 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
   return { document, changed };
 }
 
+// ---------- provenance queries (for the visual overlay) ----------
+export type Provenance = "authored" | "data" | "pinned";
+
+/** A node's dominant provenance: reads-from-data (enabled lookup), else pinned (any fitted param), else authored. */
+export function nodeProvenance(document: GraphDocument, nodeId: string): Provenance {
+  const col = nodeColumn(document, nodeId);
+  if (col?.enabled) return "data";
+  const pins = document.metadata.pins;
+  if (pins.includes(interceptKey(nodeId)) || pins.includes(noiseKey(nodeId))) return "pinned";
+  for (const edge of document.graph.edges) if (edge.target === nodeId && pins.includes(edgeKey(edge.id))) return "pinned";
+  return "authored";
+}
+
+/** An edge's coefficient provenance: pinned (fit), else data (a lookup, or points into a node still reading), else authored. */
+export function edgeProvenance(document: GraphDocument, edgeId: string): Provenance {
+  if (document.metadata.pins.includes(edgeKey(edgeId))) return "pinned";
+  const mech = normalizeEdgeMechanism(document.simulation.edges[edgeId]);
+  if (mech.kind === "table_lookup") return "data";
+  const edge = document.graph.edges.find((e) => e.id === edgeId);
+  if (edge) { const col = nodeColumn(document, edge.target); if (col?.enabled) return "data"; }
+  return "authored";
+}
+
+/** Resolve a pin key to the canvas element it marks (for the change-flash). */
+export function pinKeyElement(key: string): { kind: "edge" | "node"; id: string } | null {
+  if (key.startsWith("e:")) return { kind: "edge", id: key.slice(2) };
+  if (key.startsWith("ni:") || key.startsWith("nn:")) return { kind: "node", id: key.slice(3) };
+  return null;
+}
+
 // "Learn the whole DGP" — pin every endogenous node (a data column with drawn data-parents), then reconcile.
 export function fitDgpFromData(input: GraphDocument): GraphDocument {
   let document = input;

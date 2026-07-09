@@ -1,4 +1,4 @@
-import type { AnalysisReport, EdgeMechanism, GraphEdge, GraphModel, Point, SimulationResult } from "@nudagitty/core";
+import type { AnalysisReport, EdgeMechanism, GraphEdge, GraphModel, Point, Provenance, SimulationResult } from "@nudagitty/core";
 import type { ModulationLink, ResultPendingState, SimulationDerivedCache } from "../app/types";
 import type { Selection, ToolMode } from "../shared/appState";
 import type { WorkbenchMode } from "../shared/workbench";
@@ -39,6 +39,10 @@ export interface GraphCanvasProps {
   modulations: ModulationLink[];
   copulaCouplings: CopulaCoupling[];
   jointSources: JointSourceCloud[];
+  showProvenance: boolean;
+  nodeProvenanceById: Map<string, Provenance>;
+  edgeProvenanceById: Map<string, Provenance>;
+  changedElements: { nodeIds: Set<string>; edgeIds: Set<string> };
   disabledEdgeIds: Set<string>;
   highlightedEdges: Map<string, "causal" | "biasing">;
   ancestorIds: Set<string>;

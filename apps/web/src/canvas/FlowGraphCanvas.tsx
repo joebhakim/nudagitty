@@ -125,6 +125,14 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
   // between react-flow's own selection and the model-data sync. `wireArmed` = the pick-a-target step.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [wireArmed, setWireArmed] = useState(false);
+  // Transparency flash: briefly highlight the node/edge numbers a live re-fit just moved.
+  const [flashing, setFlashing] = useState<{ nodeIds: Set<string>; edgeIds: Set<string> }>({ nodeIds: new Set(), edgeIds: new Set() });
+  useEffect(() => {
+    if (props.changedElements.nodeIds.size === 0 && props.changedElements.edgeIds.size === 0) return undefined;
+    setFlashing(props.changedElements);
+    const timer = window.setTimeout(() => setFlashing({ nodeIds: new Set(), edgeIds: new Set() }), 1200);
+    return () => window.clearTimeout(timer);
+  }, [props.changedElements]);
   const selectedRef = useRef<Set<string>>(selectedIds);
   selectedRef.current = selectedIds;
   const wireArmedRef = useRef(false);
@@ -169,11 +177,12 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         showNoise: props.showNoiseNodes,
         onNodeClick: handleNodeSelect
       },
+      className: `prov-${props.nodeProvenanceById.get(node.id) ?? "authored"}${flashing.nodeIds.has(node.id) ? " prov-flash" : ""}`,
       selected,
       draggable: true,
       focusable: true
     };
-  }), [candidateInstrumentIds, handleNodeSelect, selectedIds, props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values, props.showNoiseNodes]);
+  }), [candidateInstrumentIds, handleNodeSelect, selectedIds, flashing, props.nodeProvenanceById, props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values, props.showNoiseNodes]);
   const [nodes, setNodes] = useState<FlowGraphNode[]>(computedNodes);
   const [legendOpen, setLegendOpen] = useState(false);
   const [cloudPositions, setCloudPositions] = useState<Record<string, { x: number; y: number }>>({});
@@ -265,10 +274,12 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         semantic: props.highlightedEdges.get(edge.id),
         enabled,
         denseEdges,
+        pinned: props.edgeProvenanceById.get(edge.id) === "pinned",
         onSelect: props.onEdgeClick
-      }
+      },
+      className: `prov-${props.edgeProvenanceById.get(edge.id) ?? "authored"}${flashing.edgeIds.has(edge.id) ? " prov-flash" : ""}`
     };
-  }), [denseEdges, hiddenNodeIds, liveNodesById, props.disabledEdgeIds, props.edgeMechanisms, props.graph.edges, props.highlightedEdges, props.onEdgeClick, props.selection]);
+  }), [denseEdges, flashing, hiddenNodeIds, liveNodesById, props.disabledEdgeIds, props.edgeMechanisms, props.edgeProvenanceById, props.graph.edges, props.highlightedEdges, props.onEdgeClick, props.selection]);
 
   useEffect(() => {
     setNodes(computedNodes); // computedNodes.selected already reflects selectedIds — no merge needed
@@ -368,8 +379,15 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
     <section className="canvas-shell flow-canvas-shell" aria-label="Graph editor">
       <div ref={frameRef} className="flow-canvas-frame" role="application" aria-label="Editable causal graph" onDoubleClick={onCanvasDoubleClick} onPointerDownCapture={onFramePointerDown}>
         {marqueeBox && <div className="canvas-marquee" style={{ left: marqueeBox.left, top: marqueeBox.top, width: marqueeBox.width, height: marqueeBox.height }} />}
+        {props.showProvenance && (
+          <div className="provenance-legend" aria-label="Provenance">
+            <span><i className="prov-swatch prov-authored" />authored</span>
+            <span><i className="prov-swatch prov-data" />from data</span>
+            <span><i className="prov-swatch prov-pinned" />fitted 📌</span>
+          </div>
+        )}
         <ReactFlow<AnyFlowNode, FlowGraphEdge>
-          className={`graph-canvas flow-graph-canvas ${denseEdges ? "dense-edges" : ""}`}
+          className={`graph-canvas flow-graph-canvas ${denseEdges ? "dense-edges" : ""} ${props.showProvenance ? "show-provenance" : ""}`}
           nodes={allNodes}
           edges={computedEdges}
           nodeTypes={FLOW_NODE_TYPES}

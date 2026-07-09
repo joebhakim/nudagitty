@@ -191,6 +191,7 @@ export type FlowGraphEdgeData = Record<string, unknown> & {
   semantic?: "causal" | "biasing";
   enabled: boolean;
   denseEdges: boolean;
+  pinned?: boolean;
   onSelect: (id: string) => void;
 };
 export type ModulationLink = { id: string; gateId: string; sourceId: string; targetId: string; sign: number; coefficient: number };
