@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { candidateInstruments, classifyConditioned, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel } from "@nudagitty/core";
+import { candidateInstruments, classifyConditioned, nodeDataMode, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel } from "@nudagitty/core";
 import type {
   AnalysisOperation,
   EdgeMechanism,
@@ -264,6 +264,7 @@ export function SelectionEditor(props: {
   onEdgeEnabled: (edge: GraphEdge, enabled: boolean) => void;
   onEdgeMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
   onDeleteEdge: (edgeId: string) => void;
+  onSetDataMode: (nodeId: string, mode: "read" | "fit" | "author") => void;
 }) {
   if (props.mode === "basic") return <BasicSelectionEditor {...props} />;
   if (props.node) return <VariableEditor
@@ -280,6 +281,7 @@ export function SelectionEditor(props: {
     onOverride={props.onOverride}
     onSelectionCondition={props.onSelectionCondition}
     onSetOperation={props.onSetOperation}
+    onSetDataMode={props.onSetDataMode}
   />;
   if (props.edge) return <EdgeEditor
     edge={props.edge}
@@ -429,6 +431,7 @@ export function VariableEditor(props: {
   onOverride: (id: string, value: number | null) => void;
   onSelectionCondition: (nodeId: string, condition: SimulationSelectionCondition | null) => void;
   onSetOperation: (nodeId: string, operation: AnalysisOperation) => void;
+  onSetDataMode: (nodeId: string, mode: "read" | "fit" | "author") => void;
 }) {
   const node = props.node;
   const variable = normalizeVariableModel(node.variable);
@@ -503,6 +506,23 @@ export function VariableEditor(props: {
       </div>
 
       <div className="selection-editor-body">
+        {(() => {
+          const dataMode = nodeDataMode(props.document, node.id);
+          if (!dataMode) return null;
+          const canFit = props.document.graph.edges.some((e) => e.target === node.id && e.kind === "directed" && props.document.simulation.edges[e.id]?.kind !== "table_lookup");
+          const blurb = dataMode === "read" ? "Replays this variable's real column — its equation is inert, so edits below are ignored." : dataMode === "fit" ? "Generated from a fit to the data (live — recomputes as you change the DAG)." : "Generated from an equation you author below.";
+          return (
+            <div className="selection-editor-block node-data-mode">
+              <strong>Values</strong>
+              <div className="data-mode-seg" role="group" aria-label="Value source">
+                <button type="button" className={dataMode === "read" ? "active" : ""} onClick={() => props.onSetDataMode(node.id, "read")}>From data</button>
+                {canFit && <button type="button" className={dataMode === "fit" ? "active" : ""} onClick={() => props.onSetDataMode(node.id, "fit")}>Fit</button>}
+                <button type="button" className={dataMode === "author" ? "active" : ""} onClick={() => props.onSetDataMode(node.id, "author")}>Author</button>
+              </div>
+              <p className="muted">{blurb}</p>
+            </div>
+          );
+        })()}
         <div className="operation-panel">
           <div className="operation-panel-head">
             <strong>Analysis operation</strong>

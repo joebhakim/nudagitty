@@ -241,6 +241,48 @@ export function pinKeyElement(key: string): { kind: "edge" | "node"; id: string 
   return null;
 }
 
+export type NodeDataMode = "read" | "fit" | "author";
+
+/** A data node's mode: reads its column (replay), fitted (pinned), or authored (generates, you set it).
+ *  null if the node isn't a data column at all. */
+export function nodeDataMode(document: GraphDocument, nodeId: string): NodeDataMode | null {
+  const col = nodeColumn(document, nodeId);
+  if (!col) return null;
+  if (col.enabled) return "read";
+  return nodeProvenance(document, nodeId) === "pinned" ? "fit" : "author";
+}
+
+/** Drop every pin belonging to a node (its intercept/noise + its incoming edge coefficients). */
+function withoutNodePins(document: GraphDocument, nodeId: string): void {
+  document.metadata.pins = document.metadata.pins.filter((key) => {
+    const el = pinKeyElement(key);
+    if (!el) return true;
+    if (el.kind === "node") return el.id !== nodeId;
+    const edge = document.graph.edges.find((e) => e.id === el.id);
+    return !edge || edge.target !== nodeId;
+  });
+}
+
+/** Switch a data node between reading its column, generating from a fitted model, or generating from an
+ *  authored equation you control. "author"/"fit" disable its table_lookup so the equation drives it. */
+export function setNodeDataMode(input: GraphDocument, nodeId: string, mode: NodeDataMode): GraphDocument {
+  const col = nodeColumn(input, nodeId);
+  if (!col) return input;
+  if (mode === "fit") return reconcilePins(pinNodeEquation(input, nodeId)).document;
+  const document = cloneDocument(input);
+  withoutNodePins(document, nodeId);
+  document.simulation.edges[col.lookupEdgeId] = { ...normalizeEdgeMechanism(document.simulation.edges[col.lookupEdgeId]), enabled: mode === "read" };
+  return document;
+}
+
+/** Editing a pinned number detaches it (→ authored, your override). Used by the editors' change handlers. */
+export function unpinForNode(input: GraphDocument, nodeId: string): GraphDocument {
+  if (!input.metadata.pins.some((key) => { const el = pinKeyElement(key); return el?.kind === "node" && el.id === nodeId; })) return input;
+  const document = cloneDocument(input);
+  document.metadata.pins = document.metadata.pins.filter((key) => { const el = pinKeyElement(key); return !(el?.kind === "node" && el.id === nodeId); });
+  return document;
+}
+
 // "Learn the whole DGP" — pin every endogenous node (a data column with drawn data-parents), then reconcile.
 export function fitDgpFromData(input: GraphDocument): GraphDocument {
   let document = input;

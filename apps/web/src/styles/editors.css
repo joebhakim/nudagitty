@@ -1100,3 +1100,12 @@
 .editor-section > summary strong { font-size: 12.5px; color: #0f172a; }
 .editor-section > summary span { font-size: 11px; color: #6b7782; }
 .editor-section-body { display: grid; gap: 8px; padding: 9px 11px; }
+
+/* Per-node Values mode (From data / Fit / Author) — the provenance switch. */
+.node-data-mode { margin-bottom: 12px; }
+.node-data-mode > strong { font-size: 12px; }
+.data-mode-seg { display: inline-flex; border: 1px solid var(--border, #d8d8e2); border-radius: 6px; overflow: hidden; margin: 5px 0; }
+.data-mode-seg button { appearance: none; background: none; border: none; padding: 4px 12px; font-size: 12px; font-weight: 600; color: var(--text-muted, #667); cursor: pointer; }
+.data-mode-seg button + button { border-left: 1px solid var(--border, #d8d8e2); }
+.data-mode-seg button.active { background: #6b40b0; color: #fff; cursor: default; }
+.node-data-mode p { margin: 2px 0 0; font-size: 11.5px; line-height: 1.4; }

@@ -57,6 +57,8 @@ import {
   nodeProvenance,
   edgeProvenance,
   pinKeyElement,
+  setNodeDataMode,
+  unpinForNode,
   withCoupling,
   withoutCoupling,
   simpleEdge,
@@ -806,7 +808,7 @@ export function App() {
     const overrides = { ...document.simulation.overrides };
     const nextVariable = normalizeVariableModel(findNode(graph, nodeId)?.variable);
     if (nextVariable.valueType === "binary" && Object.hasOwn(overrides, nodeId)) overrides[nodeId] = coerceBinary(overrides[nodeId] ?? 0);
-    commit({
+    commit(unpinForNode({ // editing intercept / noise / distribution authors them (unpin), so the edit sticks
       ...withGraph(document, graph),
       simulation: {
         ...document.simulation,
@@ -816,7 +818,7 @@ export function App() {
         },
         overrides
       }
-    });
+    }, nodeId));
   }, [commit, document]);
 
   const updateVariableModel = useCallback((nodeId: string, variable: VariableModel) => {
@@ -859,8 +861,12 @@ export function App() {
   const updateEdgeMechanism = useCallback((edge: GraphEdge, patch: Partial<EdgeMechanism>) => {
     trackEditCommitted("edge");
     const current = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
+    // Editing the coefficient/form authors it (unpin) so it sticks; a pure enable-toggle stays pinned.
+    const onlyEnabled = Object.keys(patch).length === 1 && "enabled" in patch;
+    const pins = onlyEnabled ? document.metadata.pins : document.metadata.pins.filter((key) => key !== `e:${edge.id}`);
     commit({
       ...document,
+      metadata: { ...document.metadata, pins },
       simulation: {
         ...document.simulation,
         edges: {
@@ -1015,6 +1021,7 @@ export function App() {
             onEdgeEnabled={updateEdgeEnabled}
             onEdgeMechanism={updateEdgeMechanism}
             onDeleteEdge={deleteEdgeById}
+            onSetDataMode={(id, mode) => commit(setNodeDataMode(document, id, mode))}
           />
         </ModuleFrame>
       </aside>
