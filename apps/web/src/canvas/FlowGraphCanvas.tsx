@@ -175,6 +175,8 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         summary: props.derived.nodes.get(node.id),
         candidateInstrument: candidateInstrumentIds.has(node.id),
         showNoise: props.showNoiseNodes,
+        showProvenance: props.showProvenance,
+        provenance: props.nodeProvenanceById.get(node.id) ?? "authored",
         onNodeClick: handleNodeSelect
       },
       className: `prov-${props.nodeProvenanceById.get(node.id) ?? "authored"}${flashing.nodeIds.has(node.id) ? " prov-flash" : ""}`,
@@ -182,7 +184,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
       draggable: true,
       focusable: true
     };
-  }), [candidateInstrumentIds, handleNodeSelect, selectedIds, flashing, props.nodeProvenanceById, props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values, props.showNoiseNodes]);
+  }), [candidateInstrumentIds, handleNodeSelect, selectedIds, flashing, props.nodeProvenanceById, props.showProvenance, props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values, props.showNoiseNodes]);
   const [nodes, setNodes] = useState<FlowGraphNode[]>(computedNodes);
   const [legendOpen, setLegendOpen] = useState(false);
   const [cloudPositions, setCloudPositions] = useState<Record<string, { x: number; y: number }>>({});
@@ -381,7 +383,17 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         {marqueeBox && <div className="canvas-marquee" style={{ left: marqueeBox.left, top: marqueeBox.top, width: marqueeBox.width, height: marqueeBox.height }} />}
         {props.showProvenance && (
           <div className="provenance-legend" aria-label="Provenance">
-            <span><i className="prov-swatch prov-data" />from data</span>
+            <span className="prov-legend-group">nodes</span>
+            <span>
+              <svg className="prov-nodemark" viewBox="-11 -11 22 22" aria-hidden="true"><circle r="9" fill="#1f8a6d" /><g><rect x="-5" y="-4.5" width="10" height="9" rx="1.2" fill="none" stroke="#fff" strokeWidth="1.1" /><line x1="-5" y1="-0.5" x2="5" y2="-0.5" stroke="#fff" strokeWidth="0.9" /><line x1="0" y1="-4.5" x2="0" y2="4.5" stroke="#fff" strokeWidth="0.9" /></g></svg>
+              data-derived
+            </span>
+            <span>
+              <svg className="prov-nodemark" viewBox="-11 -11 22 22" aria-hidden="true"><circle r="9" fill="#c08a2e" /><text x="0" y="4" textAnchor="middle" fontSize="13" fontStyle="italic" fontWeight="700" fill="#fff">&fnof;</text></svg>
+              model-defined
+            </span>
+            <span className="prov-legend-sep" aria-hidden="true" />
+            <span className="prov-legend-group">edges</span>
             <span><i className="prov-swatch prov-fitted" />fitted 📌</span>
             <span><i className="prov-swatch prov-authored" />authored ✎</span>
             <span><i className="prov-swatch prov-not-learned" />not learned</span>
@@ -498,7 +510,7 @@ function FlowGraphLegend(props: { showNoise: boolean }) {
 // square outcomes and circular covariates by SHAPE rather than colour.
 
 function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
-  const { node, selected, edgeSource, ancestor, changed, value, state, summary, candidateInstrument, showNoise, onNodeClick } = props.data;
+  const { node, selected, edgeSource, ancestor, changed, value, state, summary, candidateInstrument, showNoise, showProvenance, provenance, onNodeClick } = props.data;
   const showInstrumentHint = candidateInstrument && !node.roles.instrument;
   const variable = normalizeVariableModel(node.variable);
   // Discrete / atomic marginals carry point masses — Sklar's copula is unidentified across the
@@ -550,6 +562,25 @@ function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
             <title>This could be an instrument (IV) — it feeds the exposure with no other path to the outcome. Assign the instrument role to estimate via 2SLS.</title>
             <rect x="11" y="-36" width="30" height="16" rx="8" />
             <text x="26" y="-24">IV?</text>
+          </g>
+        )}
+        {showProvenance && (provenance === "data" || provenance === "authored") && (
+          <g className={`prov-node-badge prov-${provenance}`} transform="translate(-30,-30)">
+            <title>{provenance === "data"
+              ? "Data-derived — this variable's marginal is a real data column."
+              : "Model-defined (ex nihilo) — authored from scratch, no data column behind it."}</title>
+            <circle r="9" />
+            {provenance === "data" ? (
+              // a mini data table (rows + a divider) → "from a real column"
+              <g className="prov-badge-icon">
+                <rect x="-5" y="-4.5" width="10" height="9" rx="1.2" />
+                <line x1="-5" y1="-0.5" x2="5" y2="-0.5" />
+                <line x1="0" y1="-4.5" x2="0" y2="4.5" />
+              </g>
+            ) : (
+              // an ƒ → "defined by a formula/model"
+              <text className="prov-badge-glyph" x="0" y="3.4">&fnof;</text>
+            )}
           </g>
         )}
         {node.roles.adjusted && <rect className="adjusted-ring" x="-27" y="-27" width="54" height="54" rx="6" />}

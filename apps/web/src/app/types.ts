@@ -180,6 +180,8 @@ export type FlowGraphNodeData = Record<string, unknown> & {
   summary?: NodeDistributionSummary;
   candidateInstrument: boolean;
   showNoise: boolean;
+  showProvenance?: boolean;
+  provenance?: "data" | "not-learned" | "fitted" | "authored";
   onNodeClick: (id: string, event: import("react").MouseEvent) => void;
 };
 export type FlowGraphEdgeData = Record<string, unknown> & {
