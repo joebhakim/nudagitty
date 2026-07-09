@@ -51,6 +51,8 @@
 
 /* Multi-select marquee box (Shift+drag) + the group-action bar. */
 .react-flow__selection { background: rgba(107, 64, 176, 0.09); border: 1px solid rgba(107, 64, 176, 0.55); }
+/* Ctrl+drag rubber-band select. */
+.canvas-marquee { position: absolute; z-index: 5; border: 1px solid rgba(107, 64, 176, 0.6); background: rgba(107, 64, 176, 0.09); pointer-events: none; border-radius: 2px; }
 .multiselect-bar {
   position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 30;
   display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 12.5px;

@@ -323,10 +323,51 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
     props.onAddNode(point);
   }, [flow, props]);
 
+  // Ctrl+drag on empty canvas = rubber-band multi-select (screen-space hit test — no react-flow
+  // selection dependency). Ctrl held ⇒ we stop the pane's pointerdown so react-flow doesn't pan.
+  const [marquee, setMarquee] = useState<{ sx: number; sy: number; cx: number; cy: number } | null>(null);
+  const marqueeRef = useRef(marquee);
+  marqueeRef.current = marquee;
+  const onFramePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!event.ctrlKey || event.button !== 0) return;
+    const target = event.target as Element;
+    if (target.closest(".react-flow__node, .react-flow__edge, .react-flow__controls, .multiselect-bar, button, .canvas-legend-toggle, input, select, .react-flow__handle")) return;
+    event.stopPropagation();
+    setMarquee({ sx: event.clientX, sy: event.clientY, cx: event.clientX, cy: event.clientY });
+  }, []);
+  useEffect(() => {
+    if (!marquee) return undefined;
+    const move = (e: PointerEvent) => setMarquee((m) => (m ? { ...m, cx: e.clientX, cy: e.clientY } : m));
+    const up = () => {
+      const m = marqueeRef.current;
+      setMarquee(null);
+      if (!m) return;
+      const left = Math.min(m.sx, m.cx), right = Math.max(m.sx, m.cx), top = Math.min(m.sy, m.cy), bottom = Math.max(m.sy, m.cy);
+      if (right - left < 4 && bottom - top < 4) return;
+      const ids: string[] = [];
+      frameRef.current?.querySelectorAll(".react-flow__node").forEach((el) => {
+        const id = el.getAttribute("data-id");
+        if (!id || id.startsWith("cloud:")) return;
+        const b = el.getBoundingClientRect();
+        const x = b.left + b.width / 2, y = b.top + b.height / 2;
+        if (x >= left && x <= right && y >= top && y <= bottom) ids.push(id);
+      });
+      setSelectedIds(new Set(ids));
+      if (ids.length === 1) props.onNodeClick(ids[0]!);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up, { once: true });
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+  }, [marquee, props.onNodeClick]);
+  const marqueeBox = marquee && frameRef.current ? (() => {
+    const r = frameRef.current.getBoundingClientRect();
+    return { left: Math.min(marquee.sx, marquee.cx) - r.left, top: Math.min(marquee.sy, marquee.cy) - r.top, width: Math.abs(marquee.cx - marquee.sx), height: Math.abs(marquee.cy - marquee.sy) };
+  })() : null;
 
   return (
     <section className="canvas-shell flow-canvas-shell" aria-label="Graph editor">
-      <div ref={frameRef} className="flow-canvas-frame" role="application" aria-label="Editable causal graph" onDoubleClick={onCanvasDoubleClick}>
+      <div ref={frameRef} className="flow-canvas-frame" role="application" aria-label="Editable causal graph" onDoubleClick={onCanvasDoubleClick} onPointerDownCapture={onFramePointerDown}>
+        {marqueeBox && <div className="canvas-marquee" style={{ left: marqueeBox.left, top: marqueeBox.top, width: marqueeBox.width, height: marqueeBox.height }} />}
         <ReactFlow<AnyFlowNode, FlowGraphEdge>
           className={`graph-canvas flow-graph-canvas ${denseEdges ? "dense-edges" : ""}`}
           nodes={allNodes}
