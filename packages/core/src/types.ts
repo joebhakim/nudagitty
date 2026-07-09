@@ -239,6 +239,11 @@ export interface LongitudinalMetadata {
 export interface GraphDocumentMetadata {
   longitudinal: LongitudinalMetadata;
   sources: SourceCitation[];
+  // Provenance: keys of numbers PINNED to a data fit (live — recomputed on every commit). Keys:
+  // `e:<edgeId>` (edge coefficient), `ni:<nodeId>` (node intercept), `nn:<nodeId>` (node noise sd).
+  // Absent/empty ⇒ nothing pinned (the default; every existing model). A number is "read from data"
+  // when its node has a table_lookup edge; "authored" otherwise and not pinned.
+  pins: string[];
 }
 
 export interface GraphNode {

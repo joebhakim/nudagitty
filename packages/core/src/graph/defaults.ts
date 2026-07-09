@@ -63,7 +63,8 @@ export function defaultGraphDocumentMetadata(): GraphDocumentMetadata {
       censoring: [],
       survivalOutputs: []
     },
-    sources: []
+    sources: [],
+    pins: []
   };
 }
 

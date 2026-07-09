@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   cloneDocument,
+  reconcilePins,
   serializeModel,
   withGraph
 } from "@nudagitty/core";
@@ -38,6 +39,7 @@ type WorkbenchStore = {
   modelText: string;
   modelDirty: boolean;
   scatterPair: ScatterPair;
+  changedPins: string[];
   commit: (next: GraphDocument) => void;
   undo: () => void;
   redo: () => void;
@@ -61,13 +63,16 @@ type WorkbenchStore = {
 };
 
 function commitState(state: WorkbenchStore, next: GraphDocument): Partial<WorkbenchStore> {
+  // Live provenance: re-fit every pinned number from the current data + DAG; `changed` drives the flash.
+  const { document, changed } = reconcilePins(next);
   return {
     history: [...state.history.slice(-80), cloneDocument(state.document)],
     future: [],
-    document: next,
-    modelText: serializeModel(next),
+    document,
+    modelText: serializeModel(document),
     modelDirty: false,
-    scatterPair: reconcileScatterPair(next.graph, state.scatterPair)
+    scatterPair: reconcileScatterPair(document.graph, state.scatterPair),
+    changedPins: changed
   };
 }
 
@@ -95,6 +100,7 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
   modelText: serializeModel(initialDocument),
   modelDirty: false,
   scatterPair: defaultScatterPair(initialDocument.graph),
+  changedPins: [],
   commit: (next) => set((state) => commitState(state, next)),
   undo: () => set((state) => {
     const previous = state.history.at(-1);

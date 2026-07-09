@@ -1,9 +1,14 @@
 import type { GraphDocument } from "./types";
-import { cloneDocument, normalizeEdgeMechanism, normalizeVariableModel, reconcileSimulationSpec } from "./graph";
+import { cloneDocument, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, reconcileSimulationSpec } from "./graph";
 import { setLinearCoefficient, setNode, ZERO_NOISE } from "./examples/builders";
 import { datasetRows, registerRuntimeDataset } from "./datasets";
 
-// Solve A x = b (Gaussian elimination with partial pivoting). Returns null if singular.
+// ---------- provenance keys ----------
+const edgeKey = (id: string) => `e:${id}`;
+const interceptKey = (id: string) => `ni:${id}`;
+const noiseKey = (id: string) => `nn:${id}`;
+
+// ---------- linear algebra ----------
 function solveLinear(a: number[][], b: number[]): number[] | null {
   const n = b.length;
   const m = a.map((row, i) => [...row, b[i]!]);
@@ -21,10 +26,16 @@ function solveLinear(a: number[][], b: number[]): number[] | null {
   return m.map((row, i) => row[n]! / row[i]!);
 }
 
-// z-score each predictor column so the fit is well-conditioned regardless of raw scale (earnings in
-// the thousands vs 0/1 flags). Returns the standardized matrix + per-column mean/sd.
-function standardize(X: number[][]): { z: number[][]; mean: number[]; sd: number[] } {
-  const n = X.length; const p = X[0]?.length ?? 0;
+const sig = (x: number) => 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, x))));
+
+// Fit y on the PINNED predictors X (raw scale, z-scored internally for conditioning), with a fixed
+// per-row `offset` (the authored terms) and an optional estimated intercept. OLS for continuous y,
+// logistic-IRLS for binary. Returns raw-scale coefficients (+ intercept if requested, + residual sd).
+function fitLinearModel(y: number[], X: number[][], offset: number[], fitIntercept: boolean, isBinary: boolean):
+  { intercept: number; coefs: number[]; residualSd: number } | null {
+  const n = y.length; const p = X[0]?.length ?? 0;
+  if (n < p + 2) return null;
+  // z-score predictors
   const mean = new Array(p).fill(0); const sd = new Array(p).fill(1);
   for (let j = 0; j < p; j += 1) {
     let s = 0; for (let i = 0; i < n; i += 1) s += X[i]![j]!;
@@ -33,120 +44,179 @@ function standardize(X: number[][]): { z: number[][]; mean: number[]; sd: number
     sd[j] = Math.sqrt(v / Math.max(1, n)) || 1;
   }
   const z = X.map((row) => row.map((x, j) => (x - mean[j]!) / sd[j]!));
-  return { z, mean, sd };
-}
+  const cols = (fitIntercept ? 1 : 0) + p;
+  const design = z.map((row) => (fitIntercept ? [1, ...row] : [...row]));
 
-// Map standardized-space coefficients back to the RAW predictor scale.
-function unstandardize(interceptZ: number, coefZ: number[], mean: number[], sd: number[]): { intercept: number; coefs: number[] } {
+  let beta: number[];
+  if (!isBinary) {
+    const xtx = Array.from({ length: cols }, () => new Array(cols).fill(0));
+    const xty = new Array(cols).fill(0);
+    for (let i = 0; i < n; i += 1) {
+      const row = design[i]!; const yi = y[i]! - offset[i]!;
+      for (let a = 0; a < cols; a += 1) { xty[a]! += row[a]! * yi; for (let b = 0; b < cols; b += 1) xtx[a]![b]! += row[a]! * row[b]!; }
+    }
+    const sol = solveLinear(xtx, xty);
+    if (!sol) return null;
+    beta = sol;
+  } else {
+    beta = new Array(cols).fill(0);
+    for (let iter = 0; iter < 30; iter += 1) {
+      const xtwx = Array.from({ length: cols }, () => new Array(cols).fill(0));
+      const xtwz = new Array(cols).fill(0);
+      for (let i = 0; i < n; i += 1) {
+        const row = design[i]!;
+        let eta = offset[i]!; for (let a = 0; a < cols; a += 1) eta += row[a]! * beta[a]!;
+        const mu = sig(eta); const w = Math.max(1e-6, mu * (1 - mu));
+        const working = eta - offset[i]! + (y[i]! - mu) / w;
+        for (let a = 0; a < cols; a += 1) { xtwz[a]! += row[a]! * w * working; for (let b = 0; b < cols; b += 1) xtwx[a]![b]! += row[a]! * w * row[b]!; }
+      }
+      for (let a = 0; a < cols; a += 1) xtwx[a]![a]! += 1e-6;
+      const next = solveLinear(xtwx, xtwz);
+      if (!next) return null;
+      let delta = 0; for (let a = 0; a < cols; a += 1) delta += Math.abs(next[a]! - beta[a]!);
+      beta = next;
+      if (delta < 1e-8) break;
+    }
+  }
+  // un-standardise
+  const interceptZ = fitIntercept ? beta[0]! : 0;
+  const coefZ = fitIntercept ? beta.slice(1) : beta;
   const coefs = coefZ.map((b, j) => b / sd[j]!);
   let intercept = interceptZ;
-  for (let j = 0; j < coefZ.length; j += 1) intercept -= coefZ[j]! * mean[j]! / sd[j]!;
-  return { intercept, coefs };
-}
-
-// OLS of y on X (with intercept), fitted on standardized X, returned on the raw scale + residual sd.
-function fitOls(X: number[][], y: number[]): { intercept: number; coefs: number[]; residualSd: number } | null {
-  const n = y.length; const p = X[0]?.length ?? 0;
-  if (n < p + 2) return null;
-  const { z, mean, sd } = standardize(X);
-  const design = z.map((row) => [1, ...row]); // intercept column
-  const k = p + 1;
-  const xtx = Array.from({ length: k }, () => new Array(k).fill(0));
-  const xty = new Array(k).fill(0);
-  for (let i = 0; i < n; i += 1) {
-    const row = design[i]!;
-    for (let a = 0; a < k; a += 1) { xty[a]! += row[a]! * y[i]!; for (let b = 0; b < k; b += 1) xtx[a]![b]! += row[a]! * row[b]!; }
-  }
-  const beta = solveLinear(xtx, xty);
-  if (!beta) return null;
+  for (let j = 0; j < p; j += 1) intercept -= coefZ[j]! * mean[j]! / sd[j]!;
+  // residual sd (continuous): on y − (offset + intercept + Σ coef·x_raw)
   let ss = 0;
-  for (let i = 0; i < n; i += 1) { let yhat = beta[0]!; for (let j = 0; j < p; j += 1) yhat += beta[j + 1]! * z[i]![j]!; const r = y[i]! - yhat; ss += r * r; }
-  const residualSd = Math.sqrt(ss / Math.max(1, n - k));
-  const raw = unstandardize(beta[0]!, beta.slice(1), mean, sd);
-  return { ...raw, residualSd };
-}
-
-const sig = (x: number) => 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, x))));
-
-// Logistic regression of y∈{0,1} on X (with intercept) via IRLS, fitted on standardized X, raw scale.
-function fitLogistic(X: number[][], y: number[]): { intercept: number; coefs: number[] } | null {
-  const n = y.length; const p = X[0]?.length ?? 0;
-  if (n < p + 2) return null;
-  const { z, mean, sd } = standardize(X);
-  const design = z.map((row) => [1, ...row]);
-  const k = p + 1;
-  let beta = new Array(k).fill(0);
-  for (let iter = 0; iter < 30; iter += 1) {
-    const xtwx = Array.from({ length: k }, () => new Array(k).fill(0));
-    const xtwz = new Array(k).fill(0);
-    for (let i = 0; i < n; i += 1) {
-      const row = design[i]!;
-      let eta = 0; for (let a = 0; a < k; a += 1) eta += row[a]! * beta[a]!;
-      const mu = sig(eta); const w = Math.max(1e-6, mu * (1 - mu));
-      const resid = y[i]! - mu;
-      for (let a = 0; a < k; a += 1) { xtwz[a]! += row[a]! * (w * eta + resid); for (let b = 0; b < k; b += 1) xtwx[a]![b]! += row[a]! * w * row[b]!; }
-    }
-    for (let a = 0; a < k; a += 1) xtwx[a]![a]! += 1e-6; // ridge — guards against separation / singularity
-    const next = solveLinear(xtwx, xtwz);
-    if (!next) return null;
-    let delta = 0; for (let a = 0; a < k; a += 1) delta += Math.abs(next[a]! - beta[a]!);
-    beta = next;
-    if (delta < 1e-8) break;
+  for (let i = 0; i < n; i += 1) {
+    let pred = offset[i]! + (fitIntercept ? intercept : 0);
+    for (let j = 0; j < p; j += 1) pred += coefs[j]! * X[i]![j]!;
+    const r = y[i]! - pred; ss += r * r;
   }
-  return unstandardize(beta[0]!, beta.slice(1), mean, sd);
+  const residualSd = Math.sqrt(ss / Math.max(1, n - cols));
+  return { intercept, coefs, residualSd };
 }
 
-// A node is FITTABLE if it's a data column (has an incoming table_lookup) with ≥1 DRAWN data-column parent.
-export function fittableDgp(document: GraphDocument): boolean {
-  const cols = new Set<string>();
-  for (const edge of document.graph.edges) if (normalizeEdgeMechanism(document.simulation.edges[edge.id]).kind === "table_lookup") cols.add(edge.target);
-  if (cols.size === 0) return false;
-  return document.graph.edges.some((edge) =>
-    edge.kind === "directed" && cols.has(edge.target) && cols.has(edge.source) &&
+// ---------- graph provenance helpers ----------
+// A node's data column, from its table_lookup edge (enabled OR disabled — a fitted node keeps a DISABLED
+// lookup so we can still re-fit against its column and re-enabling restores replay).
+function nodeColumn(document: GraphDocument, nodeId: string): { dataset: string; dataColumn: number; lookupEdgeId: string; enabled: boolean } | null {
+  for (const edge of document.graph.edges) {
+    if (edge.target !== nodeId) continue;
+    const mech = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
+    if (mech.kind === "table_lookup" && mech.dataset) return { dataset: mech.dataset, dataColumn: mech.dataColumn ?? 0, lookupEdgeId: edge.id, enabled: mech.enabled };
+  }
+  return null;
+}
+
+// The drawn causal parents of a node that are themselves data columns (the fittable predictors).
+function drawnDataParents(document: GraphDocument, nodeId: string) {
+  return document.graph.edges.filter((edge) =>
+    edge.kind === "directed" && edge.target === nodeId && nodeColumn(document, edge.source) &&
     normalizeEdgeMechanism(document.simulation.edges[edge.id]).kind !== "table_lookup");
 }
 
-// Learn a model-based plasmode DGP from the imported data: covariates keep their real (resampled) values,
-// but every ENDOGENOUS node (a data column you've drawn causal parents into) is FIT from the data —
-// logistic for a binary node, OLS for a continuous one — and switched from reading its column to
-// GENERATING from the fit. The drawn edges become the learned coefficients; the fitted β is the DGP's
-// known true effect, which adjustment on the simulated data recovers.
-export function fitDgpFromData(input: GraphDocument): GraphDocument {
+// Is there a node still READING from data with drawn data-parents (something left to fit)?
+export function fittableDgp(document: GraphDocument): boolean {
+  return document.graph.nodes.some((node) => {
+    const col = nodeColumn(document, node.id);
+    return Boolean(col?.enabled) && drawnDataParents(document, node.id).length > 0;
+  });
+}
+
+// Mark a node's whole equation (its drawn-parent coefficients + intercept + noise) as PINNED, and switch
+// it from reading data to GENERATING by disabling its table_lookup edge. Values are filled by reconcilePins.
+export function pinNodeEquation(input: GraphDocument, nodeId: string): GraphDocument {
+  const document = cloneDocument(input);
+  const col = nodeColumn(document, nodeId);
+  if (!col) return input;
+  const drawn = drawnDataParents(document, nodeId);
+  if (drawn.length === 0) return input;
+  document.simulation.edges[col.lookupEdgeId] = { ...normalizeEdgeMechanism(document.simulation.edges[col.lookupEdgeId]), enabled: false };
+  const pins = new Set(document.metadata.pins);
+  for (const edge of drawn) pins.add(edgeKey(edge.id));
+  pins.add(interceptKey(nodeId));
+  if (normalizeVariableModel(document.graph.nodes.find((n) => n.id === nodeId)!.variable).valueType !== "binary") pins.add(noiseKey(nodeId));
+  document.metadata.pins = [...pins];
+  return document;
+}
+
+// Remove one number's pin — it keeps its last-fit value but is now AUTHORED (your override).
+export function unpinNumber(input: GraphDocument, key: string): GraphDocument {
+  if (!input.metadata.pins.includes(key)) return input;
+  const document = cloneDocument(input);
+  document.metadata.pins = document.metadata.pins.filter((k) => k !== key);
+  return document;
+}
+
+// Live reconcile: re-fit every pinned number from the current data + DAG (offset-regression, so pinned
+// coefficients are estimated holding the authored ones fixed). Returns the changed keys for the flash.
+export function reconcilePins(input: GraphDocument): { document: GraphDocument; changed: string[] } {
+  const pinSet = new Set(input.metadata.pins ?? []);
+  if (pinSet.size === 0) return { document: input, changed: [] };
   if (input.simulation.datasets) for (const [name, ds] of Object.entries(input.simulation.datasets)) registerRuntimeDataset(name, ds);
   const document = cloneDocument(input);
-  // node id → its data column (from the incoming table_lookup edge that reads it).
-  const columnOf = new Map<string, { dataset: string; dataColumn: number; lookupEdgeId: string }>();
-  for (const edge of document.graph.edges) {
-    const mech = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
-    if (mech.kind === "table_lookup" && mech.dataset) columnOf.set(edge.target, { dataset: mech.dataset, dataColumn: mech.dataColumn ?? 0, lookupEdgeId: edge.id });
-  }
-  if (columnOf.size === 0) return input;
+  const changed: string[] = [];
+  const bump = (key: string, before: number, after: number) => { if (Math.abs(before - after) > 1e-9) changed.push(key); };
 
-  const removeEdgeIds = new Set<string>();
-  for (const node of document.graph.nodes) {
-    const col = columnOf.get(node.id);
-    if (!col) continue;
-    const drawn = document.graph.edges.filter((edge) =>
-      edge.kind === "directed" && edge.target === node.id && columnOf.has(edge.source) &&
-      normalizeEdgeMechanism(document.simulation.edges[edge.id]).kind !== "table_lookup");
-    if (drawn.length === 0) continue; // exogenous covariate — leave it as real (plasmode) data
+  const nodesToFit = new Set<string>();
+  for (const key of pinSet) {
+    if (key.startsWith("e:")) { const edge = document.graph.edges.find((e) => e.id === key.slice(2)); if (edge) nodesToFit.add(edge.target); }
+    else nodesToFit.add(key.slice(3));
+  }
+
+  for (const nodeId of nodesToFit) {
+    const node = document.graph.nodes.find((n) => n.id === nodeId);
+    const col = nodeColumn(document, nodeId);
+    if (!node || !col) continue;
     const rows = datasetRows(col.dataset);
-    if (rows.length < drawn.length + 2) continue;
-    const y = rows.map((row) => row[col.dataColumn] ?? 0);
-    const X = rows.map((row) => drawn.map((edge) => row[columnOf.get(edge.source)!.dataColumn] ?? 0));
+    if (rows.length < 4) continue;
+    const drawn = drawnDataParents(document, nodeId);
+    const pinnedEdges = drawn.filter((e) => pinSet.has(edgeKey(e.id)));
+    const authoredEdges = drawn.filter((e) => !pinSet.has(edgeKey(e.id)));
+    if (pinnedEdges.length === 0 && !pinSet.has(interceptKey(nodeId)) && !pinSet.has(noiseKey(nodeId))) continue;
     const isBinary = normalizeVariableModel(node.variable).valueType === "binary";
-    const fit = isBinary ? fitLogistic(X, y) : fitOls(X, y);
-    if (!fit) continue;
-    for (let j = 0; j < drawn.length; j += 1) setLinearCoefficient(document, drawn[j]!.source, node.id, fit.coefs[j] ?? 0);
-    if (isBinary) setNode(document, node.id, { intercept: fit.intercept, combiner: "bernoulli_logit", noise: ZERO_NOISE });
-    else setNode(document, node.id, { intercept: fit.intercept, combiner: "additive", noise: { kind: "normal", mean: 0, sd: (fit as { residualSd?: number }).residualSd ?? 1 } });
-    removeEdgeIds.add(col.lookupEdgeId); // drop the data read — the node now GENERATES from the fitted model
-  }
-  if (removeEdgeIds.size === 0) return input;
+    const fitIntercept = pinSet.has(interceptKey(nodeId));
+    const fitNoise = !isBinary && pinSet.has(noiseKey(nodeId));
+    const mech = normalizeNodeMechanism(document.simulation.nodes[nodeId]);
 
-  document.graph.edges = document.graph.edges.filter((edge) => !removeEdgeIds.has(edge.id));
-  for (const id of removeEdgeIds) delete document.simulation.edges[id];
+    const y = rows.map((r) => r[col.dataColumn] ?? 0);
+    const offset = rows.map((r) => {
+      let o = fitIntercept ? 0 : mech.intercept;
+      for (const edge of authoredEdges) {
+        const em = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
+        const coef = em.kind === "linear" ? em.coefficient : 0;
+        o += coef * (r[nodeColumn(document, edge.source)!.dataColumn] ?? 0);
+      }
+      return o;
+    });
+    const X = rows.map((r) => pinnedEdges.map((edge) => r[nodeColumn(document, edge.source)!.dataColumn] ?? 0));
+    const fit = fitLinearModel(y, X, offset, fitIntercept, isBinary);
+    if (!fit) continue;
+
+    for (let j = 0; j < pinnedEdges.length; j += 1) {
+      const edge = pinnedEdges[j]!;
+      const before = (() => { const em = normalizeEdgeMechanism(document.simulation.edges[edge.id]); return em.kind === "linear" ? em.coefficient : 0; })();
+      setLinearCoefficient(document, edge.source, nodeId, fit.coefs[j] ?? 0);
+      bump(edgeKey(edge.id), before, fit.coefs[j] ?? 0);
+    }
+    const newIntercept = fitIntercept ? fit.intercept : mech.intercept;
+    const currentSd = mech.noise.kind === "normal" ? mech.noise.sd : 1;
+    const newNoise = isBinary ? ZERO_NOISE : { kind: "normal" as const, mean: 0, sd: fitNoise ? fit.residualSd : currentSd };
+    setNode(document, nodeId, { ...mech, intercept: newIntercept, combiner: isBinary ? "bernoulli_logit" : "additive", noise: newNoise });
+    if (fitIntercept) bump(interceptKey(nodeId), mech.intercept, newIntercept);
+    if (fitNoise) bump(noiseKey(nodeId), currentSd, fit.residualSd);
+  }
+
   document.simulation = reconcileSimulationSpec(document.graph, document.simulation);
   if (input.simulation.datasets) document.simulation.datasets = input.simulation.datasets;
-  return document;
+  return { document, changed };
+}
+
+// "Learn the whole DGP" — pin every endogenous node (a data column with drawn data-parents), then reconcile.
+export function fitDgpFromData(input: GraphDocument): GraphDocument {
+  let document = input;
+  for (const node of input.graph.nodes) {
+    const col = nodeColumn(document, node.id);
+    if (col?.enabled && drawnDataParents(document, node.id).length > 0) document = pinNodeEquation(document, node.id);
+  }
+  return reconcilePins(document).document;
 }
