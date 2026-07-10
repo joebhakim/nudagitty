@@ -409,6 +409,13 @@
   background: #f3f6f7;
 }
 
+/* When the Diagnostics section is present it sits above the editor frame (auto height, editor takes the rest). */
+.module-pane.with-diagnostics {
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  overflow: auto;
+}
+
 .module-frame {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

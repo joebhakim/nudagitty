@@ -507,7 +507,9 @@ function jarqueBera(v: number[]): NormalityCheck {
 }
 
 /** RESIT-style residual diagnostics on a fitted CONTINUOUS data node. */
-export function residualDiagnostics(document: GraphDocument, nodeId: string, cap = 160, perms = 149): ResidualDiagnostic {
+// cap/perms are generous because the result is CACHED by fit signature — it only recomputes when a fit
+// actually changes, so power matters more than per-call speed here.
+export function residualDiagnostics(document: GraphDocument, nodeId: string, cap = 240, perms = 199, seed = 0): ResidualDiagnostic {
   const empty: ResidualDiagnostic = { available: false, n: 0, perms, parents: [], points: [], independence: { dcor: 0, pValue: 1 }, heteroskedasticity: { dcor: 0, pValue: 1 }, normality: { skewness: 0, excessKurtosis: 0, jarqueBera: 0, pValue: 1 }, linear: true, identifiabilityWarning: false, worst: null, verdict: "ok", severity: "ok" };
   const node = document.graph.nodes.find((n) => n.id === nodeId);
   const col = nodeColumn(document, nodeId);
@@ -528,7 +530,7 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
     .filter((p): p is typeof p & { col: NonNullable<typeof p.col> } => Boolean(p.col));
   if (parentCols.length === 0) return empty;
 
-  const sig = `${col.dataset}|${rows.length}|${col.dataColumn}|${mech.intercept}|cap${cap}|p${perms}|` +
+  const sig = `${col.dataset}|${rows.length}|${col.dataColumn}|${mech.intercept}|cap${cap}|p${perms}|s${seed}|` +
     parentCols.map((p) => `${p.col.dataColumn}:${p.coef}`).join(",");
   const cached = residCache.get(sig);
   if (cached) return cached;
@@ -547,8 +549,8 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
   const worst = parents.reduce<ResidualParentCheck | null>((w, p) => (!w || p.distanceCorr > w.distanceCorr ? p : w), null);
 
   const aX = centeredDistMulti(parentSeries, n);
-  const independence = dcorPermTest(aX, centeredDist(rs), n, perms, 0x1a2b3c);
-  const heteroskedasticity = dcorPermTest(aX, centeredDist(rs.map((r) => r * r)), n, perms, 0x4d5e6f);
+  const independence = dcorPermTest(aX, centeredDist(rs), n, perms, (0x1a2b3c ^ seed) >>> 0);
+  const heteroskedasticity = dcorPermTest(aX, centeredDist(rs.map((r) => r * r)), n, perms, (0x4d5e6f ^ seed) >>> 0);
   const normality = jarqueBera(rs);
   const linear = parentCols.every((p) => p.kind === "linear");
   const identifiabilityWarning = linear && normality.pValue > 0.1; // linear + Gaussian residuals ⇒ unidentifiable

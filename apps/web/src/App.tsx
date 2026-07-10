@@ -241,6 +241,7 @@ import { useMediaQuery } from "./app/useMediaQuery";
 import { BibliographyPanel, EffectPanel, ImplicationPanel, SummaryPanel } from "./panels/analysis";
 import { AnalysisSampleBanner, DesignModulePanel, RoadmapTodoPanel, ScenarioPanel, SimulationDiagnosticsPanel, clampDrawCount } from "./panels/diagnostics";
 import { ScatterplotPanel } from "./panels/ScatterplotPanel";
+import { ChecksPanel } from "./panels/ChecksPanel";
 import { AdjustedOutputPanel } from "./panels/output";
 import { BasicExampleTabs, DemoResultPanel } from "./panels/demo";
 
@@ -541,19 +542,24 @@ export function App() {
   }, [changedPins]);
   // The residual IS the estimated disturbance ε, so its check verdict lives on the always-shown ε satellites.
   // residualDiagnostics caches by fit signature, so recomputing every commit is cheap (only changed fits re-run).
+  const [diagnosticsRunNonce, setDiagnosticsRunNonce] = useState(0);
   const residualDiagnosticsMap = useMemo(() => {
     const map = new Map<string, ReturnType<typeof residualDiagnostics>>();
     for (const node of document.graph.nodes) {
-      const d = residualDiagnostics(document, node.id);
+      const d = residualDiagnostics(document, node.id, undefined, undefined, diagnosticsRunNonce);
       if (d.available) map.set(node.id, d);
     }
     return map;
-  }, [document]);
+  }, [document, diagnosticsRunNonce]);
   const residualVerdicts = useMemo(() => {
     const map = new Map<string, "ok" | "weak" | "violated">();
     for (const [id, d] of residualDiagnosticsMap) map.set(id, d.severity);
     return map;
   }, [residualDiagnosticsMap]);
+  const diagnosticsEntries = useMemo(() => {
+    const labelOf = new Map(document.graph.nodes.map((n) => [n.id, n.label]));
+    return [...residualDiagnosticsMap.entries()].map(([id, d]) => ({ id, label: labelOf.get(id) ?? id, d }));
+  }, [residualDiagnosticsMap, document.graph.nodes]);
   const dataOrphans = useMemo(() => orphanDataColumns(document), [document]);
   const { overlapDiagnostic, positivity } = useOverlapDiagnostic(computationDocument);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
@@ -1025,7 +1031,10 @@ export function App() {
 
   const renderEditorPane = (order: number) => (
     <Panel id="editor" defaultSize={compactWorkspace ? 30 : isBasicMode ? 22 : 28} minSize={compactWorkspace ? 22 : 18} className="workspace-panel editor-pane" key="editor">
-      <aside className="side-panel module-pane editor-column" aria-label="Editor">
+      <aside className={`side-panel module-pane editor-column${diagnosticsEntries.length > 0 ? " with-diagnostics" : ""}`} aria-label="Editor">
+        {diagnosticsEntries.length > 0 && (
+          <ChecksPanel entries={diagnosticsEntries} onRun={() => setDiagnosticsRunNonce((n) => n + 1)} onOpen={selectNoiseNode} />
+        )}
         <ModuleFrame
           tone="edit"
           label="Edit"
