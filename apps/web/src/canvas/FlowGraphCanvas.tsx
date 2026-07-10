@@ -177,6 +177,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         showNoise: props.showNoiseNodes,
         showProvenance: props.showProvenance,
         provenance: props.nodeProvenanceById.get(node.id) ?? "authored",
+        noiseVerdict: props.residualVerdicts.get(node.id),
         onNodeClick: handleNodeSelect
       },
       className: `prov-${props.nodeProvenanceById.get(node.id) ?? "authored"}${flashing.nodeIds.has(node.id) ? " prov-flash" : ""}`,
@@ -184,7 +185,7 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
       draggable: true,
       focusable: true
     };
-  }), [candidateInstrumentIds, handleNodeSelect, selectedIds, flashing, props.nodeProvenanceById, props.showProvenance, props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values, props.showNoiseNodes]);
+  }), [candidateInstrumentIds, handleNodeSelect, selectedIds, flashing, props.nodeProvenanceById, props.showProvenance, props.residualVerdicts, props.ancestorIds, props.derived.nodes, props.edgeSource, props.graph.nodes, props.selection, props.simulation.changedNodes, props.simulation.nodeStates, props.simulation.values, props.showNoiseNodes]);
   const [nodes, setNodes] = useState<FlowGraphNode[]>(computedNodes);
   const [legendOpen, setLegendOpen] = useState(false);
   const [cloudPositions, setCloudPositions] = useState<Record<string, { x: number; y: number }>>({});
@@ -510,7 +511,7 @@ function FlowGraphLegend(props: { showNoise: boolean }) {
 // square outcomes and circular covariates by SHAPE rather than colour.
 
 function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
-  const { node, selected, edgeSource, ancestor, changed, value, state, summary, candidateInstrument, showNoise, showProvenance, provenance, onNodeClick } = props.data;
+  const { node, selected, edgeSource, ancestor, changed, value, state, summary, candidateInstrument, showNoise, showProvenance, provenance, noiseVerdict, onNodeClick } = props.data;
   const showInstrumentHint = candidateInstrument && !node.roles.instrument;
   const variable = normalizeVariableModel(node.variable);
   // Discrete / atomic marginals carry point masses — Sklar's copula is unidentified across the
@@ -543,8 +544,10 @@ function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
       <Handle type="source" position={Position.Right} className="flow-node-handle" />
       <svg viewBox="-76 -42 152 152" className="flow-node-svg" aria-hidden="true" onClick={handleSelect}>
         {showNoise && (
-          <g className="noise-satellite">
-            <title>Implicit disturbance (U) — every variable has one: all the unmodeled causes that make it stochastic. DAGs conventionally omit them, assuming they're independent (the Markovian / causal-sufficiency assumption); a shared one would be latent confounding.</title>
+          <g className={`noise-satellite${noiseVerdict ? ` resid-${noiseVerdict}` : ""}`}>
+            <title>{noiseVerdict
+              ? `Estimated disturbance ε for this fit. Residual-independence test (ε ⊥ parents): ${noiseVerdict === "ok" ? "INDEPENDENT ✓ — the exogenous-noise (causal-sufficiency) assumption holds." : noiseVerdict === "weak" ? "BORDERLINE — mild dependence; the additive-noise fit is approximate." : "VIOLATED ⚠ — ε depends on the parents; suspect an unmeasured confounder or a mis-specified form."} Select the node for the full RESIT diagnostics.`
+              : "Implicit disturbance (U) — every variable has one: all the unmodeled causes that make it stochastic. DAGs conventionally omit them, assuming they're independent (the Markovian / causal-sufficiency assumption); a shared one would be latent confounding. Fit a continuous data node to test this."}</title>
             <line x1={-29} y1={-23} x2={-16} y2={-14} />
             <circle cx={-37} cy={-30} r={6} />
             <text x={-37} y={-27.5}>&epsilon;</text>

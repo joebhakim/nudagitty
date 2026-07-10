@@ -42,6 +42,7 @@ export interface GraphCanvasProps {
   showProvenance: boolean;
   nodeProvenanceById: Map<string, Provenance>;
   edgeProvenanceById: Map<string, Provenance>;
+  residualVerdicts: Map<string, "ok" | "weak" | "violated">;
   changedElements: { nodeIds: Set<string>; edgeIds: Set<string> };
   disabledEdgeIds: Set<string>;
   highlightedEdges: Map<string, "causal" | "biasing">;

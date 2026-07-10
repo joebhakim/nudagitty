@@ -583,6 +583,12 @@
 .noise-satellite line { stroke: #9aa7b3; stroke-width: 1.2px; stroke-dasharray: 3 2; }
 .noise-satellite circle { fill: #fff; stroke: #9aa7b3; stroke-width: 1.2px; stroke-dasharray: 3 2; }
 .noise-satellite text { fill: #6b7782; font-size: 9px; font-style: italic; text-anchor: middle; }
+/* A tested disturbance ε carries its exogeneity (ε ⊥ parents) verdict: solid ring, coloured, filled. */
+.noise-satellite.resid-ok circle, .noise-satellite.resid-weak circle, .noise-satellite.resid-violated circle { stroke-dasharray: none; stroke-width: 1.6px; }
+.noise-satellite.resid-ok line, .noise-satellite.resid-weak line, .noise-satellite.resid-violated line { stroke-dasharray: none; }
+.noise-satellite.resid-ok circle { stroke: #1f8a6d; fill: #e4f5ef; } .noise-satellite.resid-ok line { stroke: #1f8a6d; } .noise-satellite.resid-ok text { fill: #0d6b52; }
+.noise-satellite.resid-weak circle { stroke: #c08a2e; fill: #f7efdd; } .noise-satellite.resid-weak line { stroke: #c08a2e; } .noise-satellite.resid-weak text { fill: #8a5a12; }
+.noise-satellite.resid-violated circle { stroke: #c0392b; fill: #f7e2df; } .noise-satellite.resid-violated line { stroke: #c0392b; } .noise-satellite.resid-violated text { fill: #a3281c; }
 
 .node-label {
   paint-order: stroke;
