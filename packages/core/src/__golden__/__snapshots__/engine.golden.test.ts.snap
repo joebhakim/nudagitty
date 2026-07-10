@@ -945,6 +945,60 @@ exports[`engine golden > lalonde-dgm-plasmode — simulation + do-contrasts are 
 }
 `;
 
+exports[`engine golden > lalonde-fit-recover — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(In_program=1)−do(0) on Earnings_78": 1794,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 34.463,
+      "sd": 10.545953,
+    },
+    "Black": {
+      "mean": 0.2925,
+      "sd": 0.454911,
+    },
+    "Earnings_74": {
+      "mean": 18209.363574,
+      "sd": 13675.954727,
+    },
+    "Earnings_75": {
+      "mean": 17929.222536,
+      "sd": 13947.776433,
+    },
+    "Earnings_78": {
+      "mean": 20529.343764,
+      "sd": 15722.328679,
+    },
+    "Education": {
+      "mean": 12.02175,
+      "sd": 3.028742,
+    },
+    "Hispanic": {
+      "mean": 0.0335,
+      "sd": 0.179938,
+    },
+    "In_program": {
+      "mean": 0.0645,
+      "sd": 0.245642,
+    },
+    "Married": {
+      "mean": 0.82075,
+      "sd": 0.383562,
+    },
+    "No_degree": {
+      "mean": 0.3325,
+      "sd": 0.471109,
+    },
+    "Row_source": {
+      "mean": 1334.90809,
+      "sd": 776.967922,
+    },
+  },
+}
+`;
+
 exports[`engine golden > lalonde-recover-rct — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {

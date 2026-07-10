@@ -1,5 +1,6 @@
 import { parseModel } from "../parser";
 import { analyzeGraph } from "../analysis";
+import { authorNumber, pinKeys, pinNodeEquation, reconcilePins } from "../fitDgp";
 import { datasetColumnIndex, datasetRows } from "../datasets";
 import { defaultEdgeMechanism, normalizeEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "../graph";
 import { setCopulaBlock } from "../copula";
@@ -1280,6 +1281,31 @@ export function configureLalondeReplay(document: GraphDocument): GraphDocument {
   // simulated on top of the replay (the do-oracle is therefore degenerate and is suppressed).
   disableEdge(document, "In_program", "Earnings_78");
   return document;
+}
+
+// Track C "fitted DGP, recover the imposed effect": the confounding is LEARNED from the real LaLonde rows
+// (treat's logistic on the covariates, and the covariate→earnings surface), while the treat→earnings effect
+// is AUTHORED at the RCT benchmark +$1,794 — deliberately NOT a fit degree of freedom, so the truth is
+// known and clean. do(treat) = +$1,794 exactly; adjustment should recover it while the crude gap is biased.
+// (Positive control: identification holds by construction. The outcome is linear+Gaussian so the ATE is a
+// clean additive number — at the cost of a not-quite-real earnings marginal, which the residual check flags.)
+export function configureLalondeFitRecover(document: GraphDocument): GraphDocument {
+  configureLalondeBase(document);
+  setContinuousVariable(document, "Row_source", "Uniform draw over the embedded observational LaLonde rows (shared row index, unobserved).", "row");
+  addPlasmodeCovariates(document, "Row_source", "lalonde-obs", LALONDE_DGM_COVS);
+  // treat + re78 carry a table_lookup so the fit can READ their real columns; both then GENERATE (fitted).
+  setEdgeMechanism(document, "Row_source", "In_program", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "treat") });
+  setEdgeMechanism(document, "Row_source", "Earnings_78", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "re78") });
+  // The imposed causal effect: treat → earnings = +$1,794 (authored, held fixed — the known truth).
+  setLinearCoefficient(document, "In_program", "Earnings_78", 1794);
+  // Fit the rest from data: treat's logistic on the covariates, and re78's covariate→earnings edges holding
+  // the authored +1,794 as an offset (offset regression). pinNodeEquation pins each node's whole equation;
+  // then move the treat→earnings edge from fitted to AUTHORED so it stays +1,794.
+  let doc = pinNodeEquation(document, "In_program");
+  doc = pinNodeEquation(doc, "Earnings_78");
+  const effect = doc.graph.edges.find((edge) => edge.source === "In_program" && edge.target === "Earnings_78");
+  if (effect) doc = authorNumber(doc, pinKeys.edge(effect.id));
+  return reconcilePins(doc).document;
 }
 
 function disableEdge(document: GraphDocument, source: string, target: string) {
