@@ -8,6 +8,11 @@ const edgeKey = (id: string) => `e:${id}`;
 const interceptKey = (id: string) => `ni:${id}`;
 const noiseKey = (id: string) => `nn:${id}`;
 
+// Fit cache: a node's last-fit input signature (`${docId}:${nodeId}` → sig). reconcile re-fits only when
+// the signature changes — an unrelated edit (or the second reconcile of the same commit) skips the costly
+// re-fit and keeps the carried values, which are already that fit's output.
+const fitSigCache = new Map<string, string>();
+
 // ---------- linear algebra ----------
 function solveLinear(a: number[][], b: number[]): number[] | null {
   const n = b.length;
@@ -179,6 +184,19 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
     const fitNoise = !isBinary && pinSet.has(noiseKey(nodeId));
     const mech = normalizeNodeMechanism(document.simulation.nodes[nodeId]);
 
+    // Skip the re-fit when nothing that determines this node's fit has changed since it was last fitted.
+    const sig = [
+      col.dataset, rows.length,
+      rows.length ? (rows[0]![col.dataColumn] ?? 0) : 0,
+      rows.length ? (rows[rows.length >> 1]![col.dataColumn] ?? 0) : 0,
+      col.dataColumn, isBinary ? "b" : "c",
+      fitIntercept ? "Pi" : `Ai${mech.intercept}`, fitNoise ? "Pn" : "-",
+      ...pinnedEdges.map((e) => `P${nodeColumn(document, e.source)?.dataColumn}`).sort(),
+      ...authoredEdges.map((e) => { const em = normalizeEdgeMechanism(document.simulation.edges[e.id]); return `A${nodeColumn(document, e.source)?.dataColumn}:${em.kind === "linear" ? em.coefficient : 0}`; }).sort()
+    ].join("|");
+    const cacheKey = `${input.id}:${nodeId}`;
+    if (fitSigCache.get(cacheKey) === sig) continue; // inputs unchanged → carried values are already this fit
+
     const y = rows.map((r) => r[col.dataColumn] ?? 0);
     const offset = rows.map((r) => {
       let o = fitIntercept ? 0 : mech.intercept;
@@ -205,6 +223,8 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
     setNode(document, nodeId, { ...mech, intercept: newIntercept, combiner: isBinary ? "bernoulli_logit" : "additive", noise: newNoise });
     if (fitIntercept) bump(interceptKey(nodeId), mech.intercept, newIntercept);
     if (fitNoise) bump(noiseKey(nodeId), currentSd, fit.residualSd);
+    if (fitSigCache.size > 400) fitSigCache.clear();
+    fitSigCache.set(cacheKey, sig);
   }
 
   document.simulation = reconcileSimulationSpec(document.graph, document.simulation);
@@ -403,73 +423,65 @@ function lcg(seed: number): () => number {
   return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
 }
 
-// Double-centred Euclidean-distance matrix (Székely) of a UNIVARIATE series.
-function centeredDistanceMatrix(v: number[]): number[][] {
+// Double-centred Euclidean-distance matrix (Székely) of a UNIVARIATE series — flat Float64Array (row-major).
+function centeredDist(v: number[]): Float64Array {
   const n = v.length;
-  const d = Array.from({ length: n }, () => new Array<number>(n).fill(0));
-  const rowMean = new Array<number>(n).fill(0);
+  const d = new Float64Array(n * n);
+  const rowMean = new Float64Array(n);
   let grand = 0;
-  for (let i = 0; i < n; i += 1) for (let j = 0; j < n; j += 1) { const val = Math.abs(v[i]! - v[j]!); d[i]![j] = val; rowMean[i]! += val; grand += val; }
-  for (let i = 0; i < n; i += 1) rowMean[i]! /= n;
+  for (let i = 0; i < n; i += 1) { const vi = v[i]!, base = i * n; let rm = 0; for (let j = 0; j < n; j += 1) { const val = Math.abs(vi - v[j]!); d[base + j] = val; rm += val; } rowMean[i] = rm / n; grand += rm; }
   grand /= n * n;
-  const a = Array.from({ length: n }, () => new Array<number>(n).fill(0));
-  for (let i = 0; i < n; i += 1) for (let j = 0; j < n; j += 1) a[i]![j] = d[i]![j]! - rowMean[i]! - rowMean[j]! + grand;
-  return a;
+  for (let i = 0; i < n; i += 1) { const rmi = rowMean[i]!, base = i * n; for (let j = 0; j < n; j += 1) d[base + j] = d[base + j]! - rmi - rowMean[j]! + grand; }
+  return d;
 }
 
 // Same, for a MULTIVARIATE X (each column z-scored so no column dominates the Euclidean distance).
-function centeredDistanceMatrixMulti(cols: number[][], n: number): number[][] {
+function centeredDistMulti(cols: number[][], n: number): Float64Array {
   const z = cols.map((c) => {
     let m = 0; for (let i = 0; i < n; i += 1) m += c[i]!; m /= n;
     let v = 0; for (let i = 0; i < n; i += 1) { const dd = c[i]! - m; v += dd * dd; }
     const sd = Math.sqrt(v / n) || 1;
-    return c.map((x) => (x - m) / sd);
+    const out = new Float64Array(n); for (let i = 0; i < n; i += 1) out[i] = (c[i]! - m) / sd; return out;
   });
-  const d = Array.from({ length: n }, () => new Array<number>(n).fill(0));
-  const rowMean = new Array<number>(n).fill(0);
+  const p = z.length;
+  const d = new Float64Array(n * n);
+  const rowMean = new Float64Array(n);
   let grand = 0;
-  for (let i = 0; i < n; i += 1) for (let j = 0; j < n; j += 1) {
-    let s = 0; for (let k = 0; k < z.length; k += 1) { const dd = z[k]![i]! - z[k]![j]!; s += dd * dd; }
-    const val = Math.sqrt(s); d[i]![j] = val; rowMean[i]! += val; grand += val;
+  for (let i = 0; i < n; i += 1) {
+    const base = i * n; let rm = 0;
+    for (let j = 0; j < n; j += 1) { let s = 0; for (let k = 0; k < p; k += 1) { const dd = z[k]![i]! - z[k]![j]!; s += dd * dd; } const val = Math.sqrt(s); d[base + j] = val; rm += val; }
+    rowMean[i] = rm / n; grand += rm;
   }
-  for (let i = 0; i < n; i += 1) rowMean[i]! /= n;
   grand /= n * n;
-  const a = Array.from({ length: n }, () => new Array<number>(n).fill(0));
-  for (let i = 0; i < n; i += 1) for (let j = 0; j < n; j += 1) a[i]![j] = d[i]![j]! - rowMean[i]! - rowMean[j]! + grand;
-  return a;
+  for (let i = 0; i < n; i += 1) { const rmi = rowMean[i]!, base = i * n; for (let j = 0; j < n; j += 1) d[base + j] = d[base + j]! - rmi - rowMean[j]! + grand; }
+  return d;
 }
 
-function frob(a: number[][], b: number[][], n: number): number {
-  let s = 0; for (let i = 0; i < n; i += 1) for (let j = 0; j < n; j += 1) s += a[i]![j]! * b[i]![j]!;
-  return s;
-}
-
-/** Distance correlation ∈ [0,1] from two double-centred matrices (dVarY is permutation-invariant). */
-function dcorFrom(a: number[][], b: number[][], n: number): number {
-  const denom = Math.sqrt(frob(a, a, n) * frob(b, b, n));
-  return denom < 1e-12 ? 0 : Math.sqrt(Math.max(0, frob(a, b, n)) / denom);
-}
+function frob(a: Float64Array, b: Float64Array): number { let s = 0; for (let k = 0; k < a.length; k += 1) s += a[k]! * b[k]!; return s; }
 
 /** Distance correlation ∈ [0,1] of two UNIVARIATE series: 0 iff independent (Székely). */
 export function distanceCorrelation(x: number[], y: number[]): number {
-  if (x.length < 4) return 0;
-  return dcorFrom(centeredDistanceMatrix(x), centeredDistanceMatrix(y), x.length);
+  const n = x.length;
+  if (n < 4) return 0;
+  const a = centeredDist(x), b = centeredDist(y);
+  const denom = Math.sqrt(frob(a, a) * frob(b, b));
+  return denom < 1e-12 ? 0 : Math.sqrt(Math.max(0, frob(a, b)) / denom);
 }
 
 /** dCor + PERMUTATION p-value: shuffle the pairing R times (breaks dependence) → exact null. Both matrices
  *  are pre-centred; permuting only re-pairs, so dVarX/dVarY stay fixed and only the cross term recomputes. */
-function dcorPermTest(a: number[][], b: number[][], n: number, perms: number, seed: number): DcorTest {
-  const dvx = frob(a, a, n), dvy = frob(b, b, n);
+function dcorPermTest(a: Float64Array, b: Float64Array, n: number, perms: number, seed: number): DcorTest {
+  const dvx = frob(a, a), dvy = frob(b, b);
   const denom = Math.sqrt(dvx * dvy);
   if (denom < 1e-12) return { dcor: 0, pValue: 1 };
-  const stat = Math.sqrt(Math.max(0, frob(a, b, n)) / denom);
+  const stat = Math.sqrt(Math.max(0, frob(a, b)) / denom);
   const rng = lcg(seed);
-  const perm = Array.from({ length: n }, (_, i) => i);
+  const perm = new Int32Array(n); for (let i = 0; i < n; i += 1) perm[i] = i;
   let ge = 1; // +1 for the observed statistic itself (Monte-Carlo p-value)
   for (let r = 0; r < perms; r += 1) {
     for (let i = n - 1; i > 0; i -= 1) { const j = Math.floor(rng() * (i + 1)); const t = perm[i]!; perm[i] = perm[j]!; perm[j] = t; }
     let num = 0;
-    for (let i = 0; i < n; i += 1) { const arow = a[i]!, brow = b[perm[i]!]!; for (let j = 0; j < n; j += 1) num += arow[j]! * brow[perm[j]!]!; }
+    for (let i = 0; i < n; i += 1) { const base = i * n, pib = perm[i]! * n; for (let j = 0; j < n; j += 1) num += a[base + j]! * b[pib + perm[j]!]!; }
     if (Math.sqrt(Math.max(0, num) / denom) >= stat - 1e-12) ge += 1;
   }
   return { dcor: stat, pValue: ge / (perms + 1) };
@@ -490,7 +502,7 @@ function jarqueBera(v: number[]): NormalityCheck {
 }
 
 /** RESIT-style residual diagnostics on a fitted CONTINUOUS data node. */
-export function residualDiagnostics(document: GraphDocument, nodeId: string, cap = 220, perms = 199): ResidualDiagnostic {
+export function residualDiagnostics(document: GraphDocument, nodeId: string, cap = 160, perms = 149): ResidualDiagnostic {
   const empty: ResidualDiagnostic = { available: false, n: 0, perms, parents: [], points: [], independence: { dcor: 0, pValue: 1 }, heteroskedasticity: { dcor: 0, pValue: 1 }, normality: { skewness: 0, excessKurtosis: 0, jarqueBera: 0, pValue: 1 }, linear: true, identifiabilityWarning: false, worst: null, verdict: "ok" };
   const node = document.graph.nodes.find((n) => n.id === nodeId);
   const col = nodeColumn(document, nodeId);
@@ -524,9 +536,9 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
   const parents: ResidualParentCheck[] = parentCols.map((p, k) => ({ nodeId: p.edge.source, label: p.label, distanceCorr: distanceCorrelation(rs, parentSeries[k]!) }));
   const worst = parents.reduce<ResidualParentCheck | null>((w, p) => (!w || p.distanceCorr > w.distanceCorr ? p : w), null);
 
-  const aX = centeredDistanceMatrixMulti(parentSeries, n);
-  const independence = dcorPermTest(aX, centeredDistanceMatrix(rs), n, perms, 0x1a2b3c);
-  const heteroskedasticity = dcorPermTest(aX, centeredDistanceMatrix(rs.map((r) => r * r)), n, perms, 0x4d5e6f);
+  const aX = centeredDistMulti(parentSeries, n);
+  const independence = dcorPermTest(aX, centeredDist(rs), n, perms, 0x1a2b3c);
+  const heteroskedasticity = dcorPermTest(aX, centeredDist(rs.map((r) => r * r)), n, perms, 0x4d5e6f);
   const normality = jarqueBera(rs);
   const linear = parentCols.every((p) => p.kind === "linear");
   const identifiabilityWarning = linear && normality.pValue > 0.1; // linear + Gaussian residuals ⇒ unidentifiable
