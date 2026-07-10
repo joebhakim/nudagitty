@@ -35,7 +35,6 @@ import {
   GraduationCap,
   Palette,
   Blend,
-  CircleDashed,
   BookOpen,
   Trash2,
   Undo2,
@@ -290,7 +289,6 @@ export function App() {
   const setShowCausal = useWorkbenchStore((state) => state.setShowCausal);
   const setShowBiasing = useWorkbenchStore((state) => state.setShowBiasing);
   const setShowAncestors = useWorkbenchStore((state) => state.setShowAncestors);
-  const setShowNoiseNodes = useWorkbenchStore((state) => state.setShowNoiseNodes);
   const setWorkbenchMode = useWorkbenchStore((state) => state.setWorkbenchMode);
   const setBasicResultsOpen = useWorkbenchStore((state) => state.setBasicResultsOpen);
   const setActiveExampleId = useWorkbenchStore((state) => state.setActiveExampleId);
@@ -541,17 +539,21 @@ export function App() {
     for (const key of changedPins) { const el = pinKeyElement(key); if (el?.kind === "node") nodeIds.add(el.id); else if (el?.kind === "edge") edgeIds.add(el.id); }
     return { nodeIds, edgeIds };
   }, [changedPins]);
-  // The residual IS the estimated disturbance ε, so its exogeneity verdict lives on the noise (ε) satellites.
-  // Only run when the noise view is on (each test is ~25ms), and memoise so it's once per commit.
-  const residualVerdicts = useMemo(() => {
-    const map = new Map<string, "ok" | "weak" | "violated">();
-    if (!showNoiseNodes) return map;
+  // The residual IS the estimated disturbance ε, so its check verdict lives on the always-shown ε satellites.
+  // residualDiagnostics caches by fit signature, so recomputing every commit is cheap (only changed fits re-run).
+  const residualDiagnosticsMap = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof residualDiagnostics>>();
     for (const node of document.graph.nodes) {
       const d = residualDiagnostics(document, node.id);
-      if (d.available) map.set(node.id, d.verdict);
+      if (d.available) map.set(node.id, d);
     }
     return map;
-  }, [document, showNoiseNodes]);
+  }, [document]);
+  const residualVerdicts = useMemo(() => {
+    const map = new Map<string, "ok" | "weak" | "violated">();
+    for (const [id, d] of residualDiagnosticsMap) map.set(id, d.severity);
+    return map;
+  }, [residualDiagnosticsMap]);
   const dataOrphans = useMemo(() => orphanDataColumns(document), [document]);
   const { overlapDiagnostic, positivity } = useOverlapDiagnostic(computationDocument);
   const basicRecommendedAdjustmentId = basicDemoRecommendedAdjustmentId(activeExample?.outputModule ?? null, document.graph);
@@ -1283,7 +1285,6 @@ export function App() {
             <IconButton label="Data — the current sample" pressed={showData} badge={dataOrphans.length > 0 ? "warning" : null} onClick={() => setShowData((open) => !open)}><Table size={18} /></IconButton>
             <IconButton label="Joint / DGM — the confounder joint" pressed={showJointLab} onClick={() => showJointLab ? setShowJointLab(false) : openJointLab()}><Spline size={18} /></IconButton>
             <IconButton label="Provenance — colour each number by origin (authored / data / fitted)" pressed={showProvenance} onClick={toggleProvenance}><Palette size={18} /></IconButton>
-            <IconButton label="Implicit noise nodes" pressed={showNoiseNodes} onClick={() => setShowNoiseNodes(!showNoiseNodes)}><CircleDashed size={18} /></IconButton>
             <input
               ref={snapshotInputRef}
               type="file"

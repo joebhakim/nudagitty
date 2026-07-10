@@ -99,7 +99,7 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
   showCausal: true,
   showBiasing: true,
   showAncestors: true,
-  showNoiseNodes: false,
+  showNoiseNodes: true, // ε disturbance satellites are always shown now (they carry the residual-check light)
   // Demo (basic) mode is hidden for now — default to pro; the toggle is not rendered.
   workbenchMode: "pro",
   basicResultsOpen: true,

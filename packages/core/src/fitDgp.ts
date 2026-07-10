@@ -414,8 +414,13 @@ export interface ResidualDiagnostic {
   linear: boolean;               // every parent edge is linear
   identifiabilityWarning: boolean; // linear fit + Gaussian residuals ⇒ direction not identifiable
   worst: ResidualParentCheck | null;
-  verdict: "ok" | "weak" | "violated";
+  verdict: "ok" | "weak" | "violated";       // from the exogeneity p-value (the panel's headline)
+  severity: "ok" | "weak" | "violated";      // WORST across all three checks (drives the ε light + ledger)
 }
+
+// Cache full diagnostics by fit-output signature (coefficients + data) — the seeded permutation makes them
+// deterministic, so identical inputs reuse the result. Lets the ε lights compute for every node cheaply.
+const residCache = new Map<string, ResidualDiagnostic>();
 
 // Deterministic RNG (seeded) so the permutation p-value is stable across renders (no flicker).
 function lcg(seed: number): () => number {
@@ -503,7 +508,7 @@ function jarqueBera(v: number[]): NormalityCheck {
 
 /** RESIT-style residual diagnostics on a fitted CONTINUOUS data node. */
 export function residualDiagnostics(document: GraphDocument, nodeId: string, cap = 160, perms = 149): ResidualDiagnostic {
-  const empty: ResidualDiagnostic = { available: false, n: 0, perms, parents: [], points: [], independence: { dcor: 0, pValue: 1 }, heteroskedasticity: { dcor: 0, pValue: 1 }, normality: { skewness: 0, excessKurtosis: 0, jarqueBera: 0, pValue: 1 }, linear: true, identifiabilityWarning: false, worst: null, verdict: "ok" };
+  const empty: ResidualDiagnostic = { available: false, n: 0, perms, parents: [], points: [], independence: { dcor: 0, pValue: 1 }, heteroskedasticity: { dcor: 0, pValue: 1 }, normality: { skewness: 0, excessKurtosis: 0, jarqueBera: 0, pValue: 1 }, linear: true, identifiabilityWarning: false, worst: null, verdict: "ok", severity: "ok" };
   const node = document.graph.nodes.find((n) => n.id === nodeId);
   const col = nodeColumn(document, nodeId);
   if (!node || !col) return empty;
@@ -522,6 +527,11 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
     })
     .filter((p): p is typeof p & { col: NonNullable<typeof p.col> } => Boolean(p.col));
   if (parentCols.length === 0) return empty;
+
+  const sig = `${col.dataset}|${rows.length}|${col.dataColumn}|${mech.intercept}|cap${cap}|p${perms}|` +
+    parentCols.map((p) => `${p.col.dataColumn}:${p.coef}`).join(",");
+  const cached = residCache.get(sig);
+  if (cached) return cached;
 
   const y = rows.map((r) => r[col.dataColumn] ?? 0);
   const fitted = rows.map((r) => mech.intercept + parentCols.reduce((s, p) => s + p.coef * (r[p.col.dataColumn] ?? 0), 0));
@@ -543,6 +553,14 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
   const linear = parentCols.every((p) => p.kind === "linear");
   const identifiabilityWarning = linear && normality.pValue > 0.1; // linear + Gaussian residuals ⇒ unidentifiable
   const verdict = independence.pValue >= 0.1 ? "ok" : independence.pValue >= 0.01 ? "weak" : "violated";
+  // The ε light reflects the WORST of the three checks: a clear exogeneity violation is red; a borderline
+  // exogeneity, failing homoskedasticity, or strong non-Gaussianity is yellow; otherwise green.
+  const severity: "ok" | "weak" | "violated" = independence.pValue < 0.01
+    ? "violated"
+    : (independence.pValue < 0.1 || heteroskedasticity.pValue < 0.05 || normality.pValue < 0.01) ? "weak" : "ok";
   const points = idx.map((i) => ({ fitted: fitted[i]!, residual: resid[i]! }));
-  return { available: true, n, perms, parents, points, independence, heteroskedasticity, normality, linear, identifiabilityWarning, worst, verdict };
+  const result: ResidualDiagnostic = { available: true, n, perms, parents, points, independence, heteroskedasticity, normality, linear, identifiabilityWarning, worst, verdict, severity };
+  if (residCache.size > 400) residCache.clear();
+  residCache.set(sig, result);
+  return result;
 }
