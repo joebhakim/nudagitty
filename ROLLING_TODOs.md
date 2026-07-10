@@ -26,13 +26,14 @@ already does `Y = g⁻¹(η+ε)`, so the fitter just learns the link the node's 
 - [ ] **#94 Follow-ups** — noise-family fit (skew/heavy-tail ε), two-part/hurdle for zero-inflation (the
       real earnings-$0 fix), **retire NORTA** (#92): keep `copula_marginal` only for the copula/joint tool's
       authored correlations, never fit-from-data.
-- [ ] **#95 Stronger target** — `lalonde-fit-recover`: plasmode covariates + FIT treat (logistic) + FIT
-      re78 confounders holding treat→re78 AUTHORED at the imposed effect (treat→outcome is NOT a fit DoF).
-      Imposed effect = **+$1,794 (real RCT benchmark)**. Estimator LEDGER vs truth (crude biased; g-formula
-      /IPW/AIPW recover). **Recovered-vs-truth card** included. Golden replication test (build from scratch →
-      match saved example). Open sub-decision: additive +$1,794 (identity link, marginal drift diagnosed —
-      "the limit of DGM") vs log link + τ calibrated to ATE $1,794 (realistic marginal, multiplicative
-      effect). Blocked by #93.
+- [x] **#95 Stronger target DONE** (commits 5da08d7, 1a1ebf2) — `lalonde-fit-recover`: plasmode covariates +
+      FIT treat (logistic) + FIT re78 confounders holding treat→re78 AUTHORED at **+$1,794** (identity link /
+      additive — the honest "clean ATE, drifted marginal" choice; log fails for earnings anyway). do(treat)
+      = +1794 exactly; crude gap −$14,117 (biased); AIPW ~+$1,576 recovers within noise. The recovered-vs-
+      truth "card" = the existing observed-vs-oracle-vs-adjustment output (oracle lands exactly on +1794) +
+      the adjustment-methods ledger. Replication golden test locks the from-scratch build (fitted coefs +
+      do-oracle match). Residual check honestly flags the marginal drift.
+      - [ ] optional follow-up: a one-glance "imposed +1794 · recovered +X · naive −14117" summary chip.
   - [ ] DEFERRED (not now): a **tutorial walkthrough** that builds the fitted DGP from scratch
         (import → mark → wire → fit → author effect → recover), like the LaLonde tour ([[tutorial-scaffold]]).
 
