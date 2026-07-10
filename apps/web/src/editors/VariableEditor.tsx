@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useWorkbenchStore } from "../store/workbenchStore";
 import { candidateInstruments, classifyConditioned, nodeGenerates, nodeProvenance, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, pinKeys, residualDiagnostics } from "@nudagitty/core";
 import type { ResidualDiagnostic } from "@nudagitty/core";
 import type {
@@ -540,6 +541,17 @@ export function VariableEditor(props: {
   // The instrument role is contextual: offerable only on a structural candidate (or to un-assign one).
   const isInstrumentCandidate = useMemo(() => candidateInstruments(props.document.graph).includes(node.id), [props.document.graph, node.id]);
   const residual = useMemo(() => residualDiagnostics(props.document, node.id), [props.document, node.id]);
+  // Clicking a node's ε satellite requests a jump to its residual-test panel (nonce re-fires on re-click).
+  const residualRef = useRef<HTMLDivElement | null>(null);
+  const focusResidual = useWorkbenchStore((state) => state.focusResidual);
+  useEffect(() => {
+    if (focusResidual?.id !== node.id || !residual.available || !residualRef.current) return;
+    const el = residualRef.current;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("residual-flash");
+    const timer = setTimeout(() => el.classList.remove("residual-flash"), 1500);
+    return () => clearTimeout(timer);
+  }, [focusResidual?.nonce, focusResidual?.id, node.id, residual.available]);
   const updateVariable = (patch: Partial<VariableModel>) => props.onVariableChange(node.id, normalizeVariableModel({ ...variable, ...patch }));
   // R5: the response FAMILY is directly selectable and canonical (valueType is its synced mirror).
   // Picking a family sets the family's canonical link (non-root) or root distribution so it generates
@@ -698,7 +710,7 @@ export function VariableEditor(props: {
                     )}
                   </div>
                   {isData && parentEdges.length > 0 && !allFitted && <button type="button" className="generation-fit" onClick={() => props.onSetDataMode(node.id, "fit")}>Fit all from data →</button>}
-                  {generates && <ResidualCheck d={residual} />}
+                  {generates && <div ref={residualRef}><ResidualCheck d={residual} /></div>}
                 </div>
               )}
             </div>

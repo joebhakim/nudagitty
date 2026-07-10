@@ -184,6 +184,7 @@ export type FlowGraphNodeData = Record<string, unknown> & {
   provenance?: "data" | "not-learned" | "fitted" | "authored";
   noiseVerdict?: "ok" | "weak" | "violated";
   onNodeClick: (id: string, event: import("react").MouseEvent) => void;
+  onNoiseClick?: (id: string) => void;
 };
 export type FlowGraphEdgeData = Record<string, unknown> & {
   edge: GraphEdge;

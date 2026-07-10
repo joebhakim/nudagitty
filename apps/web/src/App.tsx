@@ -281,6 +281,7 @@ export function App() {
   const redo = useWorkbenchStore((state) => state.redo);
   const replaceGraph = useWorkbenchStore((state) => state.replaceGraph);
   const setSelection = useWorkbenchStore((state) => state.setSelection);
+  const focusResidualPanel = useWorkbenchStore((state) => state.focusResidualPanel);
   const setTool = useWorkbenchStore((state) => state.setTool);
   const setEdgeSource = useWorkbenchStore((state) => state.setEdgeSource);
   const setViewMode = useWorkbenchStore((state) => state.setViewMode);
@@ -667,6 +668,12 @@ export function App() {
   const selectNode = useCallback((id: string) => {
     setSelection({ kind: "node", id });
   }, []);
+
+  // Clicking a disturbance (ε) satellite selects the node AND scrolls its residual-test panel into view.
+  const selectNoiseNode = useCallback((id: string) => {
+    setSelection({ kind: "node", id });
+    focusResidualPanel(id);
+  }, [focusResidualPanel]);
 
   const selectEdge = useCallback((id: string) => {
     setSelection({ kind: "edge", id });
@@ -1088,6 +1095,7 @@ export function App() {
         onAddNode={addNodeAt}
         onMoveNode={(id, position) => replaceGraph(updateNode(document.graph, id, { position }))}
         onNodeClick={(id) => tool === "edge" ? createOrSelectEdge(id) : tool === "couple" ? createOrSelectCoupling(id) : selectNode(id)}
+        onNoiseClick={selectNoiseNode}
         onEdgeClick={selectEdge}
         onEdgeControl={(edge) => replaceGraph(upsertEdge(document.graph, edge))}
         onResample={resample}

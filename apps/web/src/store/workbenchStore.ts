@@ -43,6 +43,9 @@ type WorkbenchStore = {
   changedPins: string[];
   showProvenance: boolean;
   toggleProvenance: () => void;
+  // A request to scroll the residual-test panel into view (nonce bumps so re-clicking the same ε re-fires).
+  focusResidual: { id: string; nonce: number } | null;
+  focusResidualPanel: (id: string) => void;
   commit: (next: GraphDocument) => void;
   undo: () => void;
   redo: () => void;
@@ -107,6 +110,8 @@ export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
   changedPins: [],
   showProvenance: false,
   toggleProvenance: () => set((state) => ({ showProvenance: !state.showProvenance })),
+  focusResidual: null,
+  focusResidualPanel: (id: string) => set((state) => ({ focusResidual: { id, nonce: (state.focusResidual?.nonce ?? 0) + 1 } })),
   commit: (next) => set((state) => commitState(state, next)),
   undo: () => set((state) => {
     const previous = state.history.at(-1);

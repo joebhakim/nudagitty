@@ -1156,6 +1156,8 @@ button.prov-chip { cursor: pointer; }
 
 /* Residual-independence (exogeneity) check — the ANM spec test on a fitted continuous node. */
 .residual-check { margin-top: 12px; padding: 9px 10px; border: 1px solid var(--border, #e2e2ea); border-left-width: 3px; border-radius: 7px; background: var(--surface-1, #fbfbfd); }
+@keyframes residual-flash-kf { 0% { box-shadow: 0 0 0 0 rgba(107,64,176,0); } 18% { box-shadow: 0 0 0 3px rgba(107,64,176,0.55); } 100% { box-shadow: 0 0 0 0 rgba(107,64,176,0); } }
+.residual-flash { animation: residual-flash-kf 1.5s ease-out; border-radius: 8px; }
 .residual-check.verdict-ok { border-left-color: #1f8a6d; }
 .residual-check.verdict-weak { border-left-color: #c08a2e; }
 .residual-check.verdict-violated { border-left-color: #c0392b; }
