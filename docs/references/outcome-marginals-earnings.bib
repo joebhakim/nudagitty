@@ -1,0 +1,186 @@
+% Fitting skewed / non-negative / zero-inflated outcomes (earnings especially):
+% link functions, noise families, retransformation, two-part models, and the
+% refutations that show why the popular fixes (log(Y+c), asinh) hide arbitrary
+% estimands. Compiled for Nudagitty's family-aware fit (tasks #93/#94/#95); the
+% intent is to surface these citations IN-APP so an economist recognizes the
+% transform/estimator they already use. See docs/fitting-outcome-marginals.md.
+% Titles double-braced to preserve capitalization.
+
+% =====================================================================
+% A. The LaLonde benchmark (why "recover the RCT" exists)
+% =====================================================================
+
+@article{lalonde1986evaluating,
+  author  = {LaLonde, Robert J.},
+  title   = {{Evaluating the Econometric Evaluations of Training Programs with Experimental Data}},
+  journal = {American Economic Review},
+  year    = {1986},
+  volume  = {76},
+  number  = {4},
+  pages   = {604--620}
+}
+
+@article{dehejia1999causal,
+  author  = {Dehejia, Rajeev H. and Wahba, Sadek},
+  title   = {{Causal Effects in Nonexperimental Studies: Reevaluating the Evaluation of Training Programs}},
+  journal = {Journal of the American Statistical Association},
+  year    = {1999},
+  volume  = {94},
+  number  = {448},
+  pages   = {1053--1062}
+}
+
+@article{dehejia2002propensity,
+  author  = {Dehejia, Rajeev H. and Wahba, Sadek},
+  title   = {{Propensity Score-Matching Methods for Nonexperimental Causal Studies}},
+  journal = {Review of Economics and Statistics},
+  year    = {2002},
+  volume  = {84},
+  number  = {1},
+  pages   = {151--161}
+}
+
+@article{smith2005does,
+  author  = {Smith, Jeffrey A. and Todd, Petra E.},
+  title   = {{Does Matching Overcome LaLonde's Critique of Nonexperimental Estimators?}},
+  journal = {Journal of Econometrics},
+  year    = {2005},
+  volume  = {125},
+  number  = {1--2},
+  pages   = {305--353}
+}
+
+% =====================================================================
+% B. The earnings-shape playbook (what economists actually do)
+% =====================================================================
+
+@book{mincer1974schooling,
+  author    = {Mincer, Jacob},
+  title     = {{Schooling, Experience, and Earnings}},
+  year      = {1974},
+  publisher = {National Bureau of Economic Research / Columbia University Press},
+  note      = {The canonical log-earnings equation}
+}
+
+@article{tobin1958estimation,
+  author  = {Tobin, James},
+  title   = {{Estimation of Relationships for Limited Dependent Variables}},
+  journal = {Econometrica},
+  year    = {1958},
+  volume  = {26},
+  number  = {1},
+  pages   = {24--36},
+  note    = {The Tobit censored-normal model}
+}
+
+@article{cragg1971some,
+  author  = {Cragg, John G.},
+  title   = {{Some Statistical Models for Limited Dependent Variables with Application to the Demand for Durable Goods}},
+  journal = {Econometrica},
+  year    = {1971},
+  volume  = {39},
+  number  = {5},
+  pages   = {829--844},
+  note    = {The two-part / hurdle model}
+}
+
+@article{duan1983smearing,
+  author  = {Duan, Naihua},
+  title   = {{Smearing Estimate: A Nonparametric Retransformation Method}},
+  journal = {Journal of the American Statistical Association},
+  year    = {1983},
+  volume  = {78},
+  number  = {383},
+  pages   = {605--610}
+}
+
+@article{manning1998logged,
+  author  = {Manning, Willard G.},
+  title   = {{The Logged Dependent Variable, Heteroscedasticity, and the Retransformation Problem}},
+  journal = {Journal of Health Economics},
+  year    = {1998},
+  volume  = {17},
+  number  = {3},
+  pages   = {283--295}
+}
+
+@article{manning2001estimating,
+  author  = {Manning, Willard G. and Mullahy, John},
+  title   = {{Estimating Log Models: To Transform or Not to Transform?}},
+  journal = {Journal of Health Economics},
+  year    = {2001},
+  volume  = {20},
+  number  = {4},
+  pages   = {461--494}
+}
+
+% =====================================================================
+% C. The mean-scale models (Jensen, PPML) and the zero-transform refutations
+% =====================================================================
+
+@article{santossilva2006log,
+  author  = {Santos Silva, J. M. C. and Tenreyro, Silvana},
+  title   = {{The Log of Gravity}},
+  journal = {Review of Economics and Statistics},
+  year    = {2006},
+  volume  = {88},
+  number  = {4},
+  pages   = {641--658},
+  note    = {PPML: estimate E[Y|X]=exp(Xb) directly; handles zeros; robust to heteroskedasticity}
+}
+
+@article{chen2024logs,
+  author  = {Chen, Jiafeng and Roth, Jonathan},
+  title   = {{Logs with Zeros? Some Problems and Solutions}},
+  journal = {Quarterly Journal of Economics},
+  year    = {2024},
+  volume  = {139},
+  number  = {2},
+  pages   = {891--936},
+  note    = {log(Y+c) and asinh give unit-dependent, arbitrary estimands when Y has zeros}
+}
+
+@article{bellemare2020elasticities,
+  author  = {Bellemare, Marc F. and Wichman, Casey J.},
+  title   = {{Elasticities and the Inverse Hyperbolic Sine Transformation}},
+  journal = {Oxford Bulletin of Economics and Statistics},
+  year    = {2020},
+  volume  = {82},
+  number  = {1},
+  pages   = {50--61}
+}
+
+% =====================================================================
+% D. The falsifiability backbone (residual-independence / RESIT diagnostics)
+% =====================================================================
+
+@article{szekely2007measuring,
+  author  = {Sz\'{e}kely, G\'{a}bor J. and Rizzo, Maria L. and Bakirov, Nail K.},
+  title   = {{Measuring and Testing Dependence by Correlation of Distances}},
+  journal = {The Annals of Statistics},
+  year    = {2007},
+  volume  = {35},
+  number  = {6},
+  pages   = {2769--2794}
+}
+
+@article{peters2014causal,
+  author  = {Peters, Jonas and Mooij, Joris M. and Janzing, Dominik and Sch\"{o}lkopf, Bernhard},
+  title   = {{Causal Discovery with Continuous Additive Noise Models}},
+  journal = {Journal of Machine Learning Research},
+  year    = {2014},
+  volume  = {15},
+  pages   = {2009--2053},
+  note    = {RESIT: regression with subsequent independence test}
+}
+
+@article{sejdinovic2013equivalence,
+  author  = {Sejdinovic, Dino and Sriperumbudur, Bharath and Gretton, Arthur and Fukumizu, Kenji},
+  title   = {{Equivalence of Distance-Based and RKHS-Based Statistics in Hypothesis Testing}},
+  journal = {The Annals of Statistics},
+  year    = {2013},
+  volume  = {41},
+  number  = {5},
+  pages   = {2263--2291},
+  note    = {Distance correlation is equivalent to HSIC}
+}
