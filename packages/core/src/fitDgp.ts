@@ -158,7 +158,11 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
   const authoredSet = new Set(input.metadata.authored ?? []);
   if (pinSet.size === 0) return { document: input, changed: [] };
   if (input.simulation.datasets) for (const [name, ds] of Object.entries(input.simulation.datasets)) registerRuntimeDataset(name, ds);
-  const document = cloneDocument(input);
+  // Clone LAZILY: if every fit is cache-skipped (e.g. a node was just moved), return `input` untouched so
+  // its identity — crucially metadata — is preserved and downstream memos (computationDocument → the whole
+  // IPW/output pipeline) don't needlessly recompute.
+  let document = input;
+  const ensureClone = () => { if (document === input) document = cloneDocument(input); };
   const changed: string[] = [];
   const bump = (key: string, before: number, after: number) => { if (Math.abs(before - after) > 1e-9) changed.push(key); };
 
@@ -210,6 +214,7 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
     const X = rows.map((r) => pinnedEdges.map((edge) => r[nodeColumn(document, edge.source)!.dataColumn] ?? 0));
     const fit = fitLinearModel(y, X, offset, fitIntercept, isBinary);
     if (!fit) continue;
+    ensureClone(); // a real re-fit is happening → now we need our own copy to write into
 
     for (let j = 0; j < pinnedEdges.length; j += 1) {
       const edge = pinnedEdges[j]!;
@@ -227,6 +232,7 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
     fitSigCache.set(cacheKey, sig);
   }
 
+  if (document === input) return { document: input, changed: [] }; // nothing re-fit → no churn
   document.simulation = reconcileSimulationSpec(document.graph, document.simulation);
   if (input.simulation.datasets) document.simulation.datasets = input.simulation.datasets;
   return { document, changed };
