@@ -16,9 +16,13 @@ The honest replacement for NORTA: fix a fitted marginal by **improving the model
 family), not by forcing it through a copula (which buries the residual/endogeneity warnings). Generation
 already does `Y = g⁻¹(η+ε)`, so the fitter just learns the link the node's family implies.
 
-- [ ] **#93 Family-aware fit v1** — fit OLS on `g(Y)~X` (identity/log/softplus/logit from the node's
-      combiner) + normal noise on the link scale; residual check moves to that scale. Golden-safe (additive
-      = identity, unchanged). Verify the fit-link ↔ generate-`g⁻¹` round-trip.
+- [x] **#93 Family-aware fit v1 DONE** (commits e41adb4, ae031ae) — reconcilePins fits OLS on the LINK
+      scale from the node's valueType (identity / log=`positive`/gamma_log / logit=`proportion`), normal
+      noise on that scale, + a retransformation-bias correction so the log-link generated MEAN still matches
+      the data. residualDiagnostics computes ε on the link scale (`scale` field + UI footer). Family select
+      exposed for data nodes ("fit family (link)"); `positive`/`proportion` un-gated. Golden byte-identical.
+      Verified on lalonde re78: identity→8.4% negatives; log→positive (min $840), mean matched — and the
+      diagnostic HONESTLY still fails on the log scale (earnings aren't lognormal → two-part = #94).
 - [ ] **#94 Follow-ups** — noise-family fit (skew/heavy-tail ε), two-part/hurdle for zero-inflation (the
       real earnings-$0 fix), **retire NORTA** (#92): keep `copula_marginal` only for the copula/joint tool's
       authored correlations, never fit-from-data.
