@@ -879,8 +879,3 @@
 }
 @media (prefers-color-scheme: dark) { .copula-coupling-label { stroke: #1b2126; } }
 
-/* discrete / point-mass badge on nodes (atoms) */
-.pointmass-badge { cursor: help; }
-.pointmass-badge rect { fill: var(--panel, #fff); stroke: #9b6dd6; stroke-width: 1px; opacity: 0.95; }
-.pointmass-badge line { stroke: #9b6dd6; stroke-width: 1.6px; stroke-linecap: round; }
-@media (prefers-color-scheme: dark) { .pointmass-badge rect { fill: #1b2126; } }
