@@ -507,7 +507,7 @@ function ResidualCheck({ d }: { d: ResidualDiagnostic }) {
           </div>
         ))}
       </div>
-      <p className="muted residual-foot">Distance correlation (≡ HSIC), permutation p over {d.perms} shuffles, n&nbsp;=&nbsp;{d.n}. OLS forces residuals <i>linearly</i> orthogonal to X, so this <b>nonlinear</b> test (RESIT) is what still catches a mis-specified mechanism.</p>
+      <p className="muted residual-foot">{d.scale !== "identity" && <><b>Residuals on the {d.scale} scale</b> (the family's link). </>}Distance correlation (≡ HSIC), permutation p over {d.perms} shuffles, n&nbsp;=&nbsp;{d.n}. OLS forces residuals <i>linearly</i> orthogonal to X, so this <b>nonlinear</b> test (RESIT) is what still catches a mis-specified mechanism.</p>
     </div>
   );
 }

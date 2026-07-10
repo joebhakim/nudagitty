@@ -1,4 +1,4 @@
-import type { GraphDocument } from "./types";
+import type { GraphDocument, NodeCombinerKind } from "./types";
 import { cloneDocument, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, reconcileSimulationSpec } from "./graph";
 import { setLinearCoefficient, setNode, ZERO_NOISE } from "./examples/builders";
 import { datasetRows, registerRuntimeDataset } from "./datasets";
@@ -7,6 +7,22 @@ import { datasetRows, registerRuntimeDataset } from "./datasets";
 const edgeKey = (id: string) => `e:${id}`;
 const interceptKey = (id: string) => `ni:${id}`;
 const noiseKey = (id: string) => `nn:${id}`;
+
+// ---------- family-aware fit: fit on the LINK scale the node's family implies ----------
+// Generation does Y = g⁻¹(η + ε) (additive→identity, gamma_log/poisson_log→exp, bounded_logistic→sigmoid),
+// so fitting a continuous node = fit OLS on g(Y) ~ X with normal noise on the link scale. That gives a
+// realistic (e.g. lognormal) marginal that stays testable — no marginal-forcing copula. `Y = f(X)+ε` stays.
+export type FitLink = "identity" | "log" | "logit";
+export function linkForValueType(valueType: string): { link: FitLink; combiner: NodeCombinerKind } {
+  if (valueType === "positive") return { link: "log", combiner: "gamma_log" };
+  if (valueType === "proportion") return { link: "logit", combiner: "bounded_logistic" };
+  return { link: "identity", combiner: "additive" };
+}
+export function applyLink(y: number, link: FitLink): number {
+  if (link === "log") return y > 0 ? Math.log(y) : NaN;          // exp(·) is the inverse in generation
+  if (link === "logit") return y > 0 && y < 1 ? Math.log(y / (1 - y)) : NaN; // sigmoid(·) is the inverse
+  return y;
+}
 
 // Fit cache: a node's last-fit input signature (`${docId}:${nodeId}` → sig). reconcile re-fits only when
 // the signature changes — an unrelated edit (or the second reconcile of the same commit) skips the costly
@@ -183,7 +199,9 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
     // Only AUTHORED parents contribute a fixed offset; NOT-LEARNED parents (in neither set) are excluded.
     const authoredEdges = drawn.filter((e) => authoredSet.has(edgeKey(e.id)));
     if (pinnedEdges.length === 0 && !pinSet.has(interceptKey(nodeId)) && !pinSet.has(noiseKey(nodeId))) continue;
-    const isBinary = normalizeVariableModel(node.variable).valueType === "binary";
+    const valueType = normalizeVariableModel(node.variable).valueType;
+    const isBinary = valueType === "binary";
+    const { link, combiner: linkCombiner } = linkForValueType(valueType);
     const fitIntercept = pinSet.has(interceptKey(nodeId));
     const fitNoise = !isBinary && pinSet.has(noiseKey(nodeId));
     const mech = normalizeNodeMechanism(document.simulation.nodes[nodeId]);
@@ -193,7 +211,7 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
       col.dataset, rows.length,
       rows.length ? (rows[0]![col.dataColumn] ?? 0) : 0,
       rows.length ? (rows[rows.length >> 1]![col.dataColumn] ?? 0) : 0,
-      col.dataColumn, isBinary ? "b" : "c",
+      col.dataColumn, isBinary ? "b" : link,
       fitIntercept ? "Pi" : `Ai${mech.intercept}`, fitNoise ? "Pn" : "-",
       ...pinnedEdges.map((e) => `P${nodeColumn(document, e.source)?.dataColumn}`).sort(),
       ...authoredEdges.map((e) => { const em = normalizeEdgeMechanism(document.simulation.edges[e.id]); return `A${nodeColumn(document, e.source)?.dataColumn}:${em.kind === "linear" ? em.coefficient : 0}`; }).sort()
@@ -201,8 +219,10 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
     const cacheKey = `${input.id}:${nodeId}`;
     if (fitSigCache.get(cacheKey) === sig) continue; // inputs unchanged → carried values are already this fit
 
-    const y = rows.map((r) => r[col.dataColumn] ?? 0);
-    const offset = rows.map((r) => {
+    // Target on the fit's LINK scale (identity for continuous — unchanged; log for positive, etc.). The
+    // authored offset + coefficients live on that same scale (η), so this stays exact.
+    const yRaw = rows.map((r) => (isBinary ? (r[col.dataColumn] ?? 0) : applyLink(r[col.dataColumn] ?? 0, link)));
+    const offsetRaw = rows.map((r) => {
       let o = fitIntercept ? 0 : mech.intercept;
       for (const edge of authoredEdges) {
         const em = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
@@ -211,7 +231,13 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
       }
       return o;
     });
-    const X = rows.map((r) => pinnedEdges.map((edge) => r[nodeColumn(document, edge.source)!.dataColumn] ?? 0));
+    const XRaw = rows.map((r) => pinnedEdges.map((edge) => r[nodeColumn(document, edge.source)!.dataColumn] ?? 0));
+    // Drop rows outside the link's domain (e.g. Y≤0 under a log link) so the fit only sees valid targets.
+    const keep: number[] = [];
+    for (let i = 0; i < yRaw.length; i += 1) if (Number.isFinite(yRaw[i]) && Number.isFinite(offsetRaw[i]) && XRaw[i]!.every(Number.isFinite)) keep.push(i);
+    const y = keep.map((i) => yRaw[i]!);
+    const offset = keep.map((i) => offsetRaw[i]!);
+    const X = keep.map((i) => XRaw[i]!);
     const fit = fitLinearModel(y, X, offset, fitIntercept, isBinary);
     if (!fit) continue;
     ensureClone(); // a real re-fit is happening → now we need our own copy to write into
@@ -222,10 +248,25 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
       setLinearCoefficient(document, edge.source, nodeId, fit.coefs[j] ?? 0);
       bump(edgeKey(edge.id), before, fit.coefs[j] ?? 0);
     }
-    const newIntercept = fitIntercept ? fit.intercept : mech.intercept;
+    let newIntercept = fitIntercept ? fit.intercept : mech.intercept;
     const currentSd = mech.noise.kind === "normal" ? mech.noise.sd : 1;
     const newNoise = isBinary ? ZERO_NOISE : { kind: "normal" as const, mean: 0, sd: fitNoise ? fit.residualSd : currentSd };
-    setNode(document, nodeId, { ...mech, intercept: newIntercept, combiner: isBinary ? "bernoulli_logit" : "additive", noise: newNoise });
+    // Retransformation-bias correction for the log link: generation draws Y = exp(η+ε), whose mean is
+    // exp(η+σ²/2), not exp(η). Shift the intercept so the generated MEAN matches the data mean (over the
+    // fitted rows) — keeps the "mean matches data" promise; the residual check still tests the log-scale shape.
+    if (link === "log" && fitIntercept) {
+      const sd = newNoise.kind === "normal" ? newNoise.sd : 0;
+      const half = (sd * sd) / 2;
+      let genSum = 0, targetSum = 0;
+      for (let i = 0; i < X.length; i += 1) {
+        let eta = fit.intercept + offset[i]!;
+        for (let j = 0; j < pinnedEdges.length; j += 1) eta += (fit.coefs[j] ?? 0) * X[i]![j]!;
+        genSum += Math.exp(eta + half);
+        targetSum += Math.exp(y[i]!); // y is log(Y_raw) → exp recovers the raw value
+      }
+      if (genSum > 1e-9 && targetSum > 1e-9) newIntercept = fit.intercept + Math.log(targetSum / genSum);
+    }
+    setNode(document, nodeId, { ...mech, intercept: newIntercept, combiner: isBinary ? "bernoulli_logit" : linkCombiner, noise: newNoise });
     if (fitIntercept) bump(interceptKey(nodeId), mech.intercept, newIntercept);
     if (fitNoise) bump(noiseKey(nodeId), currentSd, fit.residualSd);
     if (fitSigCache.size > 400) fitSigCache.clear();
@@ -422,6 +463,7 @@ export interface ResidualDiagnostic {
   worst: ResidualParentCheck | null;
   verdict: "ok" | "weak" | "violated";       // from the exogeneity p-value (the panel's headline)
   severity: "ok" | "weak" | "violated";      // WORST across all three checks (drives the ε light + ledger)
+  scale: FitLink;                            // the working scale residuals are computed on (log ⇒ "log-scale residuals")
 }
 
 // Cache full diagnostics by fit-output signature (coefficients + data) — the seeded permutation makes them
@@ -516,7 +558,7 @@ function jarqueBera(v: number[]): NormalityCheck {
 // cap/perms are generous because the result is CACHED by fit signature — it only recomputes when a fit
 // actually changes, so power matters more than per-call speed here.
 export function residualDiagnostics(document: GraphDocument, nodeId: string, cap = 240, perms = 199, seed = 0): ResidualDiagnostic {
-  const empty: ResidualDiagnostic = { available: false, n: 0, perms, parents: [], points: [], independence: { dcor: 0, pValue: 1 }, heteroskedasticity: { dcor: 0, pValue: 1 }, normality: { skewness: 0, excessKurtosis: 0, jarqueBera: 0, pValue: 1 }, linear: true, identifiabilityWarning: false, worst: null, verdict: "ok", severity: "ok" };
+  const empty: ResidualDiagnostic = { available: false, n: 0, perms, parents: [], points: [], independence: { dcor: 0, pValue: 1 }, heteroskedasticity: { dcor: 0, pValue: 1 }, normality: { skewness: 0, excessKurtosis: 0, jarqueBera: 0, pValue: 1 }, linear: true, identifiabilityWarning: false, worst: null, verdict: "ok", severity: "ok", scale: "identity" };
   const node = document.graph.nodes.find((n) => n.id === nodeId);
   const col = nodeColumn(document, nodeId);
   if (!node || !col) return empty;
@@ -536,17 +578,23 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
     .filter((p): p is typeof p & { col: NonNullable<typeof p.col> } => Boolean(p.col));
   if (parentCols.length === 0) return empty;
 
-  const sig = `${col.dataset}|${rows.length}|${col.dataColumn}|${mech.intercept}|cap${cap}|p${perms}|s${seed}|` +
+  const sig = `${col.dataset}|${rows.length}|${col.dataColumn}|${mech.intercept}|${normalizeVariableModel(node.variable).valueType}|cap${cap}|p${perms}|s${seed}|` +
     parentCols.map((p) => `${p.col.dataColumn}:${p.coef}`).join(",");
   const cached = residCache.get(sig);
   if (cached) return cached;
 
-  const y = rows.map((r) => r[col.dataColumn] ?? 0);
+  // Residuals live on the node's LINK scale (log(Y)−η̂ for a log-linked node), so ε⊥X and the normality
+  // check test the assumption the model actually makes. Rows outside the link domain (Y≤0 under log) drop out.
+  const scale = linkForValueType(normalizeVariableModel(node.variable).valueType).link;
+  const gy = rows.map((r) => applyLink(r[col.dataColumn] ?? 0, scale));
   const fitted = rows.map((r) => mech.intercept + parentCols.reduce((s, p) => s + p.coef * (r[p.col.dataColumn] ?? 0), 0));
-  const resid = y.map((yi, i) => yi - fitted[i]!);
-  const stride = Math.max(1, Math.floor(rows.length / cap));
+  const resid = gy.map((v, i) => v - fitted[i]!);
+  const valid: number[] = [];
+  for (let i = 0; i < rows.length; i += 1) if (Number.isFinite(resid[i])) valid.push(i);
+  if (valid.length < 20) return empty;
+  const stride = Math.max(1, Math.floor(valid.length / cap));
   const idx: number[] = [];
-  for (let i = 0; i < rows.length; i += stride) idx.push(i);
+  for (let k = 0; k < valid.length; k += stride) idx.push(valid[k]!);
   const n = idx.length;
   const rs = idx.map((i) => resid[i]!);
   const parentSeries = parentCols.map((p) => idx.map((i) => rows[i]![p.col.dataColumn] ?? 0));
@@ -567,7 +615,7 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
     ? "violated"
     : (independence.pValue < 0.1 || heteroskedasticity.pValue < 0.05 || normality.pValue < 0.01) ? "weak" : "ok";
   const points = idx.map((i) => ({ fitted: fitted[i]!, residual: resid[i]! }));
-  const result: ResidualDiagnostic = { available: true, n, perms, parents, points, independence, heteroskedasticity, normality, linear, identifiabilityWarning, worst, verdict, severity };
+  const result: ResidualDiagnostic = { available: true, n, perms, parents, points, independence, heteroskedasticity, normality, linear, identifiabilityWarning, worst, verdict, severity, scale };
   if (residCache.size > 400) residCache.clear();
   residCache.set(sig, result);
   return result;
