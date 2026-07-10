@@ -104,18 +104,40 @@ export function SimulationDiagnosticsPanel(props: {
   simulation: SimulationResult;
   empiricalDraws: number;
   onEmpiricalDraws: (sampleSize: number) => void;
+  onSeed: (seed: number) => void;
 }) {
   return (
     <div className="simulation-diagnostics-panel">
       <DrawCountControl value={props.empiricalDraws} onChange={props.onEmpiricalDraws} />
+      <SeedControl value={props.document.simulation.seed} onChange={props.onSeed} />
       <ConditioningMethodPanel simulation={props.simulation} />
       <div className="diagnostic-list">
         <strong>Run diagnostics</strong>
-        <span>seed {props.document.simulation.seed}</span>
         {props.simulation.diagnostics.length === 0
           ? <span>No active simulation warnings.</span>
           : props.simulation.diagnostics.map((message) => <span className="warning" key={message}>{message}</span>)}
       </div>
+    </div>
+  );
+}
+
+// The RNG seed is editable so a run is exactly reproducible (and a from-scratch build can be pinned to a
+// saved example's seed). Empty stays put; 0 is treated as 1 by the engine. "resample" just bumps it by 1.
+export function SeedControl(props: { value: number; onChange: (seed: number) => void }) {
+  return (
+    <div className="draw-count-control seed-control">
+      <div className="draw-count-head">
+        <strong>Random seed</strong>
+        <span>fixed · deterministic</span>
+      </div>
+      <input
+        aria-label="random seed"
+        type="number"
+        min={0}
+        step={1}
+        value={props.value}
+        onChange={(event) => { const n = Number(event.target.value); if (Number.isFinite(n)) props.onChange(Math.max(0, Math.trunc(n))); }}
+      />
     </div>
   );
 }

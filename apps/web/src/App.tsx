@@ -942,6 +942,11 @@ export function App() {
     commit({ ...document, simulation: { ...document.simulation, seed: document.simulation.seed + 1 } });
   }, [commit, document]);
 
+  const setSeed = useCallback((seed: number) => {
+    if (!Number.isFinite(seed) || seed === document.simulation.seed) return;
+    commit({ ...document, simulation: { ...document.simulation, seed: Math.max(0, Math.trunc(seed)) } });
+  }, [commit, document]);
+
   const clearOverrides = useCallback(() => {
     commit({ ...document, simulation: { ...document.simulation, overrides: {} } });
   }, [commit, document]);
@@ -1508,6 +1513,7 @@ export function App() {
                   simulation={simulation}
                   empiricalDraws={empiricalDraws}
                   onEmpiricalDraws={updateEmpiricalDraws}
+                  onSeed={setSeed}
                 />
               </Section>
               <Section title="Causal Effect Identification" pending={analysisPending}>
