@@ -558,7 +558,7 @@ export function VariableEditor(props: {
   // correctly — no more picking a distribution and hoping the inferred type agrees.
   const FAMILY_LINK: Partial<Record<VariableModel["valueType"], NodeCombinerKind>> = { continuous: "additive", binary: "bernoulli_logit", count: "poisson_log", ordinal: "additive", categorical: "additive", positive: "gamma_log", proportion: "bounded_logistic" };
   const FAMILY_ROOT_DISTRIBUTION: Partial<Record<VariableModel["valueType"], NodeDistribution["kind"]>> = { continuous: "normal", binary: "bernoulli", count: "poisson", positive: "gamma", proportion: "beta", categorical: "categorical", ordinal: "categorical" };
-  const REALIZED_FAMILIES = new Set<VariableModel["valueType"]>(["continuous", "binary", "count", "ordinal", "categorical"]);
+  const REALIZED_FAMILIES = new Set<VariableModel["valueType"]>(["continuous", "binary", "count", "ordinal", "categorical", "positive", "proportion"]);
   const changeFamily = (kind: VariableModel["valueType"]) => {
     const patch: Partial<VariableModel> = { valueType: kind };
     if ((kind === "ordinal" || kind === "categorical") && variable.categories.length < 2) patch.categories = ["level 1", "level 2", "level 3"];
@@ -652,9 +652,9 @@ export function VariableEditor(props: {
                   </div>
                 );
               })()}
-              {!isData && !isRoot && (
+              {!isRoot && (
                 <label className="field">
-                  <span>type</span>
+                  <span>{isData ? "fit family (link)" : "type"}</span>
                   <select value={variable.valueType} onChange={(event) => changeFamily(event.target.value as VariableModel["valueType"])}>
                     {VARIABLE_TYPES.map(([kind, label]) => (<option value={kind} key={kind} disabled={!REALIZED_FAMILIES.has(kind) && kind !== variable.valueType}>{label}{REALIZED_FAMILIES.has(kind) ? "" : " (planned)"}</option>))}
                   </select>
