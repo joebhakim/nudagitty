@@ -1116,13 +1116,22 @@
 .generation-head > strong { font-size: 12px; }
 .generation-read { margin: 2px 0 0; font-size: 12px; line-height: 1.45; }
 .generation-body { display: flex; flex-direction: column; gap: 8px; }
-.generation-equation { display: flex; flex-direction: column; gap: 6px; padding: 7px 9px; border: 1px solid var(--border, #e2e2ea); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
-.generation-term { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
-.generation-term .tactile-number-field { width: 100%; }
-.gen-term-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.gen-term-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.generation-equation { display: flex; flex-direction: column; gap: 2px; padding: 5px 7px; border: 1px solid var(--border, #e2e2ea); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
+/* Dense: one compact ROW per term — name · value input · ∅📌✎. Scales to big DAGs. */
+.generation-term { display: flex; flex-direction: row; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gen-term-name { flex: 0 0 auto; min-width: 60px; max-width: 44%; font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.generation-term .tactile-number-field { flex: 1 1 80px; min-width: 0; }
+.generation-term > select { flex: 1 1 auto; min-width: 0; }
+.generation-term .distribution-editor { flex: 1 1 120px; min-width: 0; }
+.generation-term .dep-control { flex: 0 0 auto; }
+.gen-notlearned { flex: 1 1 auto; font-size: 11px; font-style: italic; }
 .gen-parent { font-size: 12px; font-weight: 600; white-space: nowrap; }
-.gen-curve { font-size: 11.5px; }
+.gen-curve { flex: 1 1 auto; font-size: 11px; }
+/* Hide the tactile nudge/slider row in the equation; keep just the (still type/arrow-editable) value input. */
+.generation-equation.dense .tactile-number-controls { display: none; }
+.generation-equation.dense .tactile-number-head { display: block; gap: 0; }
+.generation-equation.dense .tactile-number-head > span:empty { display: none; }
+.generation-equation.dense .tactile-number-head input { width: 100%; box-sizing: border-box; text-align: right; padding: 2px 6px; height: 24px; }
 .prov-chip { flex: 0 0 auto; min-width: 22px; height: 21px; display: inline-flex; align-items: center; justify-content: center; border-radius: 5px; font-size: 11px; border: 1px solid transparent; background: none; padding: 0 4px; }
 button.prov-chip { cursor: pointer; }
 .prov-chip.pinned { color: #6b40b0; border-color: #c9b6e6; background: #f3ecfc; }

@@ -594,8 +594,11 @@
 .noise-satellite.resid-ok circle:not(.noise-hit), .noise-satellite.resid-weak circle:not(.noise-hit), .noise-satellite.resid-violated circle:not(.noise-hit) { stroke-dasharray: none; stroke-width: 1.6px; }
 .noise-satellite.resid-ok line, .noise-satellite.resid-weak line, .noise-satellite.resid-violated line { stroke-dasharray: none; }
 .noise-satellite.resid-ok circle:not(.noise-hit) { stroke: #1f8a6d; fill: #e4f5ef; } .noise-satellite.resid-ok line { stroke: #1f8a6d; } .noise-satellite.resid-ok text { fill: #0d6b52; }
-.noise-satellite.resid-weak circle:not(.noise-hit) { stroke: #d9a520; fill: #fdf0c8; } .noise-satellite.resid-weak line { stroke: #d9a520; } .noise-satellite.resid-weak text { fill: #8a6d12; }
-.noise-satellite.resid-violated circle:not(.noise-hit) { stroke: #c0392b; fill: #f7d5d0; stroke-width: 2px; } .noise-satellite.resid-violated line { stroke: #c0392b; stroke-width: 1.6px; } .noise-satellite.resid-violated text { fill: #a3281c; font-weight: 700; }
+/* A failing check shows a warning triangle with a "!" instead of the quiet ε circle. */
+.noise-tri { stroke: none; }
+.noise-bang { font-style: normal; font-weight: 800; text-anchor: middle; fill: #fff; }
+.noise-satellite.resid-weak .noise-tri { fill: #d9a520; } .noise-satellite.resid-weak line { stroke: #d9a520; }
+.noise-satellite.resid-violated .noise-tri { fill: #c0392b; } .noise-satellite.resid-violated line { stroke: #c0392b; stroke-width: 1.6px; }
 
 .node-label {
   paint-order: stroke;

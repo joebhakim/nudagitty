@@ -636,20 +636,19 @@ export function VariableEditor(props: {
           const noiseState = dep(pinKeys.noise(node.id));
           return (
             <div className="selection-editor-block generation-block">
-              <div className="generation-head"><strong>Generation</strong></div>
-              {/* MARGINAL — reading (or binary) reproduces the observed column exactly; a fitted CONTINUOUS
-                  node currently matches the mean but not the full shape (exact-shape NORTA is planned). */}
+              <div className="generation-head"><strong>How it&rsquo;s generated</strong></div>
+              {/* MARGINAL — terse; the full caveat lives in the tooltip. */}
               {isData && (() => {
                 const marginalFromData = !generates || isBinary;
                 return marginalFromData ? (
-                  <div className="marginal-row">
+                  <div className="marginal-row" title={`${node.label}'s marginal is the observed data column${generates ? " — its rate is preserved by the fit" : ", not authored"}.`}>
                     <span className="prov-badge data">from data</span>
-                    <span className="muted"><b>{node.label}</b>&rsquo;s marginal is the observed column{generates ? " (its rate is preserved by the fit)" : " — not authored"}.</span>
+                    <span className="muted">marginal = observed column</span>
                   </div>
                 ) : (
-                  <div className="marginal-row">
+                  <div className="marginal-row" title={`${node.label} is generated from the fit — its mean matches the data, but the full marginal shape is approximate (exact-shape preservation is planned).`}>
                     <span className="prov-badge modeled">modeled</span>
-                    <span className="muted"><b>{node.label}</b> is generated from the fit — its <b>mean</b> matches the data, but the full marginal shape is approximate (exact-shape preservation is planned).</span>
+                    <span className="muted">mean matches data · shape approx.</span>
                   </div>
                 );
               })()}
@@ -670,42 +669,45 @@ export function VariableEditor(props: {
                 <div className="dependence-block">
                   <div className="dependence-head">
                     <strong>Dependence</strong>
-                    {isData && <span className="muted">{generates ? "modeled on its parents" : "not learned"}</span>}
+                    {isData && <span className="muted">{generates ? "modeled on parents" : "not learned"}</span>}
                   </div>
                   {isData && !generates && (
-                    <p className="muted generation-read">The arrows into <b>{node.label}</b> are <b>structural only — not yet learned</b>. <b>Fit</b> them from the data (📌) or <b>author</b> a number (✎) to make {node.label} depend on its parents; until then {node.label} stays the observed column.</p>
+                    <p className="muted generation-read">Arrows are <b>structural only</b> — fit (📌) or author (✎) a number to make {node.label} depend on its parents.</p>
                   )}
-                  <div className="generation-equation">
+                  <div className="generation-equation dense">
                     <div className="generation-term">
-                      <div className="gen-term-head"><span className="gen-term-name">intercept</span><DepControl {...depProps} state={interceptState} keyStr={pinKeys.intercept(node.id)} /></div>
+                      <span className="gen-term-name">intercept</span>
                       {isData && interceptState === "not-learned"
                         ? <span className="gen-notlearned muted">not learned</span>
                         : <TactileNumberField label="" value={mechanism.intercept} step={0.1} nudge={1} onChange={(intercept) => props.onMechanism(node.id, { intercept })} />}
+                      <DepControl {...depProps} state={interceptState} keyStr={pinKeys.intercept(node.id)} />
                     </div>
                     {parentEdges.map((p) => (
                       <div className="generation-term" key={p.edge.id}>
-                        <div className="gen-term-head"><span className="gen-term-name">{p.label} ×</span><DepControl {...depProps} state={dep(p.key)} keyStr={p.key} /></div>
+                        <span className="gen-term-name" title={p.label}>{p.label} ×</span>
                         {isData && dep(p.key) === "not-learned"
                           ? <span className="gen-notlearned muted">not learned</span>
                           : p.coef !== null
                             ? <TactileNumberField label="" value={p.coef} step={0.1} nudge={1} onChange={(v) => props.onCoefficient(p.edge, v)} />
-                            : <span className="gen-curve muted">{p.kind} curve — select the edge</span>}
+                            : <span className="gen-curve muted">{p.kind} — edit on edge</span>}
+                        <DepControl {...depProps} state={dep(p.key)} keyStr={p.key} />
                       </div>
                     ))}
                     {(generates || !isData) && (
-                      <label className="field">
-                        <span>combiner</span>
+                      <div className="generation-term gen-term-combiner">
+                        <span className="gen-term-name">combiner</span>
                         <select value={mechanism.combiner} onChange={(event) => props.onMechanism(node.id, { combiner: event.target.value as NodeCombinerKind })}>
                           {NODE_COMBINERS.map((item) => <option value={item.kind} key={item.kind}>{item.label}</option>)}
                         </select>
-                      </label>
+                      </div>
                     )}
                     {!isBinary && (
                       <div className="generation-term">
-                        <div className="gen-term-head"><span className="gen-term-name">noise</span><DepControl {...depProps} state={noiseState} keyStr={pinKeys.noise(node.id)} /></div>
+                        <span className="gen-term-name">noise</span>
                         {isData && noiseState === "not-learned"
                           ? <span className="gen-notlearned muted">not learned</span>
                           : <DistributionEditor label="" distribution={mechanism.noise} onChange={(noise) => props.onMechanism(node.id, { noise })} />}
+                        <DepControl {...depProps} state={noiseState} keyStr={pinKeys.noise(node.id)} />
                       </div>
                     )}
                   </div>

@@ -554,8 +554,18 @@ function FlowGraphNode(props: FlowNodeProps<FlowGraphNode>) {
               ? `Estimated disturbance ε for this fit. Residual-independence test (ε ⊥ parents): ${noiseVerdict === "ok" ? "INDEPENDENT ✓ — the exogenous-noise (causal-sufficiency) assumption holds." : noiseVerdict === "weak" ? "BORDERLINE — mild dependence; the additive-noise fit is approximate." : "VIOLATED ⚠ — ε depends on the parents; suspect an unmeasured confounder or a mis-specified form."} Select the node for the full RESIT diagnostics.`
               : "Implicit disturbance (U) — every variable has one: all the unmodeled causes that make it stochastic. DAGs conventionally omit them, assuming they're independent (the Markovian / causal-sufficiency assumption); a shared one would be latent confounding. Fit a continuous data node to test this."}</title>
             <line x1={-29} y1={-23} x2={-16} y2={-14} />
-            <circle cx={-37} cy={-30} r={6} />
-            <text x={-37} y={-27.5}>&epsilon;</text>
+            {noiseVerdict === "weak" || noiseVerdict === "violated" ? (
+              // A failing residual check reads as a warning ⚠, not a quiet ε.
+              <>
+                <path className="noise-tri" d="M -37 -38.5 L -30 -25.5 L -44 -25.5 Z" />
+                <text className="noise-bang" x={-37} y={-27.5}>!</text>
+              </>
+            ) : (
+              <>
+                <circle cx={-37} cy={-30} r={6} />
+                <text x={-37} y={-27.5}>&epsilon;</text>
+              </>
+            )}
           </g>
         )}
         {node.roles.exposure ? (
