@@ -247,8 +247,8 @@ function bisectMonotone(f: (x: number) => number, target: number, lo: number, hi
  * can call it to draw the ATE field, the iso-ATE contour and the infeasible band from exactly the same math
  * the engine uses. Returns null if there's no imposed effect (or nothing to solve against).
  */
-export function imposedEffectContext(document: GraphDocument): ImposedEffectContext | null {
-  const imposed = document.metadata.imposedEffect;
+export function imposedEffectContext(document: GraphDocument, override?: ImposedEffect): ImposedEffectContext | null {
+  const imposed = override ?? document.metadata.imposedEffect;
   if (!imposed || !Number.isFinite(imposed.target)) return null;
 
   // Fall back to the graph's exposure/outcome roles, so a legacy doc (bare `imposedEffect: 1794`) still works.
@@ -429,6 +429,212 @@ export function setImposedEffect(input: GraphDocument, patch: Partial<ImposedEff
   if (next.target === current.target && next.extensiveShare === current.extensiveShare) return input;
   const document = cloneDocument(input);
   document.metadata.imposedEffect = next;
+  return document;
+}
+
+// ---------- creating an imposed effect ----------
+//
+// WHY you impose rather than fit. Fitting the exposure→outcome edge is a multiple regression on all the
+// pinned parents, so its coefficient is the ADJUSTED association — which, under exchangeability given those
+// parents, IS the outcome-regression estimate of the causal effect. That sounds like the right thing to do,
+// and it is exactly the wrong thing to do HERE, because it makes the benchmark CIRCULAR: the DGP's "truth"
+// becomes the estimator's answer, so outcome regression scores 100% by construction and you conclude
+// "adjustment works" having merely assumed it. For a benchmark that can FAIL, the truth has to come from
+// OUTSIDE the estimation — e.g. LaLonde's actual randomised experiment (+$1,794). That is what imposing is.
+//
+// (On lalonde-obs the adjusted coefficient is −0.413 on the log scale — a 34% DROP — when the experimental
+// truth is +3%. That is not a bug in the fit: it is the LaLonde finding. Adjustment cannot rescue PSID
+// controls, and an example that fitted this edge would quietly hide precisely that.)
+
+/** What the DATA says about the effect — the outcome-regression estimate, on BOTH margins. Never a truth. */
+export interface DataImpliedEffect {
+  gamma: number;              // adjusted gate coefficient on the exposure (log-odds of participating)
+  delta: number;              // adjusted intensive coefficient on the exposure (log-dollars, among Y>0)
+  extensive: number;          // dollars the gate move delivers
+  intensive: number;          // dollars the amount move delivers
+  ate: number;                // extensive + intensive — the ADJUSTED estimate, not the truth
+  /**
+   * extensive / ate, when that is a usable split. NULL when it is not — which happens whenever the two
+   * margins fight (one positive, one negative) or the adjusted effect is ≤ 0. Then the data cannot even
+   * suggest a SHAPE, and the UI must say so rather than invent one.
+   */
+  extensiveShare: number | null;
+}
+
+/**
+ * Fit both margins of a two-part outcome on [confounders…, exposure] and decompose the implied dollar effect.
+ *
+ * This is the honest answer to "can't the data just tell me?". It can tell you something — but only about
+ * the SHAPE (how the effect splits across margins), and even that only when the two margins agree. The
+ * MAGNITUDE it reports is the confounded-adjusted estimate, which is the very number the example exists to
+ * refute. So: take the shape from the data, take the magnitude from the experiment.
+ */
+export function dataImpliedEffect(document: GraphDocument, exposureId: string, outcomeId: string): DataImpliedEffect | null {
+  const outcomeNode = document.graph.nodes.find((n) => n.id === outcomeId);
+  if (!outcomeNode || normalizeVariableModel(outcomeNode.variable).valueType !== "semicontinuous") return null;
+
+  const col = nodeColumn(document, outcomeId);
+  const expCol = nodeColumn(document, exposureId);
+  if (!col || !expCol) return null;
+  const rows = datasetRows(col.dataset);
+  if (rows.length < 8) return null;
+
+  // Predictors: the outcome's other data parents, then the exposure LAST (so its coefficient is coefs[p-1]).
+  const confounders = drawnDataParents(document, outcomeId)
+    .filter((e) => e.source !== exposureId)
+    .map((e) => ({ source: e.source, col: nodeColumn(document, e.source) }))
+    .filter((c): c is { source: string; col: NonNullable<ReturnType<typeof nodeColumn>> } => Boolean(c.col));
+  const predictors = [...confounders.map((c) => c.col.dataColumn), expCol.dataColumn];
+  const p = predictors.length;
+
+  const y = rows.map((r) => r[col.dataColumn] ?? 0);
+  const X = rows.map((r) => predictors.map((j) => r[j] ?? 0));
+  const positive: number[] = y.map((v) => (v > 0 ? 1 : 0));
+  const nPos = positive.reduce((s, v) => s + v, 0);
+  if (nPos < p + 2 || nPos === rows.length) return null;   // no zeros ⇒ no gate ⇒ no split to speak of
+
+  const gateFit = fitLinearModel(positive, X, new Array(rows.length).fill(0), true, true);
+  if (!gateFit) return null;
+  const posIdx = y.map((v, i) => (v > 0 ? i : -1)).filter((i) => i >= 0);
+  const amtFit = fitLinearModel(
+    posIdx.map((i) => Math.log(y[i]!)),
+    posIdx.map((i) => X[i]!),
+    new Array(posIdx.length).fill(0), true, false
+  );
+  if (!amtFit) return null;
+
+  const gamma = gateFit.coefs[p - 1]!;
+  const delta = amtFit.coefs[p - 1]!;
+  const h = (amtFit.residualSd * amtFit.residualSd) / 2;
+
+  // Decompose over the CONFOUNDER-only linear predictors — same construction as imposedEffectContext, so
+  // this share is directly comparable to the one the pad solves for.
+  let extensive = 0, intensive = 0, ate = 0;
+  for (const row of rows) {
+    let g = gateFit.intercept, a = amtFit.intercept;
+    for (let j = 0; j < confounders.length; j += 1) {
+      const v = row[predictors[j]!] ?? 0;
+      g += gateFit.coefs[j]! * v;
+      a += amtFit.coefs[j]! * v;
+    }
+    const p0 = sigmoid01(g), p1 = sigmoid01(g + gamma);
+    const a0 = Math.exp(a + h), a1 = a0 * Math.exp(delta);
+    extensive += (p1 - p0) * a0;
+    intensive += p1 * (a1 - a0);
+    ate += p1 * a1 - p0 * a0;
+  }
+  const n = rows.length;
+  extensive /= n; intensive /= n; ate /= n;
+
+  // A share is only meaningful when both margins push the SAME way and the total is positive. Otherwise the
+  // ratio is a number without a story (e.g. share = 3.1 because the intensive margin is −$8k).
+  const usable = ate > 0 && extensive >= 0 && intensive >= 0;
+  return { gamma, delta, extensive, intensive, ate, extensiveShare: usable ? extensive / ate : null };
+}
+
+/** Where a default extensive/intensive split comes from, so the UI can be honest about it. */
+export interface ShareSuggestion {
+  share: number;
+  basis:
+    | "both-margins"  // the data's γ̂ AND δ̂ agree in sign — the full split is usable as-is
+    | "gate-only"     // δ̂ is unusable, so we adopt γ̂ and SOLVE the amount for the target
+    | "none";         // the data has nothing to say (or the family has no split)
+  implied: DataImpliedEffect | null;
+  clamped: boolean;   // the data's shape exceeded what the target can feasibly deliver
+}
+
+/**
+ * Ask the data for the SHAPE, given a target you brought from outside.
+ *
+ * On lalonde-obs the two margins FIGHT: γ̂ = +0.25 (employment up — right sign) but δ̂ = −0.45 (pay down 36%
+ * — badly confounded), so the full split is meaningless (extensive +$304 against intensive −$8,733). We fall
+ * back to `gate-only`: adopt γ̂, then solve δ from the iso-ATE contour so the ATE is still exactly the target.
+ * That is defensible — the gate is a logistic on WHETHER SOMEONE WORKS, which the PSID contamination distorts
+ * far less than it distorts dollar amounts — but it is a suggestion, not a truth, and the UI says so.
+ */
+export function suggestImposedShare(
+  document: GraphDocument, exposure: string, outcome: string, target: number,
+  /** Pass a memoized `dataImpliedEffect` — it runs two IRLS fits over every row, so the editor must not
+   *  redo it on each keystroke. It does not depend on `target`, only the doc. */
+  cached?: DataImpliedEffect | null
+): ShareSuggestion {
+  const implied = cached !== undefined ? cached : dataImpliedEffect(document, exposure, outcome);
+  const ctx = imposedEffectContext(document, { target, exposure, outcome });
+  if (!ctx || ctx.family !== "two_part" || !implied) return { share: 0, basis: "none", implied, clamped: false };
+
+  const clamp = (raw: number) => ({
+    share: Math.max(0, Math.min(ctx.maxExtensiveShare, raw)),
+    clamped: raw > ctx.maxExtensiveShare + 1e-9 || raw < -1e-9
+  });
+  if (implied.extensiveShare !== null) {
+    const { share, clamped } = clamp(implied.extensiveShare);
+    return { share, basis: "both-margins", implied, clamped };
+  }
+  if (implied.gamma > 0 && target > 0) {
+    const { share, clamped } = clamp((ctx.s(implied.gamma) - ctx.c0) / target);
+    return { share, basis: "gate-only", implied, clamped };
+  }
+  return { share: 0, basis: "none", implied, clamped: false };
+}
+
+/** Can this edge carry an imposed effect? (Both ends must be data columns; the target must be fittable.) */
+export function imposableEffect(document: GraphDocument, edgeId: string): { exposure: string; outcome: string; family: ImposedEffectContext["family"] } | null {
+  const edge = document.graph.edges.find((e) => e.id === edgeId);
+  if (!edge || edge.kind !== "directed") return null;
+  if (document.metadata.imposedEffect) return null;                       // one at a time — already imposed
+  if (!nodeColumn(document, edge.source) || !nodeColumn(document, edge.target)) return null;
+  if (drawnDataParents(document, edge.target).length === 0) return null;  // nothing fitted to impose ON TOP OF
+  const node = document.graph.nodes.find((n) => n.id === edge.target);
+  if (!node) return null;
+  const vt = normalizeVariableModel(node.variable).valueType;
+  if (vt === "binary" || vt === "categorical" || vt === "count") return null;  // no solver for these yet
+  return {
+    exposure: edge.source,
+    outcome: edge.target,
+    family: vt === "semicontinuous" ? "two_part" : vt === "positive" ? "log" : "additive"
+  };
+}
+
+/**
+ * Declare the causal effect this DGP carries. You give the ESTIMAND (a number in the outcome's own units);
+ * reconcilePins derives whatever coefficients encode it. Two side-effects are load-bearing:
+ *
+ *  1. the outcome is switched from READING its data column to GENERATING (a node replaying data ignores its
+ *     equation entirely, so an "imposed" effect on it would be invisible); and
+ *  2. the effect edge is marked AUTHORED — a PINNED edge means "learn the effect from data", which is the
+ *     circularity above, and applyImposed deliberately stands down when it sees one.
+ */
+export function imposeEffect(input: GraphDocument, spec: { exposure: string; outcome: string; target: number; extensiveShare?: number }): GraphDocument {
+  const edge = input.graph.edges.find((e) => e.source === spec.exposure && e.target === spec.outcome && e.kind === "directed");
+  if (!edge || !Number.isFinite(spec.target)) return input;
+
+  let document = input;
+  const col = nodeColumn(document, spec.outcome);
+  if (col?.enabled && drawnDataParents(document, spec.outcome).length > 0) document = pinNodeEquation(document, spec.outcome);
+  document = authorNumber(document, edgeKey(edge.id));
+
+  const doc = cloneDocument(document);
+  doc.metadata.imposedEffect = { target: spec.target, exposure: spec.exposure, outcome: spec.outcome };
+  if (spec.extensiveShare !== undefined) {
+    doc.metadata.imposedEffect.extensiveShare = spec.extensiveShare;
+    return doc;
+  }
+
+  // No split given ⇒ ask the data for one. This needs the FITTED state (the confounder η's), which only
+  // exists after a reconcile — hence the extra pass. Idempotent, so the caller reconciling again is free.
+  const fitted = reconcilePins(doc).document;
+  const suggestion = suggestImposedShare(fitted, spec.exposure, spec.outcome, spec.target);
+  if (suggestion.basis === "none") return doc;               // additive/log — there is no split to pick
+  const out = cloneDocument(fitted);
+  out.metadata.imposedEffect = { ...out.metadata.imposedEffect!, extensiveShare: suggestion.share };
+  return out;
+}
+
+/** Stop imposing. The coefficients keep their last derived values, but they are now yours (authored). */
+export function clearImposedEffect(input: GraphDocument): GraphDocument {
+  if (!input.metadata.imposedEffect) return input;
+  const document = cloneDocument(input);
+  delete document.metadata.imposedEffect;
   return document;
 }
 

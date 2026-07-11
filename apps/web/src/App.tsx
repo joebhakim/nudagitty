@@ -63,6 +63,8 @@ import {
   authorNumber,
   unlearnNumber,
   setImposedEffect,
+  imposeEffect,
+  clearImposedEffect,
   pinNumber,
   unpinKey,
   withCoupling,
@@ -1083,6 +1085,10 @@ export function App() {
             // Re-author the imposed ESTIMAND (target and/or how the story splits across the two margins).
             // We never set coefficients: commitState runs reconcilePins, which DERIVES gamma/delta from it.
             onImposedEffect={(patch) => commit(setImposedEffect(document, patch))}
+            // CREATE one. The target comes from outside the data (an experiment, a policy goal); the split is
+            // seeded from what the data can honestly say about the SHAPE. Coefficients are never touched.
+            onImposeEffect={(spec) => commit(imposeEffect(document, spec))}
+            onClearImposedEffect={() => commit(clearImposedEffect(document))}
             onAuthorNumber={(key) => commit(unpinKey(document, key))}
             // A DERIVED gate coefficient is changed by moving the STORY, on the effect's pad.
             onSelectEdge={selectEdge}

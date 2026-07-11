@@ -25,6 +25,7 @@ import type { WorkbenchMode } from "../shared/workbench";
 import { OPERATION_BLURBS, OPERATION_LABELS, deriveOperation } from "../shared/operations";
 import { clamp, coerceBinary, formatInputNumber, formatSignedValue, formatValue } from "../shared/formatting";
 import { badControlWarning, describeEstimand } from "../outputs/estimand";
+import type { ImposeSpec } from "./ImposedEffectPad";
 import { EstimandFormula, NodeName } from "../outputs/EstimandFormula";
 import { nodeDisplayName, nodeOutputLabel } from "../compute/format";
 import { analyticDistributionLabel, defaultDistribution, valueTypeFromDistribution, valueTypeLabel } from "../compute/distributionPlot";
@@ -268,6 +269,8 @@ export function SelectionEditor(props: {
   onEdgeEnabled: (edge: GraphEdge, enabled: boolean) => void;
   onEdgeMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
   onImposedEffect: (patch: Partial<ImposedEffect>) => void;
+  onImposeEffect: (spec: ImposeSpec) => void;
+  onClearImposedEffect: () => void;
   onAuthorNumber: (key: string) => void;
   onSelectEdge: (edgeId: string) => void;
   onDeleteEdge: (edgeId: string) => void;
@@ -307,6 +310,8 @@ export function SelectionEditor(props: {
     onMechanism={props.onEdgeMechanism}
     onDelete={props.onDeleteEdge}
     onImposedEffect={props.onImposedEffect}
+    onImposeEffect={props.onImposeEffect}
+    onClearImposedEffect={props.onClearImposedEffect}
     onAuthorNumber={props.onAuthorNumber}
   />;
   return (

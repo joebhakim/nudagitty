@@ -1,8 +1,10 @@
 import type React from "react";
 import { useMemo, useRef, useState } from "react";
 import type { GraphDocument, ImposedEffect } from "@nudagitty/core";
-import { imposedEffectContext } from "@nudagitty/core";
+import { dataImpliedEffect, imposableEffect, imposedEffectContext, suggestImposedShare } from "@nudagitty/core";
 import { Checkbox, InfoDot } from "../controls";
+
+export interface ImposeSpec { exposure: string; outcome: string; target: number; extensiveShare?: number }
 
 const PAD_TIP =
   "A two-part outcome has TWO treatment coefficients — γ on the participation gate (log-odds) and δ on the amount (log-dollars) — and neither is in dollars. \"ATE = $1,794\" is ONE equation in TWO unknowns, so it does not pick a single answer: it defines a whole FAMILY of causal stories that all deliver the same dollar effect. This pad IS that family. Slide along the curve to choose how much of the effect comes from MORE PEOPLE WORKING versus HIGHER PAY AMONG WORKERS — the dollar total stays exactly on target either way. (With an additive outcome none of this arises: the coefficient simply IS the ATE.)";
@@ -44,6 +46,90 @@ export function EffectEdgeFitWarning(props: {
   );
 }
 
+const IMPOSE_TIP =
+  "Fitting this edge is a MULTIPLE regression on every other pinned parent, so its coefficient is the ADJUSTED association — which, under exchangeability, IS the outcome-regression estimate of the causal effect. That sounds right, and it is exactly wrong here: it makes the benchmark CIRCULAR. The DGP's \"truth\" becomes your estimator's answer, so outcome regression scores 100% by construction and you conclude \"adjustment works\" having merely assumed it. For a benchmark that can FAIL, the truth must come from OUTSIDE the estimation — a randomised experiment, a policy target, a scenario you want to stress. That is what imposing is.";
+const SHAPE_TIP =
+  "You brought the MAGNITUDE from outside. The data can still speak to the SHAPE — how the effect splits across the two margins — because a confounded sample can be wrong about size while still being informative about mechanism. Here it is only half-informative: it gets the employment margin's sign right but reports pay collapsing 36%, which is the confounding talking. So we take the margin it can be trusted on (a logistic on WHETHER SOMEONE WORKS is far less distorted by the PSID comparison group than dollar amounts are) and solve the other one to land your target exactly. It is a starting point, not a truth — move it on the pad.";
+
+/**
+ * Declare the effect this DGP carries. The affordance that did not exist: every path in the app led to
+ * FITTING the exposure → outcome edge, which is the one edge you must never fit — so a user rebuilding the
+ * LaLonde benchmark from a spreadsheet could not actually rebuild it. Now they can, in two fields.
+ */
+export function ImposeEffectCard(props: {
+  document: GraphDocument;
+  edgeId: string;
+  onImpose: (spec: ImposeSpec) => void;
+}) {
+  const cand = useMemo(() => imposableEffect(props.document, props.edgeId), [props.document, props.edgeId]);
+  const [text, setText] = useState("");
+  const twoPart = cand?.family === "two_part";
+  // The two-margin fit runs an IRLS over every row and does NOT depend on the typed target — so it is
+  // memoized on the document alone, and typing costs only the cheap S(γ) map.
+  const implied = useMemo(
+    () => (cand && twoPart ? dataImpliedEffect(props.document, cand.exposure, cand.outcome) : null),
+    [props.document, cand?.exposure, cand?.outcome, twoPart] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  if (!cand) return null;
+
+  const target = Number(text);
+  const valid = text.trim() !== "" && Number.isFinite(target) && Math.abs(target) > 1e-9;
+  const suggestion = valid && twoPart
+    ? suggestImposedShare(props.document, cand.exposure, cand.outcome, target, implied)
+    : null;
+  const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
+
+  return (
+    <div className="impose-card">
+      <strong>Impose a causal effect{<InfoDot tip={IMPOSE_TIP} href="/effects.html#estimand" />}</strong>
+      <p>
+        Give this DGP a <b>known</b> effect, brought in from outside the data — an experiment, a policy target,
+        a scenario. Then every estimator you run can be <i>graded</i> against it. <b>Fitting</b> this edge
+        instead learns the adjusted association, and a benchmark graded against its own estimator cannot fail.
+      </p>
+      <div className="impose-row">
+        <label>
+          <span>effect on <b>{cand.outcome}</b> of <b>{cand.exposure}</b></span>
+          <input
+            type="number" inputMode="decimal" placeholder="e.g. 1794" value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && valid) props.onImpose({ ...cand, target, extensiveShare: suggestion?.share }); }}
+          />
+        </label>
+        <button
+          type="button" className="primary" disabled={!valid}
+          onClick={() => props.onImpose({ ...cand, target, extensiveShare: suggestion?.share })}
+        >Impose</button>
+      </div>
+
+      {/* What the data can say about the SHAPE — and, honestly, what it cannot. */}
+      {suggestion?.basis === "gate-only" && implied && (
+        <p className="impose-shape">
+          <b>The data's two margins disagree{<InfoDot tip={SHAPE_TIP} href="/effects.html#two-margins" />}</b> — it
+          has employment going <b>up</b>, but pay going <b>{pct(Math.exp(implied.delta) - 1)}</b>, which is the
+          confounding, not an effect. So we keep only the margin it can be trusted on: its gate puts{" "}
+          <b>{pct(suggestion.share)}</b> of your effect through <i>more people working</i>, and the pay effect is
+          solved to land the total exactly. Adjust it on the pad afterwards.
+        </p>
+      )}
+      {suggestion?.basis === "both-margins" && (
+        <p className="impose-shape">
+          <b>The data suggests a split{<InfoDot tip={SHAPE_TIP} href="/effects.html#two-margins" />}</b> —{" "}
+          <b>{pct(suggestion.share)}</b> of the effect through <i>more people working</i>, the rest through{" "}
+          <i>higher pay</i>. The magnitude is yours; only the shape is borrowed.
+          {suggestion.clamped && " (Clamped — the data's shape exceeds what your target can feasibly deliver.)"}
+        </p>
+      )}
+      {valid && !twoPart && (
+        <p className="impose-shape muted">
+          The outcome is <b>{cand.family === "log" ? "log-scale" : "additive"}</b>, so there is nothing further
+          to choose: one parameter, one constraint. The coefficient is fully determined by the number above.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
  * The (γ, δ) manifold. One equation, two unknowns ⇒ the solution set is a CURVE, not a point. The pad draws
  * the ATE field, the iso-ATE contour at the target, and the provably-unreachable band, and lets you pick a
@@ -54,6 +140,7 @@ export function ImposedEffectPad(props: {
   document: GraphDocument;
   edgeId: string;
   onChange: (patch: Partial<ImposedEffect>) => void;
+  onClear: () => void;
 }) {
   const ctx = useMemo(() => imposedEffectContext(props.document), [props.document]);
   const [locked, setLocked] = useState(true);
@@ -181,6 +268,8 @@ export function ImposedEffectPad(props: {
       <div className="imposed-lock">
         <Checkbox label="hold the effect at target" checked={locked} onChange={setLocked} />
         <InfoDot tip={LOCK_TIP} href="/effects.html#estimand" />
+        {/* Stop imposing: γ and δ keep the values they were last derived to, but they become YOURS. */}
+        <button type="button" className="imposed-clear" onClick={props.onClear}>stop imposing</button>
       </div>
 
       {locked && (
