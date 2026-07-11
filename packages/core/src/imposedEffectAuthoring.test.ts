@@ -50,4 +50,28 @@ describe("authoring the imposed effect's story (what the pad drives)", () => {
     const twice = reconcilePins(once).document;
     expect(JSON.stringify(twice.simulation)).toBe(JSON.stringify(once.simulation));
   });
+
+  // FREE MODE (pad unlocked): dragging to an arbitrary (γ,δ) does NOT store coefficients. We read the target
+  // AND the split off that point and re-author the ESTIMAND; the engine derives γ/δ from it.
+  //
+  // What round-trips is the ESTIMAND, not the coefficients — and that distinction is the whole thesis. The
+  // new δ changes the offset the confounders are fit against, so the η's legitimately shift and the engine
+  // lands on a slightly DIFFERENT coefficient that delivers the SAME dollar effect and the SAME split. The
+  // estimand is honored exactly; the coefficient is just whatever encodes it against the current fit. (If we
+  // had stored the coefficient instead, this shift is precisely the silent lie we would have shipped.)
+  it("free-drag: the ESTIMAND round-trips exactly (the coefficients need not)", () => {
+    const ctx0 = imposedEffectContext(base)!;
+    for (const [gamma, delta] of [[0.9, 0.05], [2.2, 0.02], [0.3, 0.07]] as const) {
+      const ate = Math.exp(delta) * ctx0.s(gamma) - ctx0.c0;      // what that DGP would impose
+      const share = ctx0.decompose(gamma, delta).extensive / ate;
+      const doc = reconcilePins(setImposedEffect(base, { target: ate, extensiveShare: share })).document;
+
+      const back = coefs(doc);
+      const got = imposedEffectContext(doc)!.decompose(back.gamma, back.delta);
+      expect(got.ate).toBeCloseTo(ate, 4);                        // the dollar effect you chose: exact
+      expect(got.extensive / got.ate).toBeCloseTo(share, 3);      // the story you chose: exact
+      expect(back.gamma).toBeCloseTo(gamma, 1);                   // coefficients land NEAR the dragged point,
+      expect(back.delta).toBeCloseTo(delta, 3);                   // shifted only by the confounders' refit
+    }
+  });
 });

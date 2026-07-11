@@ -1209,6 +1209,12 @@ button.prov-chip { cursor: pointer; }
 .ipad-floor { stroke: var(--muted, #65717d); stroke-width: 1; stroke-dasharray: 3 2; opacity: 0.7; }
 .ipad-contour { fill: none; stroke: var(--accent, #23716f); stroke-width: 2; }
 .ipad-handle { fill: var(--accent, #23716f); stroke: #fff; stroke-width: 1.5; }
+.imposed-lock { display: flex; align-items: center; gap: 2px; margin: 3px 0 4px; font-size: 11px; }
+.imposed-lock label { font-size: 11px; }
+/* Unlocked and dragged off the contour: the DGP no longer imposes the target you authored. Say so —
+   ochre (a changed estimand), never red (it isn't an error, it's a different question). */
+.imposed-ate-off { font-size: 10.5px; font-weight: 700; color: var(--chart-series-2, #cf7a22); }
+.ipad-handle.off { fill: var(--chart-series-2, #cf7a22); }
 .imposed-share { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted, #667); }
 .imposed-share > span { flex: 0 0 auto; }
 .imposed-share > input { flex: 1 1 auto; min-width: 0; accent-color: var(--accent, #23716f); }

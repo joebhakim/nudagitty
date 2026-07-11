@@ -1080,9 +1080,9 @@ export function App() {
             onPinNumber={(key) => commit(pinNumber(document, key))}
             onUnpinKey={(key) => commit(unpinKey(document, key))}
             onUnlearnNumber={(key) => commit(unlearnNumber(document, key))}
-            // Re-author the imposed effect's STORY (the extensive/intensive split). We never set the
-            // coefficients: commitState runs reconcilePins, which DERIVES gamma/delta from the estimand.
-            onImposedShare={(share) => commit(setImposedEffect(document, { extensiveShare: share }))}
+            // Re-author the imposed ESTIMAND (target and/or how the story splits across the two margins).
+            // We never set coefficients: commitState runs reconcilePins, which DERIVES gamma/delta from it.
+            onImposedEffect={(patch) => commit(setImposedEffect(document, patch))}
           />
         </ModuleFrame>
       </aside>

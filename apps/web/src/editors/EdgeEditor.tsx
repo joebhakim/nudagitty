@@ -1,7 +1,7 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { defaultEdgeMechanism, normalizeEdgeMechanism } from "@nudagitty/core";
-import type { EdgeMechanism, EdgeMechanismKind, GraphDocument, GraphEdge, SimulatedNodeState, SimulationResult } from "@nudagitty/core";
+import type { EdgeMechanism, EdgeMechanismKind, GraphDocument, GraphEdge, ImposedEffect, SimulatedNodeState, SimulationResult } from "@nudagitty/core";
 import { Checkbox, TactileNumberField } from "../controls";
 import { functionGlyphPath, nodeOutputLabel } from "../compute/format";
 import { formatSignedValue, formatValue } from "../shared/formatting";
@@ -20,7 +20,7 @@ export function EdgeEditor(props: {
   onEnabled: (edge: GraphEdge, enabled: boolean) => void;
   onMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
   onDelete: (edgeId: string) => void;
-  onImposedShare: (share: number) => void;
+  onImposedEffect: (patch: Partial<ImposedEffect>) => void;
 }) {
   const committed = useMemo(() => normalizeEdgeMechanism(props.document.simulation.edges[props.edge.id]), [props.document.simulation.edges, props.edge.id]);
   // The edge is edited as a local draft so dragging/typing only repaints the transfer
@@ -46,7 +46,7 @@ export function EdgeEditor(props: {
       <div className="selection-editor-body">
         {/* When this edge carries an IMPOSED effect, its coefficient is DERIVED from the estimand — so the
             control is the estimand's story (the extensive/intensive split), not the raw number below. */}
-        <ImposedEffectPad document={props.document} edgeId={props.edge.id} onShare={props.onImposedShare} />
+        <ImposedEffectPad document={props.document} edgeId={props.edge.id} onChange={props.onImposedEffect} />
         <EdgeTransferPlot
           mechanism={draft}
           state={sourceState}
