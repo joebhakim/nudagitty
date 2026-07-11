@@ -45,6 +45,7 @@ export function canonicalShareExampleId(document: GraphDocument, activeExampleId
 
 export function shareStatusLabel(status: ShareStatus, idleLabel: string) {
   if (status === "copied") return "Copied";
+  if (status === "copied-no-data") return "Copied — your imported data can't travel in a link; the recipient must re-upload the CSV";
   if (status === "too-large") return "Link too big";
   if (status === "failed") return "Copy failed";
   return idleLabel;

@@ -152,7 +152,9 @@ import {
   SHARE_EXAMPLE_HASH_KEY,
   STORAGE_KEY,
   createWorkbenchSnapshot,
+  missingDatasets,
   parseWorkbenchSnapshotText,
+  shareDropsImportedData,
   snapshotFilename
 } from "./shared/appState";
 import type { BibliographyTopic, Selection, ToolMode } from "./shared/appState";
@@ -774,7 +776,9 @@ export function App() {
     try {
       await copyTextToClipboard(url);
       window.history.replaceState(null, "", new URL(url).hash);
-      setCompactShareStatus("copied");
+      // A compact link cannot carry an imported table (it would blow the URL cap), so say so rather than
+      // handing over a model whose data columns silently resolve to nothing.
+      setCompactShareStatus(shareDropsImportedData(document) ? "copied-no-data" : "copied");
     } catch {
       setCompactShareStatus("failed");
     }
@@ -1081,6 +1085,11 @@ export function App() {
     </Panel>
   );
 
+  // A shared link cannot carry an imported table, so a doc arriving this way has table_lookup columns that
+  // resolve to nothing. Previously that was silent (empty columns, a broken fit); now we say it and offer
+  // the fix.
+  const missingData = useMemo(() => missingDatasets(document), [document]);
+
   const renderCanvasPane = (order: number) => (
     <Panel id="canvas" defaultSize={compactWorkspace ? 42 : isBasicMode ? (basicResultsOpen ? 48 : 78) : presentationActive ? 58 : 44} minSize={compactWorkspace ? 32 : 32} className="workspace-panel canvas-panel" key="canvas">
       <FlowGraphCanvas
@@ -1137,6 +1146,17 @@ export function App() {
           </div>
         );
       })()}
+      {missingData.length > 0 && (
+        <div className="wire-prompt data-missing" role="status">
+          <span>
+            This model reads from imported data (<b>{missingData.join(", ")}</b>) that a share link can&rsquo;t carry —
+            those columns are <b>empty</b>, so the fit and the results are not real. Re-upload the CSV to restore it.
+          </span>
+          <div className="wire-prompt-actions">
+            <button type="button" className="wp-fit" onClick={() => setShowImport(true)}>Re-upload CSV →</button>
+          </div>
+        </div>
+      )}
     </Panel>
   );
 

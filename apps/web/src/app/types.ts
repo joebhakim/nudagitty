@@ -168,7 +168,9 @@ export type DragState =
   | null;
 export type PointerScreenPoint = { clientX: number; clientY: number };
 export type EdgeGeometry = { path: string; control: Point; label: Point; start: Point; end: Point; curved: boolean };
-export type ShareStatus = "idle" | "copied" | "too-large" | "failed";
+// "copied-no-data": the link was copied, but the document reads from an IMPORTED dataset that a URL cannot
+// carry — the recipient will need to re-upload the CSV. Better to say so than to hand over a broken model.
+export type ShareStatus = "idle" | "copied" | "copied-no-data" | "too-large" | "failed";
 export type FlowGraphNodeData = Record<string, unknown> & {
   node: GraphNode;
   selected: boolean;

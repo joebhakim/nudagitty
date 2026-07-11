@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { exampleDocument, normalizeNodeMechanism, normalizeEdgeMechanism } from "@nudagitty/core";
-import { encodeCompactShareDocument, decodeCompactShareDocument } from "./appState";
+import { encodeCompactShareDocument, decodeCompactShareDocument, missingDatasets, shareDropsImportedData } from "./appState";
 
 // `appState.ts` (the whole share codec) had NO unit test — only an E2E that checks which hash key is used
 // and never round-trips a decode. This is the safety net for shrinking the payload: anything the encoder
@@ -12,7 +12,7 @@ import { encodeCompactShareDocument, decodeCompactShareDocument } from "./appSta
 const CASES = [
   "simpson-severity",              // plain, small
   "lalonde-fit-recover-2part",     // fitted DGP: pins + authored + a two-part gate + imposedEffect
-  "wg-dgm-copula"                  // copula blocks
+  "confounder-joint-copula"        // carries copulaBlocks (the dependence structure)
 ];
 
 describe("compact share codec round-trip", () => {
@@ -55,6 +55,34 @@ describe("compact share codec round-trip", () => {
     const m = normalizeEdgeMechanism(decoded.simulation.edges[edge.id]);
     const m0 = normalizeEdgeMechanism(doc.simulation.edges[edge.id]);
     closeToSixSigFigs(m.kind === "linear" ? m.coefficient : NaN, m0.kind === "linear" ? m0.coefficient : NaN);
+  });
+
+  // REGRESSION: copula blocks had no key in CompactSimulation, so a shared copula/joint model arrived with
+  // its dependence structure silently gone. The idempotence test above CANNOT catch this (encode dropped
+  // them on both passes, so the payloads still matched) — it needs an explicit assertion.
+  it("carries copula blocks (they used to be silently dropped)", () => {
+    const doc = exampleDocument("confounder-joint-copula")!;
+    expect(doc.simulation.copulaBlocks?.length).toBeGreaterThan(0);
+    const decoded = decodeCompactShareDocument(encodeCompactShareDocument(doc, null))!.document;
+    expect(decoded.simulation.copulaBlocks?.length).toBe(doc.simulation.copulaBlocks!.length);
+    expect(decoded.simulation.copulaBlocks).toEqual(doc.simulation.copulaBlocks);
+  });
+
+  // A shared imported-data link arrives with its table_lookup columns resolving to nothing. That used to be
+  // silent (empty columns, a meaningless fit); it must now be detectable so the UI can ask for a re-upload.
+  it("detects a dataset the link could not carry", () => {
+    // built-in data is always registered -> nothing missing
+    const builtin = exampleDocument("lalonde-fit-recover-2part")!;
+    expect(missingDatasets(builtin)).toEqual([]);
+    expect(shareDropsImportedData(builtin)).toBe(false);
+
+    // simulate what a recipient sees: the same model pointed at an imported table that isn't registered
+    const shared = exampleDocument("lalonde-fit-recover-2part")!;
+    for (const edge of shared.graph.edges) {
+      const m = shared.simulation.edges[edge.id];
+      if (m && m.kind === "table_lookup") shared.simulation.edges[edge.id] = { ...m, dataset: "user-data" };
+    }
+    expect(missingDatasets(shared)).toEqual(["user-data"]);
   });
 
   it("never rounds integers (the seed would be corrupted)", () => {

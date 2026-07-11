@@ -873,6 +873,12 @@
 .wire-prompt .wp-fit { appearance: none; border: none; background: #6b40b0; color: #fff; font-weight: 700; font-size: 12px; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 .wire-prompt .wp-fit:hover { background: #5a2fa0; }
 .wire-prompt .wp-leave { appearance: none; border: 1px solid var(--border, #d8d8e2); background: none; color: var(--text-muted, #667); font-size: 12px; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+/* A shared model whose imported data could not travel in the link — the columns are empty, so warn (amber),
+   don't let it look like a working model. Uses the house --warn tone, not the fail red. */
+.wire-prompt.data-missing { border-color: #e0c48f; background: #fdf7ec; }
+.wire-prompt.data-missing .wp-fit { background: var(--warn, #8a5f00); }
+.wire-prompt.data-missing .wp-fit:hover { background: #6f4d00; }
+@media (prefers-color-scheme: dark) { .wire-prompt.data-missing { border-color: #5a4a24; background: #2a2312; } }
 @media (prefers-color-scheme: dark) { .wire-prompt { background: #1c1c24; border-color: #34343e; } }
 .copula-coupling-label {
   fill: #9b6dd6; font-size: 10px; font-weight: 700; paint-order: stroke; stroke: var(--panel, #fff); stroke-width: 3px;

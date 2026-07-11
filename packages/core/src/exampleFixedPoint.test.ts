@@ -18,7 +18,10 @@ describe("every example is a fixed point of reconcile (protects the short #examp
   it.each(EXAMPLES.map((e) => e.id))("%s is unchanged by the commit pipeline", (id) => {
     const pristine = exampleDocument(id);
     expect(pristine).toBeTruthy();
-    const afterCommit = reconcilePins(syncGenerativeState(exampleDocument(id)!)).document;
-    expect(canon(afterCommit)).toBe(canon(pristine!));
+    const before = canon(pristine!);
+    // Clone rather than rebuild: some configurators (the two-part fitted DGP) iterate a fit to a fixed point
+    // and are expensive, and this runs for every example.
+    const afterCommit = reconcilePins(syncGenerativeState(structuredClone(pristine!))).document;
+    expect(canon(afterCommit)).toBe(before);
   });
 });
