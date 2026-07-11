@@ -88,20 +88,3 @@ export const NODE_TWO_PART: EqNode = {
 };
 
 export const EQ_NODES: EqNode[] = [NODE_CONTINUOUS, NODE_BINARY, NODE_TWO_PART];
-
-// The generative shape + a plain-language gloss. The gloss is the point: "not everyone using this will be
-// a stats expert", so every symbol the equation introduces gets said in words exactly once.
-export const FAMILY_SHAPE: Record<Family, { shape: string; gloss: string }> = {
-  continuous: {
-    shape: "= η + ε",
-    gloss: "A score η built from the parents, plus random noise ε. That's it — the value IS the score plus noise."
-  },
-  binary: {
-    shape: "P( · = 1 ) = σ(η)",
-    gloss: "σ (the logistic curve) squashes the score η into a probability between 0 and 1 — then we flip a coin at that probability. So a coefficient here moves the odds, not the outcome directly."
-  },
-  semicontinuous: {
-    shape: "= works? × amount",
-    gloss: "Two questions, two models. First: did they earn anything at all? Then, only if they did: how much? That's why there's a spike at $0 — and why the amount's coefficients live inside an exp(), so they read as percentages, not dollars."
-  }
-};

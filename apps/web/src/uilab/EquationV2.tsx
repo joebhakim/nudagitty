@@ -1,11 +1,11 @@
 import { useState } from "react";
 import type { EqNode, EqPart, EqTerm } from "./nodeSpecs";
-import { STATE_GLYPH, STATE_LABEL, cycle } from "./fixtures";
+import { STATE_LABEL, cycle } from "./fixtures";
 import type { DepState } from "./fixtures";
 
-// Equation view, v2 — family-aware. The generative FORM is the teaching payload: a binary node is a
-// logistic; a two-part node is a gate × an exp(). No prose — the equation says it. The LHS is the
-// variable in the house .node-name chip; the RHS is the actual structural form.
+// Equation view — family-aware, DENSE. One box. The shape line is line 1 and doubles as the
+// link/combiner control (click the ▾). Each number carries a compact 2×2 icon control that fits inside
+// the line height, so the real ∅/📌/✎ actions are back without costing a single pixel of height.
 
 function fmtCoef(v: number | null): string {
   if (v === null) return "—";
@@ -15,21 +15,16 @@ function fmtCoef(v: number | null): string {
   return a >= 1 ? v.toFixed(2) : v.toFixed(3);
 }
 
-// Reads as part of the equation; click turns it into an input.
 function Ghost({ value, state, onChange }: { value: number | null; state: DepState; onChange: (v: number) => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   if (value === null) return <span className="eq2-num st-not-learned">—</span>;
   if (editing) {
     return (
-      <input
-        className={`eq2-num eq2-num-input st-${state}`}
-        autoFocus
-        value={draft}
+      <input className={`eq2-num eq2-num-input st-${state}`} autoFocus value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => { const n = Number(draft); if (Number.isFinite(n)) onChange(n); setEditing(false); }}
-        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEditing(false); }}
-      />
+        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEditing(false); }} />
     );
   }
   return (
@@ -41,27 +36,42 @@ function Ghost({ value, state, onChange }: { value: number | null; state: DepSta
   );
 }
 
-function Prov({ state, onCycle }: { state: DepState; onCycle: () => void }) {
+// The real controls, back — but as a 2×2 icon grid sized to fit inside one equation line, so it costs
+// zero extra height. ∅ not learned · 📌 fit from data · ✎ author · ⓘ where this number came from.
+function TermControls({ state, info, onSet }: { state: DepState; info: string; onSet: (s: DepState) => void }) {
+  const btn = (s: DepState, glyph: string) => (
+    <button type="button" className={`eq2-ctl-b${state === s ? " active" : ""} st-${s}`}
+      title={STATE_LABEL[s]} onClick={() => onSet(s)}>{glyph}</button>
+  );
   return (
-    <button type="button" className={`eq2-prov st-${state}`} onClick={onCycle} title={`${STATE_LABEL[state]} — click to change`}>
-      {STATE_GLYPH[state]}
-    </button>
+    <span className="eq2-ctl" role="group" aria-label="how this number is set">
+      {btn("not-learned", "∅")}
+      {btn("fitted", "●")}
+      {btn("authored", "✎")}
+      <button type="button" className="eq2-ctl-b eq2-ctl-info" title={info}>ⓘ</button>
+    </span>
   );
 }
 
+const INFO: Record<DepState, string> = {
+  "not-learned": "No number: the arrow is structural only and contributes nothing to generation.",
+  fitted: "Fitted from the data column by the DGP fit — it will be re-learned whenever the fit re-runs.",
+  authored: "You set this number. The fit holds it fixed and fits everything else around it."
+};
+
 function Predictor(props: {
   lead: string; part: EqPart;
-  onCoef: (id: string, v: number) => void; onCycle: (id: string) => void;
-  onIntercept: (v: number) => void; onCycleIntercept: () => void;
+  onCoef: (id: string, v: number) => void; onState: (id: string, s: DepState) => void;
+  onIntercept: (v: number) => void; onInterceptState: (s: DepState) => void;
 }) {
   const { part } = props;
   return (
-    <div className="eq2-pred">
+    <>
       <div className="eq2-term">
         <span className="eq2-lead">{props.lead} =</span>
         <Ghost value={part.intercept.value} state={part.intercept.state} onChange={props.onIntercept} />
         <span className="eq2-tail" />
-        <Prov state={part.intercept.state} onCycle={props.onCycleIntercept} />
+        <TermControls state={part.intercept.state} info={INFO[part.intercept.state]} onSet={props.onInterceptState} />
       </div>
       {part.terms.map((t: EqTerm) => {
         const off = t.state === "not-learned";
@@ -69,34 +79,38 @@ function Predictor(props: {
           <div className={`eq2-term${off ? " is-off" : ""}`} key={t.id}>
             <span className="eq2-lead eq2-op">+</span>
             {off
-              ? <span className="eq2-parent" title={t.parent}>{t.parent}</span>
+              ? <span className="eq2-parent" title={t.parent}>{t.parent} <i>not learned</i></span>
               : <><Ghost value={t.coef} state={t.state} onChange={(v) => props.onCoef(t.id, v)} />
                   <span className="eq2-mul">·</span>
                   <span className="eq2-parent" title={t.parent}>{t.parent}</span></>}
-            {off && <span className="eq2-off">not learned</span>}
             <span className="eq2-tail" />
-            <Prov state={t.state} onCycle={() => props.onCycle(t.id)} />
+            <TermControls state={t.state} info={INFO[t.state]} onSet={(s) => props.onState(t.id, s)} />
           </div>
         );
       })}
-    </div>
+    </>
   );
 }
 
+const LINKS = ["additive", "bernoulli logit", "gamma log", "two-part", "bounded logistic", "poisson log"];
+
 export function EquationV2({ node: initial }: { node: EqNode }) {
   const [node, setNode] = useState(initial);
+  const [linkOpen, setLinkOpen] = useState(false);
   const twoPart = node.family === "semicontinuous";
 
-  const editPart = (which: "eta" | "gate", fn: (p: EqPart) => EqPart) =>
-    setNode((n) => ({ ...n, [which]: fn(n[which] as EqPart) }));
+  const editPart = (w: "eta" | "gate", fn: (p: EqPart) => EqPart) => setNode((n) => ({ ...n, [w]: fn(n[w] as EqPart) }));
   const setCoef = (w: "eta" | "gate") => (id: string, v: number) =>
     editPart(w, (p) => ({ ...p, terms: p.terms.map((t) => (t.id === id ? { ...t, coef: v } : t)) }));
-  const cycleTerm = (w: "eta" | "gate") => (id: string) =>
-    editPart(w, (p) => ({ ...p, terms: p.terms.map((t) => (t.id === id ? { ...t, state: cycle(t.state), coef: t.coef ?? 0 } : t)) }));
+  const setState = (w: "eta" | "gate") => (id: string, s: DepState) =>
+    editPart(w, (p) => ({ ...p, terms: p.terms.map((t) => (t.id === id ? { ...t, state: s, coef: t.coef ?? 0 } : t)) }));
   const setInt = (w: "eta" | "gate") => (v: number) => editPart(w, (p) => ({ ...p, intercept: { ...p.intercept, value: v } }));
-  const cycleInt = (w: "eta" | "gate") => () => editPart(w, (p) => ({ ...p, intercept: { ...p.intercept, state: cycle(p.intercept.state) } }));
+  const setIntState = (w: "eta" | "gate") => (s: DepState) => editPart(w, (p) => ({ ...p, intercept: { ...p.intercept, state: s } }));
 
   const chip = <span className="node-name">{node.label}</span>;
+  const shape = node.family === "binary"
+    ? <>P( {chip} = 1 ) = σ(η)</>
+    : twoPart ? <>{chip} = works? × amount</> : <>{chip} = η + ε</>;
 
   return (
     <div className="eq2-card">
@@ -105,40 +119,46 @@ export function EquationV2({ node: initial }: { node: EqNode }) {
         <span className="muted">modeled on parents</span>
       </div>
 
-      {/* The shape: the variable (house chip) as LHS, its real generative form as RHS. */}
-      <div className="eq2-shape">
-        {node.family === "binary"
-          ? <code>P( {chip} = 1 ) = σ(η)</code>
-          : twoPart
-            ? <code>{chip} = works? × amount</code>
-            : <code>{chip} = η + ε</code>}
-      </div>
-
       <div className="eq2-body">
+        {/* Line 1: the shape. Doubles as the link/combiner control — no separate dropdown row. */}
+        <div className="eq2-term eq2-shape-row">
+          <code className="eq2-shape">{shape}</code>
+          <span className="eq2-tail" />
+          <button type="button" className="eq2-link" title="change the link / combiner" onClick={() => setLinkOpen((v) => !v)}>▾</button>
+        </div>
+        {linkOpen && (
+          <div className="eq2-term eq2-link-row">
+            <select defaultValue={twoPart ? "two-part" : node.family === "binary" ? "bernoulli logit" : "additive"}
+              onChange={() => setLinkOpen(false)}>
+              {LINKS.map((l) => <option key={l}>{l}</option>)}
+            </select>
+          </div>
+        )}
+
         {twoPart && node.gate && (
           <>
-            <div className="eq2-sub"><code>works? ~ Bernoulli( σ(η_gate) )</code><span className="eq2-margin-tag">extensive</span></div>
+            <div className="eq2-term eq2-sub"><code>works? ~ Bernoulli( σ(η_gate) )</code><span className="eq2-tail" /><span className="eq2-margin-tag">ext</span></div>
             <Predictor lead="η_gate" part={node.gate}
-              onCoef={setCoef("gate")} onCycle={cycleTerm("gate")}
-              onIntercept={setInt("gate")} onCycleIntercept={cycleInt("gate")} />
-            <div className="eq2-sub"><code>amount = exp( η + ε )</code><span className="eq2-margin-tag">intensive</span></div>
+              onCoef={setCoef("gate")} onState={setState("gate")}
+              onIntercept={setInt("gate")} onInterceptState={setIntState("gate")} />
+            <div className="eq2-term eq2-sub"><code>amount = exp( η + ε )</code><span className="eq2-tail" /><span className="eq2-margin-tag">int</span></div>
           </>
         )}
 
         <Predictor lead="η" part={node.eta}
-          onCoef={setCoef("eta")} onCycle={cycleTerm("eta")}
-          onIntercept={setInt("eta")} onCycleIntercept={cycleInt("eta")} />
+          onCoef={setCoef("eta")} onState={setState("eta")}
+          onIntercept={setInt("eta")} onInterceptState={setIntState("eta")} />
 
         {node.noise && (
-          <div className="eq2-term eq2-noise">
+          <div className="eq2-term">
             <span className="eq2-lead">ε ~</span>
-            <span className="eq2-dist">Normal(0,</span>
+            <span className="eq2-dist">N(0,</span>
             <Ghost value={node.noise.sd} state={node.noise.state}
               onChange={(v) => setNode((n) => (n.noise ? { ...n, noise: { ...n.noise, sd: v } } : n))} />
             <span className="eq2-dist">)</span>
             <span className="eq2-tail" />
-            <Prov state={node.noise.state}
-              onCycle={() => setNode((n) => (n.noise ? { ...n, noise: { ...n.noise, state: cycle(n.noise.state) } } : n))} />
+            <TermControls state={node.noise.state} info={INFO[node.noise.state]}
+              onSet={(s) => setNode((n) => (n.noise ? { ...n, noise: { ...n.noise, state: s } } : n))} />
           </div>
         )}
       </div>

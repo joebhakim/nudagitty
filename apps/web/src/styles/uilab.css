@@ -144,39 +144,39 @@
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
-   C2 · EQUATION v2 — family-aware, and DENSE. Spacing is matched to the app's
-   existing equation UI (.dgp-eq in the DGP inspector) and to the original
-   generation block — no prose, no airy cards. The LHS is the house .node-name
-   chip; the RHS is the node's real generative form.
+   C2 · EQUATION — family-aware, ONE box, maximum density. The shape is line 1 and
+   doubles as the link/combiner control (▾), which also kills the combiner row.
+   Each number carries a 2x2 icon control (∅ 📌 / ✎ ⓘ) sized to fit INSIDE the
+   line height — so the real controls are back at zero vertical cost.
    ─────────────────────────────────────────────────────────────────────────── */
 .eq2-card { display: flex; flex-direction: column; }
-.eq2-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.eq2-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
 .eq2-head > strong { font-size: 12px; }
 .eq2-head > .muted { font-size: 11px; color: var(--muted, #65717d); }
 
-/* The shape line — one line. Mirrors .dgp-eq: thin left rule, tight padding. */
-.eq2-shape { padding: 3px 8px; border-left: 2px solid var(--accent, #23716f); background: #fafcfc; border-radius: 0 4px 4px 0; margin-bottom: 4px; }
-.eq2-shape > code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; color: #2b3640; white-space: nowrap; }
+.eq2-body { padding: 3px 6px; border: 1px solid var(--border, #e2e2ea); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
 
-.eq2-body { padding: 4px 7px; border: 1px solid var(--border, #e2e2ea); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
-
-/* Two-part: one tight line per margin. */
-.eq2-sub { display: flex; align-items: baseline; gap: 6px; padding: 2px 0 1px; }
-.eq2-sub + .eq2-pred { margin-bottom: 2px; }
-.eq2-pred + .eq2-sub { border-top: 1px dashed #e2e4e8; margin-top: 3px; padding-top: 4px; }
-.eq2-sub > code { font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--muted, #65717d); white-space: nowrap; }
-.eq2-margin-tag { margin-left: auto; font-size: 8.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--accent, #23716f); opacity: 0.75; }
-
-.eq2-pred { display: flex; flex-direction: column; }
-.eq2-term { display: flex; align-items: baseline; gap: 4px; font-size: 11px; line-height: 1.55; }
+/* One equation line. The 2x2 control is 18px tall, so the row height is set by IT, not by the text —
+   which is why the controls cost nothing: 18px is about a normal 11px line anyway. */
+.eq2-term { display: flex; align-items: center; gap: 4px; font-size: 11px; min-height: 18px; }
 .eq2-term.is-off { opacity: 0.5; }
 .eq2-lead { flex: 0 0 auto; font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--muted, #65717d); }
 .eq2-op, .eq2-mul { color: var(--muted, #99a); font-family: ui-monospace, monospace; }
 .eq2-parent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.eq2-off { font-size: 9.5px; font-style: italic; color: var(--muted, #9aa0a8); }
+.eq2-parent > i { font-size: 9.5px; color: var(--muted, #9aa0a8); }
 .eq2-tail { flex: 1 1 auto; }
 .eq2-dist { font-family: ui-monospace, monospace; font-size: 10.5px; }
-.eq2-noise { border-top: 1px dashed #e2e4e8; margin-top: 3px; padding-top: 3px; }
+
+/* Line 1 — the shape. The variable uses the house .node-name chip. */
+.eq2-shape-row { padding-bottom: 2px; margin-bottom: 2px; border-bottom: 1px solid #eceef1; }
+.eq2-shape { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; color: #2b3640; white-space: nowrap; }
+.eq2-link { appearance: none; border: none; background: none; cursor: pointer; font-size: 10px; color: var(--muted, #99a); padding: 0 3px; border-radius: 3px; }
+.eq2-link:hover { background: rgba(0,0,0,0.06); color: var(--text, #202428); }
+.eq2-link-row > select { width: 100%; font-size: 10.5px; }
+
+/* Two-part margin headers — one tight line each. */
+.eq2-sub > code { font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted, #65717d); white-space: nowrap; }
+.eq2-margin-tag { font-size: 8px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--accent, #23716f); opacity: 0.7; }
 
 /* Ghost number: text in the equation until clicked. The underline carries provenance. */
 .eq2-num { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 11px; padding: 0 2px; border-radius: 3px; cursor: text; border-bottom: 2px solid transparent; }
@@ -184,22 +184,37 @@
 .eq2-num.st-fitted { color: #0d6b52; border-bottom-color: #23716f; }
 .eq2-num.st-authored { color: #8a5a12; border-bottom-color: #cf7a22; }
 .eq2-num.st-not-learned { color: var(--muted, #9aa0a8); border-bottom: 2px dashed #c9ccd4; font-weight: 500; }
-.eq2-num-input { width: 72px; border: 1px solid var(--accent, #23716f); background: var(--surface-0, #fff); outline: none; text-align: right; }
+.eq2-num-input { width: 68px; border: 1px solid var(--accent, #23716f); background: var(--surface-0, #fff); outline: none; text-align: right; }
 
-.eq2-prov { flex: 0 0 auto; appearance: none; border: none; background: none; border-radius: 3px; padding: 0 2px; font-size: 9.5px; line-height: 1.4; cursor: pointer; opacity: 0.7; }
-.eq2-prov:hover { opacity: 1; background: rgba(0,0,0,0.06); }
-.eq2-prov.st-not-learned { filter: grayscale(1); opacity: 0.4; }
+/* THE CONTROL — 4 icon buttons in a 2x2 grid, sized to sit INSIDE the equation line (zero extra height).
+   NB: base.css sets a global `button { min-height: 32px }` (touch targets). min-height CLAMPS UPWARD, so
+   without `min-height: 0` these buttons silently render 32px tall, overflow their cells and get clipped —
+   which is exactly what turned the first attempt into an illegible vertical smear. */
+.eq2-ctl { flex: 0 0 auto; display: grid; grid-template-columns: 10px 10px; grid-template-rows: 10px 10px; gap: 1px; border-radius: 3px; }
+/* hover frame via box-shadow so it costs NO layout (a border would add 2px to every row). */
+.eq2-term:hover .eq2-ctl { background: var(--surface-0, #fff); box-shadow: 0 0 0 1px var(--border, #dfe1e6); }
+.eq2-ctl-b {
+  appearance: none; border: none; background: none; padding: 0; margin: 0;
+  width: 10px; height: 10px; min-height: 0;   /* ← defeats the global 32px touch-target clamp */
+  font-size: 8.5px; line-height: 10px; text-align: center; cursor: pointer; border-radius: 2px; opacity: 0.32;
+}
+.eq2-ctl-b:hover { opacity: 1; background: rgba(0,0,0,0.10); }
+.eq2-ctl-b.active { opacity: 1; }
+.eq2-ctl-b.st-fitted { color: #23716f; }
+.eq2-ctl-b.st-authored { color: #cf7a22; }
+.eq2-ctl-b.active.st-not-learned { background: #e6e8ec; }
+.eq2-ctl-b.active.st-fitted { background: rgba(35,113,111,0.22); color: #0d5b52; }
+.eq2-ctl-b.active.st-authored { background: rgba(207,122,34,0.28); color: #8a5a12; }
+.eq2-ctl-info { color: var(--accent, #23716f); cursor: help; opacity: 0.4; }
 
 @media (prefers-color-scheme: dark) {
-  .eq2-shape { background: #16161c; border-left-color: #2c5a4c; }
-  .eq2-shape > code { color: #c9d2da; }
   .eq2-body { background: #1b1b22; border-color: #34343e; }
-  .eq2-pred + .eq2-sub, .eq2-noise { border-top-color: #34343e; }
-  .eq2-num:hover { background: rgba(255,255,255,0.07); }
+  .eq2-shape-row { border-bottom-color: #2a2a33; }
+  .eq2-shape { color: #c9d2da; }
+  .eq2-num:hover, .eq2-ctl-b:hover { background: rgba(255,255,255,0.10); }
   .eq2-num.st-fitted { color: #7fe3c6; }
   .eq2-num.st-authored { color: #e0b877; }
   .eq2-num-input { background: #101014; color: #e8e8ef; }
-  .eq2-prov:hover { background: rgba(255,255,255,0.08); }
 }
 
 /* Lab chrome for the chosen-direction feature section. */
