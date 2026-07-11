@@ -1297,6 +1297,9 @@ export function configureLalondeFitRecover(document: GraphDocument): GraphDocume
   setEdgeMechanism(document, "Row_source", "In_program", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "treat") });
   setEdgeMechanism(document, "Row_source", "Earnings_78", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "re78") });
   // The imposed causal effect: treat → earnings = +$1,794 (authored, held fixed — the known truth).
+  // For an ADDITIVE outcome the coefficient IS the ATE (do(1)−do(0) = β for every unit), so declaring the
+  // estimand and typing the coefficient are the same thing — which is exactly why THIS example is
+  // hand-reproducible and the two-part one is not. Declared anyway, so both run through one code path.
   setLinearCoefficient(document, "In_program", "Earnings_78", 1794);
   // Fit the rest from data: treat's logistic on the covariates, and re78's covariate→earnings edges holding
   // the authored +1,794 as an offset (offset regression). pinNodeEquation pins each node's whole equation;
@@ -1305,6 +1308,7 @@ export function configureLalondeFitRecover(document: GraphDocument): GraphDocume
   doc = pinNodeEquation(doc, "Earnings_78");
   const effect = doc.graph.edges.find((edge) => edge.source === "In_program" && edge.target === "Earnings_78");
   if (effect) doc = authorNumber(doc, pinKeys.edge(effect.id));
+  doc.metadata = { ...doc.metadata, imposedEffect: { target: 1794, exposure: "In_program", outcome: "Earnings_78" } };
   return reconcilePins(doc).document;
 }
 
@@ -1322,78 +1326,19 @@ export function configureLalondeFitRecoverTwoPart(document: GraphDocument): Grap
   setEdgeMechanism(document, "Row_source", "In_program", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "treat") });
   setEdgeMechanism(document, "Row_source", "Earnings_78", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "re78") });
   setVariable(document, "Earnings_78", { valueType: "semicontinuous" });
-  // Fit treat's logistic + re78's confounders (gate + intensive), holding treat's own effect at 0 so the
-  // confounders are fit free of it; the imposed causal effect is applied to both margins analytically below.
-  setLinearCoefficient(document, "In_program", "Earnings_78", 0);
+
+  // DECLARE THE ESTIMAND, don't type coefficients. The $1,794 benchmark is imposed extensive-led: 62% of
+  // it from MORE PEOPLE WORKING (the gate γ), the rest from HIGHER PAY AMONG WORKERS (the intensive δ).
+  // reconcilePins derives γ and δ from this — in closed form, clamped to what the data can actually deliver
+  // — and iterates to a fixed point, so the saved example IS what the app recomputes on load. (Typing the
+  // coefficients instead would be a lie the moment the fit moved; see docs/plan-imposed-estimand.md.)
+  setLinearCoefficient(document, "In_program", "Earnings_78", 0); // placeholder — the solve overwrites it
   let doc = pinNodeEquation(document, "In_program");
   doc = pinNodeEquation(doc, "Earnings_78");
   const effect = doc.graph.edges.find((edge) => edge.source === "In_program" && edge.target === "Earnings_78");
-  if (effect) doc = authorNumber(doc, pinKeys.edge(effect.id));
-  doc = reconcilePins(doc).document;
-
-  // Solve the extensive/intensive split of the $1,794 benchmark over the real covariate distribution, then
-  // ITERATE TO A FIXED POINT. δ is an AUTHORED offset in Earnings_78's intensive fit, so setting it changes
-  // the confounder fit — which changes the very η's the solve was computed against. Solving once and stopping
-  // leaves the example NOT a fixed point of reconcilePins: the app's own commit pipeline refits it on load,
-  // silently drifting every Earnings_78 coefficient (and knocking the doc off the short `#example=` share
-  // link). Looping until the fit and the solve agree makes the saved example exactly what the app recomputes.
-  const canon = (d: GraphDocument) => JSON.stringify({ graph: d.graph, simulation: d.simulation });
-  for (let pass = 0; pass < 8; pass += 1) {
-    const { gamma, delta } = solveTwoPartEffect(doc, 1794, 0.62);
-    const mech = normalizeNodeMechanism(doc.simulation.nodes["Earnings_78"]);
-    // setNode REPLACES, so spread the fitted mechanism (log-link combiner + retransformation-corrected
-    // intercept + noise); only the gate's In_program coefficient changes.
-    setNode(doc, "Earnings_78", { ...mech, gate: { intercept: mech.gate?.intercept ?? 0, coefficients: { ...(mech.gate?.coefficients ?? {}), In_program: gamma } } });
-    setLinearCoefficient(doc, "In_program", "Earnings_78", delta);
-    const before = canon(doc);
-    doc = reconcilePins(doc).document; // refit the confounders holding the new δ as an offset
-    if (canon(doc) === before) break;  // the fit reproduces what the solve assumed → fixed point
-  }
-  // Record the analytic truth the DGP imposes (γ+δ solved so extensive+intensive = exactly this), so the
-  // output can show it next to the MC-noisy simulated do()-oracle.
+  if (effect) doc = authorNumber(doc, pinKeys.edge(effect.id)); // AUTHORED, never fitted — fitting it would
   doc.metadata = { ...doc.metadata, imposedEffect: { target: 1794, extensiveShare: 0.62, exposure: "In_program", outcome: "Earnings_78" } };
-  return doc;
-}
-
-// Solve the two-part treatment effect: γ (gate logit shift) delivers `extensiveShare` of `target` via the
-// EXTENSIVE margin (more people working), then δ (intensive log shift) delivers the rest via the INTENSIVE
-// margin (higher earnings among workers). The Oaxaca-style split sums exactly to the total two-part
-// do()-contrast, so total = target. Confounder η's are read from the fitted node (In_program excluded).
-function solveTwoPartEffect(doc: GraphDocument, target: number, extensiveShare: number): { gamma: number; delta: number } {
-  const mech = normalizeNodeMechanism(doc.simulation.nodes["Earnings_78"]);
-  const sd = mech.noise.kind === "normal" ? mech.noise.sd : 0;
-  const h = (sd * sd) / 2;
-  const rows = datasetRows("lalonde-obs");
-  const gateCoefs = mech.gate?.coefficients ?? {};
-  const confCols = doc.graph.edges
-    .filter((e) => e.target === "Earnings_78" && e.source !== "In_program" && e.source !== "Row_source")
-    .map((e) => {
-      const cov = LALONDE_DGM_COVS.find((c) => c.id === e.source);
-      const em = normalizeEdgeMechanism(doc.simulation.edges[e.id]);
-      return { source: e.source, col: cov ? datasetColumnIndex("lalonde-obs", cov.column) : -1, coef: em.kind === "linear" ? em.coefficient : 0 };
-    })
-    .filter((c) => c.col >= 0);
-  const etaG: number[] = [], etaA: number[] = [];
-  for (const r of rows) {
-    let g = mech.gate?.intercept ?? 0, a = mech.intercept;
-    for (const c of confCols) { const v = r[c.col] ?? 0; a += c.coef * v; g += (gateCoefs[c.source] ?? 0) * v; }
-    etaG.push(g); etaA.push(a);
-  }
-  const sig = (x: number) => 1 / (1 + Math.exp(-x));
-  const N = Math.max(1, rows.length);
-  const extensive = (gamma: number) => { let s = 0; for (let i = 0; i < N; i += 1) s += (sig(etaG[i]! + gamma) - sig(etaG[i]!)) * Math.exp(etaA[i]! + h); return s / N; };
-  const gamma = solveMonotone(extensive, target * extensiveShare, 0, 8);
-  const intensive = (delta: number) => { let s = 0; for (let i = 0; i < N; i += 1) s += sig(etaG[i]! + gamma) * (Math.exp(etaA[i]! + delta + h) - Math.exp(etaA[i]! + h)); return s / N; };
-  const delta = solveMonotone(intensive, target * (1 - extensiveShare), 0, 3);
-  return { gamma, delta };
-}
-
-// Bisection for a monotone-increasing f: find x with f(x)=target on [lo,hi], doubling hi until it brackets.
-function solveMonotone(f: (x: number) => number, target: number, lo: number, hi: number): number {
-  let a = lo, b = hi;
-  for (let k = 0; k < 60 && f(b) < target; k += 1) b *= 2;
-  for (let k = 0; k < 100; k += 1) { const m = (a + b) / 2; if (f(m) < target) a = m; else b = m; }
-  return (a + b) / 2;
+  return reconcilePins(doc).document; // fits the confounders AND derives γ/δ, to convergence
 }
 
 function disableEdge(document: GraphDocument, source: string, target: string) {

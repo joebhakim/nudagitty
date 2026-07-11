@@ -36,11 +36,15 @@ describe("imposedEffectContext — the (γ,δ) iso-ATE manifold", () => {
   });
 
   it("reproduces the example's operating point (62% extensive)", () => {
+    // γ ≈ 1.769 (not the 1.754 of the old one-pass configurator solve): now that the confounders are fit
+    // holding the REAL δ as an offset — and iterated to a fixed point — the η's differ slightly. The dollar
+    // decomposition and the target are what actually matter, and both are exact.
     const sol = ctx.solve(0.62);
-    expect(sol.gamma).toBeCloseTo(1.7542, 3);
+    expect(sol.gamma).toBeCloseTo(1.769, 2);
     expect(sol.delta).toBeCloseTo(0.0309, 3);
-    expect(sol.extensive).toBeCloseTo(1112, -2);
-    expect(sol.intensive).toBeCloseTo(682, -2);
+    expect(sol.extensive).toBeCloseTo(1112, -2);   // 62% of $1,794
+    expect(sol.intensive).toBeCloseTo(682, -2);    // 38%
+    expect(sol.extensive + sol.intensive).toBeCloseTo(ctx.target, 6);
     expect(sol.clamped).toBe(false);
   });
 
