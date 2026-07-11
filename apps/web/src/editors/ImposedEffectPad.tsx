@@ -11,6 +11,39 @@ const WALL_TIP =
 const LOCK_TIP =
   "Locked: you author the ESTIMAND (the dollar target + how the story splits) and the engine derives γ and δ — the handle can only move along the curve, because that curve IS every DGP consistent with your target. Unlocked: you drag anywhere and the ATE becomes whatever that point implies. Even then you are still authoring an estimand, not coefficients — the target and the split are read off the point you chose, and the coefficients are re-derived from them.";
 
+const FIT_TRAP_TIP =
+  "Fitting an edge means LEARNING its coefficient from the data. That is right for a confounder → outcome edge. It is wrong for the exposure → outcome edge, because what the data contains there is the CONFOUNDED association — the very thing you are trying to correct. Fit it and you learn the bias, then hand it to the simulator as if it were the causal mechanism: do() will faithfully report your confounding back to you, and there is no imposed truth left to recover. Author it (or impose an effect) instead.";
+
+/**
+ * The exposure → outcome edge must never be FITTED. This is the trap a real user fell into: they fitted it,
+ * learned the confounded association (a −34% "effect" on log-earnings), and then had nothing to recover —
+ * their DGP's do() simply replayed the bias. The UI made "fit everything" the easy path and said nothing.
+ * Now it says something, and offers the one-click fix.
+ */
+export function EffectEdgeFitWarning(props: {
+  document: GraphDocument;
+  edge: { id: string; source: string; target: string };
+  onAuthor: (key: string) => void;
+}) {
+  const nodes = props.document.graph.nodes;
+  const isExposure = nodes.find((n) => n.id === props.edge.source)?.roles?.exposure;
+  const isOutcome = nodes.find((n) => n.id === props.edge.target)?.roles?.outcome;
+  const key = `e:${props.edge.id}`;
+  const fitted = props.document.metadata.pins?.includes(key);
+  if (!isExposure || !isOutcome || !fitted) return null;
+  return (
+    <div className="effect-fit-warning">
+      <strong>⚠ This effect is being <em>fitted</em> from the data{<InfoDot tip={FIT_TRAP_TIP} href="/effects.html#trap" />}</strong>
+      <p>
+        It is the <b>exposure → outcome</b> edge, so what the data holds there is the <b>confounded
+        association</b>, not the causal effect. Fitting it teaches the simulator your bias — <code>do()</code>{" "}
+        will just hand it back, and there is no imposed truth to recover.
+      </p>
+      <button type="button" onClick={() => props.onAuthor(key)}>Author it instead</button>
+    </div>
+  );
+}
+
 /**
  * The (γ, δ) manifold. One equation, two unknowns ⇒ the solution set is a CURVE, not a point. The pad draws
  * the ATE field, the iso-ATE contour at the target, and the provably-unreachable band, and lets you pick a
@@ -106,7 +139,7 @@ export function ImposedEffectPad(props: {
   return (
     <div className="imposed-pad">
       <div className="imposed-pad-head">
-        <strong>Imposed effect{<InfoDot tip={PAD_TIP} />}</strong>
+        <strong>Imposed effect{<InfoDot tip={PAD_TIP} href="/effects.html#family" />}</strong>
         <span className={offTarget ? "imposed-ate-off" : "muted"}>
           {money(shownAte)}{offTarget ? " (off target)" : " · one target, many stories"}
         </span>
@@ -142,12 +175,12 @@ export function ImposedEffectPad(props: {
         <text x={mL - 4} y={y(ctx.deltaFor(0)) + 3} className="resid-tick" textAnchor="end">{pct(Math.exp(ctx.deltaFor(0)) - 1)}</text>
         <text x={mL - 4} y={y(ctx.deltaFloor) + 3} className="resid-tick" textAnchor="end">{pct(Math.exp(ctx.deltaFloor) - 1)}</text>
         <text x={W - mR} y={mT + plotH + 12} className="resid-tick" textAnchor="end">employment →</text>
-        <text x={mL + plotW / 2} y={H - 3} className="resid-axlabel" textAnchor="middle">grey = unreachable{<InfoDot tip={WALL_TIP} />}</text>
+        <text x={mL + plotW / 2} y={H - 3} className="resid-axlabel" textAnchor="middle">grey = unreachable{<InfoDot tip={WALL_TIP} href="/effects.html#wall" />}</text>
       </svg>
 
       <div className="imposed-lock">
         <Checkbox label="hold the effect at target" checked={locked} onChange={setLocked} />
-        <InfoDot tip={LOCK_TIP} />
+        <InfoDot tip={LOCK_TIP} href="/effects.html#estimand" />
       </div>
 
       {locked && (

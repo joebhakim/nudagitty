@@ -1083,6 +1083,7 @@ export function App() {
             // Re-author the imposed ESTIMAND (target and/or how the story splits across the two margins).
             // We never set coefficients: commitState runs reconcilePins, which DERIVES gamma/delta from it.
             onImposedEffect={(patch) => commit(setImposedEffect(document, patch))}
+            onAuthorNumber={(key) => commit(unpinKey(document, key))}
           />
         </ModuleFrame>
       </aside>

@@ -215,8 +215,10 @@ export function List({ values, empty }: { values: string[]; empty: string }) {
   return <ul className="plain-list">{values.map((value) => <li key={value}>{value}</li>)}</ul>;
 }
 
-// Small "ⓘ" affordance carrying an explanatory tooltip (native title). Used to surface otherwise-
-// invisible mechanism detail (e.g. the two-part gate/intensive math) without a redesign.
-export function InfoDot({ tip, label = "more info" }: { tip: string; label?: string }) {
+// Small "ⓘ" affordance carrying an explanatory tooltip (native title). Used to surface otherwise-invisible
+// mechanism detail (e.g. the two-part gate/intensive math) without a redesign. With `href` it also becomes a
+// door: the tooltip is the two-sentence version, the link is the long form (/effects.html).
+export function InfoDot({ tip, href, label = "more info" }: { tip: string; href?: string; label?: string }) {
+  if (href) return <a className="info-dot" href={href} target="_blank" rel="noreferrer" title={tip} aria-label={label}>ⓘ</a>;
   return <span className="info-dot" role="img" aria-label={label} title={tip}>ⓘ</span>;
 }

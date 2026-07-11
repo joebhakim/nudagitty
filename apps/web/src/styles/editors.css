@@ -1194,6 +1194,21 @@ button.prov-chip { cursor: pointer; }
 .resid-dot { fill: #6b40b0; opacity: 0.5; }
 .info-dot { display: inline-block; margin-left: 4px; font-size: 10.5px; line-height: 1; color: var(--accent, #23716f); opacity: 0.65; cursor: help; vertical-align: baseline; }
 .info-dot:hover { opacity: 1; }
+/* The exposure→outcome edge is being FITTED — i.e. learning the confounded association and calling it
+   causal. Amber: this is a methodological mistake you are about to make, not a broken app. */
+.effect-fit-warning { margin: 8px 0; padding: 8px 10px; border: 1px solid #e0c48f; border-left: 3px solid #c08a2e; border-radius: 7px; background: #fdf6e7; }
+.effect-fit-warning > strong { display: block; font-size: 11.5px; color: #8a5a12; }
+.effect-fit-warning > p { margin: 4px 0 6px; font-size: 11px; line-height: 1.45; color: var(--text, #333); }
+.effect-fit-warning code { font-family: var(--font-mono, ui-monospace, monospace); }
+.effect-fit-warning > button { appearance: none; border: 1px solid #c08a2e; background: #fff; color: #8a5a12; border-radius: 6px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.effect-fit-warning > button:hover { background: #f6ecd8; }
+@media (prefers-color-scheme: dark) {
+  .effect-fit-warning { background: #2a2210; border-color: #5a4a24; }
+  .effect-fit-warning > strong { color: #e0b877; }
+  .effect-fit-warning > button { background: #1b1b22; color: #e0b877; border-color: #5a4a24; }
+  .effect-fit-warning > button:hover { background: #302610; }
+}
+
 /* ---- imposed-effect manifold pad: one target, many stories ---- */
 .imposed-pad { margin: 8px 0; padding: 9px 10px; border: 1px solid var(--border, #e2e2ea); border-left: 3px solid var(--accent, #23716f); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
 .imposed-pad-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }

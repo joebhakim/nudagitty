@@ -29,6 +29,7 @@ export default defineConfig({
         main: resolve(root, "index.html"),
         gallery: resolve(root, "gallery.html"),
         "joint-lab": resolve(root, "joint-lab.html"),
+        effects: resolve(root, "effects.html"),
         // Prototype-only: side-by-side design variants for editor chrome (see src/uilab/).
         "ui-lab": resolve(root, "ui-lab.html")
       }

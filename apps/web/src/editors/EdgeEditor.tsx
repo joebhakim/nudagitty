@@ -10,7 +10,7 @@ import { NodeName } from "../outputs/EstimandFormula";
 import { computeEdgeTransfer } from "../charts/edgeTransfer";
 import { chartFrame } from "../charts/chartFrame";
 import { EDGE_MECHANISMS } from "../app/constants";
-import { ImposedEffectPad } from "./ImposedEffectPad";
+import { EffectEdgeFitWarning, ImposedEffectPad } from "./ImposedEffectPad";
 
 export function EdgeEditor(props: {
   edge: GraphEdge;
@@ -21,6 +21,7 @@ export function EdgeEditor(props: {
   onMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
   onDelete: (edgeId: string) => void;
   onImposedEffect: (patch: Partial<ImposedEffect>) => void;
+  onAuthorNumber: (key: string) => void;
 }) {
   const committed = useMemo(() => normalizeEdgeMechanism(props.document.simulation.edges[props.edge.id]), [props.document.simulation.edges, props.edge.id]);
   // The edge is edited as a local draft so dragging/typing only repaints the transfer
@@ -46,6 +47,7 @@ export function EdgeEditor(props: {
       <div className="selection-editor-body">
         {/* When this edge carries an IMPOSED effect, its coefficient is DERIVED from the estimand — so the
             control is the estimand's story (the extensive/intensive split), not the raw number below. */}
+        <EffectEdgeFitWarning document={props.document} edge={props.edge} onAuthor={props.onAuthorNumber} />
         <ImposedEffectPad document={props.document} edgeId={props.edge.id} onChange={props.onImposedEffect} />
         <EdgeTransferPlot
           mechanism={draft}

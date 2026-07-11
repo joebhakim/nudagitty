@@ -267,6 +267,7 @@ export function SelectionEditor(props: {
   onEdgeEnabled: (edge: GraphEdge, enabled: boolean) => void;
   onEdgeMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
   onImposedEffect: (patch: Partial<ImposedEffect>) => void;
+  onAuthorNumber: (key: string) => void;
   onDeleteEdge: (edgeId: string) => void;
   onSetDataMode: (nodeId: string, mode: "read" | "fit" | "author") => void;
   onPinNumber: (key: string) => void;
@@ -303,6 +304,7 @@ export function SelectionEditor(props: {
     onMechanism={props.onEdgeMechanism}
     onDelete={props.onDeleteEdge}
     onImposedEffect={props.onImposedEffect}
+    onAuthorNumber={props.onAuthorNumber}
   />;
   return (
     <div className="selection-empty-state">
@@ -543,7 +545,7 @@ function ResidualCheck({ d }: { d: ResidualDiagnostic }) {
   return (
     <div className={`residual-check verdict-${d.verdict}`}>
       <div className="residual-head">
-        <strong>Residual check{d.gate && <InfoDot tip={TWO_PART_RESID_TIP} />}</strong>
+        <strong>Residual check{d.gate && <InfoDot tip={TWO_PART_RESID_TIP} href="/effects.html#honesty" />}</strong>
         <span className="residual-verdict">{verdictLabel}</span>
       </div>
       <p className="muted">{lead}</p>
@@ -751,7 +753,7 @@ export function VariableEditor(props: {
               })()}
               {!isRoot && (
                 <label className="field">
-                  <span>{isData ? "fit family (link)" : "type"}{variable.valueType === "semicontinuous" && <InfoDot tip={TWO_PART_FAMILY_TIP} />}</span>
+                  <span>{isData ? "fit family (link)" : "type"}{variable.valueType === "semicontinuous" && <InfoDot tip={TWO_PART_FAMILY_TIP} href="/effects.html#two-margins" />}</span>
                   <select value={variable.valueType} onChange={(event) => changeFamily(event.target.value as VariableModel["valueType"])}>
                     {VARIABLE_TYPES.map(([kind, label]) => (<option value={kind} key={kind} disabled={!REALIZED_FAMILIES.has(kind) && kind !== variable.valueType}>{label}{REALIZED_FAMILIES.has(kind) ? "" : " (planned)"}</option>))}
                   </select>
