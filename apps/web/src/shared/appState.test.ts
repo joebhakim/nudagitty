@@ -45,10 +45,16 @@ describe("compact share codec round-trip", () => {
     closeToSixSigFigs(gate!.coefficients["In_program"]!, original!.coefficients["In_program"]!);
     closeToSixSigFigs(gate!.intercept, original!.intercept);
 
-    // provenance + the imposed truth (an integer — must NOT be touched by the rounder)
+    // Provenance + the imposed ESTIMAND. This is now an object, not a bare number: what you author is the
+    // estimand (the dollar target + how the story splits across the two margins); gamma/delta are DERIVED
+    // from it on every reconcile. The target is an integer and must NOT be touched by the rounder, and the
+    // share must survive too — lose it and the link reopens a different causal story at the same total.
     expect(decoded.metadata.authored).toEqual(doc.metadata.authored);
     expect(decoded.metadata.pins.length).toBe(doc.metadata.pins.length);
-    expect(decoded.metadata.imposedEffect).toBe(1794);
+    expect(decoded.metadata.imposedEffect?.target).toBe(1794);
+    expect(decoded.metadata.imposedEffect?.extensiveShare).toBeCloseTo(0.62, 6);
+    expect(decoded.metadata.imposedEffect?.exposure).toBe("In_program");
+    expect(decoded.metadata.imposedEffect?.outcome).toBe("Earnings_78");
 
     // the authored treatment effect (delta) on the intensive margin
     const edge = decoded.graph.edges.find((e: { source: string; target: string }) => e.source === "In_program" && e.target === "Earnings_78")!;
