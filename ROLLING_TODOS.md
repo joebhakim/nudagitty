@@ -38,13 +38,16 @@ already does `Y = g⁻¹(η+ε)`, so the fitter just learns the link the node's 
       tail (Mincer "log your regressors" fix deferred); the nonlinear do()-oracle is MC-noisy (imposed truth
       is analytic 1794 — surfacing it in the output card is polish). **CANARY-CONFIRMED WORKING:** oracle
       +$1,785 ≈ imposed +$1,794, crude −$14,842, gate row renders (87%/89%), $0 spike visible, ~$2M outliers.
-- [ ] **Two-part UI follow-ups** (canary review, 2026-07-10) — **DONE:** (i) InfoDots on the fit-family select
-      + residual panel (gate=extensive / scatter=intensive log scale / +0.03 is log not $ / retransformation);
-      endogeneity scatter now has axis labels + dollar min/max ticks (so the ~$2M tail is legible). **REMAINING:**
-      collapsible left-column **marginal distribution panel** (labelled axes, shows the zero spike + skew properly,
-      collapsed by default); make the **output oracle explanation two-part-aware** (it still says "outcome ~
-      treatment + confounder + noise", wrong for a gate×amount outcome); optional (i) on the canvas/edge editor
-      for the log-scale coefficient; surface the analytic imposed truth vs the MC-noisy simulated oracle.
+- [x] **Two-part UI follow-ups DONE** (canary review, 2026-07-10; commits 8b0ed15, 44292c1) — (i) InfoDots on
+      the fit-family select + residual panel (gate=extensive / scatter=intensive log scale / +0.03 is log not $ /
+      retransformation); endogeneity scatter axis labels + dollar min/max ticks (~$2M tail legible); **collapsible
+      marginal-distribution panel** in the editor (MarginalPlot: labelled histogram, distinct $0-spike bar, tail
+      clipped at p98 with max noted); **oracle explanation generalized** (was "outcome ~ treatment + confounder +
+      noise", wrong for gate×amount — now names two-part/survival + the MC-noise caveat); **analytic imposed truth
+      surfaced** (GraphDocumentMetadata.imposedEffect + GMethodsComparison.imposedEffect → "DGP imposes +$1,794
+      exactly · this row is a Monte-Carlo estimate" under the g-formula oracle). **REMAINING (minor):** optional (i)
+      on the canvas/edge editor for the log-scale coefficient; the imposed-truth line is example-specific (a general
+      truth-provider/benchmark panel is the larger deferred item). **All UI still wants a canary visual pass.**
 - [ ] **#94 Follow-ups (remaining)** — noise-family fit (skew/heavy-tail ε); **Tobit** single-index contrast;
       **PPML / gamma-GLM** mean-scale fit (fixes #93's zero-dropping log-OLS); `log(Y+c)`/asinh refutation
       widget (Chen–Roth); **Mincer predictor transforms** for the two-part intensive; **retire NORTA** (#92).
