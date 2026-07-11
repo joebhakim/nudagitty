@@ -38,6 +38,11 @@ export type VariableValueType =
   | "ordinal"
   | "count"
   | "positive"
+  // Semicontinuous / two-part (Cragg): a point mass at 0 (the extensive margin, "did Y happen at
+  // all") times a strictly-positive amount (the intensive margin, "how much given it happened").
+  // The natural family for zero-inflated earnings — one part decides participation, the other the
+  // positive amount. See `NodeMechanism.gate` for the extensive-margin model.
+  | "semicontinuous"
   | "proportion"
   | "time_to_event"
   | "vector"
@@ -303,12 +308,24 @@ export type NodeInteraction =
   | { id: string; kind: "product"; left: string; right: string; coefficient: number }
   | { id: string; kind: "smooth_gated"; source: string; gate: string; coefficient: number; threshold: number; steepness: number };
 
+// The extensive-margin (participation) model of a two-part `semicontinuous` node: its own
+// logistic linear predictor, P(Y>0) = σ(intercept + Σ coefficients[parent]·parent). Kept separate
+// from the node's edge coefficients (which carry the intensive/amount model), so the two margins
+// are fit and interpreted independently — Cragg's whole point.
+export interface NodeGate {
+  intercept: number;
+  coefficients: Record<string, number>; // keyed by source node id
+}
+
 export interface NodeMechanism {
   distribution: NodeDistribution;
   intercept: number;
   noise: NodeDistribution;
   combiner: NodeCombinerKind;
   interactions: NodeInteraction[];
+  // Two-part gate. Present only on `semicontinuous` nodes; absent/undefined ⇒ single-part (the
+  // node's ordinary behavior, byte-identical to before this field existed).
+  gate?: NodeGate | null;
 }
 
 export type EdgeMechanismKind =

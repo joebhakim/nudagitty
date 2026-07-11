@@ -3,6 +3,7 @@ import type {
   EdgeMechanismKind,
   GraphDocumentMetadata,
   NodeDistribution,
+  NodeGate,
   NodeInteraction,
   NodeMechanism,
   ResponseFamily,
@@ -163,13 +164,29 @@ export function cloneNodeMechanism(mechanism: NodeMechanism): NodeMechanism {
 }
 
 export function normalizeNodeMechanism(mechanism: Partial<NodeMechanism> | undefined): NodeMechanism {
+  const gate = normalizeNodeGate(mechanism?.gate);
   return {
     distribution: normalizeNodeDistribution(mechanism?.distribution),
     intercept: mechanism?.intercept ?? 0,
     noise: normalizeNodeDistribution(mechanism?.noise, "constant"),
     combiner: isNodeCombinerKind(mechanism?.combiner) ? mechanism.combiner : "additive",
-    interactions: (mechanism?.interactions ?? []).map(cloneInteraction)
+    interactions: (mechanism?.interactions ?? []).map(cloneInteraction),
+    // Emit `gate` only when present, so a single-part mechanism is byte-identical to before.
+    ...(gate !== null ? { gate } : {})
   };
+}
+
+function normalizeNodeGate(gate: unknown): NodeGate | null {
+  if (!gate || typeof gate !== "object") return null;
+  const raw = gate as Record<string, unknown>;
+  const intercept = typeof raw.intercept === "number" && Number.isFinite(raw.intercept) ? raw.intercept : 0;
+  const coefficients: Record<string, number> = {};
+  if (raw.coefficients && typeof raw.coefficients === "object") {
+    for (const [key, value] of Object.entries(raw.coefficients as Record<string, unknown>)) {
+      if (typeof value === "number" && Number.isFinite(value)) coefficients[key] = value;
+    }
+  }
+  return { intercept, coefficients };
 }
 
 export function normalizeEdgeMechanism(mechanism: Partial<EdgeMechanism> | undefined): EdgeMechanism {

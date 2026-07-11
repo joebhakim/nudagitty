@@ -53,6 +53,7 @@ export const VARIABLE_VALUE_TYPES: ReadonlySet<VariableValueType> = new Set([
   "ordinal",
   "count",
   "positive",
+  "semicontinuous",
   "proportion",
   "time_to_event",
   "vector",
