@@ -137,7 +137,11 @@ The nuance currently sits in a doc nobody opens. Surface it *at the point of con
 - **`/effects.html` explainer page** (precedent: the copula explainer pages) hosting the long form — the
   honesty spectrum, bias-vs-variance, **Chen–Roth `log(Y+c)`**, PPML/Jensen, Cragg/Tobit/Duan/Mincer, and the
   γ/δ manifold. Source: `docs/fitting-outcome-marginals.md`.
-- **The `log(Y+c)` refutation widget** — slide `c`, watch the "% effect" swing. Chen–Roth taught by *doing*.
+- ~~The `log(Y+c)` refutation widget~~ — **SPURRED OUT** to its own example: `docs/spur-chen-roth-refutation.md`.
+  It is the one piece of nuance best taught by *doing*, and it deserves a whole example (with a dollars/cents
+  toggle that moves the entire curve), not a widget bolted onto the pad. Note the pad is already the
+  CONSTRUCTIVE answer to Chen–Roth: with zeros, "the effect" is a one-parameter family, and the pad makes
+  you pick a member on purpose instead of letting an arbitrary `c` pick one for you.
 
 ---
 
@@ -150,6 +154,6 @@ The nuance currently sits in a doc nobody opens. Surface it *at the point of con
 5. **(b2)** free mode
 6. **(c1)** ⓘ dots
 7. **(c2)** `/effects.html`
-8. **(c3)** `log(Y+c)` refutation widget
+8. ~~**(c3)** `log(Y+c)` refutation widget~~ → **spur**: `docs/spur-chen-roth-refutation.md`
 
 Each step: `tsc -b` + `vitest run` green, golden reviewed, then commit.
