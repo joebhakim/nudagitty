@@ -62,6 +62,7 @@ import {
   setNodeDataMode,
   authorNumber,
   unlearnNumber,
+  setImposedEffect,
   pinNumber,
   unpinKey,
   withCoupling,
@@ -1079,6 +1080,9 @@ export function App() {
             onPinNumber={(key) => commit(pinNumber(document, key))}
             onUnpinKey={(key) => commit(unpinKey(document, key))}
             onUnlearnNumber={(key) => commit(unlearnNumber(document, key))}
+            // Re-author the imposed effect's STORY (the extensive/intensive split). We never set the
+            // coefficients: commitState runs reconcilePins, which DERIVES gamma/delta from the estimand.
+            onImposedShare={(share) => commit(setImposedEffect(document, { extensiveShare: share }))}
           />
         </ModuleFrame>
       </aside>

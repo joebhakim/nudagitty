@@ -1194,6 +1194,37 @@ button.prov-chip { cursor: pointer; }
 .resid-dot { fill: #6b40b0; opacity: 0.5; }
 .info-dot { display: inline-block; margin-left: 4px; font-size: 10.5px; line-height: 1; color: var(--accent, #23716f); opacity: 0.65; cursor: help; vertical-align: baseline; }
 .info-dot:hover { opacity: 1; }
+/* ---- imposed-effect manifold pad: one target, many stories ---- */
+.imposed-pad { margin: 8px 0; padding: 9px 10px; border: 1px solid var(--border, #e2e2ea); border-left: 3px solid var(--accent, #23716f); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
+.imposed-pad-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.imposed-pad-head > strong { font-size: 12px; }
+.imposed-pad-head > span { font-size: 10.5px; }
+.imposed-pad-svg { display: block; margin: 2px 0 4px; border: 1px solid var(--border, #ececf2); border-radius: 5px; background: var(--surface-0, #fff); touch-action: none; cursor: crosshair; }
+/* the ATE field — which side of the target you're on (deliberately faint: the CONTOUR is the message) */
+.ipad-field-under { fill: var(--chart-series-1, #23716f); opacity: 0.05; }
+.ipad-field-over { fill: var(--chart-series-2, #cf7a22); opacity: 0.07; }
+/* provably unreachable: S(γ) ≤ Amax ⇒ no γ can reach the target below the δ floor. Grey, not red —
+   it's a constraint of the data, not a user error. */
+.ipad-infeasible { fill: var(--muted, #65717d); opacity: 0.16; }
+.ipad-floor { stroke: var(--muted, #65717d); stroke-width: 1; stroke-dasharray: 3 2; opacity: 0.7; }
+.ipad-contour { fill: none; stroke: var(--accent, #23716f); stroke-width: 2; }
+.ipad-handle { fill: var(--accent, #23716f); stroke: #fff; stroke-width: 1.5; }
+.imposed-share { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted, #667); }
+.imposed-share > span { flex: 0 0 auto; }
+.imposed-share > input { flex: 1 1 auto; min-width: 0; accent-color: var(--accent, #23716f); }
+.imposed-share > b { flex: 0 0 34px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text, #222); }
+.imposed-readout { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; margin-top: 5px; }
+.imposed-readout > div { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--surface-2, #f2f2f6); }
+.imposed-readout span { color: var(--muted, #667); }
+.imposed-readout b { font-variant-numeric: tabular-nums; }
+.imposed-foot { font-size: 10.5px !important; opacity: 0.9; margin-top: 5px !important; line-height: 1.45; }
+@media (prefers-color-scheme: dark) {
+  .imposed-pad { background: #1b1b22; border-color: #34343e; }
+  .imposed-pad-svg { background: #141419; border-color: #2a2a33; }
+  .imposed-readout > div { background: #26262f; }
+  .ipad-handle { stroke: #141419; }
+}
+
 .marginal-dist { margin: 4px 0 2px; }
 .marginal-dist > summary { cursor: pointer; font-size: 11px; color: var(--muted, #667); list-style: revert; }
 .marginal-dist > summary:hover { color: var(--text, #222); }

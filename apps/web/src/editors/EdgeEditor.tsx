@@ -10,6 +10,7 @@ import { NodeName } from "../outputs/EstimandFormula";
 import { computeEdgeTransfer } from "../charts/edgeTransfer";
 import { chartFrame } from "../charts/chartFrame";
 import { EDGE_MECHANISMS } from "../app/constants";
+import { ImposedEffectPad } from "./ImposedEffectPad";
 
 export function EdgeEditor(props: {
   edge: GraphEdge;
@@ -19,6 +20,7 @@ export function EdgeEditor(props: {
   onEnabled: (edge: GraphEdge, enabled: boolean) => void;
   onMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
   onDelete: (edgeId: string) => void;
+  onImposedShare: (share: number) => void;
 }) {
   const committed = useMemo(() => normalizeEdgeMechanism(props.document.simulation.edges[props.edge.id]), [props.document.simulation.edges, props.edge.id]);
   // The edge is edited as a local draft so dragging/typing only repaints the transfer
@@ -42,6 +44,9 @@ export function EdgeEditor(props: {
         </div>
       </div>
       <div className="selection-editor-body">
+        {/* When this edge carries an IMPOSED effect, its coefficient is DERIVED from the estimand — so the
+            control is the estimand's story (the extensive/intensive split), not the raw number below. */}
+        <ImposedEffectPad document={props.document} edgeId={props.edge.id} onShare={props.onImposedShare} />
         <EdgeTransferPlot
           mechanism={draft}
           state={sourceState}

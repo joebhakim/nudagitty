@@ -265,6 +265,7 @@ export function SelectionEditor(props: {
   onCoefficient: (edge: GraphEdge, coefficient: number) => void;
   onEdgeEnabled: (edge: GraphEdge, enabled: boolean) => void;
   onEdgeMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
+  onImposedShare: (share: number) => void;
   onDeleteEdge: (edgeId: string) => void;
   onSetDataMode: (nodeId: string, mode: "read" | "fit" | "author") => void;
   onPinNumber: (key: string) => void;
@@ -300,6 +301,7 @@ export function SelectionEditor(props: {
     onEnabled={props.onEdgeEnabled}
     onMechanism={props.onEdgeMechanism}
     onDelete={props.onDeleteEdge}
+    onImposedShare={props.onImposedShare}
   />;
   return (
     <div className="selection-empty-state">

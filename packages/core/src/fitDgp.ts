@@ -1,4 +1,4 @@
-import type { GraphDocument, NodeCombinerKind, NodeGate } from "./types";
+import type { GraphDocument, ImposedEffect, NodeCombinerKind, NodeGate } from "./types";
 import { cloneDocument, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, reconcileSimulationSpec } from "./graph";
 import { setLinearCoefficient, setNode, ZERO_NOISE } from "./examples/builders";
 import { datasetRows, registerRuntimeDataset } from "./datasets";
@@ -365,6 +365,20 @@ export function imposedEffectContext(document: GraphDocument): ImposedEffectCont
   };
 
   return { family, exposure, outcome, edgeId: edge.id, target, c0, amax, s, maxExtensiveShare, deltaFloor, deltaFor, decompose, solve };
+}
+
+/**
+ * Re-author the imposed effect's STORY (how much of it runs through the extensive margin) or its TARGET.
+ * You never set γ/δ — reconcilePins derives them. The share is clamped to what the data can deliver.
+ */
+export function setImposedEffect(input: GraphDocument, patch: Partial<ImposedEffect>): GraphDocument {
+  const current = input.metadata.imposedEffect;
+  if (!current) return input;
+  const next = { ...current, ...patch };
+  if (next.target === current.target && next.extensiveShare === current.extensiveShare) return input;
+  const document = cloneDocument(input);
+  document.metadata.imposedEffect = next;
+  return document;
 }
 
 // Live reconcile: re-fit every pinned number from the current data + DAG (offset-regression, so pinned
