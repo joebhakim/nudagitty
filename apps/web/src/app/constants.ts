@@ -63,6 +63,7 @@ export const VARIABLE_TYPES: Array<[VariableModel["valueType"], string]> = [
   ["ordinal", "ordinal"],
   ["count", "count"],
   ["positive", "positive real"],
+  ["semicontinuous", "two-part (zeros + positive)"],
   ["proportion", "proportion"],
   ["time_to_event", "time to event"],
   ["vector", "vector"],

@@ -493,6 +493,12 @@ function ResidualCheck({ d }: { d: ResidualDiagnostic }) {
           <span className="rt-name">Gaussian noise (Jarque–Bera)</span>
           <span className="rt-stat">skew {d.normality.skewness.toFixed(1)}, exk {d.normality.excessKurtosis.toFixed(1)}, p&nbsp;{d.normality.pValue < 0.001 ? "<0.001" : `=${d.normality.pValue.toFixed(3)}`}</span>
         </div>
+        {d.gate && (
+          <div className={`rtest ${flagged(d.gate.independence.pValue) ? "fail" : "pass"}`}>
+            <span className="rt-name">participation gate (P(Y&gt;0))</span>
+            <span className="rt-stat">{(d.gate.rate * 100).toFixed(0)}% obs / {(d.gate.predictedRate * 100).toFixed(0)}% pred, ε⊥X dCor {d.gate.independence.dcor.toFixed(2)}, p&nbsp;{fmtP(d.gate.independence.pValue)}</span>
+          </div>
+        )}
       </div>
       <svg className="residual-scatter" viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="residuals vs fitted">
         <line x1={pad} y1={H / 2} x2={W - pad} y2={H / 2} className="resid-zero" />
@@ -507,7 +513,7 @@ function ResidualCheck({ d }: { d: ResidualDiagnostic }) {
           </div>
         ))}
       </div>
-      <p className="muted residual-foot">{d.scale !== "identity" && <><b>Residuals on the {d.scale} scale</b> (the family's link). </>}Distance correlation (≡ HSIC), permutation p over {d.perms} shuffles, n&nbsp;=&nbsp;{d.n}. OLS forces residuals <i>linearly</i> orthogonal to X, so this <b>nonlinear</b> test (RESIT) is what still catches a mis-specified mechanism.</p>
+      <p className="muted residual-foot">{d.scale !== "identity" && <><b>Residuals on the {d.scale} scale</b> (the family's link). </>}{d.gate && <>Two-part: the scatter/tests below are the <b>intensive</b> margin (amount | Y&gt;0); the gate row above is the <b>extensive</b> margin (whether Y&gt;0). </>}Distance correlation (≡ HSIC), permutation p over {d.perms} shuffles, n&nbsp;=&nbsp;{d.n}. OLS forces residuals <i>linearly</i> orthogonal to X, so this <b>nonlinear</b> test (RESIT) is what still catches a mis-specified mechanism.</p>
     </div>
   );
 }
@@ -558,7 +564,7 @@ export function VariableEditor(props: {
   // correctly — no more picking a distribution and hoping the inferred type agrees.
   const FAMILY_LINK: Partial<Record<VariableModel["valueType"], NodeCombinerKind>> = { continuous: "additive", binary: "bernoulli_logit", count: "poisson_log", ordinal: "additive", categorical: "additive", positive: "gamma_log", proportion: "bounded_logistic" };
   const FAMILY_ROOT_DISTRIBUTION: Partial<Record<VariableModel["valueType"], NodeDistribution["kind"]>> = { continuous: "normal", binary: "bernoulli", count: "poisson", positive: "gamma", proportion: "beta", categorical: "categorical", ordinal: "categorical" };
-  const REALIZED_FAMILIES = new Set<VariableModel["valueType"]>(["continuous", "binary", "count", "ordinal", "categorical", "positive", "proportion"]);
+  const REALIZED_FAMILIES = new Set<VariableModel["valueType"]>(["continuous", "binary", "count", "ordinal", "categorical", "positive", "semicontinuous", "proportion"]);
   const changeFamily = (kind: VariableModel["valueType"]) => {
     const patch: Partial<VariableModel> = { valueType: kind };
     if ((kind === "ordinal" || kind === "categorical") && variable.categories.length < 2) patch.categories = ["level 1", "level 2", "level 3"];
