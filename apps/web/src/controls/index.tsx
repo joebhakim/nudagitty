@@ -214,3 +214,9 @@ export function List({ values, empty }: { values: string[]; empty: string }) {
   if (values.length === 0) return empty ? <p className="muted">{empty}</p> : null;
   return <ul className="plain-list">{values.map((value) => <li key={value}>{value}</li>)}</ul>;
 }
+
+// Small "ⓘ" affordance carrying an explanatory tooltip (native title). Used to surface otherwise-
+// invisible mechanism detail (e.g. the two-part gate/intensive math) without a redesign.
+export function InfoDot({ tip, label = "more info" }: { tip: string; label?: string }) {
+  return <span className="info-dot" role="img" aria-label={label} title={tip}>ⓘ</span>;
+}

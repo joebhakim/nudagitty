@@ -1188,7 +1188,12 @@ button.prov-chip { cursor: pointer; }
 @media (prefers-color-scheme: dark) { .residual-identif { background: #2a2140; color: #c9adf0; border-color: #4a3b66; } }
 .residual-scatter { display: block; margin: 6px 0; border: 1px solid var(--border, #ececf2); border-radius: 5px; background: var(--surface-0, #fff); }
 .resid-zero { stroke: #b9b9c6; stroke-width: 1; stroke-dasharray: 3 3; }
+.resid-axis { stroke: #c9c9d4; stroke-width: 1; }
+.resid-tick { fill: var(--text-muted, #8a8a99); font-size: 8px; font-variant-numeric: tabular-nums; }
+.resid-axlabel { fill: var(--text-muted, #8a8a99); font-size: 8.5px; }
 .resid-dot { fill: #6b40b0; opacity: 0.5; }
+.info-dot { display: inline-block; margin-left: 4px; font-size: 11px; line-height: 1; color: var(--accent, #6b40b0); opacity: 0.7; cursor: help; vertical-align: baseline; }
+.info-dot:hover { opacity: 1; }
 .residual-bars { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
 .residual-bar-row { display: flex; align-items: center; gap: 7px; font-size: 11px; }
 .rb-label { flex: 0 0 80px; color: var(--text-muted, #667); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1196,7 +1201,7 @@ button.prov-chip { cursor: pointer; }
 .rb-track > i { display: block; height: 100%; background: #6b40b0; }
 .rb-val { flex: 0 0 30px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted, #667); }
 .residual-foot { font-size: 10.5px !important; opacity: 0.85; }
-@media (prefers-color-scheme: dark) { .residual-check { background: #1b1b22; border-color: #34343e; } .residual-scatter { background: #141419; border-color: #2a2a33; } .rb-track { background: #2a2a33; } }
+@media (prefers-color-scheme: dark) { .residual-check { background: #1b1b22; border-color: #34343e; } .residual-scatter { background: #141419; border-color: #2a2a33; } .rb-track { background: #2a2a33; } .resid-axis { stroke: #3a3a45; } }
 
 /* Diagnostics ledger — a collapsible section in the left column; collapsed unless a check needs review. */
 .checks-panel { border: 1px solid #cbd5dc; border-left: 4px solid #8a93a5; border-radius: 9px; background: #fff; box-shadow: 0 1px 3px rgba(24,35,42,0.07); overflow: hidden; }

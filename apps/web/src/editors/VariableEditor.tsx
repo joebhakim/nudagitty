@@ -28,7 +28,7 @@ import { EstimandFormula, NodeName } from "../outputs/EstimandFormula";
 import { nodeDisplayName, nodeOutputLabel } from "../compute/format";
 import { analyticDistributionLabel, defaultDistribution, valueTypeFromDistribution, valueTypeLabel } from "../compute/distributionPlot";
 import { conditioningSliderBounds, conditioningSliderStep, roundToStep } from "../compute/conditioning";
-import { Checkbox, NumberField, RoleToggle, TactileNumberField } from "../controls";
+import { Checkbox, InfoDot, NumberField, RoleToggle, TactileNumberField } from "../controls";
 import { EdgeEditor, EdgePanel } from "./EdgeEditor";
 import { DistributionEditor } from "./DistributionEditor";
 import { AdjustmentMethodEditor } from "./adjustment";
@@ -452,6 +452,11 @@ function DepControl(props: {
 // RESIT (Peters et al. 2014) residual diagnostics on a fitted continuous node. Distance correlation ≡ HSIC
 // (Sejdinovic 2013), significance by permutation. Three tests: exogeneity ε⊥X, homoskedasticity via
 // dCor(ε²,X), and residual non-Gaussianity (Jarque–Bera). Refutations, not confirmations.
+const TWO_PART_FAMILY_TIP =
+  "Two-part (semicontinuous): the outcome is a participation gate P(Y>0)=σ(η_gate) times a positive amount exp(η+ε). The fit learns them separately — logistic on 1(Y>0) for the gate, log-linear on Y>0 for the amount — so the marginal can reproduce a spike at $0 plus a skewed positive tail. A coefficient on the amount is on the LOG scale (e.g. +0.03 ≈ +3% among workers), NOT dollars; the dollar effect is the do-contrast in the output.";
+const TWO_PART_RESID_TIP =
+  "Two-part diagnostics. The scatter + exogeneity/homoskedasticity/Gaussian tests are the INTENSIVE margin (amount | Y>0), on the LOG scale it is fit on — 'fitted' is η = log-earnings, so a $2M earner sits at the far right. The participation-gate row is the EXTENSIVE margin, P(Y>0). The log-normal amount is retransformation-corrected so its mean matches the data; the tests still flag that log-normal earnings on dollar predictors is misspecified (the heavy tail).";
+
 function ResidualCheck({ d }: { d: ResidualDiagnostic }) {
   if (!d.available) return null;
   const pFloor = 1 / (d.perms + 1);
@@ -464,16 +469,22 @@ function ResidualCheck({ d }: { d: ResidualDiagnostic }) {
     : d.verdict === "weak"
       ? <>Residuals show <b>borderline dependence</b> on the parents (dCor {d.independence.dcor.toFixed(2)}, p&nbsp;{fmtP(d.independence.pValue)}); worst&nbsp;= <b>{d.worst?.label}</b>. The additive-noise fit is a rough approximation.</>
       : <>Residuals <b>depend on the parents</b> (dCor {d.independence.dcor.toFixed(2)}, p&nbsp;{fmtP(d.independence.pValue)}); worst&nbsp;= <b>{d.worst?.label}</b>. The exogenous-noise assumption <b>ε ⊥ X looks violated</b> — enrich the functional form, or suspect an unmeasured confounder.</>;
-  const W = 230, H = 96, pad = 4;
+  // Plot area with margins for axis labels (mL left for the y-axis, mB bottom for the x-axis).
+  const W = 250, H = 120, mL = 34, mR = 8, mT = 6, mB = 24;
+  const plotW = W - mL - mR, plotBot = H - mB, midY = mT + (plotBot - mT) / 2;
   const fx = d.points.map((p) => p.fitted);
   const fmin = Math.min(...fx), fmax = Math.max(...fx);
   const rabs = Math.max(1e-9, ...d.points.map((p) => Math.abs(p.residual)));
-  const sx = (f: number) => pad + ((f - fmin) / Math.max(1e-9, fmax - fmin)) * (W - 2 * pad);
-  const sy = (r: number) => H / 2 - (r / rabs) * (H / 2 - pad);
+  const sx = (f: number) => mL + ((f - fmin) / Math.max(1e-9, fmax - fmin)) * plotW;
+  const sy = (r: number) => midY - (r / rabs) * ((plotBot - mT) / 2 - 2);
+  // Axis ticks: on the log scale, show the DOLLAR equivalent (exp η) so the heavy tail is legible.
+  const money = (v: number) => v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `$${(v / 1e3).toFixed(0)}k` : `$${Math.round(v)}`;
+  const axFmt = (v: number) => d.scale === "log" ? money(Math.exp(v)) : d.scale === "logit" ? (1 / (1 + Math.exp(-v))).toFixed(2) : (Math.abs(v) >= 1000 ? money(v) : v.toFixed(1));
+  const xLabel = d.scale === "log" ? "fitted earnings (log scale)" : d.scale === "logit" ? "fitted P (logit scale)" : "fitted";
   return (
     <div className={`residual-check verdict-${d.verdict}`}>
       <div className="residual-head">
-        <strong>Residual check</strong>
+        <strong>Residual check{d.gate && <InfoDot tip={TWO_PART_RESID_TIP} />}</strong>
         <span className="residual-verdict">{verdictLabel}</span>
       </div>
       <p className="muted">{lead}</p>
@@ -500,8 +511,19 @@ function ResidualCheck({ d }: { d: ResidualDiagnostic }) {
           </div>
         )}
       </div>
-      <svg className="residual-scatter" viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="residuals vs fitted">
-        <line x1={pad} y1={H / 2} x2={W - pad} y2={H / 2} className="resid-zero" />
+      <svg className="residual-scatter" viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`residuals vs ${xLabel}`}>
+        {/* axes */}
+        <line x1={mL} y1={mT} x2={mL} y2={plotBot} className="resid-axis" />
+        <line x1={mL} y1={plotBot} x2={W - mR} y2={plotBot} className="resid-axis" />
+        <line x1={mL} y1={midY} x2={W - mR} y2={midY} className="resid-zero" />
+        {/* x ticks (min / max) — dollars on the log scale so a $2M outlier is legible */}
+        <text x={mL} y={plotBot + 10} className="resid-tick">{axFmt(fmin)}</text>
+        <text x={W - mR} y={plotBot + 10} className="resid-tick" textAnchor="end">{axFmt(fmax)}</text>
+        <text x={mL + plotW / 2} y={H - 2} className="resid-axlabel" textAnchor="middle">{xLabel}</text>
+        {/* y ticks (±max residual) + label */}
+        <text x={mL - 3} y={mT + 6} className="resid-tick" textAnchor="end">+{rabs.toFixed(1)}</text>
+        <text x={mL - 3} y={plotBot} className="resid-tick" textAnchor="end">−{rabs.toFixed(1)}</text>
+        <text transform={`translate(9 ${midY}) rotate(-90)`} className="resid-axlabel" textAnchor="middle">residual</text>
         {d.points.map((p, i) => <circle key={i} cx={sx(p.fitted)} cy={sy(p.residual)} r={1.4} className="resid-dot" />)}
       </svg>
       <div className="residual-bars">
@@ -660,7 +682,7 @@ export function VariableEditor(props: {
               })()}
               {!isRoot && (
                 <label className="field">
-                  <span>{isData ? "fit family (link)" : "type"}</span>
+                  <span>{isData ? "fit family (link)" : "type"}{variable.valueType === "semicontinuous" && <InfoDot tip={TWO_PART_FAMILY_TIP} />}</span>
                   <select value={variable.valueType} onChange={(event) => changeFamily(event.target.value as VariableModel["valueType"])}>
                     {VARIABLE_TYPES.map(([kind, label]) => (<option value={kind} key={kind} disabled={!REALIZED_FAMILIES.has(kind) && kind !== variable.valueType}>{label}{REALIZED_FAMILIES.has(kind) ? "" : " (planned)"}</option>))}
                   </select>
