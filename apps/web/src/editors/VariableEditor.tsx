@@ -30,6 +30,7 @@ import { nodeDisplayName, nodeOutputLabel } from "../compute/format";
 import { analyticDistributionLabel, defaultDistribution, valueTypeFromDistribution, valueTypeLabel } from "../compute/distributionPlot";
 import { conditioningSliderBounds, conditioningSliderStep, roundToStep } from "../compute/conditioning";
 import { Checkbox, InfoDot, NumberField, RoleToggle, TactileNumberField } from "../controls";
+import { EquationBlock } from "./EquationBlock";
 import { EdgeEditor, EdgePanel } from "./EdgeEditor";
 import { DistributionEditor } from "./DistributionEditor";
 import { AdjustmentMethodEditor } from "./adjustment";
@@ -773,43 +774,18 @@ export function VariableEditor(props: {
                   {isData && !generates && (
                     <p className="muted generation-read">Arrows are <b>structural only</b> — fit (📌) or author (✎) a number to make {node.label} depend on its parents.</p>
                   )}
-                  <div className="generation-equation dense">
-                    <div className="generation-term">
-                      <span className="gen-term-name">intercept</span>
-                      {isData && interceptState === "not-learned"
-                        ? <span className="gen-notlearned muted">not learned</span>
-                        : <TactileNumberField label="" value={mechanism.intercept} step={0.1} nudge={1} onChange={(intercept) => props.onMechanism(node.id, { intercept })} />}
-                      <DepControl {...depProps} state={interceptState} keyStr={pinKeys.intercept(node.id)} />
-                    </div>
-                    {parentEdges.map((p) => (
-                      <div className="generation-term" key={p.edge.id}>
-                        <span className="gen-term-name" title={p.label}>{p.label} ×</span>
-                        {isData && dep(p.key) === "not-learned"
-                          ? <span className="gen-notlearned muted">not learned</span>
-                          : p.coef !== null
-                            ? <TactileNumberField label="" value={p.coef} step={0.1} nudge={1} onChange={(v) => props.onCoefficient(p.edge, v)} />
-                            : <span className="gen-curve muted">{p.kind} — edit on edge</span>}
-                        <DepControl {...depProps} state={dep(p.key)} keyStr={p.key} />
-                      </div>
-                    ))}
-                    {(generates || !isData) && (
-                      <div className="generation-term gen-term-combiner">
-                        <span className="gen-term-name">combiner</span>
-                        <select value={mechanism.combiner} onChange={(event) => props.onMechanism(node.id, { combiner: event.target.value as NodeCombinerKind })}>
-                          {NODE_COMBINERS.map((item) => <option value={item.kind} key={item.kind}>{item.label}</option>)}
-                        </select>
-                      </div>
-                    )}
-                    {!isBinary && (
-                      <div className="generation-term">
-                        <span className="gen-term-name">noise</span>
-                        {isData && noiseState === "not-learned"
-                          ? <span className="gen-notlearned muted">not learned</span>
-                          : <DistributionEditor label="" distribution={mechanism.noise} onChange={(noise) => props.onMechanism(node.id, { noise })} />}
-                        <DepControl {...depProps} state={noiseState} keyStr={pinKeys.noise(node.id)} />
-                      </div>
-                    )}
-                  </div>
+                  <EquationBlock
+                    node={node}
+                    document={props.document}
+                    mechanism={mechanism}
+                    isData={isData}
+                    parents={parentEdges}
+                    onMechanism={props.onMechanism}
+                    onCoefficient={props.onCoefficient}
+                    onPinNumber={props.onPinNumber}
+                    onUnpinKey={props.onUnpinKey}
+                    onUnlearnNumber={props.onUnlearnNumber}
+                  />
                   {isData && parentEdges.length > 0 && !allFitted && <button type="button" className="generation-fit" onClick={() => props.onSetDataMode(node.id, "fit")}>Fit all from data →</button>}
                   {generates && <div ref={residualRef}><ResidualCheck d={residual} /></div>}
                 </div>

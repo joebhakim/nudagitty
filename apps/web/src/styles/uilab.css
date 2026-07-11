@@ -142,3 +142,17 @@
   .dt-table tr.st-fitted .dt-from button { color: #7fe3c6; }
   .dt-table tr.st-authored .dt-from button { color: #e0b877; }
 }
+
+/* Lab chrome for the chosen-direction feature section. */
+.uilab-feature { margin-bottom: 34px; padding-bottom: 22px; border-bottom: 1px solid #e2e2ea; }
+.uilab-feature > h2 { margin: 0 0 4px; font-size: 15px; }
+.uilab-pick { font-size: 11px; font-weight: 700; color: var(--accent, #23716f); letter-spacing: 0.02em; }
+.uilab-note-wide { max-width: 92ch; min-height: 0; margin-bottom: 12px; font-size: 12px; }
+.uilab-note-wide code { font-family: ui-monospace, monospace; background: rgba(0,0,0,0.05); padding: 1px 3px; border-radius: 3px; }
+.uilab-col h3 { margin: 0 0 6px; font-size: 12px; font-weight: 700; }
+.uilab-col h3 .muted { font-weight: 500; color: var(--muted, #8a8f99); }
+.uilab-section-title { margin: 0 0 12px; font-size: 15px; }
+@media (prefers-color-scheme: dark) {
+  .uilab-feature { border-bottom-color: #2a2a33; }
+  .uilab-note-wide code { background: rgba(255,255,255,0.08); }
+}

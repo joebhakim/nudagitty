@@ -9,8 +9,8 @@ for (const scheme of ["light", "dark"] as const) {
     const page = await browser.newPage({ colorScheme: scheme, viewport: { width: 2100, height: 1150 } });
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
-    await page.goto("http://localhost:5173/ui-lab.html");
-    await expect(page.locator(".uilab-grid")).toBeVisible({ timeout: 20000 });
+    await page.goto("http://127.0.0.1:5173/ui-lab.html");
+    await expect(page.locator(".uilab-grid").first()).toBeVisible({ timeout: 20000 });
     await page.waitForTimeout(500);
     console.log(`[${scheme}] COLUMNS:`, await page.locator(".uilab-col").count(), "| ERRORS:", errors.length ? errors.join(" | ") : "none");
     await page.screenshot({ path: `screenshots/uilab-${scheme}.png`, fullPage: true });

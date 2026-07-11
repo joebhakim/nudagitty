@@ -6,6 +6,8 @@ import {
   RestyledDependence, TableDependence, useTerms
 } from "./variants";
 import type { Term } from "./fixtures";
+import { EQ_NODES } from "./nodeSpecs";
+import { EquationV2 } from "./EquationV2";
 
 type VariantComponent = ComponentType<{ terms: Term[]; onCycle: (id: string) => void; onValue: (id: string, v: number) => void }>;
 
@@ -55,12 +57,47 @@ export function UiLab() {
         </div>
       </header>
 
+      <section className="uilab-feature">
+        <h2>C2 · Equation, family-aware <span className="uilab-pick">← chosen direction</span></h2>
+        <p className="uilab-note uilab-note-wide">
+          The equation is the node's real generative form — binary is a logistic, two-part is a gate × an
+          exp(). Coefficients are ghost inputs (click to edit); the underline carries provenance
+          (teal = fitted, ochre = authored, dashed = not learned) and the right-hand glyph cycles it.
+          <strong> current</strong> is shown first, same width, as the density reference.
+        </p>
+        <div className="uilab-grid">
+          <DensityRef width={width} />
+          {EQ_NODES.map((n) => (
+            <section className="uilab-col" key={n.id}>
+              <h3>{n.label} <span className="muted">· {n.family}</span></h3>
+              <div className="uilab-pane" style={{ width }}>
+                <EquationV2 node={n} />
+              </div>
+            </section>
+          ))}
+        </div>
+      </section>
+
+      <h2 className="uilab-section-title">All directions (the original comparison)</h2>
       <div className="uilab-grid">
         {VARIANTS.map((v) => (
           <VariantColumn key={v.id} title={v.title} note={v.note} width={width} withResidual={withResidual} Component={v.Component} />
         ))}
       </div>
     </div>
+  );
+}
+
+// The ORIGINAL, same width, same node — so the density claim is checkable at a glance rather than asserted.
+function DensityRef({ width }: { width: number }) {
+  const state = useTerms(TERMS);
+  return (
+    <section className="uilab-col">
+      <h3>current <span className="muted">· density reference</span></h3>
+      <div className="uilab-pane" style={{ width }}>
+        <CurrentDependence {...state} />
+      </div>
+    </section>
   );
 }
 
