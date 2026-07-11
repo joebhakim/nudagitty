@@ -9,7 +9,9 @@ import { runSimulation } from "./index";
 // logit instead of being the real column. That silently corrupted the covariates (and hence the
 // confounding) of any user-built plasmode DGP. All three paths now neutralize the mechanism.
 describe("plasmode passthrough ignores a stale fitted marginal on a data column", () => {
-  // One simulation per document, then read every covariate out of it (this example is expensive to build).
+  // ONE simulation per document, then read every covariate out of it. The two-part example bails to the
+  // interpreted path (compiled.ts can't do the gate), so each run is expensive — four of them blew vitest's
+  // 5s default under suite load.
   function covariates(doc: NonNullable<ReturnType<typeof exampleDocument>>) {
     const sim = runSimulation(doc.graph, doc.simulation);
     const stat = (id: string) => {

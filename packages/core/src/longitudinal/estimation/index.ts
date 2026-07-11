@@ -57,7 +57,9 @@ export function compareLongitudinalGMethods(document: GraphDocument, config: GMe
       effectiveSampleSize: effectiveSampleSize(cohort.weights) ?? 0
     },
     diagnostics: validateLongitudinalMetadata(document),
-    ...(typeof fullMetadata.imposedEffect === "number" ? { imposedEffect: fullMetadata.imposedEffect } : {})
+    // The comparison surfaces the imposed TARGET (a number, for display next to the MC-noisy do()-oracle);
+    // the full ImposedEffect spec (share, exposure, outcome) stays on the document metadata.
+    ...(typeof fullMetadata.imposedEffect?.target === "number" ? { imposedEffect: fullMetadata.imposedEffect.target } : {})
   };
 }
 

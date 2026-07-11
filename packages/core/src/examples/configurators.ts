@@ -1351,7 +1351,7 @@ export function configureLalondeFitRecoverTwoPart(document: GraphDocument): Grap
   }
   // Record the analytic truth the DGP imposes (γ+δ solved so extensive+intensive = exactly this), so the
   // output can show it next to the MC-noisy simulated do()-oracle.
-  doc.metadata = { ...doc.metadata, imposedEffect: 1794 };
+  doc.metadata = { ...doc.metadata, imposedEffect: { target: 1794, extensiveShare: 0.62, exposure: "In_program", outcome: "Earnings_78" } };
   return doc;
 }
 

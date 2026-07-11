@@ -2,6 +2,7 @@ import type {
   EdgeMechanism,
   EdgeMechanismKind,
   GraphDocumentMetadata,
+  ImposedEffect,
   NodeDistribution,
   NodeGate,
   NodeInteraction,
@@ -143,7 +144,24 @@ export function normalizeGraphDocumentMetadata(metadata: Partial<GraphDocumentMe
     pins: Array.isArray(raw.pins) ? raw.pins.filter((pin): pin is string => typeof pin === "string") : [],
     authored: Array.isArray(raw.authored) ? raw.authored.filter((key): key is string => typeof key === "string") : [],
     // Emit only when set, so documents without an imposed effect stay byte-identical.
-    ...(typeof raw.imposedEffect === "number" && Number.isFinite(raw.imposedEffect) ? { imposedEffect: raw.imposedEffect } : {})
+    ...(normalizeImposedEffect(raw.imposedEffect) ? { imposedEffect: normalizeImposedEffect(raw.imposedEffect)! } : {})
+  };
+}
+
+// Accepts the object form AND the legacy bare number (older share links carry `imposedEffect: 1794`), so an
+// existing link keeps working — it just re-derives its coefficients like everything else.
+function normalizeImposedEffect(raw: unknown): ImposedEffect | null {
+  if (typeof raw === "number") return Number.isFinite(raw) ? { target: raw } : null;
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.target !== "number" || !Number.isFinite(obj.target)) return null;
+  const share = typeof obj.extensiveShare === "number" && Number.isFinite(obj.extensiveShare)
+    ? clamp01(obj.extensiveShare) : undefined;
+  return {
+    target: obj.target,
+    ...(share !== undefined ? { extensiveShare: share } : {}),
+    ...(typeof obj.exposure === "string" && obj.exposure ? { exposure: obj.exposure } : {}),
+    ...(typeof obj.outcome === "string" && obj.outcome ? { outcome: obj.outcome } : {})
   };
 }
 

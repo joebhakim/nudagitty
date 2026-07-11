@@ -251,9 +251,27 @@ export interface GraphDocumentMetadata {
   // fitted/authored. Both absent/empty ⇒ every existing model (nodes generate, edges authored by default).
   pins: string[];
   authored: string[];
-  // The effect the DGP IMPOSES by construction (the analytic truth), when an example sets one. Surfaced
-  // alongside the simulated do()-oracle, which for a nonlinear outcome (e.g. two-part) carries MC noise.
-  imposedEffect?: number | null;
+  // The causal effect the DGP IMPOSES by construction. This is the AUTHORED OBJECT — the coefficients that
+  // realize it are DERIVED from it on every reconcile (see solveImposedEffect). Storing the coefficient
+  // instead would be a latent lie: change the fit and the coefficient no longer produces `target`, but a
+  // separate "imposed = $1,794" badge would still claim it does.
+  imposedEffect?: ImposedEffect | null;
+}
+
+// An imposed causal effect: the ESTIMAND you author, not the coefficient that happens to encode it.
+//
+// For an ADDITIVE outcome the coefficient IS the ATE (do(1)−do(0) = β for every unit), so this is trivial.
+// For a TWO-PART outcome it is not: treatment acts on TWO margins — the participation gate γ (log-odds) and
+// the amount δ (log-dollars) — and neither is in dollars. "ATE = target" is ONE equation in TWO unknowns, so
+// it defines a ONE-PARAMETER FAMILY of causal stories, all delivering the same dollar effect. `extensiveShare`
+// picks which member of that family you mean: how much of the effect comes from MORE PEOPLE WORKING versus
+// HIGHER PAY AMONG WORKERS. (It is clamped to what the data can actually deliver — see the feasibility wall
+// in docs/plan-imposed-estimand.md.)
+export interface ImposedEffect {
+  target: number;            // the ATE, in the outcome's own units
+  extensiveShare?: number;   // two-part only: fraction of the effect delivered via the gate (0..1)
+  exposure?: string;         // defaults to the graph's exposure-role node
+  outcome?: string;          // defaults to the graph's outcome-role node
 }
 
 export interface GraphNode {
