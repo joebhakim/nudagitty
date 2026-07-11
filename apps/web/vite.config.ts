@@ -28,7 +28,9 @@ export default defineConfig({
         // gallery.* subdomain). In dev both are served at / and /gallery.html.
         main: resolve(root, "index.html"),
         gallery: resolve(root, "gallery.html"),
-        "joint-lab": resolve(root, "joint-lab.html")
+        "joint-lab": resolve(root, "joint-lab.html"),
+        // Prototype-only: side-by-side design variants for editor chrome (see src/uilab/).
+        "ui-lab": resolve(root, "ui-lab.html")
       }
     }
   },

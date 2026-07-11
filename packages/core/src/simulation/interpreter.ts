@@ -95,6 +95,17 @@ export function sampleRootValue(distribution: NodeDistribution, variable: Variab
   return coerceBinary(sampleDistribution(distribution, rng));
 }
 
+// A node fed by an ENABLED table_lookup (and no interactions) IS its data cell. Its own intercept /
+// noise / combiner must therefore be IGNORED — otherwise a stale fitted marginal (e.g. from clicking
+// "fit" on a data column, which leaves an intercept + noise behind) gets ADDED on top of the cell and
+// silently corrupts it: `age` becomes 34 + real_age + N(0,10.5), and a binary column gets re-drawn
+// through a leftover logit. Curated plasmode nodes already carry exactly this neutral shape (intercept 0,
+// constant-0 noise, additive combiner), so this is a no-op for them — it only repairs polluted ones.
+const PASSTHROUGH_NOISE: NodeDistribution = { kind: "constant", value: 0 };
+export function plasmodePassthroughMechanism(mechanism: NodeMechanism): NodeMechanism {
+  return { ...mechanism, intercept: 0, noise: PASSTHROUGH_NOISE, combiner: "additive" };
+}
+
 // P(Y>0) for a two-part (semicontinuous) node: σ over the gate's own linear predictor. Needs raw
 // parent values, so the caller (which holds the `values` map) computes it and hands the result to
 // finalizeNodeValue. A node with no gate returns 1 (always participates ⇒ ordinary single-part).

@@ -136,7 +136,14 @@ export function compileModel(graph: GraphModel, spec: SimulationSpec, order: str
     // other edges are STRUCTURAL (the causal DAG you draw for adjustment), not a regenerating model — so
     // wiring confounders into a plasmode treatment must not blow up its linear predictor.
     const rawLookup = lookupParent >= 0 && mechanism.interactions.length === 0;
-    plan.push({ id, out, binary, count, ordinal, ordinalThr, categorical, catLevels, rawLookup, lookupParent, lookupFn, isRoot: false, rootSampler: identity, binaryNonBernoulliRoot: false, intercept: mechanism.intercept, edgeParents, edgeFns, absorbParents, absorbFns, interactions: mechanism.interactions.map((interaction) => compileInteractionFn(interaction, index)), noiseSampler: compileDistributionSampler(mechanism.noise), riskFn, combineFn: link, variable });
+    // A data-backed node IS its cell: drop its intercept / noise / combiner so a stale fitted marginal
+    // can't be added on top (see plasmodePassthroughMechanism). No-op for curated plasmode nodes, which
+    // already carry intercept 0 + constant-0 noise + additive — so the values AND rng stream are unchanged.
+    const passIntercept = rawLookup ? 0 : mechanism.intercept;
+    const passNoise: FastSampler = rawLookup ? identity : compileDistributionSampler(mechanism.noise);
+    const passLink: (eta: number) => number = rawLookup ? ((eta) => eta) : link;
+    const passRisk: (eta: number) => number = rawLookup ? ((eta) => clamp01(eta)) : riskFn;
+    plan.push({ id, out, binary, count, ordinal, ordinalThr, categorical, catLevels, rawLookup, lookupParent, lookupFn, isRoot: false, rootSampler: identity, binaryNonBernoulliRoot: false, intercept: passIntercept, edgeParents, edgeFns, absorbParents, absorbFns, interactions: mechanism.interactions.map((interaction) => compileInteractionFn(interaction, index)), noiseSampler: passNoise, riskFn: passRisk, combineFn: passLink, variable });
   }
   return { plan, index };
 }

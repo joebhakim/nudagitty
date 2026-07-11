@@ -25,7 +25,7 @@ import {
 } from "./conditioning";
 import { empiricalDistribution, emptyEmpiricalDistribution, simulateEmpiricalDistributions } from "./empirical";
 import type { StructuralContribution } from "./interpreter";
-import { coerceVariableValue, edgeContribution, finalizeNodeValue, gateProbability, interactionContribution, sampleRootValue } from "./interpreter";
+import { coerceVariableValue, edgeContribution, finalizeNodeValue, gateProbability, interactionContribution, plasmodePassthroughMechanism, sampleRootValue } from "./interpreter";
 import { empiricalSampleSize } from "./math";
 
 export interface SimulationInterventionContext {
@@ -100,15 +100,18 @@ export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?
       if (edgeMechanism.kind === "table_lookup") lookupContribution = contribution;
       if (!absorbing) value += contribution;
     }
-    // Plasmode: a node read from data (a table_lookup edge, no interactions) IS the cell value — ignore
-    // the other structural edges (the causal DAG for adjustment, not a regenerating model). Matches compiled.
-    if (lookupContribution !== null && mechanism.interactions.length === 0) value = mechanism.intercept + lookupContribution;
-    const interaction = interactionContribution(values, mechanism);
-    const noise = sampleDistribution(mechanism.noise, rng);
+    // Plasmode: a node read from data (a table_lookup edge, no interactions) IS the cell value — ignore the
+    // other structural edges (the causal DAG for adjustment, not a regenerating model) AND the node's own
+    // intercept/noise/combiner (a stale fitted marginal must not be added on top). Matches compiled.
+    const rawLookup = lookupContribution !== null && mechanism.interactions.length === 0;
+    const mech = rawLookup ? plasmodePassthroughMechanism(mechanism) : mechanism;
+    if (rawLookup) value = lookupContribution!;
+    const interaction = interactionContribution(values, mech);
+    const noise = sampleDistribution(mech.noise, rng);
     value += interaction + noise;
-    const analytic = analyticForStructuralNode(activeGraph, id, spec, mechanism, analyticByNode);
-    const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mechanism, values) : 1;
-    const finalized = finalizeNodeValue(value, mechanism, variable, nodeContributions, mechanism.intercept + interaction + noise, rng, false, gateProb);
+    const analytic = analyticForStructuralNode(activeGraph, id, spec, mech, analyticByNode);
+    const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mech, values) : 1;
+    const finalized = finalizeNodeValue(value, mech, variable, nodeContributions, mech.intercept + interaction + noise, rng, false, gateProb);
     values[id] = variable.valueType === "distributional" ? distributionProjection(analytic, finalized) : finalized;
     analyticByNode.set(id, analytic);
   }
@@ -224,12 +227,14 @@ export function runIntervenedEmpiricalSimulation(graph: GraphModel, spec: Simula
           if (edgeMechanism.kind === "table_lookup") lookupContribution = contribution;
           if (!absorbing) value += contribution;
         }
-        if (lookupContribution !== null && mechanism.interactions.length === 0) value = mechanism.intercept + lookupContribution;
-        const interaction = interactionContribution(values, mechanism);
-        const noise = sampleDistribution(mechanism.noise, rng);
+        const rawLookup = lookupContribution !== null && mechanism.interactions.length === 0;
+        const mech = rawLookup ? plasmodePassthroughMechanism(mechanism) : mechanism;
+        if (rawLookup) value = lookupContribution!;
+        const interaction = interactionContribution(values, mech);
+        const noise = sampleDistribution(mech.noise, rng);
         value += interaction + noise;
-        const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mechanism, values) : 1;
-        values[id] = finalizeNodeValue(value, mechanism, variable, nodeContributions, mechanism.intercept + interaction + noise, rng, true, gateProb);
+        const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mech, values) : 1;
+        values[id] = finalizeNodeValue(value, mech, variable, nodeContributions, mech.intercept + interaction + noise, rng, true, gateProb);
       }
       lastValues = values;
       for (const id of order) samples[id]?.push(values[id] ?? 0);

@@ -27,7 +27,7 @@ import { compileModel, runCompiledForward } from "./compiled";
 import { prepareCopulaBlock, drawCopulaBlockSample } from "../copulaVine";
 import { VARIANCE_EPSILON } from "./constants";
 import type { StructuralContribution } from "./interpreter";
-import { coerceVariableValue, edgeContribution, finalizeNodeValue, gateProbability, interactionContribution, sampleRootValue } from "./interpreter";
+import { coerceVariableValue, edgeContribution, finalizeNodeValue, gateProbability, interactionContribution, plasmodePassthroughMechanism, sampleRootValue } from "./interpreter";
 import { clampProbability, empiricalSampleSize, inverseStandardNormalCdf, standardNormalCdf } from "./math";
 import { choleskyDecomposition } from "../stats/linalg";
 
@@ -162,6 +162,7 @@ export function simulateEmpiricalDistributions(
         } else {
           const nodeContributions: StructuralContribution[] = [];
           let value = mechanism.intercept;
+          let lookupContribution: number | null = null;
           for (const parent of parents) {
             const edge = graph.edges.find((candidate) => candidate.kind === "directed" && candidate.source === parent && candidate.target === id);
             if (!edge) continue;
@@ -170,11 +171,18 @@ export function simulateEmpiricalDistributions(
             const contribution = edgeContribution(values[parent] ?? 0, edgeMechanism);
             const absorbing = edgeMechanism.kind === "absorbing";
             nodeContributions.push({ value: contribution, absorbing });
+            if (edgeMechanism.kind === "table_lookup") lookupContribution = contribution;
             if (!absorbing) value += contribution;
           }
-          const interaction = interactionContribution(values, mechanism);
+          // Plasmode: a node read from data (an ENABLED table_lookup, no interactions) IS the cell value —
+          // ignore the other structural edges AND its own intercept/noise/combiner, so a stale fitted
+          // marginal can never be added on top of the column. Matches core.ts / compiled.ts.
+          const rawLookup = lookupContribution !== null && mechanism.interactions.length === 0;
+          const mech = rawLookup ? plasmodePassthroughMechanism(mechanism) : mechanism;
+          if (rawLookup) value = lookupContribution!;
+          const interaction = interactionContribution(values, mech);
           const base = value + interaction;
-          const guided = condition && shouldUseImportanceSampling(condition) ? guidedAdditiveNoiseSample(base, mechanism, variable, condition, rng) : null;
+          const guided = condition && shouldUseImportanceSampling(condition) ? guidedAdditiveNoiseSample(base, mech, variable, condition, rng) : null;
           if (guided) {
             if (!guided.possible) possible = false;
             values[id] = guided.value;
@@ -182,10 +190,10 @@ export function simulateEmpiricalDistributions(
             guidedThisSample = guidedThisSample || guided.guided;
             continue;
           }
-          const noise = sampleDistribution(mechanism.noise, rng);
+          const noise = sampleDistribution(mech.noise, rng);
           value += interaction + noise;
-          const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mechanism, values) : 1;
-          values[id] = finalizeNodeValue(value, mechanism, variable, nodeContributions, mechanism.intercept + interaction + noise, rng, true, gateProb);
+          const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mech, values) : 1;
+          values[id] = finalizeNodeValue(value, mech, variable, nodeContributions, mech.intercept + interaction + noise, rng, true, gateProb);
         }
       }
     }

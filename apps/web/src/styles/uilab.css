@@ -1,0 +1,144 @@
+/* UI lab (prototype-only). Every variant class is prefixed (.dl-/.de-/.dt-/.dep-restyled) so nothing
+   here can leak into the real editor. Colours come from the house tokens in base.css:
+   --accent teal = "from data" (matches the prov-badge.data language), --chart-series-2 ochre = "you set it"
+   (matches prov-badge.modeled). Purple is deliberately gone.
+
+   Dark uses @media (prefers-color-scheme: dark) — the SAME convention every real component uses — so these
+   rules are directly portable into the app once a variant is chosen (and so the lab can't lie about dark). */
+
+.uilab { padding: 20px 24px 60px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: var(--text, #202428); background: #f6f7f8; min-height: 100vh; }
+.uilab-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 20px; }
+.uilab h1 { margin: 0 0 6px; font-size: 19px; }
+.uilab-sub { margin: 0; max-width: 62ch; font-size: 12.5px; line-height: 1.5; color: var(--muted, #65717d); }
+.uilab-sub code { font-family: ui-monospace, monospace; font-size: 11.5px; background: rgba(0,0,0,0.05); padding: 1px 4px; border-radius: 3px; }
+.uilab-controls { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--muted, #65717d); }
+.uilab-controls label { display: inline-flex; align-items: center; gap: 5px; }
+
+.uilab-grid { display: flex; align-items: flex-start; gap: 18px; overflow-x: auto; padding-bottom: 12px; }
+.uilab-col { flex: 0 0 auto; }
+.uilab-col h2 { margin: 0 0 3px; font-size: 13px; font-weight: 700; }
+.uilab-note { margin: 0 0 8px; font-size: 11px; line-height: 1.45; color: var(--muted, #65717d); max-width: 320px; min-height: 46px; }
+/* The pane mimics the real editor column: same surface + padding, so density reads true. */
+.uilab-pane { padding: 10px; border: 1px solid #e2e2ea; border-radius: 9px; background: #fff; }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   A · PROVENANCE LEDGER — the ResidualCheck row idiom applied to provenance.
+   The row's tint + left accent IS the state, so it's legible without reading.
+   ─────────────────────────────────────────────────────────────────────────── */
+.dl-card { display: flex; flex-direction: column; }
+.dl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.dl-head > strong { font-size: 12px; }
+.dl-head > .muted { font-size: 11px; color: var(--muted, #65717d); }
+.dl-rows { display: flex; flex-direction: column; gap: 2px; padding: 5px 6px; border: 1px solid var(--border, #e2e2ea); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
+.dl-row { display: flex; align-items: center; gap: 7px; padding: 3px 7px; border-radius: 5px; border-left: 3px solid transparent; font-size: 11px; }
+.dl-name { flex: 1 1 auto; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dl-val { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-family: ui-monospace, monospace; font-size: 11px; }
+.dl-chip { flex: 0 0 auto; appearance: none; border: 1px solid transparent; background: none; border-radius: 999px; padding: 1px 6px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.02em; cursor: pointer; white-space: nowrap; }
+
+/* fitted = from data → the teal/green of prov-badge.data */
+.dl-row.st-fitted { background: rgba(35,113,111,0.08); border-left-color: #23716f; }
+.dl-row.st-fitted .dl-chip { color: #0d6b52; background: #d8f2ea; border-color: #9ed9c6; }
+/* authored = you set it → the ochre of prov-badge.modeled */
+.dl-row.st-authored { background: rgba(207,122,34,0.10); border-left-color: #cf7a22; }
+.dl-row.st-authored .dl-chip { color: #8a5a12; background: #f6ecd8; border-color: #e0c48f; }
+/* not-learned = structural only, no number → neutral + dashed, value is an em-dash */
+.dl-row.st-not-learned { background: transparent; border-left: 3px dashed #c9ccd4; }
+.dl-row.st-not-learned .dl-name, .dl-row.st-not-learned .dl-val { color: var(--muted, #9aa0a8); font-weight: 500; font-style: italic; }
+.dl-row.st-not-learned .dl-chip { color: var(--muted, #8a8f99); background: #f0f1f4; border-color: #dfe1e6; }
+.dl-row-plain { padding-left: 10px; }
+.dl-row-plain .dl-name { flex: 0 0 auto; }   /* don't let the select squeeze "combiner" to "comb…" */
+.dl-row-plain .dl-select, .dl-row-plain select { flex: 1 1 auto; min-width: 0; font-size: 11px; }
+/* Quiet, on-palette call to action — not a loud solid pill. */
+.dl-fit { align-self: flex-start; appearance: none; margin-top: 8px; border: 1px solid var(--accent, #23716f); background: none; color: var(--accent, #23716f); font-size: 11.5px; font-weight: 700; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+.dl-fit:hover { background: var(--accent-soft, #dff0ee); }
+
+/* E · LEDGER, EXCEPTION-TINTED — "fitted" is the default state (≈ every row), so leave it QUIET; only the
+   things worth spotting (authored / not-learned) carry a tint. Keeps the ResidualCheck row idiom without
+   turning 8 fitted parents into a uniform wall of teal that says nothing. */
+.dl-quiet .dl-row.st-fitted { background: none; border-left-color: transparent; }
+.dl-quiet .dl-row.st-fitted .dl-chip { color: #0d6b52; background: none; border-color: transparent; font-weight: 600; opacity: 0.75; }
+.dl-quiet .dl-row.st-fitted:hover { background: rgba(0,0,0,0.03); }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   B · RESTYLE ONLY — same markup as Current; just re-point the colours.
+   ─────────────────────────────────────────────────────────────────────────── */
+.dep-restyled .dep-control button:nth-child(1).active { background: #9aa0a8; }                 /* ∅ neutral */
+.dep-restyled .dep-control button:nth-child(2).active { background: var(--accent, #23716f); }  /* 📌 from data (teal) */
+.dep-restyled .dep-control button:nth-child(3).active { background: #cf7a22; }                 /* ✎ you set it (ochre) */
+.dep-restyled .generation-fit { background: none; border: 1px solid var(--accent, #23716f); color: var(--accent, #23716f); font-size: 11.5px; padding: 5px 10px; border-radius: 6px; }
+.dep-restyled .generation-fit:hover { background: var(--accent-soft, #dff0ee); }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   C · EQUATION — the structural equation, coefficients as provenance chips.
+   ─────────────────────────────────────────────────────────────────────────── */
+.de-card { display: flex; flex-direction: column; }
+.de-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.de-head > strong { font-size: 12px; }
+.de-head > .muted { font-size: 11px; color: var(--muted, #65717d); }
+.de-eq { padding: 7px 8px; border: 1px solid var(--border, #e2e2ea); border-radius: 7px; background: var(--surface-1, #fbfbfd); font-size: 11.5px; }
+.de-lhs { font-weight: 700; margin-bottom: 3px; }
+.de-term { display: flex; align-items: baseline; gap: 4px; padding: 1px 0 1px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.de-op, .de-mul { color: var(--muted, #99a); }
+.de-parent { color: var(--text, #202428); overflow: hidden; text-overflow: ellipsis; }
+.de-coef { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 700; padding: 0 4px; border-radius: 4px; cursor: pointer; border-bottom: 2px solid transparent; }
+.de-coef.st-fitted { color: #0d6b52; background: rgba(35,113,111,0.10); border-bottom-color: #23716f; }
+.de-coef.st-authored { color: #8a5a12; background: rgba(207,122,34,0.12); border-bottom-color: #cf7a22; }
+.de-coef.st-not-learned { color: var(--muted, #9aa0a8); background: none; border-bottom: 2px dashed #c9ccd4; font-style: italic; font-weight: 500; }
+/* A parent with no number yet: the arrow is structural only — show it as an absent term, not a fake slot. */
+.de-term-off { cursor: pointer; opacity: 0.6; }
+.de-term-off .de-parent { font-style: italic; }
+.de-off-tag { font-size: 9.5px; font-style: italic; color: var(--muted, #9aa0a8); border-bottom: 1px dashed #c9ccd4; }
+.de-via { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; }
+.de-via select { flex: 1 1 auto; min-width: 0; font-size: 11px; }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   D · ALIGNED TABLE — columns + tabular numerals; provenance is a quiet column.
+   ─────────────────────────────────────────────────────────────────────────── */
+.dt-card { display: flex; flex-direction: column; }
+.dt-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.dt-head > strong { font-size: 12px; }
+.dt-head > .muted { font-size: 11px; color: var(--muted, #65717d); }
+.dt-table { width: 100%; border-collapse: collapse; border: 1px solid var(--border, #e2e2ea); border-radius: 7px; background: var(--surface-1, #fbfbfd); font-size: 11px; overflow: hidden; }
+.dt-table th { text-align: left; font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted, #8a8f99); padding: 4px 8px; border-bottom: 1px solid var(--border, #e2e2ea); }
+.dt-table th:nth-child(2) { text-align: right; }
+.dt-table td { padding: 3px 8px; border-bottom: 1px solid rgba(0,0,0,0.04); }
+.dt-table tr:last-child td { border-bottom: none; }
+.dt-name { font-weight: 600; max-width: 110px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dt-val { text-align: right; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.dt-from button { appearance: none; border: none; background: none; padding: 0; font-size: 10px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.dt-table tr.st-fitted .dt-from button { color: #0d6b52; }
+.dt-table tr.st-authored .dt-from button { color: #8a5a12; }
+.dt-table tr.st-not-learned td { color: var(--muted, #9aa0a8); font-style: italic; }
+.dt-table tr.st-not-learned .dt-from button { color: var(--muted, #8a8f99); font-style: normal; }
+.dt-row-plain select { width: 100%; font-size: 11px; }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   DARK — the app's real convention, so what you see here is what you'd ship.
+   ─────────────────────────────────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  .uilab { background: #101014; color: #e8e8ef; }
+  .uilab-pane { background: #17171d; border-color: #2a2a33; }
+  .uilab-note, .uilab-sub, .uilab-controls { color: #8a8f99; }
+  .uilab-sub code { background: rgba(255,255,255,0.08); }
+
+  .dl-rows { background: #1b1b22; border-color: #34343e; }
+  .dl-row.st-fitted { background: rgba(35,113,111,0.20); }
+  .dl-row.st-fitted .dl-chip { color: #7fe3c6; background: #123028; border-color: #2c5a4c; }
+  .dl-row.st-authored { background: rgba(207,122,34,0.18); }
+  .dl-row.st-authored .dl-chip { color: #e0b877; background: #302610; border-color: #5a4a24; }
+  .dl-row.st-not-learned { border-left-color: #3a3a45; }
+  .dl-row.st-not-learned .dl-chip { color: #8a8f99; background: #26262f; border-color: #34343e; }
+  .dl-quiet .dl-row.st-fitted .dl-chip { color: #7fe3c6; }
+  .dl-quiet .dl-row.st-fitted:hover { background: rgba(255,255,255,0.04); }
+  .dl-fit:hover { background: rgba(35,113,111,0.20); }
+
+  .de-eq { background: #1b1b22; border-color: #34343e; }
+  .de-coef.st-fitted { color: #7fe3c6; background: rgba(35,113,111,0.22); }
+  .de-coef.st-authored { color: #e0b877; background: rgba(207,122,34,0.20); }
+
+  .dt-table { background: #1b1b22; border-color: #34343e; }
+  .dt-table th { border-bottom-color: #34343e; }
+  .dt-table td { border-bottom-color: rgba(255,255,255,0.05); }
+  .dt-table tr.st-fitted .dt-from button { color: #7fe3c6; }
+  .dt-table tr.st-authored .dt-from button { color: #e0b877; }
+}
