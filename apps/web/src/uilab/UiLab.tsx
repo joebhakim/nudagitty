@@ -6,6 +6,8 @@ import {
   RestyledDependence, TableDependence, useTerms
 } from "./variants";
 import type { Term } from "./fixtures";
+import { EQ_NODES } from "./nodeSpecs";
+import { EquationV2 } from "./EquationV2";
 
 type VariantComponent = ComponentType<{ terms: Term[]; onCycle: (id: string) => void; onValue: (id: string, v: number) => void }>;
 
@@ -55,6 +57,28 @@ export function UiLab() {
         </div>
       </header>
 
+      <section className="uilab-feature">
+        <h2>C2 · Equation, family-aware <span className="uilab-pick">← chosen direction</span></h2>
+        <p className="uilab-note uilab-note-wide">
+          The equation renders the node's <strong>actual generative form</strong>, because that form is the thing
+          worth teaching. A binary node is a logistic; the two-part outcome is a gate × an exp() — so the gate and
+          the <code>exp</code> stop being invisible tooltip lore and just become the equation. Coefficients are{" "}
+          <strong>ghost inputs</strong>: they read as part of the equation, click one to edit. The glyph on the
+          right is provenance (📌 fitted / ✎ authored / ∅ not learned) — click to change.
+        </p>
+        <div className="uilab-grid">
+          {EQ_NODES.map((n) => (
+            <section className="uilab-col" key={n.id}>
+              <h3>{n.label} <span className="muted">· {n.family}</span></h3>
+              <div className="uilab-pane" style={{ width }}>
+                <EquationV2 node={n} />
+              </div>
+            </section>
+          ))}
+        </div>
+      </section>
+
+      <h2 className="uilab-section-title">All directions (the original comparison)</h2>
       <div className="uilab-grid">
         {VARIANTS.map((v) => (
           <VariantColumn key={v.id} title={v.title} note={v.note} width={width} withResidual={withResidual} Component={v.Component} />

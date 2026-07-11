@@ -142,3 +142,82 @@
   .dt-table tr.st-fitted .dt-from button { color: #7fe3c6; }
   .dt-table tr.st-authored .dt-from button { color: #e0b877; }
 }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   C2 · EQUATION v2 — family-aware. The generative FORM is the teaching payload:
+   a binary node is a logistic; a two-part node is a gate × an exp(). Coefficients
+   are GHOST INPUTS: they read as part of the equation until you click them.
+   ─────────────────────────────────────────────────────────────────────────── */
+.eq2-card { display: flex; flex-direction: column; }
+.eq2-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.eq2-head > strong { font-size: 12px; }
+.eq2-head > .muted { font-size: 11px; color: var(--muted, #65717d); }
+
+/* The shape + its plain-language gloss. Every symbol the equation introduces is said in words once. */
+.eq2-shape { padding: 7px 9px; border: 1px solid var(--accent, #23716f); border-left-width: 3px; border-radius: 7px; background: var(--accent-soft, #dff0ee); margin-bottom: 6px; }
+.eq2-shape > code { display: block; font-family: ui-monospace, monospace; font-size: 11.5px; color: #0d5b52; }
+.eq2-shape > code b { font-weight: 700; }
+.eq2-gloss { margin: 4px 0 0; font-size: 10.5px; line-height: 1.45; color: #3d6b62; }
+
+.eq2-body { padding: 6px 8px; border: 1px solid var(--border, #e2e2ea); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
+
+/* A two-part node has TWO predictors; label each margin so the split is explicit. */
+.eq2-sub { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; padding: 4px 0 3px; border-top: 1px dashed #dfe1e6; margin-top: 4px; }
+.eq2-sub:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+.eq2-sub-title { font-size: 11.5px; font-weight: 700; }
+.eq2-sub > code { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted, #65717d); }
+.eq2-margin-tag { margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--accent, #23716f); opacity: 0.8; }
+
+.eq2-pred { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 4px; }
+.eq2-term { display: flex; align-items: baseline; gap: 4px; font-size: 11px; padding: 1px 0; }
+.eq2-term.is-off { opacity: 0.55; }
+.eq2-lead { flex: 0 0 auto; font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--muted, #65717d); min-width: 14px; }
+.eq2-op, .eq2-mul { color: var(--muted, #99a); font-family: ui-monospace, monospace; }
+.eq2-parent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eq2-off { font-size: 9.5px; font-style: italic; color: var(--muted, #9aa0a8); }
+.eq2-tail { flex: 1 1 auto; }   /* pushes the provenance glyph to the right margin */
+.eq2-dist { font-family: ui-monospace, monospace; font-size: 10.5px; }
+.eq2-noise { border-top: 1px dashed #dfe1e6; padding-top: 4px; margin-top: 3px; }
+.eq2-foot { margin: 5px 0 0; font-size: 10px; line-height: 1.4; color: var(--muted, #8a8f99); }
+
+/* Ghost number: reads as text in the equation; a click turns it into an input. The underline carries
+   provenance, so the colour language is identical to the ledger/badges (teal = data, ochre = you). */
+.eq2-num { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 11px; padding: 0 3px; border-radius: 3px; cursor: text; border-bottom: 2px solid transparent; }
+.eq2-num:hover { background: rgba(0,0,0,0.05); }
+.eq2-num.st-fitted { color: #0d6b52; border-bottom-color: #23716f; }
+.eq2-num.st-authored { color: #8a5a12; border-bottom-color: #cf7a22; }
+.eq2-num.st-not-learned { color: var(--muted, #9aa0a8); border-bottom: 2px dashed #c9ccd4; font-style: italic; font-weight: 500; }
+.eq2-num-input { width: 76px; border: 1px solid var(--accent, #23716f); background: var(--surface-0, #fff); outline: none; text-align: right; }
+
+/* Provenance glyph, right-aligned so the column of 📌/✎ is scannable down the equation. */
+.eq2-prov { flex: 0 0 auto; appearance: none; border: 1px solid transparent; background: none; border-radius: 4px; padding: 0 3px; font-size: 10px; line-height: 1.5; cursor: pointer; opacity: 0.75; }
+.eq2-prov:hover { opacity: 1; background: rgba(0,0,0,0.05); }
+.eq2-prov.st-not-learned { filter: grayscale(1); opacity: 0.45; }
+
+@media (prefers-color-scheme: dark) {
+  .eq2-shape { background: rgba(35,113,111,0.18); border-color: #2c5a4c; }
+  .eq2-shape > code { color: #7fe3c6; }
+  .eq2-gloss { color: #9fd3c6; }
+  .eq2-body { background: #1b1b22; border-color: #34343e; }
+  .eq2-sub { border-top-color: #34343e; }
+  .eq2-noise { border-top-color: #34343e; }
+  .eq2-num:hover { background: rgba(255,255,255,0.07); }
+  .eq2-num.st-fitted { color: #7fe3c6; }
+  .eq2-num.st-authored { color: #e0b877; }
+  .eq2-num-input { background: #101014; color: #e8e8ef; }
+  .eq2-prov:hover { background: rgba(255,255,255,0.08); }
+}
+
+/* Lab chrome for the chosen-direction feature section. */
+.uilab-feature { margin-bottom: 34px; padding-bottom: 22px; border-bottom: 1px solid #e2e2ea; }
+.uilab-feature > h2 { margin: 0 0 4px; font-size: 15px; }
+.uilab-pick { font-size: 11px; font-weight: 700; color: var(--accent, #23716f); letter-spacing: 0.02em; }
+.uilab-note-wide { max-width: 92ch; min-height: 0; margin-bottom: 12px; font-size: 12px; }
+.uilab-note-wide code { font-family: ui-monospace, monospace; background: rgba(0,0,0,0.05); padding: 1px 3px; border-radius: 3px; }
+.uilab-col h3 { margin: 0 0 6px; font-size: 12px; font-weight: 700; }
+.uilab-col h3 .muted { font-weight: 500; color: var(--muted, #8a8f99); }
+.uilab-section-title { margin: 0 0 12px; font-size: 15px; }
+@media (prefers-color-scheme: dark) {
+  .uilab-feature { border-bottom-color: #2a2a33; }
+  .uilab-note-wide code { background: rgba(255,255,255,0.08); }
+}
