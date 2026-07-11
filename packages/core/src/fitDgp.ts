@@ -177,9 +177,199 @@ export function unpinNumber(input: GraphDocument, key: string): GraphDocument {
   return authorNumber(input, key);
 }
 
+// ================= imposed effect: derive the coefficients from the authored ESTIMAND =================
+//
+// You author an ATE. The coefficient that encodes it is DERIVED — never stored as the source of truth,
+// because a stored coefficient becomes a lie the moment the fit changes.
+//
+// For an ADDITIVE outcome the coefficient IS the ATE (do(1)−do(0) = β for every unit), so this is trivial.
+// For a TWO-PART outcome it is not. Treatment acts on two margins:
+//     P(Y>0) = σ(ηg + γ·T)          γ in LOG-ODDS
+//     E[Y|Y>0] = exp(ηa + δ·T + h)  δ in LOG-DOLLARS,  h = σ²/2
+// Neither is in dollars, and the per-unit dollar effect is heterogeneous, so NO coefficient equals the ATE.
+// "ATE = A" is ONE equation in TWO unknowns ⇒ a ONE-PARAMETER FAMILY of causal stories. `extensiveShare`
+// picks the member: how much of the effect comes from MORE PEOPLE WORKING vs HIGHER PAY AMONG WORKERS.
+//
+// δ factors out of the intensive term (exp(ηa+δ+h) = e^δ·exp(ηa+h)), which collapses the whole thing:
+//     ATE(γ,δ) = e^δ·S(γ) − C₀      S(γ) = mean[σ(ηg+γ)·exp(ηa+h)],  C₀ = S(0)
+//   ⇒ δ(γ) = ln((C₀ + A) / S(γ))                      ← the entire iso-ATE contour, in closed form
+//   ⇒ extensive(γ) = S(γ) − C₀                        ← so solving for a share is a 1-D bisection on S
+//
+// FEASIBILITY IS REAL, not decorative. S(γ) ≤ S(∞) = Amax = mean[exp(ηa+h)] (everyone works), so:
+//     max extensive-only effect = Amax − C₀      and      δ ≥ ln((C₀+A)/Amax)
+// On lalonde-obs with A=$1,794: C₀=$20,614, Amax=$22,087 ⇒ the extensive margin can deliver AT MOST $1,473.
+// The target is UNREACHABLE by employment alone: pay must rise ≥1.5%, and the extensive share can never
+// exceed ~82%. We clamp to that and say so.
+export interface ImposedEffectContext {
+  family: "additive" | "log" | "two_part";
+  exposure: string;
+  outcome: string;
+  edgeId: string;
+  target: number;
+  /** Two-part / log only. C₀ = mean outcome under do(T=0); Amax = S(∞), everyone participates. */
+  c0: number;
+  amax: number;
+  /** S(γ) = mean[σ(ηg+γ)·exp(ηa+h)] — the participation-weighted mean amount. Monotone increasing. */
+  s: (gamma: number) => number;
+  /** The largest extensive share the DATA can actually deliver: (Amax − C₀)/target, clamped to [0,1]. */
+  maxExtensiveShare: number;
+  /** δ can never go below this — pay must rise at least this much, whatever γ does. */
+  deltaFloor: number;
+  /** The iso-ATE contour: given γ, the δ that holds the ATE at exactly `target`. */
+  deltaFor: (gamma: number) => number;
+  /** The dollar decomposition at a point on the contour (extensive + intensive === target). */
+  decompose: (gamma: number, delta: number) => { extensive: number; intensive: number; ate: number };
+  /** Solve the contour for a requested extensive share (clamped to what's feasible). */
+  solve: (share: number) => ImposedEffectSolution;
+}
+
+export interface ImposedEffectSolution {
+  gamma: number;             // gate shift (0 for non-two-part)
+  delta: number;             // the edge coefficient, on the outcome's link scale
+  extensiveShare: number;    // the share ACTUALLY used, after the feasibility clamp
+  clamped: boolean;          // true if the request was infeasible
+  extensive: number;         // dollars delivered by the extensive margin
+  intensive: number;         // dollars delivered by the intensive margin
+}
+
+const sigmoid01 = (x: number) => 1 / (1 + Math.exp(-Math.max(-40, Math.min(40, x))));
+
+/** Bisection for a monotone-increasing f: find x with f(x) = target, expanding the bracket as needed. */
+function bisectMonotone(f: (x: number) => number, target: number, lo: number, hi: number): number {
+  let a = lo, b = hi;
+  for (let k = 0; k < 80 && f(b) < target; k += 1) b *= 2;
+  for (let k = 0; k < 100; k += 1) { const m = (a + b) / 2; if (f(m) < target) a = m; else b = m; }
+  return (a + b) / 2;
+}
+
+/**
+ * Build the solve context from the CURRENT fitted state. Pure — no mutation — so the editor's manifold pad
+ * can call it to draw the ATE field, the iso-ATE contour and the infeasible band from exactly the same math
+ * the engine uses. Returns null if there's no imposed effect (or nothing to solve against).
+ */
+export function imposedEffectContext(document: GraphDocument): ImposedEffectContext | null {
+  const imposed = document.metadata.imposedEffect;
+  if (!imposed || !Number.isFinite(imposed.target)) return null;
+
+  // Fall back to the graph's exposure/outcome roles, so a legacy doc (bare `imposedEffect: 1794`) still works.
+  const exposure = imposed.exposure ?? document.graph.nodes.find((n) => n.roles?.exposure)?.id;
+  const outcome = imposed.outcome ?? document.graph.nodes.find((n) => n.roles?.outcome)?.id;
+  if (!exposure || !outcome) return null;
+
+  const edge = document.graph.edges.find((e) => e.source === exposure && e.target === outcome && e.kind === "directed");
+  if (!edge) return null;
+  const outcomeNode = document.graph.nodes.find((n) => n.id === outcome);
+  if (!outcomeNode) return null;
+
+  const valueType = normalizeVariableModel(outcomeNode.variable).valueType;
+  const family: ImposedEffectContext["family"] =
+    valueType === "semicontinuous" ? "two_part" : valueType === "positive" ? "log" : "additive";
+  const target = imposed.target;
+
+  // ADDITIVE: the coefficient IS the ATE. No data needed — this is why the additive example is
+  // hand-reproducible (you literally type the number).
+  if (family === "additive") {
+    const solve = (): ImposedEffectSolution => ({ gamma: 0, delta: target, extensiveShare: 0, clamped: false, extensive: 0, intensive: target });
+    return {
+      family, exposure, outcome, edgeId: edge.id, target,
+      c0: 0, amax: 0, s: () => 0, maxExtensiveShare: 0, deltaFloor: -Infinity,
+      deltaFor: () => target,
+      decompose: () => ({ extensive: 0, intensive: target, ate: target }),
+      solve
+    };
+  }
+
+  // Nonlinear families need the covariate distribution, which we read from the outcome's data rows.
+  const col = nodeColumn(document, outcome);
+  if (!col) return null;
+  const rows = datasetRows(col.dataset);
+  if (rows.length < 4) return null;
+
+  const mech = normalizeNodeMechanism(document.simulation.nodes[outcome]);
+  const sd = mech.noise.kind === "normal" ? mech.noise.sd : 0;
+  const h = (sd * sd) / 2;
+  const gate = mech.gate;
+
+  // η's over the CONFOUNDERS ONLY — the exposure's own contribution is exactly what γ/δ add, so it must be
+  // excluded here or we'd double-count it.
+  const confounders = drawnDataParents(document, outcome)
+    .filter((e) => e.source !== exposure)
+    .map((e) => {
+      const pc = nodeColumn(document, e.source);
+      const em = normalizeEdgeMechanism(document.simulation.edges[e.id]);
+      return { source: e.source, col: pc, coef: em.kind === "linear" ? em.coefficient : 0 };
+    })
+    .filter((c): c is typeof c & { col: NonNullable<typeof c.col> } => Boolean(c.col));
+
+  const etaG: number[] = [], amount: number[] = [];
+  for (const r of rows) {
+    let g = gate?.intercept ?? 0, a = mech.intercept;
+    for (const c of confounders) {
+      const v = r[c.col.dataColumn] ?? 0;
+      a += c.coef * v;
+      g += (gate?.coefficients[c.source] ?? 0) * v;
+    }
+    etaG.push(g);
+    amount.push(Math.exp(a + h)); // exp(ηa + h) — the baseline expected amount for this row
+  }
+  const n = rows.length;
+
+  // LOG (single-part, no gate): everyone "participates", so ATE = (e^δ − 1)·Ā ⇒ δ = ln(1 + A/Ā).
+  const abar = amount.reduce((s, v) => s + v, 0) / n;
+  if (family === "log") {
+    const delta = Math.log(1 + target / Math.max(1e-9, abar));
+    const solve = (): ImposedEffectSolution => ({ gamma: 0, delta, extensiveShare: 0, clamped: false, extensive: 0, intensive: target });
+    return {
+      family, exposure, outcome, edgeId: edge.id, target,
+      c0: abar, amax: abar, s: () => abar, maxExtensiveShare: 0, deltaFloor: -Infinity,
+      deltaFor: () => delta,
+      decompose: () => ({ extensive: 0, intensive: target, ate: target }),
+      solve
+    };
+  }
+
+  // TWO-PART.
+  const s = (gamma: number) => {
+    let acc = 0;
+    for (let i = 0; i < n; i += 1) acc += sigmoid01(etaG[i]! + gamma) * amount[i]!;
+    return acc / n;
+  };
+  const c0 = s(0);
+  const amax = abar;                                     // S(+∞): everyone participates
+  const maxExtensive = Math.max(0, amax - c0);           // the most employment alone can ever deliver
+  const maxExtensiveShare = target > 0 ? Math.min(1, maxExtensive / target) : 0;
+  const deltaFloor = Math.log((c0 + target) / Math.max(1e-9, amax));
+  const deltaFor = (gamma: number) => Math.log((c0 + target) / Math.max(1e-9, s(gamma)));
+
+  const decompose = (gamma: number, delta: number) => {
+    let extensive = 0, intensive = 0, ate = 0;
+    for (let i = 0; i < n; i += 1) {
+      const p0 = sigmoid01(etaG[i]!), p1 = sigmoid01(etaG[i]! + gamma);
+      const a0 = amount[i]!, a1 = a0 * Math.exp(delta);
+      extensive += (p1 - p0) * a0;   // change WHO works, amount at baseline
+      intensive += p1 * (a1 - a0);   // change HOW MUCH, among (new) workers
+      ate += p1 * a1 - p0 * a0;      // the actual two-part do()-contrast (== extensive + intensive)
+    }
+    return { extensive: extensive / n, intensive: intensive / n, ate: ate / n };
+  };
+
+  const solve = (requestedShare: number): ImposedEffectSolution => {
+    const want = Math.max(0, Math.min(1, requestedShare));
+    const share = Math.min(want, maxExtensiveShare);
+    const clamped = share < want - 1e-9;
+    // extensive(γ) = S(γ) − C₀, so target the level S(γ) = C₀ + share·A. Monotone ⇒ bisection is safe.
+    const gamma = share <= 0 ? 0 : bisectMonotone(s, c0 + share * target, 0, 8);
+    const delta = deltaFor(gamma);
+    const d = decompose(gamma, delta);
+    return { gamma, delta, extensiveShare: share, clamped, extensive: d.extensive, intensive: d.intensive };
+  };
+
+  return { family, exposure, outcome, edgeId: edge.id, target, c0, amax, s, maxExtensiveShare, deltaFloor, deltaFor, decompose, solve };
+}
+
 // Live reconcile: re-fit every pinned number from the current data + DAG (offset-regression, so pinned
 // coefficients are estimated holding the authored ones fixed). Returns the changed keys for the flash.
-export function reconcilePins(input: GraphDocument): { document: GraphDocument; changed: string[] } {
+export function reconcilePins(input: GraphDocument, depth = 0): { document: GraphDocument; changed: string[] } {
   const pinSet = new Set(input.metadata.pins ?? []);
   const authoredSet = new Set(input.metadata.authored ?? []);
   if (pinSet.size === 0) return { document: input, changed: [] };
@@ -321,9 +511,55 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
     fitSigCache.set(cacheKey, sig);
   }
 
+  // ---- derive the coefficients that realize the authored ATE ----
+  // The effect edge is AUTHORED, so the outcome's fit holds it as a per-row OFFSET — which means solving
+  // for it CHANGES the fit, which changes the η's the solve was computed against. That is a genuine
+  // fixed-point equation, so we re-reconcile until the fit reproduces what the solve assumed (below).
+  // Doing this INSIDE reconcile is what makes reconcile idempotent: reconcile(reconcile(d)) == reconcile(d).
+  // A document that is not a fixed point silently mutates the moment the app opens it (the commit pipeline
+  // reconciles on load) — and, because it no longer byte-matches exampleDocument(id), it also falls off the
+  // short `#example=` share link and serializes the whole ~10KB document instead.
+  const applyImposed = (): boolean => {
+    const ctx = imposedEffectContext(document);
+    if (!ctx) return false;
+    // If the effect edge is PINNED, the user is FITTING the effect, not imposing it — the two are mutually
+    // exclusive (fitting it learns the confounded association and destroys the imposed truth). Leave it be.
+    if (pinSet.has(edgeKey(ctx.edgeId))) return false;
+    const sol = ctx.solve(document.metadata.imposedEffect?.extensiveShare ?? 0);
+    let moved = false;
+
+    const em = normalizeEdgeMechanism(document.simulation.edges[ctx.edgeId]);
+    const beforeDelta = em.kind === "linear" ? em.coefficient : 0;
+    if (Math.abs(beforeDelta - sol.delta) > 1e-9) {
+      ensureClone();
+      setLinearCoefficient(document, ctx.exposure, ctx.outcome, sol.delta);
+      bump(edgeKey(ctx.edgeId), beforeDelta, sol.delta);
+      moved = true;
+    }
+    // γ is NOT an edge — it lives on the outcome node's gate model, which is why no UI can reach it today.
+    if (ctx.family === "two_part") {
+      const gm = normalizeNodeMechanism(document.simulation.nodes[ctx.outcome]);
+      const beforeGamma = gm.gate?.coefficients[ctx.exposure] ?? 0;
+      if (Math.abs(beforeGamma - sol.gamma) > 1e-9) {
+        ensureClone();
+        const m = normalizeNodeMechanism(document.simulation.nodes[ctx.outcome]); // re-read: ensureClone may have swapped the doc
+        setNode(document, ctx.outcome, { ...m, gate: { intercept: m.gate?.intercept ?? 0, coefficients: { ...(m.gate?.coefficients ?? {}), [ctx.exposure]: sol.gamma } } });
+        moved = true;
+      }
+    }
+    return moved;
+  };
+  const imposedMoved = applyImposed();
+
   if (document === input) return { document: input, changed: [] }; // nothing re-fit → no churn
   document.simulation = reconcileSimulationSpec(document.graph, document.simulation);
   if (input.simulation.datasets) document.simulation.datasets = input.simulation.datasets;
+  // Re-fit against the coefficients we just derived, and re-solve. Converges fast (the fit's dependence on
+  // the offset is weak); the depth guard is a backstop, not the expected exit.
+  if (imposedMoved && depth < 8) {
+    const next = reconcilePins(document, depth + 1);
+    return { document: next.document, changed: [...new Set([...changed, ...next.changed])] };
+  }
   return { document, changed };
 }
 

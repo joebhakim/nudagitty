@@ -1,0 +1,61 @@
+import { describe, it, expect } from "vitest";
+import { exampleDocument } from "./examples";
+import { imposedEffectContext } from "./index";
+
+// The solve context is PURE and is the single source of truth for BOTH the engine and the editor's
+// manifold pad. Lock the math against the values derived by hand (see docs/plan-imposed-estimand.md).
+describe("imposedEffectContext — the (γ,δ) iso-ATE manifold", () => {
+  const ctx = imposedEffectContext(exampleDocument("lalonde-fit-recover-2part")!)!;
+
+  it("recognises the two-part family and the imposed target", () => {
+    expect(ctx).toBeTruthy();
+    expect(ctx.family).toBe("two_part");
+    expect(ctx.target).toBe(1794);
+    expect(ctx.exposure).toBe("In_program");
+    expect(ctx.outcome).toBe("Earnings_78");
+  });
+
+  it("computes the feasibility wall: employment ALONE cannot reach $1,794", () => {
+    expect(ctx.c0).toBeCloseTo(20614, -2);   // do(T=0) mean earnings
+    expect(ctx.amax).toBeCloseTo(22087, -2); // S(∞): everyone works
+    const maxExtensiveDollars = ctx.amax - ctx.c0;
+    expect(maxExtensiveDollars).toBeCloseTo(1473, -2);
+    expect(maxExtensiveDollars).toBeLessThan(ctx.target);          // <-- the wall
+    expect(ctx.maxExtensiveShare).toBeCloseTo(0.821, 2);           // never 100%
+    expect(ctx.deltaFloor).toBeCloseTo(0.0144, 3);                 // pay MUST rise >= 1.5%
+  });
+
+  it("the closed-form contour holds the ATE at exactly the target, for ANY share", () => {
+    for (const share of [0, 0.2, 0.4, 0.62, 0.8]) {
+      const sol = ctx.solve(share);
+      const { ate, extensive, intensive } = ctx.decompose(sol.gamma, sol.delta);
+      expect(ate).toBeCloseTo(ctx.target, 6);                      // the whole point
+      expect(extensive + intensive).toBeCloseTo(ctx.target, 6);    // Oaxaca split telescopes exactly
+      expect(sol.delta).toBeGreaterThanOrEqual(ctx.deltaFloor - 1e-9);
+    }
+  });
+
+  it("reproduces the example's operating point (62% extensive)", () => {
+    const sol = ctx.solve(0.62);
+    expect(sol.gamma).toBeCloseTo(1.7542, 3);
+    expect(sol.delta).toBeCloseTo(0.0309, 3);
+    expect(sol.extensive).toBeCloseTo(1112, -2);
+    expect(sol.intensive).toBeCloseTo(682, -2);
+    expect(sol.clamped).toBe(false);
+  });
+
+  it("clamps an infeasible request instead of silently lying", () => {
+    const sol = ctx.solve(1.0);                                     // "make it ALL about employment"
+    expect(sol.clamped).toBe(true);
+    expect(sol.extensiveShare).toBeCloseTo(ctx.maxExtensiveShare, 6);
+    // clamped, but STILL exactly on target — we bend the story, never the truth
+    expect(ctx.decompose(sol.gamma, sol.delta).ate).toBeCloseTo(ctx.target, 6);
+  });
+
+  it("share = 0 is the all-intensive end (γ=0, pay does all the work)", () => {
+    const sol = ctx.solve(0);
+    expect(sol.gamma).toBe(0);
+    expect(sol.delta).toBeCloseTo(Math.log(1 + ctx.target / ctx.c0), 6);
+    expect(ctx.decompose(sol.gamma, sol.delta).ate).toBeCloseTo(ctx.target, 6);
+  });
+});
