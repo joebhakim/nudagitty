@@ -1,4 +1,4 @@
-import type { GraphDocument, NodeCombinerKind } from "./types";
+import type { GraphDocument, NodeCombinerKind, NodeGate } from "./types";
 import { cloneDocument, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, reconcileSimulationSpec } from "./graph";
 import { setLinearCoefficient, setNode, ZERO_NOISE } from "./examples/builders";
 import { datasetRows, registerRuntimeDataset } from "./datasets";
@@ -15,6 +15,9 @@ const noiseKey = (id: string) => `nn:${id}`;
 export type FitLink = "identity" | "log" | "logit";
 export function linkForValueType(valueType: string): { link: FitLink; combiner: NodeCombinerKind } {
   if (valueType === "positive") return { link: "log", combiner: "gamma_log" };
+  // Two-part: the intensive margin (amount | Y>0) is fit on the log scale, exactly like `positive`.
+  // The extensive margin (the gate, P(Y>0)) is fit separately below and stored on `mechanism.gate`.
+  if (valueType === "semicontinuous") return { link: "log", combiner: "gamma_log" };
   if (valueType === "proportion") return { link: "logit", combiner: "bounded_logistic" };
   return { link: "identity", combiner: "additive" };
 }
@@ -266,7 +269,26 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
       }
       if (genSum > 1e-9 && targetSum > 1e-9) newIntercept = fit.intercept + Math.log(targetSum / genSum);
     }
-    setNode(document, nodeId, { ...mech, intercept: newIntercept, combiner: isBinary ? "bernoulli_logit" : linkCombiner, noise: newNoise });
+    // Two-part gate (extensive margin): logistic fit of 1(Y>0) on the parents over ALL rows
+    // (participation is observed for everyone, unlike the intensive amount which is Y>0-only). The
+    // logistic MLE with a free intercept makes mean P(Y>0) match the empirical participation rate,
+    // so P(Y>0)·E[Y|Y>0] reproduces the overall mean including the zero spike.
+    let gate: NodeGate | null = null;
+    if (valueType === "semicontinuous") {
+      const gk: number[] = [];
+      for (let i = 0; i < XRaw.length; i += 1) if (XRaw[i]!.every(Number.isFinite)) gk.push(i);
+      const gateFit = fitLinearModel(
+        gk.map((i) => ((rows[i]![col.dataColumn] ?? 0) > 0 ? 1 : 0)),
+        gk.map((i) => XRaw[i]!),
+        gk.map(() => 0), true, true
+      );
+      if (gateFit) {
+        const coefficients: Record<string, number> = {};
+        for (let j = 0; j < pinnedEdges.length; j += 1) coefficients[pinnedEdges[j]!.source] = gateFit.coefs[j] ?? 0;
+        gate = { intercept: gateFit.intercept, coefficients };
+      }
+    }
+    setNode(document, nodeId, { ...mech, intercept: newIntercept, combiner: isBinary ? "bernoulli_logit" : linkCombiner, noise: newNoise, ...(gate ? { gate } : {}) });
     if (fitIntercept) bump(interceptKey(nodeId), mech.intercept, newIntercept);
     if (fitNoise) bump(noiseKey(nodeId), currentSd, fit.residualSd);
     if (fitSigCache.size > 400) fitSigCache.clear();
