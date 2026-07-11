@@ -30,12 +30,18 @@ already does `Y = g⁻¹(η+ε)`, so the fitter just learns the link the node's 
       exposed for data nodes ("fit family (link)"); `positive`/`proportion` un-gated. Golden byte-identical.
       Verified on lalonde re78: identity→8.4% negatives; log→positive (min $840), mean matched — and the
       diagnostic HONESTLY still fails on the log scale (earnings aren't lognormal → two-part = #94).
-- [ ] **#94 Follow-ups** — noise-family fit (skew/heavy-tail ε), two-part/hurdle for zero-inflation (the
-      real earnings-$0 fix), **retire NORTA** (#92): keep `copula_marginal` only for the copula/joint tool's
-      authored correlations, never fit-from-data. **Design write-up: `docs/fitting-outcome-marginals.md`
-      — noise-family build mechanics + the log-link ∞ guardrail (§6); the econ literature + the
-      "mechanically include for economists" menu, PPML / Cragg two-part / Tobit / Duan smearing /
-      Chen–Roth log(Y+c) refutation (§7–8).**
+- [x] **#94 P4 two-part/hurdle (Cragg) SHIPPED** (commits f3c054c…8a8151f) — new `semicontinuous` family:
+      logistic gate × log-link intensive → real earnings zero spike; `lalonde-fit-recover-2part` recovers the
+      imposed +$1,794 (extensive-led: γ solved ~62% via gate, δ solved so the analytic two-part do() = 1794
+      exactly); scale-aware diagnostic checks both margins; editor exposes the family + gate row. Two honest
+      limitations FLAGGED not hidden: log-link amplifies dollar earnings-history predictors → heavy intensive
+      tail (Mincer "log your regressors" fix deferred); the nonlinear do()-oracle is MC-noisy (imposed truth
+      is analytic 1794 — surfacing it in the output card is polish). **UI visual check on canary still pending.**
+- [ ] **#94 Follow-ups (remaining)** — noise-family fit (skew/heavy-tail ε); **Tobit** single-index contrast;
+      **PPML / gamma-GLM** mean-scale fit (fixes #93's zero-dropping log-OLS); `log(Y+c)`/asinh refutation
+      widget (Chen–Roth); **Mincer predictor transforms** for the two-part intensive; **retire NORTA** (#92).
+      **Design write-up: `docs/fitting-outcome-marginals.md` — noise-family mechanics + log-link ∞ guardrail
+      (§6); econ literature + the "mechanically include for economists" menu (§7–8).**
 - [x] **#95 Stronger target DONE** (commits 5da08d7, 1a1ebf2) — `lalonde-fit-recover`: plasmode covariates +
       FIT treat (logistic) + FIT re78 confounders holding treat→re78 AUTHORED at **+$1,794** (identity link /
       additive — the honest "clean ATE, drifted marginal" choice; log fails for earnings anyway). do(treat)

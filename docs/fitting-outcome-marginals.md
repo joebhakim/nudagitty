@@ -229,9 +229,22 @@ cross-linked to the task backlog:
   = the Duan-smearing analogue, `duan1983smearing`), keeping the ε⊥X test live. The §3 middle row;
   build mechanics + the log-link ∞ guardrail in §6. A narrow tool (heavy-tailed *symmetric*
   outcomes), orthogonal to the earnings-zeros problem — not the earnings fix.
-- **#94 P4 — two-part / hurdle (Cragg).** `cragg1971some` — the real earnings-zero fix: a
-  `P(Y>0)` gate × an `E[Y|Y>0]` intensive model. Add **Tobit** `tobin1958estimation` as the
-  single-index contrast so the tool can *show* why two-part usually wins.
+- **#94 P4 — two-part / hurdle (Cragg). SHIPPED.** `cragg1971some` — a new `semicontinuous` family:
+  a `P(Y>0)` logistic **gate** × an `E[Y|Y>0]` log-link **intensive** model, generating the real
+  earnings zero spike. Example `lalonde-fit-recover-2part` recovers the imposed +$1,794 split
+  extensive-led (γ solved for ~62% via the gate, δ solved so the analytic two-part `do()` = exactly
+  $1,794); the residual panel checks both margins (intensive RESIT + gate calibration/exogeneity).
+  Two honest limitations surfaced, both flagged not hidden:
+  1. **Heavy intensive tail** — the log-link amplifies the *dollar-valued* earnings histories
+     exponentially (skew ~30, a $2M tail), which the diagnostic points straight at (dCor on `re74`).
+     The fix is the **Mincer lesson**: log/scale the intensive regressors (needs a per-predictor
+     transform in the fit — deferred, tracked below).
+  2. **Monte-Carlo `do()`-oracle** — a two-part effect is nonlinear, so unlike #95's exact additive
+     shift the simulated `do()` wobbles (~$1,794 ± a few hundred). The *imposed* truth is exactly
+     $1,794 (analytic); surfacing that analytic benchmark in the output card (vs the noisy simulated
+     oracle) is a polish follow-up.
+  Still TODO: **Tobit** `tobin1958estimation` as the single-index contrast (show why two-part wins);
+  and the two limitation fixes above (Mincer predictor transforms; analytic-truth display).
 - **#94 P5 — retire NORTA fit-from-data** (#92): keep `copula_marginal` only for the copula/joint
   tool's *authored* correlations, never as a fit target.
 - **New — PPML / gamma-log GLM outcome model.** `santossilva2006log` + `manning2001estimating`: the
