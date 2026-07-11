@@ -48,6 +48,20 @@ already does `Y = g⁻¹(η+ε)`, so the fitter just learns the link the node's 
       exactly · this row is a Monte-Carlo estimate" under the g-formula oracle). **REMAINING (minor):** optional (i)
       on the canvas/edge editor for the log-scale coefficient; the imposed-truth line is example-specific (a general
       truth-provider/benchmark panel is the larger deferred item). **All UI still wants a canary visual pass.**
+- [ ] **REPRODUCIBILITY GAP (found 2026-07-11, from a real user replication attempt)** — `lalonde-fit-recover-2part`
+      **cannot be rebuilt from the UI**, and nothing says so. The imposed effect needs (a) the **gate coefficient
+      γ=1.754**, for which there is **no UI at all** (you cannot author an extensive-margin effect), and (b) **δ
+      solved by a numeric root-find** so the analytic two-part do() = 1794 — configurator-only. Decide: expose
+      gate-coefficient authoring + a "solve δ for a target ATE" affordance, OR label the example curated-only and
+      point hand-replication at the additive #95 (`lalonde-fit-recover`, which IS reproducible — replicate.test.ts).
+      Related trap seen in the wild: user FIT treat→outcome (learning the confounded −0.413) instead of AUTHORING
+      it — the UI makes "fit everything" the easy path, so there's no imposed truth. Consider warning when the
+      exposure→outcome edge is fitted in a "recover the imposed effect" workflow.
+- [ ] **Compact share links** — the `#c=` payload is ~9KB of base64 for one example (whole doc inlined). Want
+      short/compact links (id + delta, or a hash-backed store). Raised during the replication debug.
+- [ ] **core/empirical divergence** — empirical.ts had NO plasmode passthrough at all (it treated table_lookup as
+      a plain additive edge); now aligned, but the two loops duplicate node-evaluation logic and drifted once
+      already. Worth unifying into one evaluator.
 - [ ] **#94 Follow-ups (remaining)** — noise-family fit (skew/heavy-tail ε); **Tobit** single-index contrast;
       **PPML / gamma-GLM** mean-scale fit (fixes #93's zero-dropping log-OLS); `log(Y+c)`/asinh refutation
       widget (Chen–Roth); **Mincer predictor transforms** for the two-part intensive; **retire NORTA** (#92).
