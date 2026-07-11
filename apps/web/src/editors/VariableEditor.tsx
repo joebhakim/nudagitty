@@ -26,6 +26,7 @@ import { OPERATION_BLURBS, OPERATION_LABELS, deriveOperation } from "../shared/o
 import { clamp, coerceBinary, formatInputNumber, formatSignedValue, formatValue } from "../shared/formatting";
 import { badControlWarning, describeEstimand } from "../outputs/estimand";
 import type { ImposeSpec } from "./ImposedEffectPad";
+import { FamilyGuardrail } from "./FamilyGuardrail";
 import { EstimandFormula, NodeName } from "../outputs/EstimandFormula";
 import { nodeDisplayName, nodeOutputLabel } from "../compute/format";
 import { analyticDistributionLabel, defaultDistribution, valueTypeFromDistribution, valueTypeLabel } from "../compute/distributionPlot";
@@ -271,6 +272,7 @@ export function SelectionEditor(props: {
   onImposedEffect: (patch: Partial<ImposedEffect>) => void;
   onImposeEffect: (spec: ImposeSpec) => void;
   onClearImposedEffect: () => void;
+  onChangeFamily: (nodeId: string, kind: VariableModel["valueType"]) => void;
   onAuthorNumber: (key: string) => void;
   onSelectEdge: (edgeId: string) => void;
   onDeleteEdge: (edgeId: string) => void;
@@ -300,6 +302,7 @@ export function SelectionEditor(props: {
     onUnpinKey={props.onUnpinKey}
     onUnlearnNumber={props.onUnlearnNumber}
     onSelectEdge={props.onSelectEdge}
+    onChangeFamily={props.onChangeFamily}
   />;
   if (props.edge) return <EdgeEditor
     edge={props.edge}
@@ -312,6 +315,7 @@ export function SelectionEditor(props: {
     onImposedEffect={props.onImposedEffect}
     onImposeEffect={props.onImposeEffect}
     onClearImposedEffect={props.onClearImposedEffect}
+    onChangeFamily={props.onChangeFamily}
     onAuthorNumber={props.onAuthorNumber}
   />;
   return (
@@ -629,6 +633,7 @@ export function VariableEditor(props: {
   onUnpinKey: (key: string) => void;
   onUnlearnNumber: (key: string) => void;
   onSelectEdge: (edgeId: string) => void;
+  onChangeFamily: (nodeId: string, kind: VariableModel["valueType"]) => void;
 }) {
   const node = props.node;
   const variable = normalizeVariableModel(node.variable);
@@ -654,16 +659,11 @@ export function VariableEditor(props: {
   // R5: the response FAMILY is directly selectable and canonical (valueType is its synced mirror).
   // Picking a family sets the family's canonical link (non-root) or root distribution so it generates
   // correctly — no more picking a distribution and hoping the inferred type agrees.
-  const FAMILY_LINK: Partial<Record<VariableModel["valueType"], NodeCombinerKind>> = { continuous: "additive", binary: "bernoulli_logit", count: "poisson_log", ordinal: "additive", categorical: "additive", positive: "gamma_log", proportion: "bounded_logistic" };
-  const FAMILY_ROOT_DISTRIBUTION: Partial<Record<VariableModel["valueType"], NodeDistribution["kind"]>> = { continuous: "normal", binary: "bernoulli", count: "poisson", positive: "gamma", proportion: "beta", categorical: "categorical", ordinal: "categorical" };
   const REALIZED_FAMILIES = new Set<VariableModel["valueType"]>(["continuous", "binary", "count", "ordinal", "categorical", "positive", "semicontinuous", "proportion"]);
-  const changeFamily = (kind: VariableModel["valueType"]) => {
-    const patch: Partial<VariableModel> = { valueType: kind };
-    if ((kind === "ordinal" || kind === "categorical") && variable.categories.length < 2) patch.categories = ["level 1", "level 2", "level 3"];
-    updateVariable(patch);
-    if (isRoot) { const dist = FAMILY_ROOT_DISTRIBUTION[kind]; if (dist) props.onMechanism(node.id, { distribution: defaultDistribution(dist) }); }
-    else { const combiner = FAMILY_LINK[kind]; if (combiner) props.onMechanism(node.id, { combiner }); }
-  };
+  // Family + its canonical link move together, in ONE commit — see applyFamilyChange. Sharing that path with
+  // the guardrail's one-click fix is the point: a picker that set the type but not the link is precisely the
+  // silent mismatch the guardrail exists to catch.
+  const changeFamily = (kind: VariableModel["valueType"]) => props.onChangeFamily(node.id, kind);
   // The root-distribution picker only offers distributions that match the family, and picking one
   // syncs the family back — so the two pickers inform each other (choose poisson ⇒ type becomes count).
   const FAMILY_DISTRIBUTIONS: Partial<Record<VariableModel["valueType"], NodeDistribution["kind"][]>> = {
@@ -715,6 +715,12 @@ export function VariableEditor(props: {
       </div>
 
       <div className="selection-editor-body">
+        <FamilyGuardrail
+          document={props.document}
+          nodeId={node.id}
+          samples={state?.empirical.samples}
+          onChangeFamily={props.onChangeFamily}
+        />
         {(() => {
           const isData = nodeProvenance(props.document, node.id) === "data"; // marginal comes from the data column
           const generates = nodeGenerates(props.document, node.id);

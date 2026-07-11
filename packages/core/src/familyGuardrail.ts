@@ -1,0 +1,105 @@
+import type { GraphDocument, VariableValueType } from "./types";
+import { normalizeVariableModel } from "./graph";
+import { datasetRows } from "./datasets";
+import { nodeColumn } from "./fitDgp";
+
+/**
+ * Guardrails: does the declared response FAMILY match the variable it claims to model?
+ *
+ * The engine will happily fit and simulate a family that cannot possibly have produced the data, and say
+ * nothing. The worst case is not exotic — it is the DEFAULT. `lalonde-fit-recover` declares earnings
+ * `continuous`, so it is fit and generated as linear + Gaussian noise, and the result is a population in
+ * which **9.2% of people earn NEGATIVE money** (down to −$29,403) and **nobody earns exactly zero** —
+ * against real rows where negatives are impossible and 12.4% earn exactly zero. Every downstream estimate
+ * is then computed on a population that cannot exist. Nothing in the app said so.
+ *
+ * These checks compare two things it is cheap to have side by side:
+ *   the DATA  — what the real column looks like (what is possible), and
+ *   the DRAWS — what the DGP actually emits (what the model believes is possible).
+ * A mismatch between them is a modelling error, not a preference. So the check is a HEURISTIC (thresholds,
+ * not proofs) but the evidence it reports is a measured fact, and it always names the number that fired it.
+ *
+ * Deliberately a list, not a boolean — this grows. Obvious next rules: non-negative integers modelled as
+ * continuous (⇒ count/Poisson); a hard upper bound in the data that the model overshoots (⇒ bounded);
+ * generated mass beyond the data's support by orders of magnitude (the log-link tail).
+ */
+export type FamilyWarningKind =
+  /** Real rows pile up at exactly 0, but the family is additive — it can reproduce neither the spike nor
+   *  the floor, and will invent negatives to fit the mean. This is the two-part (Cragg) case. */
+  | "zero-spike-under-additive"
+  /** The DGP emits values the DATA says are impossible: negatives for a column that is never negative.
+   *  The most damning one, because it is measured off the draws themselves, not inferred. */
+  | "generates-impossible-negatives"
+  /** The data HAS negatives but the family is log-scale (positive / semicontinuous). The fit takes
+   *  log(Y) on Y>0, so those rows are silently dropped — and for two-part they are lumped in with the
+   *  zeros as "did not participate", which is a different claim entirely. */
+  | "negatives-under-positive-family";
+
+export interface FamilyWarning {
+  kind: FamilyWarningKind;
+  nodeId: string;
+  /** The share of rows (or draws) that triggered it — always shown, so the user judges the evidence. */
+  fraction: number;
+  /** The worst value seen, when there is one (e.g. the most negative value the DGP emitted). */
+  extreme?: number;
+  /** The family that would fix it, when there is an obvious one. */
+  suggest?: VariableValueType;
+}
+
+/** Below this share we do not nag — a stray draw is not a misspecification. */
+const NEGATIVE_DRAW_FLOOR = 0.005;
+const ZERO_SPIKE_FLOOR = 0.02;
+
+/**
+ * @param generated The node's simulated draws, when available (`nodeStates[id].empirical.samples`). Without
+ *   them the draw-based check simply does not fire — the data-based ones still do.
+ */
+export function familyWarnings(document: GraphDocument, nodeId: string, generated?: readonly number[]): FamilyWarning[] {
+  const node = document.graph.nodes.find((n) => n.id === nodeId);
+  const col = nodeColumn(document, nodeId);
+  if (!node || !col) return [];   // no real column to compare against ⇒ nothing to be honest about
+
+  const rows = datasetRows(col.dataset);
+  if (rows.length < 8) return [];
+  const data = rows.map((r) => r[col.dataColumn] ?? 0);
+  const valueType = normalizeVariableModel(node.variable).valueType;
+
+  const n = data.length;
+  const negatives = data.filter((v) => v < 0);
+  const neverNegative = negatives.length === 0;
+  const zeroShare = data.filter((v) => v === 0).length / n;
+  const distinct = new Set(data).size;
+
+  const out: FamilyWarning[] = [];
+
+  // 1. A zero spike under an additive family. Requires a genuinely continuous, non-negative column — a 0/1
+  //    column is binary, not a spike, and a column that already goes negative has no floor to violate.
+  if (valueType === "continuous" && neverNegative && distinct > 3 && zeroShare >= ZERO_SPIKE_FLOOR) {
+    out.push({ kind: "zero-spike-under-additive", nodeId, fraction: zeroShare, suggest: "semicontinuous" });
+  }
+
+  // 2. The DGP emits negatives for a column that is never negative. Measured off the draws — the one check
+  //    that catches the failure rather than predicting it.
+  if (generated && generated.length >= 8 && neverNegative) {
+    const bad = generated.filter((v) => v < 0);
+    const fraction = bad.length / generated.length;
+    if (fraction >= NEGATIVE_DRAW_FLOOR) {
+      out.push({
+        kind: "generates-impossible-negatives", nodeId, fraction,
+        extreme: Math.min(...bad),
+        // If the real column also has a zero spike the honest family is two-part; otherwise plain positive.
+        suggest: zeroShare >= ZERO_SPIKE_FLOOR ? "semicontinuous" : "positive"
+      });
+    }
+  }
+
+  // 3. Negatives in the data under a log-scale family — those rows are being silently reinterpreted.
+  if ((valueType === "positive" || valueType === "semicontinuous") && negatives.length > 0) {
+    out.push({
+      kind: "negatives-under-positive-family", nodeId, fraction: negatives.length / n,
+      extreme: Math.min(...negatives), suggest: "continuous"
+    });
+  }
+
+  return out;
+}

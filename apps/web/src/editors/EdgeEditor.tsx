@@ -1,7 +1,7 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { defaultEdgeMechanism, normalizeEdgeMechanism } from "@nudagitty/core";
-import type { EdgeMechanism, EdgeMechanismKind, GraphDocument, GraphEdge, ImposedEffect, SimulatedNodeState, SimulationResult } from "@nudagitty/core";
+import { defaultEdgeMechanism, imposableEffect, imposedEffectEdge, normalizeEdgeMechanism } from "@nudagitty/core";
+import type { EdgeMechanism, EdgeMechanismKind, GraphDocument, GraphEdge, ImposedEffect, SimulatedNodeState, SimulationResult, VariableModel } from "@nudagitty/core";
 import { Checkbox, TactileNumberField } from "../controls";
 import { functionGlyphPath, nodeOutputLabel } from "../compute/format";
 import { formatSignedValue, formatValue } from "../shared/formatting";
@@ -12,6 +12,7 @@ import { chartFrame } from "../charts/chartFrame";
 import { EDGE_MECHANISMS } from "../app/constants";
 import { EffectEdgeFitWarning, ImposeEffectCard, ImposedEffectPad } from "./ImposedEffectPad";
 import type { ImposeSpec } from "./ImposedEffectPad";
+import { FamilyGuardrail } from "./FamilyGuardrail";
 
 export function EdgeEditor(props: {
   edge: GraphEdge;
@@ -24,6 +25,7 @@ export function EdgeEditor(props: {
   onImposedEffect: (patch: Partial<ImposedEffect>) => void;
   onImposeEffect: (spec: ImposeSpec) => void;
   onClearImposedEffect: () => void;
+  onChangeFamily: (nodeId: string, kind: VariableModel["valueType"]) => void;
   onAuthorNumber: (key: string) => void;
 }) {
   const committed = useMemo(() => normalizeEdgeMechanism(props.document.simulation.edges[props.edge.id]), [props.document.simulation.edges, props.edge.id]);
@@ -51,6 +53,16 @@ export function EdgeEditor(props: {
         {/* When this edge carries an IMPOSED effect, its coefficient is DERIVED from the estimand — so the
             control is the estimand's story (the extensive/intensive split), not the raw number below. */}
         <EffectEdgeFitWarning document={props.document} edge={props.edge} onAuthor={props.onAuthorNumber} />
+        {/* On the EFFECT edge only: a positive control whose outcome family cannot generate its own outcome
+            is worse than no benchmark at all, so say it before the target is ever typed. */}
+        {(imposableEffect(props.document, props.edge.id) || imposedEffectEdge(props.document)?.edgeId === props.edge.id) && (
+          <FamilyGuardrail
+            document={props.document}
+            nodeId={props.edge.target}
+            samples={props.simulation.nodeStates[props.edge.target]?.empirical.samples}
+            onChangeFamily={props.onChangeFamily}
+          />
+        )}
         <ImposeEffectCard document={props.document} edgeId={props.edge.id} onImpose={props.onImposeEffect} />
         <ImposedEffectPad document={props.document} edgeId={props.edge.id} onChange={props.onImposedEffect} onClear={props.onClearImposedEffect} />
         <EdgeTransferPlot

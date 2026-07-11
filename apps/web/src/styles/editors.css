@@ -1209,6 +1209,23 @@ button.prov-chip { cursor: pointer; }
   .effect-fit-warning > button:hover { background: #302610; }
 }
 
+/* ---- family guardrail: the declared family cannot have produced this variable ----
+   RED, unlike the ochre fit-warning: this is not a design choice with a tradeoff, it is a model that
+   assigns positive probability to impossible values. Everything downstream of it is computed on a
+   population that cannot exist. */
+.family-guardrail { margin: 8px 0; padding: 8px 10px; border: 1px solid #e0a9a9; border-left: 3px solid #b64a4a; border-radius: 7px; background: #fdf0f0; }
+.family-guardrail > strong { display: block; font-size: 11.5px; color: #8f2f2f; }
+.family-guardrail p { margin: 5px 0 0; font-size: 11px; line-height: 1.45; color: var(--text, #333); }
+.family-guardrail-fixes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.family-guardrail-fixes > button { appearance: none; border: 1px solid #b64a4a; background: #fff; color: #8f2f2f; border-radius: 6px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.family-guardrail-fixes > button:hover { background: #f7e0e0; }
+@media (prefers-color-scheme: dark) {
+  .family-guardrail { background: #2b1717; border-color: #5c3030; }
+  .family-guardrail > strong { color: #e59a9a; }
+  .family-guardrail-fixes > button { background: #1b1b22; color: #e59a9a; border-color: #5c3030; }
+  .family-guardrail-fixes > button:hover { background: #3a1e1e; }
+}
+
 /* ---- impose-an-effect: the create card ----
    Deliberately the ACCENT frame, not the ochre warning frame — imposing is the correct, constructive act,
    not a caution. (The ochre .effect-fit-warning above is what fires when you FIT this edge instead.) */

@@ -17,4 +17,5 @@ export * from "./copulaBlockEdit";
 export * from "./dataframe";
 export * from "./dataImport";
 export * from "./fitDgp";
+export * from "./familyGuardrail";
 export { buildDistributionQuantile } from "./distributions";

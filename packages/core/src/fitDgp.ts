@@ -129,7 +129,7 @@ function fitLinearModel(y: number[], X: number[][], offset: number[], fitInterce
 // ---------- graph provenance helpers ----------
 // A node's data column, from its table_lookup edge (enabled OR disabled — a fitted node keeps a DISABLED
 // lookup so we can still re-fit against its column and re-enabling restores replay).
-function nodeColumn(document: GraphDocument, nodeId: string): { dataset: string; dataColumn: number; lookupEdgeId: string; enabled: boolean } | null {
+export function nodeColumn(document: GraphDocument, nodeId: string): { dataset: string; dataColumn: number; lookupEdgeId: string; enabled: boolean } | null {
   for (const edge of document.graph.edges) {
     if (edge.target !== nodeId) continue;
     const mech = normalizeEdgeMechanism(document.simulation.edges[edge.id]);

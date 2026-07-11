@@ -241,6 +241,7 @@ import {
 import { Checkbox, IconButton, ModuleFrame, RadioGroup, Section } from "./controls";
 import { FlowGraphCanvas } from "./canvas/FlowGraphCanvas";
 import type { JointSourceCloud, CopulaCoupling } from "./canvas/types";
+import { applyFamilyChange } from "./editors/familyChange";
 import { SelectionEditor } from "./editors/VariableEditor";
 import { useMediaQuery } from "./app/useMediaQuery";
 import { BibliographyPanel, EffectPanel, ImplicationPanel, SummaryPanel } from "./panels/analysis";
@@ -1089,6 +1090,8 @@ export function App() {
             // seeded from what the data can honestly say about the SHAPE. Coefficients are never touched.
             onImposeEffect={(spec) => commit(imposeEffect(document, spec))}
             onClearImposedEffect={() => commit(clearImposedEffect(document))}
+            // Family + its canonical link move together, in one commit — shared with the guardrail's fix.
+            onChangeFamily={(id, kind) => commit(applyFamilyChange(document, id, kind))}
             onAuthorNumber={(key) => commit(unpinKey(document, key))}
             // A DERIVED gate coefficient is changed by moving the STORY, on the effect's pad.
             onSelectEdge={selectEdge}
