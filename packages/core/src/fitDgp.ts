@@ -471,6 +471,9 @@ export function fitDgpFromData(input: GraphDocument): GraphDocument {
 export interface ResidualParentCheck { nodeId: string; label: string; distanceCorr: number; }
 export interface DcorTest { dcor: number; pValue: number; }
 export interface NormalityCheck { skewness: number; excessKurtosis: number; jarqueBera: number; pValue: number; }
+// Two-part extensive margin: is the participation gate calibrated (predictedRate≈rate, ~exact by MLE),
+// and is its residual 1(Y>0)−P̂ independent of X (a form check on the gate, over ALL rows)?
+export interface GateCheck { rate: number; predictedRate: number; independence: DcorTest; }
 export interface ResidualDiagnostic {
   available: boolean;
   n: number;
@@ -484,8 +487,9 @@ export interface ResidualDiagnostic {
   identifiabilityWarning: boolean; // linear fit + Gaussian residuals ⇒ direction not identifiable
   worst: ResidualParentCheck | null;
   verdict: "ok" | "weak" | "violated";       // from the exogeneity p-value (the panel's headline)
-  severity: "ok" | "weak" | "violated";      // WORST across all three checks (drives the ε light + ledger)
+  severity: "ok" | "weak" | "violated";      // WORST across all checks (drives the ε light + ledger)
   scale: FitLink;                            // the working scale residuals are computed on (log ⇒ "log-scale residuals")
+  gate?: GateCheck | null;                   // two-part only: the extensive-margin (participation) check
 }
 
 // Cache full diagnostics by fit-output signature (coefficients + data) — the seeded permutation makes them
@@ -580,7 +584,7 @@ function jarqueBera(v: number[]): NormalityCheck {
 // cap/perms are generous because the result is CACHED by fit signature — it only recomputes when a fit
 // actually changes, so power matters more than per-call speed here.
 export function residualDiagnostics(document: GraphDocument, nodeId: string, cap = 240, perms = 199, seed = 0): ResidualDiagnostic {
-  const empty: ResidualDiagnostic = { available: false, n: 0, perms, parents: [], points: [], independence: { dcor: 0, pValue: 1 }, heteroskedasticity: { dcor: 0, pValue: 1 }, normality: { skewness: 0, excessKurtosis: 0, jarqueBera: 0, pValue: 1 }, linear: true, identifiabilityWarning: false, worst: null, verdict: "ok", severity: "ok", scale: "identity" };
+  const empty: ResidualDiagnostic = { available: false, n: 0, perms, parents: [], points: [], independence: { dcor: 0, pValue: 1 }, heteroskedasticity: { dcor: 0, pValue: 1 }, normality: { skewness: 0, excessKurtosis: 0, jarqueBera: 0, pValue: 1 }, linear: true, identifiabilityWarning: false, worst: null, verdict: "ok", severity: "ok", scale: "identity", gate: null };
   const node = document.graph.nodes.find((n) => n.id === nodeId);
   const col = nodeColumn(document, nodeId);
   if (!node || !col) return empty;
@@ -601,7 +605,8 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
   if (parentCols.length === 0) return empty;
 
   const sig = `${col.dataset}|${rows.length}|${col.dataColumn}|${mech.intercept}|${normalizeVariableModel(node.variable).valueType}|cap${cap}|p${perms}|s${seed}|` +
-    parentCols.map((p) => `${p.col.dataColumn}:${p.coef}`).join(",");
+    parentCols.map((p) => `${p.col.dataColumn}:${p.coef}`).join(",") +
+    (mech.gate ? `|g${mech.gate.intercept}:${parentCols.map((p) => mech.gate!.coefficients[p.edge.source] ?? 0).join(",")}` : "");
   const cached = residCache.get(sig);
   if (cached) return cached;
 
@@ -631,13 +636,38 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
   const linear = parentCols.every((p) => p.kind === "linear");
   const identifiabilityWarning = linear && normality.pValue > 0.1; // linear + Gaussian residuals ⇒ unidentifiable
   const verdict = independence.pValue >= 0.1 ? "ok" : independence.pValue >= 0.01 ? "weak" : "violated";
-  // The ε light reflects the WORST of the three checks: a clear exogeneity violation is red; a borderline
-  // exogeneity, failing homoskedasticity, or strong non-Gaussianity is yellow; otherwise green.
-  const severity: "ok" | "weak" | "violated" = independence.pValue < 0.01
+
+  // Two-part extensive margin (gate): over ALL rows (participation is observed for everyone, unlike the
+  // Y>0-only intensive residuals above), check the gate is calibrated and its residual 1(Y>0)−P̂ is ⊥ X.
+  let gate: GateCheck | null = null;
+  const gm = mech.gate;
+  if (normalizeVariableModel(node.variable).valueType === "semicontinuous" && gm) {
+    const gValid: number[] = [];
+    for (let i = 0; i < rows.length; i += 1) if (parentCols.every((p) => Number.isFinite(rows[i]![p.col.dataColumn]))) gValid.push(i);
+    if (gValid.length >= 20) {
+      const gstride = Math.max(1, Math.floor(gValid.length / cap));
+      const gidx: number[] = [];
+      for (let k = 0; k < gValid.length; k += gstride) gidx.push(gValid[k]!);
+      const gn = gidx.length;
+      const sgm = (x: number) => 1 / (1 + Math.exp(-x));
+      const part: number[] = gidx.map((i) => ((rows[i]![col.dataColumn] ?? 0) > 0 ? 1 : 0));
+      const pPred = gidx.map((i) => sgm(gm.intercept + parentCols.reduce((s, p) => s + (gm.coefficients[p.edge.source] ?? 0) * (rows[i]![p.col.dataColumn] ?? 0), 0)));
+      const gResid = part.map((y, k) => y - pPred[k]!);
+      const gSeries = parentCols.map((p) => gidx.map((i) => rows[i]![p.col.dataColumn] ?? 0));
+      const gInd = dcorPermTest(centeredDistMulti(gSeries, gn), centeredDist(gResid), gn, perms, (0x7a8b9c ^ seed) >>> 0);
+      gate = { rate: part.reduce((a, b) => a + b, 0) / gn, predictedRate: pPred.reduce((a, b) => a + b, 0) / gn, independence: gInd };
+    }
+  }
+
+  // The ε light reflects the WORST check: a clear exogeneity violation (intensive OR gate) is red; a
+  // borderline exogeneity, failing homoskedasticity, strong non-Gaussianity, or a weak gate is yellow.
+  const gateBad = gate ? gate.independence.pValue < 0.01 : false;
+  const gateWeak = gate ? gate.independence.pValue < 0.05 : false;
+  const severity: "ok" | "weak" | "violated" = (independence.pValue < 0.01 || gateBad)
     ? "violated"
-    : (independence.pValue < 0.1 || heteroskedasticity.pValue < 0.05 || normality.pValue < 0.01) ? "weak" : "ok";
+    : (independence.pValue < 0.1 || heteroskedasticity.pValue < 0.05 || normality.pValue < 0.01 || gateWeak) ? "weak" : "ok";
   const points = idx.map((i) => ({ fitted: fitted[i]!, residual: resid[i]! }));
-  const result: ResidualDiagnostic = { available: true, n, perms, parents, points, independence, heteroskedasticity, normality, linear, identifiabilityWarning, worst, verdict, severity, scale };
+  const result: ResidualDiagnostic = { available: true, n, perms, parents, points, independence, heteroskedasticity, normality, linear, identifiabilityWarning, worst, verdict, severity, scale, gate };
   if (residCache.size > 400) residCache.clear();
   residCache.set(sig, result);
   return result;
