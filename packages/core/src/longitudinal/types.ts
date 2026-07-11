@@ -129,6 +129,9 @@ export interface GMethodsComparison {
     effectiveSampleSize: number;
   };
   diagnostics: string[];
+  // The effect the DGP imposes analytically (from document metadata), when the example declares one —
+  // shown next to the simulated g-formula oracle, which carries MC noise for a nonlinear outcome.
+  imposedEffect?: number | null;
 }
 
 export interface MethodSurvivalCurve {

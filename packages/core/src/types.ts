@@ -251,6 +251,9 @@ export interface GraphDocumentMetadata {
   // fitted/authored. Both absent/empty ⇒ every existing model (nodes generate, edges authored by default).
   pins: string[];
   authored: string[];
+  // The effect the DGP IMPOSES by construction (the analytic truth), when an example sets one. Surfaced
+  // alongside the simulated do()-oracle, which for a nonlinear outcome (e.g. two-part) carries MC noise.
+  imposedEffect?: number | null;
 }
 
 export interface GraphNode {

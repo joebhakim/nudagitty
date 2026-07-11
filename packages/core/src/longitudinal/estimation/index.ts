@@ -23,7 +23,8 @@ import { aipwEstimate } from "./estimators/aipw";
 import { assignedTreatmentValue, effectiveSampleSize, isUncensored } from "../internal";
 
 export function compareLongitudinalGMethods(document: GraphDocument, config: GMethodsComparisonConfig): GMethodsComparison | null {
-  const metadata = normalizeGraphDocumentMetadata(document.metadata).longitudinal;
+  const fullMetadata = normalizeGraphDocumentMetadata(document.metadata);
+  const metadata = fullMetadata.longitudinal;
   const strategies = config.strategies ?? resolveStrategies(metadata.treatmentStrategies, config.strategyIds);
   if (!strategies) return null;
   const cohort = simulateLongitudinalCohort(document);
@@ -55,7 +56,8 @@ export function compareLongitudinalGMethods(document: GraphDocument, config: GMe
       sampleSize: cohort.sampleSize,
       effectiveSampleSize: effectiveSampleSize(cohort.weights) ?? 0
     },
-    diagnostics: validateLongitudinalMetadata(document)
+    diagnostics: validateLongitudinalMetadata(document),
+    ...(typeof fullMetadata.imposedEffect === "number" ? { imposedEffect: fullMetadata.imposedEffect } : {})
   };
 }
 

@@ -141,7 +141,9 @@ export function normalizeGraphDocumentMetadata(metadata: Partial<GraphDocumentMe
       }).filter((source) => source.id)
       : [],
     pins: Array.isArray(raw.pins) ? raw.pins.filter((pin): pin is string => typeof pin === "string") : [],
-    authored: Array.isArray(raw.authored) ? raw.authored.filter((key): key is string => typeof key === "string") : []
+    authored: Array.isArray(raw.authored) ? raw.authored.filter((key): key is string => typeof key === "string") : [],
+    // Emit only when set, so documents without an imposed effect stay byte-identical.
+    ...(typeof raw.imposedEffect === "number" && Number.isFinite(raw.imposedEffect) ? { imposedEffect: raw.imposedEffect } : {})
   };
 }
 

@@ -1338,6 +1338,9 @@ export function configureLalondeFitRecoverTwoPart(document: GraphDocument): Grap
   // setNode replaces, so spreading `mech` is required — only the gate's In_program coefficient changes.
   setNode(doc, "Earnings_78", { ...mech, gate: { intercept: mech.gate?.intercept ?? 0, coefficients: { ...(mech.gate?.coefficients ?? {}), In_program: gamma } } });
   setLinearCoefficient(doc, "In_program", "Earnings_78", delta);
+  // Record the analytic truth the DGP imposes (γ+δ solved so extensive+intensive = exactly this), so the
+  // output can show it next to the MC-noisy simulated do()-oracle.
+  doc.metadata = { ...doc.metadata, imposedEffect: 1794 };
   return doc;
 }
 

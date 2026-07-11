@@ -1576,6 +1576,9 @@
 
 /* Per-method estimand formula shown by default in the compare-all rows (prose moves to expansion). */
 .method-row-formula code { font-family: var(--font-mono, ui-monospace, monospace); color: #6b7681; }
+/* Imposed-truth benchmark under the oracle row (analytic value vs the MC-noisy simulated do). */
+.method-imposed { display: block; margin-top: 2px; font-size: 10.5px; color: var(--text-muted, #7a6a54); }
+.method-imposed strong { color: var(--accent, #6b40b0); }
 
 /* Continuous-exposure effect readout (the dose-response analog of the unified panel). */
 .continuous-effect-headline {

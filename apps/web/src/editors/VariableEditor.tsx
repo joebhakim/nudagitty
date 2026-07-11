@@ -457,6 +457,62 @@ const TWO_PART_FAMILY_TIP =
 const TWO_PART_RESID_TIP =
   "Two-part diagnostics. The scatter + exogeneity/homoskedasticity/Gaussian tests are the INTENSIVE margin (amount | Y>0), on the LOG scale it is fit on — 'fitted' is η = log-earnings, so a $2M earner sits at the far right. The participation-gate row is the EXTENSIVE margin, P(Y>0). The log-normal amount is retransformation-corrected so its mean matches the data; the tests still flag that log-normal earnings on dollar predictors is misspecified (the heavy tail).";
 
+// Marginal distribution of a node's simulated samples: a labelled histogram that shows a point mass
+// at 0 (the two-part zero spike) as a distinct bar and clips the heavy tail at ~p98 so the body stays
+// legible (the clipped max is noted). General — renders for any node with samples.
+function MarginalPlot({ samples, unit }: { samples: number[]; unit?: string }) {
+  const n = samples.length;
+  if (n < 2) return null;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const max = sorted[n - 1]!;
+  const zeros = samples.reduce((c, x) => c + (x === 0 ? 1 : 0), 0);
+  const zeroFrac = zeros / n;
+  const spike = zeroFrac >= 0.01;
+  const body = spike ? samples.filter((x) => x !== 0) : samples;
+  const bs = [...body].sort((a, b) => a - b);
+  const bAt = (p: number) => bs.length ? bs[Math.min(bs.length - 1, Math.max(0, Math.round(p * (bs.length - 1))))]! : 0;
+  const lo = spike ? (bs[0] ?? 0) : bAt(0.01);
+  const hi = Math.max(lo + 1e-9, bAt(0.98));
+  const BINS = 28;
+  const w = (hi - lo) / BINS || 1;
+  const counts = new Array(BINS).fill(0);
+  let tail = 0;
+  for (const x of body) {
+    if (x > hi) { tail += 1; continue; }
+    let b = Math.floor((x - lo) / w);
+    if (b < 0) b = 0; else if (b >= BINS) b = BINS - 1;
+    counts[b] += 1;
+  }
+  const maxFrac = Math.max(zeroFrac, ...counts.map((c) => c / n), 1e-9);
+  const W = 250, H = 122, mL = 30, mR = 8, mT = 8, mB = 26;
+  const plotBot = H - mB, plotTop = mT, plotHt = plotBot - plotTop;
+  const spikeW = spike ? 16 : 0, gap = spike ? 5 : 0;
+  const hx0 = mL + spikeW + gap, hw = W - mR - hx0, bw = hw / BINS;
+  const yOf = (frac: number) => plotBot - (frac / maxFrac) * plotHt;
+  const fmt = (v: number) => { const a = Math.abs(v); return a >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : a >= 1e3 ? `${Math.round(v / 1e3)}k` : a >= 10 ? v.toFixed(0) : v.toFixed(1); };
+  return (
+    <svg className="marginal-plot" viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="marginal distribution">
+      <line x1={mL} y1={plotTop} x2={mL} y2={plotBot} className="resid-axis" />
+      <line x1={mL} y1={plotBot} x2={W - mR} y2={plotBot} className="resid-axis" />
+      {spike && (
+        <g>
+          <rect x={mL + 1} y={yOf(zeroFrac)} width={spikeW - 2} height={Math.max(0, plotBot - yOf(zeroFrac))} className="marg-spike" />
+          <text x={mL + spikeW / 2} y={plotBot + 9} className="resid-tick" textAnchor="middle">0</text>
+          <text x={mL + spikeW / 2} y={Math.max(plotTop + 6, yOf(zeroFrac) - 2)} className="resid-tick" textAnchor="middle">{Math.round(zeroFrac * 100)}%</text>
+        </g>
+      )}
+      {counts.map((c, i) => {
+        const y = yOf(c / n);
+        return <rect key={i} x={hx0 + i * bw} y={y} width={Math.max(0.5, bw - 0.6)} height={Math.max(0, plotBot - y)} className="marg-bar" />;
+      })}
+      <text x={hx0} y={plotBot + 9} className="resid-tick">{fmt(lo)}</text>
+      <text x={W - mR} y={plotBot + 9} className="resid-tick" textAnchor="end">{fmt(hi)}</text>
+      <text x={hx0 + hw / 2} y={H - 3} className="resid-axlabel" textAnchor="middle">value{unit ? ` (${unit})` : ""}{tail > 0 ? `  ·  tail→${fmt(max)}` : ""}</text>
+      <text transform={`translate(8 ${plotTop + plotHt / 2}) rotate(-90)`} className="resid-axlabel" textAnchor="middle">fraction</text>
+    </svg>
+  );
+}
+
 function ResidualCheck({ d }: { d: ResidualDiagnostic }) {
   if (!d.available) return null;
   const pFloor = 1 / (d.perms + 1);
@@ -678,6 +734,16 @@ export function VariableEditor(props: {
                     <span className="prov-badge modeled">modeled</span>
                     <span className="muted">mean matches data · shape approx.</span>
                   </div>
+                );
+              })()}
+              {(() => {
+                const samples = props.simulation.nodeStates[node.id]?.empirical.samples ?? [];
+                if (samples.length < 2) return null;
+                return (
+                  <details className="marginal-dist">
+                    <summary>marginal distribution</summary>
+                    <MarginalPlot samples={samples} unit={variable.unit} />
+                  </details>
                 );
               })()}
               {!isRoot && (

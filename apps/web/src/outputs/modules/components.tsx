@@ -407,7 +407,7 @@ export function WhatIfAdvancedOutputView({ output }: { output: WhatIfAdvancedOut
 // real confusion (why is one simulation "the truth" and the others "estimates"): the estimators only
 // see the data; the oracle owns the structural equations and runs them under each do().
 const ORACLE_EXPLANATION =
-  "Every other method (IPW, matching, …) only uses the data — imagine a literal spreadsheet. The oracle is different: we actually have the structural equation model (outcome ~ treatment + confounder + noise; treatment ~ confounder + noise; confounder ~ noise), so instead of fitting curves from the data we plug in the real math — simulate under each do(treatment), i.e. each treatment setting, then take the difference.";
+  "Every other method (IPW, matching, …) only uses the data — imagine a literal spreadsheet. The oracle is different: we actually have the structural equation model — each variable is generated from its parents plus noise via the equations you specified (a plain outcome is treatment + confounders + noise; a two-part earnings outcome is a participation gate × a positive amount; a survival outcome is a hazard, …). So instead of fitting curves from the data we plug in the real math — simulate under each do(treatment), i.e. each treatment setting, then take the difference. For a nonlinear outcome (e.g. two-part) this simulated contrast carries a little Monte-Carlo noise around the effect the DGP actually imposes.";
 
 export const METHOD_GLOSSARY: Record<GMethodEstimate["id"], { plain: string; formula: string }> = {
   naive: {
@@ -666,6 +666,9 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
                   <td>
                     <strong>{open ? "▾ " : "▸ "}{isOracle ? "True effect — g-formula (oracle)" : estimate.label}{estimate.id === primary?.id ? " ◄" : ""}</strong>
                     <small className="method-row-formula">{formula ? <code>{formula}</code> : (estimate.diagnostics[0] ?? "")}</small>
+                    {isOracle && comparison.imposedEffect != null && (
+                      <small className="method-imposed">DGP imposes <strong>{formatOutcomeDifference(comparison.imposedEffect, outcomeScale, "")}</strong> exactly (analytic) · this row is a Monte-Carlo estimate of it</small>
+                    )}
                   </td>
                   <td>{formatOutcomeValue(estimate.arms[0].mean, outcomeScale, "")}</td>
                   <td>{formatOutcomeValue(estimate.arms[1].mean, outcomeScale, "")}</td>
