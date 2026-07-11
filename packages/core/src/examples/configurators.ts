@@ -1308,6 +1308,80 @@ export function configureLalondeFitRecover(document: GraphDocument): GraphDocume
   return reconcilePins(doc).document;
 }
 
+// Track C, two-part variant: same fitted-DGP recovery as configureLalondeFitRecover, but Earnings_78 is
+// a SEMICONTINUOUS (two-part) outcome — a participation gate × a positive amount — so the fitted marginal
+// reproduces the real earnings ZERO SPIKE (unlike the linear/Gaussian #95, which can't). The imposed
+// +$1,794 is split extensive-led across the two margins: γ (the gate shift) is solved so more-people-working
+// delivers ~62% of the effect, then δ (the intensive log shift) is solved so higher-earnings-among-workers
+// makes the deterministic two-part do()-contrast EXACTLY $1,794. Both margins are authored (the known truth);
+// the confounders are fit treat-free (In_program→Earnings_78 is authored, so it is excluded from both fits).
+export function configureLalondeFitRecoverTwoPart(document: GraphDocument): GraphDocument {
+  configureLalondeBase(document);
+  setContinuousVariable(document, "Row_source", "Uniform draw over the embedded observational LaLonde rows (shared row index, unobserved).", "row");
+  addPlasmodeCovariates(document, "Row_source", "lalonde-obs", LALONDE_DGM_COVS);
+  setEdgeMechanism(document, "Row_source", "In_program", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "treat") });
+  setEdgeMechanism(document, "Row_source", "Earnings_78", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "re78") });
+  setVariable(document, "Earnings_78", { valueType: "semicontinuous" });
+  // Fit treat's logistic + re78's confounders (gate + intensive), holding treat's own effect at 0 so the
+  // confounders are fit free of it; the imposed causal effect is applied to both margins analytically below.
+  setLinearCoefficient(document, "In_program", "Earnings_78", 0);
+  let doc = pinNodeEquation(document, "In_program");
+  doc = pinNodeEquation(doc, "Earnings_78");
+  const effect = doc.graph.edges.find((edge) => edge.source === "In_program" && edge.target === "Earnings_78");
+  if (effect) doc = authorNumber(doc, pinKeys.edge(effect.id));
+  doc = reconcilePins(doc).document;
+
+  // Solve the extensive/intensive split of the $1,794 benchmark over the real covariate distribution.
+  const { gamma, delta } = solveTwoPartEffect(doc, 1794, 0.62);
+  const mech = normalizeNodeMechanism(doc.simulation.nodes["Earnings_78"]);
+  // Preserve the fitted mechanism (log-link combiner + retransformation-corrected intercept + noise);
+  // setNode replaces, so spreading `mech` is required — only the gate's In_program coefficient changes.
+  setNode(doc, "Earnings_78", { ...mech, gate: { intercept: mech.gate?.intercept ?? 0, coefficients: { ...(mech.gate?.coefficients ?? {}), In_program: gamma } } });
+  setLinearCoefficient(doc, "In_program", "Earnings_78", delta);
+  return doc;
+}
+
+// Solve the two-part treatment effect: γ (gate logit shift) delivers `extensiveShare` of `target` via the
+// EXTENSIVE margin (more people working), then δ (intensive log shift) delivers the rest via the INTENSIVE
+// margin (higher earnings among workers). The Oaxaca-style split sums exactly to the total two-part
+// do()-contrast, so total = target. Confounder η's are read from the fitted node (In_program excluded).
+function solveTwoPartEffect(doc: GraphDocument, target: number, extensiveShare: number): { gamma: number; delta: number } {
+  const mech = normalizeNodeMechanism(doc.simulation.nodes["Earnings_78"]);
+  const sd = mech.noise.kind === "normal" ? mech.noise.sd : 0;
+  const h = (sd * sd) / 2;
+  const rows = datasetRows("lalonde-obs");
+  const gateCoefs = mech.gate?.coefficients ?? {};
+  const confCols = doc.graph.edges
+    .filter((e) => e.target === "Earnings_78" && e.source !== "In_program" && e.source !== "Row_source")
+    .map((e) => {
+      const cov = LALONDE_DGM_COVS.find((c) => c.id === e.source);
+      const em = normalizeEdgeMechanism(doc.simulation.edges[e.id]);
+      return { source: e.source, col: cov ? datasetColumnIndex("lalonde-obs", cov.column) : -1, coef: em.kind === "linear" ? em.coefficient : 0 };
+    })
+    .filter((c) => c.col >= 0);
+  const etaG: number[] = [], etaA: number[] = [];
+  for (const r of rows) {
+    let g = mech.gate?.intercept ?? 0, a = mech.intercept;
+    for (const c of confCols) { const v = r[c.col] ?? 0; a += c.coef * v; g += (gateCoefs[c.source] ?? 0) * v; }
+    etaG.push(g); etaA.push(a);
+  }
+  const sig = (x: number) => 1 / (1 + Math.exp(-x));
+  const N = Math.max(1, rows.length);
+  const extensive = (gamma: number) => { let s = 0; for (let i = 0; i < N; i += 1) s += (sig(etaG[i]! + gamma) - sig(etaG[i]!)) * Math.exp(etaA[i]! + h); return s / N; };
+  const gamma = solveMonotone(extensive, target * extensiveShare, 0, 8);
+  const intensive = (delta: number) => { let s = 0; for (let i = 0; i < N; i += 1) s += sig(etaG[i]! + gamma) * (Math.exp(etaA[i]! + delta + h) - Math.exp(etaA[i]! + h)); return s / N; };
+  const delta = solveMonotone(intensive, target * (1 - extensiveShare), 0, 3);
+  return { gamma, delta };
+}
+
+// Bisection for a monotone-increasing f: find x with f(x)=target on [lo,hi], doubling hi until it brackets.
+function solveMonotone(f: (x: number) => number, target: number, lo: number, hi: number): number {
+  let a = lo, b = hi;
+  for (let k = 0; k < 60 && f(b) < target; k += 1) b *= 2;
+  for (let k = 0; k < 100; k += 1) { const m = (a + b) / 2; if (f(m) < target) a = m; else b = m; }
+  return (a + b) / 2;
+}
+
 function disableEdge(document: GraphDocument, source: string, target: string) {
   const edge = document.graph.edges.find((candidate) => candidate.source === source && candidate.target === target);
   if (!edge) return;

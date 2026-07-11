@@ -4,7 +4,7 @@ import { datasetColumnIndex, datasetRows } from "../datasets";
 import { defaultEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "../graph";
 import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeInteraction, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "../types";
 import { HIV_CD4_SEQUENCE_VISITS, UNIT_NORMAL, ZERO_NOISE, addCopulaCovariates, addPlasmodeCovariates, applyWhatIfMetadata, binaryStrategies, dynamicLowRiskStrategy, exampleSeed, layoutExampleDocument, markExposures, prepareDocument, riskEstimand, setBinaryVariable, setContinuousVariable, setEdgeMechanism, setExampleSampleSize, setLinearCoefficient, setLogitNode, setNode, setSelection, setSmoothGate, setVariable, staticStrategy, survivalSpec } from "./builders";
-import { configureBerksonHospital, configureBirthweightParadox, configureCaseControlSelection, configureCategoricalRegimen, configureCatsHighriseSyndrome, configureCausalMlRefutation, configureChessIntelligencePractice, configureChessIntelligenceSimpleFlip, configureCollegeEarnings, configureBiasAmplificationZ, configureConfounderJointCopula, configureConfounderTripleCopula, configureContinuousDoseResponse, configureDiscreteMarginConfession, configureGlut4DoseResponse, configureImmortalTimeBias, configureModeratedConfounding, configureReceptorSynergyCopula, configureSuppressorConfounding, configureTable2Fallacy, configureTailDependentConfounders, configureEducationMediation, configureErVisitsCount, configureEffectModificationCrossover, configureEffectModificationOrdinal, configureEpistasisCoatColor, configureFlexibleAdjustment, configureFrontDoorSmoking, configureGaltonExample, configureIcuMortalityTriage, configureIncrementalityUplift, configureInstrumentalEncouragement, configureJohnSnowCholera, configureLalondeGenerative, configureLalondeIndependent, configureLalondePlasmode, configureLalondeReplay, configureLalondeFitRecover, configureLordsParadox, configureMBiasAdjustment, configureMeasurementErrorLatent, configureMediationDirectTotal, configureModeratedMediation, configureObesityParadox, configureOpsRootCause, configureOtaGeneProgramTraits, configurePolicingEncounters, configurePolicyEventStudy, configurePositivityCorrelatedConfounders, configureRestaurantCollider, configureSimpsonSeverity, configureTargetTrialFollowup, configureTutoringScores, configureWhatIfCensoringIpcw, configureWhatIfDynamicGFormula, configureWhatIfHazardSelection, configureWhatIfHivCd4Variants, configureWhatIfIpwPseudopopulation, configureWhatIfNhefsMortalitySurvival, configureWhatIfNhefsWeightGain, configureWhatIfNhefsWeightGainConfounderDag, configureWhatIfNhefsWeightGainCopula, configureWhatIfNhefsWeightGainGenerative, configureWhatIfNhefsWeightGainPlasmode, configureWhatIfNhefsWeightGainPositivity, configureWhatIfSnaftSurvival, configureWhatIfTreatmentFeedback, configureWhatIfWeightGainGEstimation } from "./configurators";
+import { configureBerksonHospital, configureBirthweightParadox, configureCaseControlSelection, configureCategoricalRegimen, configureCatsHighriseSyndrome, configureCausalMlRefutation, configureChessIntelligencePractice, configureChessIntelligenceSimpleFlip, configureCollegeEarnings, configureBiasAmplificationZ, configureConfounderJointCopula, configureConfounderTripleCopula, configureContinuousDoseResponse, configureDiscreteMarginConfession, configureGlut4DoseResponse, configureImmortalTimeBias, configureModeratedConfounding, configureReceptorSynergyCopula, configureSuppressorConfounding, configureTable2Fallacy, configureTailDependentConfounders, configureEducationMediation, configureErVisitsCount, configureEffectModificationCrossover, configureEffectModificationOrdinal, configureEpistasisCoatColor, configureFlexibleAdjustment, configureFrontDoorSmoking, configureGaltonExample, configureIcuMortalityTriage, configureIncrementalityUplift, configureInstrumentalEncouragement, configureJohnSnowCholera, configureLalondeGenerative, configureLalondeIndependent, configureLalondePlasmode, configureLalondeReplay, configureLalondeFitRecover, configureLalondeFitRecoverTwoPart, configureLordsParadox, configureMBiasAdjustment, configureMeasurementErrorLatent, configureMediationDirectTotal, configureModeratedMediation, configureObesityParadox, configureOpsRootCause, configureOtaGeneProgramTraits, configurePolicingEncounters, configurePolicyEventStudy, configurePositivityCorrelatedConfounders, configureRestaurantCollider, configureSimpsonSeverity, configureTargetTrialFollowup, configureTutoringScores, configureWhatIfCensoringIpcw, configureWhatIfDynamicGFormula, configureWhatIfHazardSelection, configureWhatIfHivCd4Variants, configureWhatIfIpwPseudopopulation, configureWhatIfNhefsMortalitySurvival, configureWhatIfNhefsWeightGain, configureWhatIfNhefsWeightGainConfounderDag, configureWhatIfNhefsWeightGainCopula, configureWhatIfNhefsWeightGainGenerative, configureWhatIfNhefsWeightGainPlasmode, configureWhatIfNhefsWeightGainPositivity, configureWhatIfSnaftSurvival, configureWhatIfTreatmentFeedback, configureWhatIfWeightGainGEstimation } from "./configurators";
 
 export const EXAMPLE_DOMAINS = [
   { id: "classic", label: "Classic DAG patterns", description: "Compact examples for teaching and fast bias checks." },
@@ -1214,6 +1214,47 @@ export const EXAMPLES: ExampleModel[] = [
     title: "Job training → earnings (fitted DGP, recover +$1,794)",
     domain: "dgm",
     summary: "The FITTED-DGP positive control: the confounding is LEARNED from the real LaLonde rows — treat's enrolment logistic on the covariates, and the covariate→earnings surface — while the treatment effect is AUTHORED at the RCT benchmark +$1,794 (held fixed, NOT a fit degree of freedom, so the truth is known and clean). Because identification holds by construction, adjustment SHOULD recover +$1,794 while the naive gap is badly biased — a check on the estimators and the from-scratch workflow. The outcome is linear+Gaussian (clean additive ATE), so its marginal isn't quite real earnings — the residual check (ε) flags that honestly. Provenance: covariate→treat/earnings edges are fitted 📌, treat→earnings is authored ✎.",
+    code: `dag {
+  Row_source [latent,label="LaLonde rows (resample)",pos="0.0,4.4"]
+  Age [adjusted,label="age",pos="-3.3,2.7"]
+  Education [adjusted,label="education",pos="-2.35,3.15"]
+  Black [adjusted,label="black",pos="-1.4,3.35"]
+  Hispanic [adjusted,label="hispanic",pos="-0.45,3.45"]
+  Married [adjusted,label="married",pos="0.5,3.45"]
+  No_degree [adjusted,label="no degree",pos="1.45,3.35"]
+  Earnings_74 [adjusted,label="earnings '74",pos="2.4,3.15"]
+  Earnings_75 [adjusted,label="earnings '75",pos="3.35,2.7"]
+  In_program [exposure,label="in program",pos="-1.75,0.7"]
+  Earnings_78 [outcome,label="earnings '78",pos="1.6,-1.7"]
+  Row_source -> Age
+  Row_source -> Education
+  Row_source -> Black
+  Row_source -> Hispanic
+  Row_source -> Married
+  Row_source -> No_degree
+  Row_source -> Earnings_74
+  Row_source -> Earnings_75
+  Row_source -> In_program
+  Row_source -> Earnings_78
+  Age -> In_program
+  Age -> Earnings_78
+  Education -> In_program
+  Education -> Earnings_78
+  No_degree -> In_program
+  No_degree -> Earnings_78
+  Earnings_74 -> In_program
+  Earnings_74 -> Earnings_78
+  Earnings_75 -> In_program
+  Earnings_75 -> Earnings_78
+  Married -> Earnings_78
+  In_program -> Earnings_78
+}`
+  },
+  {
+    id: "lalonde-fit-recover-2part",
+    title: "Job training → earnings (two-part DGP, recover +$1,794)",
+    domain: "dgm",
+    summary: "The two-part upgrade of the fitted-DGP positive control: Earnings_78 is now a SEMICONTINUOUS outcome — a participation gate (did they earn anything?) × a positive amount (how much, if so) — so the fitted marginal reproduces the real earnings ZERO SPIKE that the linear/Gaussian version (lalonde-fit-recover) cannot. The confounding is still LEARNED from the real LaLonde rows; the +$1,794 benchmark is IMPOSED, split extensive-led across the two margins (γ solved so more-people-working delivers ~62%, δ solved so higher-earnings-among-workers makes the two-part do()-contrast exactly +$1,794). Adjustment SHOULD recover it while the naive gap is biased. The residual check honestly flags the intensive tail: log-normal earnings on dollar predictors is still misspecified (the Mincer lesson). Provenance: covariate→treat/earnings edges fitted 📌, treat→earnings authored ✎ on both margins.",
     code: `dag {
   Row_source [latent,label="LaLonde rows (resample)",pos="0.0,4.4"]
   Age [adjusted,label="age",pos="-3.3,2.7"]
@@ -3165,6 +3206,7 @@ function configurePractitionerExample(document: GraphDocument, id: string): Grap
   if (id === "lalonde-dgm-generative") return configureLalondeGenerative(next);
   if (id === "lalonde-recover-rct") return configureLalondeReplay(next);
   if (id === "lalonde-fit-recover") return configureLalondeFitRecover(next);
+  if (id === "lalonde-fit-recover-2part") return configureLalondeFitRecoverTwoPart(next);
   if (id === "what-if-weight-gain-g-estimation") return configureWhatIfWeightGainGEstimation(next);
   if (id === "what-if-hiv-cd4-variants") return configureWhatIfHivCd4Variants(next);
   if (id === "what-if-censoring-ipcw") return configureWhatIfCensoringIpcw(next);

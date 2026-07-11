@@ -283,7 +283,9 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
         gk.map(() => 0), true, true
       );
       if (gateFit) {
-        const coefficients: Record<string, number> = {};
+        // Preserve any non-pinned gate coefficient (e.g. an authored/imposed treatment effect on the
+        // extensive margin) — only the pinned (fitted) confounder parents are overwritten here.
+        const coefficients: Record<string, number> = { ...(mech.gate?.coefficients ?? {}) };
         for (let j = 0; j < pinnedEdges.length; j += 1) coefficients[pinnedEdges[j]!.source] = gateFit.coefs[j] ?? 0;
         gate = { intercept: gateFit.intercept, coefficients };
       }

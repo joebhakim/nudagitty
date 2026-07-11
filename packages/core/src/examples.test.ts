@@ -60,6 +60,7 @@ describe("example catalog", () => {
       "lalonde-dgm-generative",
       "lalonde-recover-rct",
       "lalonde-fit-recover",
+      "lalonde-fit-recover-2part",
       "what-if-hiv-cd4-variants",
       "what-if-censoring-ipcw",
       "what-if-dynamic-g-formula",

@@ -999,6 +999,60 @@ exports[`engine golden > lalonde-fit-recover — simulation + do-contrasts are s
 }
 `;
 
+exports[`engine golden > lalonde-fit-recover-2part — simulation + do-contrasts are stable 1`] = `
+{
+  "doContrasts": {
+    "do(In_program=1)−do(0) on Earnings_78": 1913.283775,
+  },
+  "nodes": {
+    "Age": {
+      "mean": 34.23975,
+      "sd": 10.420522,
+    },
+    "Black": {
+      "mean": 0.29725,
+      "sd": 0.457048,
+    },
+    "Earnings_74": {
+      "mean": 18642.625048,
+      "sd": 14740.698863,
+    },
+    "Earnings_75": {
+      "mean": 18247.424778,
+      "sd": 15039.524287,
+    },
+    "Earnings_78": {
+      "mean": 21733.22388,
+      "sd": 45169.865461,
+    },
+    "Education": {
+      "mean": 12.0145,
+      "sd": 2.993959,
+    },
+    "Hispanic": {
+      "mean": 0.0315,
+      "sd": 0.174665,
+    },
+    "In_program": {
+      "mean": 0.07425,
+      "sd": 0.262177,
+    },
+    "Married": {
+      "mean": 0.8115,
+      "sd": 0.391111,
+    },
+    "No_degree": {
+      "mean": 0.33625,
+      "sd": 0.472426,
+    },
+    "Row_source": {
+      "mean": 1348.864027,
+      "sd": 772.536148,
+    },
+  },
+}
+`;
+
 exports[`engine golden > lalonde-recover-rct — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {
