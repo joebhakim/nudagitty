@@ -13,7 +13,8 @@ import type {
   ViewMode
 } from "@nudagitty/core";
 import type { WorkbenchMode } from "../shared/workbench";
-import { loadInitialWorkbenchState } from "../shared/appState";
+import { emptyStateDocument, loadInitialWorkbenchState } from "../shared/appState";
+import type { LoadedWorkbenchState } from "../shared/appState";
 import type { BibliographyTopic, Selection, ToolMode } from "../shared/appState";
 import { defaultScatterPair, reconcileScatterPair } from "../shared/pairs";
 import type { ScatterPair } from "../shared/pairs";
@@ -83,8 +84,31 @@ function commitState(state: WorkbenchStore, next: GraphDocument): Partial<Workbe
   };
 }
 
-const initialState = loadInitialWorkbenchState();
+// The store singleton is imported all over the app, so it must exist SYNCHRONOUSLY. But decoding a share
+// link is now async (native DecompressionStream is stream-based). So: seed the store with a cheap empty
+// document here, and let main.tsx `await hydrateWorkbenchState()` BEFORE the first render — no flash, no
+// loading state, and every module that imports the store still gets it synchronously.
+const initialState: LoadedWorkbenchState = { document: emptyStateDocument(), activeExampleId: null, source: "default" };
 const initialDocument = initialState.document;
+
+/** Resolve the real initial state (hash link / localStorage / default example) and install it. */
+export async function hydrateWorkbenchState(): Promise<void> {
+  let loaded: LoadedWorkbenchState;
+  try {
+    loaded = await loadInitialWorkbenchState();
+  } catch {
+    return; // keep the seeded empty document rather than failing to boot
+  }
+  useWorkbenchStore.setState({
+    document: loaded.document,
+    activeExampleId: loaded.activeExampleId,
+    modelText: serializeModel(loaded.document),
+    modelDirty: false,
+    scatterPair: defaultScatterPair(loaded.document.graph),
+    history: [],
+    future: []
+  });
+}
 
 export const useWorkbenchStore = create<WorkbenchStore>((set, get) => ({
   document: initialDocument,

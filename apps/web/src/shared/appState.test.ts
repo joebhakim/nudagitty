@@ -16,15 +16,15 @@ const CASES = [
 ];
 
 describe("compact share codec round-trip", () => {
-  it.each(CASES)("%s survives encode -> decode -> encode unchanged", (id) => {
+  it.each(CASES)("%s survives encode -> decode -> encode unchanged", async (id) => {
     const doc = exampleDocument(id);
     expect(doc).toBeTruthy();
 
-    const once = encodeCompactShareDocument(doc!, id);
-    const decoded = decodeCompactShareDocument(once);
+    const once = await encodeCompactShareDocument(doc!, id);
+    const decoded = await decodeCompactShareDocument(once);
     expect(decoded).toBeTruthy();
 
-    const twice = encodeCompactShareDocument(decoded!.document, decoded!.activeExampleId);
+    const twice = await encodeCompactShareDocument(decoded!.document, decoded!.activeExampleId);
     expect(twice).toBe(once);
   });
 
@@ -33,10 +33,10 @@ describe("compact share codec round-trip", () => {
   const closeToSixSigFigs = (actual: number, expected: number) =>
     expect(Math.abs(actual - expected) / Math.max(1e-12, Math.abs(expected))).toBeLessThan(1e-5);
 
-  it("carries the fitted-DGP specifics: gate coefficient, authored provenance, imposed effect", () => {
+  it("carries the fitted-DGP specifics: gate coefficient, authored provenance, imposed effect", async () => {
     const id = "lalonde-fit-recover-2part";
     const doc = exampleDocument(id)!;
-    const decoded = decodeCompactShareDocument(encodeCompactShareDocument(doc, id))!.document;
+    const decoded = (await decodeCompactShareDocument(await encodeCompactShareDocument(doc, id)))!.document;
 
     // the two-part gate (a nested object the default-stripper must not flatten away)
     const gate = normalizeNodeMechanism(decoded.simulation.nodes["Earnings_78"]).gate;
@@ -51,7 +51,7 @@ describe("compact share codec round-trip", () => {
     expect(decoded.metadata.imposedEffect).toBe(1794);
 
     // the authored treatment effect (delta) on the intensive margin
-    const edge = decoded.graph.edges.find((e) => e.source === "In_program" && e.target === "Earnings_78")!;
+    const edge = decoded.graph.edges.find((e: { source: string; target: string }) => e.source === "In_program" && e.target === "Earnings_78")!;
     const m = normalizeEdgeMechanism(decoded.simulation.edges[edge.id]);
     const m0 = normalizeEdgeMechanism(doc.simulation.edges[edge.id]);
     closeToSixSigFigs(m.kind === "linear" ? m.coefficient : NaN, m0.kind === "linear" ? m0.coefficient : NaN);
@@ -60,10 +60,10 @@ describe("compact share codec round-trip", () => {
   // REGRESSION: copula blocks had no key in CompactSimulation, so a shared copula/joint model arrived with
   // its dependence structure silently gone. The idempotence test above CANNOT catch this (encode dropped
   // them on both passes, so the payloads still matched) — it needs an explicit assertion.
-  it("carries copula blocks (they used to be silently dropped)", () => {
+  it("carries copula blocks (they used to be silently dropped)", async () => {
     const doc = exampleDocument("confounder-joint-copula")!;
     expect(doc.simulation.copulaBlocks?.length).toBeGreaterThan(0);
-    const decoded = decodeCompactShareDocument(encodeCompactShareDocument(doc, null))!.document;
+    const decoded = (await decodeCompactShareDocument(await encodeCompactShareDocument(doc, null)))!.document;
     expect(decoded.simulation.copulaBlocks?.length).toBe(doc.simulation.copulaBlocks!.length);
     expect(decoded.simulation.copulaBlocks).toEqual(doc.simulation.copulaBlocks);
   });
@@ -85,17 +85,46 @@ describe("compact share codec round-trip", () => {
     expect(missingDatasets(shared)).toEqual(["user-data"]);
   });
 
-  it("never rounds integers (the seed would be corrupted)", () => {
+  // BACK-COMPAT: links shared before compression are plain JSON (their first decoded byte is `{`), and the
+  // decoder sniffs that instead of blindly inflating. If this breaks, every link anyone has ever shared dies.
+  it("still decodes a legacy uncompressed v2 link", async () => {
+    const legacy = {
+      v: 2,
+      t: "Legacy model",
+      n: [{ i: "A", x: 0, y: 0, r: "e" }, { i: "B", x: 120, y: 0, r: "o" }],
+      e: [{ s: "A", t: "B" }]
+    };
+    const bytes = new TextEncoder().encode(JSON.stringify(legacy));
+    let binary = "";
+    for (const b of bytes) binary += String.fromCharCode(b);
+    const uncompressed = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+
+    const decoded = await decodeCompactShareDocument(uncompressed);
+    expect(decoded).toBeTruthy();
+    expect(decoded!.document.graph.nodes.map((n) => n.id)).toEqual(["A", "B"]);
+    expect(decoded!.document.graph.edges.length).toBe(1);
+    expect(decoded!.document.title).toBe("Legacy model");
+  });
+
+  it("actually compresses (the whole point)", async () => {
+    const doc = exampleDocument("lalonde-fit-recover-2part")!;
+    const encoded = await encodeCompactShareDocument(doc, null);
+    // uncompressed this payload was ~8,034 b64 chars (and ~9,828 before the slimming).
+    expect(encoded.length).toBeLessThan(3000);
+    expect(await decodeCompactShareDocument(encoded)).toBeTruthy();
+  });
+
+  it("never rounds integers (the seed would be corrupted)", async () => {
     const doc = exampleDocument("lalonde-fit-recover-2part")!;
     expect(Number.isInteger(doc.simulation.seed)).toBe(true);
-    const decoded = decodeCompactShareDocument(encodeCompactShareDocument(doc, null))!.document;
+    const decoded = (await decodeCompactShareDocument(await encodeCompactShareDocument(doc, null)))!.document;
     // 2640834105 rounded to 6 significant digits would be 2640830000 — an entirely different RNG stream.
     expect(decoded.simulation.seed).toBe(doc.simulation.seed);
   });
 
-  it("preserves a non-default seed and a non-linear edge mechanism kind", () => {
+  it("preserves a non-default seed and a non-linear edge mechanism kind", async () => {
     const doc = exampleDocument("lalonde-fit-recover-2part")!;
-    const decoded = decodeCompactShareDocument(encodeCompactShareDocument(doc, null))!.document;
+    const decoded = (await decodeCompactShareDocument(await encodeCompactShareDocument(doc, null)))!.document;
     expect(decoded.simulation.seed).toBe(doc.simulation.seed);
     // the plasmode row-source edges are table_lookup, not linear — the kind must survive
     const lookup = decoded.graph.edges.find((e) => e.source === "Row_source" && e.target === "Age")!;

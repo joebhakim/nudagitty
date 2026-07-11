@@ -767,7 +767,7 @@ export function App() {
   }, [activeExampleId, document]);
 
   const copyCompactShareLink = useCallback(async () => {
-    const url = compactShareUrlForDocument(document, activeExampleId);
+    const url = await compactShareUrlForDocument(document, activeExampleId);
     trackAnalyticsEvent("share_clicked", { kind: "compact" });
     if (url.length > MAX_SHARE_URL_LENGTH) {
       setCompactShareStatus("too-large");
@@ -785,7 +785,7 @@ export function App() {
   }, [activeExampleId, document]);
 
   const copyFullShareLink = useCallback(async () => {
-    const url = fullShareUrlForDocument(document, activeExampleId);
+    const url = await fullShareUrlForDocument(document, activeExampleId);
     trackAnalyticsEvent("share_clicked", { kind: "full" });
     if (url.length > MAX_SHARE_URL_LENGTH) {
       setFullShareStatus("too-large");

@@ -10,21 +10,22 @@ import {
   encodeWorkbenchSnapshot
 } from "../shared/appState";
 
-export function compactShareUrlForDocument(document: GraphDocument, activeExampleId: string | null): string {
+export async function compactShareUrlForDocument(document: GraphDocument, activeExampleId: string | null): Promise<string> {
   const url = new URL(window.location.href);
+  // A document identical to a curated example needs no payload at all — just name it (~60 chars).
   const exampleId = canonicalShareExampleId(document, activeExampleId);
   if (exampleId) {
     url.hash = `${SHARE_EXAMPLE_HASH_KEY}=${encodeURIComponent(exampleId)}`;
     return url.toString();
   }
-  const encoded = encodeCompactShareDocument(document, activeExampleId);
+  const encoded = await encodeCompactShareDocument(document, activeExampleId);
   url.hash = `${SHARE_COMPACT_HASH_KEY}=${encoded}`;
   return url.toString();
 }
 
-export function fullShareUrlForDocument(document: GraphDocument, activeExampleId: string | null): string {
+export async function fullShareUrlForDocument(document: GraphDocument, activeExampleId: string | null): Promise<string> {
   const url = new URL(window.location.href);
-  const encoded = encodeWorkbenchSnapshot(createWorkbenchSnapshot(document, activeExampleId));
+  const encoded = await encodeWorkbenchSnapshot(createWorkbenchSnapshot(document, activeExampleId));
   url.hash = `${SHARE_DOCUMENT_HASH_KEY}=${encoded}`;
   return url.toString();
 }
