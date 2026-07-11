@@ -95,7 +95,18 @@ export function sampleRootValue(distribution: NodeDistribution, variable: Variab
   return coerceBinary(sampleDistribution(distribution, rng));
 }
 
-export function finalizeNodeValue(value: number, mechanism: NodeMechanism, variable: VariableModel, contributions: StructuralContribution[], leakTerm: number, rng: () => number, forceDraw = false): number {
+// P(Y>0) for a two-part (semicontinuous) node: σ over the gate's own linear predictor. Needs raw
+// parent values, so the caller (which holds the `values` map) computes it and hands the result to
+// finalizeNodeValue. A node with no gate returns 1 (always participates ⇒ ordinary single-part).
+export function gateProbability(mechanism: NodeMechanism, values: Record<string, number>): number {
+  const gate = mechanism.gate;
+  if (!gate) return 1;
+  let eta = gate.intercept;
+  for (const source in gate.coefficients) eta += (gate.coefficients[source] ?? 0) * (values[source] ?? 0);
+  return sigmoid(eta);
+}
+
+export function finalizeNodeValue(value: number, mechanism: NodeMechanism, variable: VariableModel, contributions: StructuralContribution[], leakTerm: number, rng: () => number, forceDraw = false, gateProb = 1): number {
   // Gaussian copula: η (= value, built from latent-Gaussian parents + noise) is mapped through
   // Φ then the node's target marginal — deterministic given η, for both continuous and binary
   // marginals (so the cross-covariate correlation carried by the shared latent is preserved).
@@ -149,6 +160,16 @@ export function finalizeNodeValue(value: number, mechanism: NodeMechanism, varia
     let cum = 0;
     for (let k = 0; k < K; k += 1) { cum += exps[k]! / total; if (u <= cum) return k; }
     return K - 1;
+  }
+  // Semicontinuous / two-part: participation gate (extensive) × positive amount (intensive). The
+  // amount is the log-link intensive draw exp(η+ε) (= gamma_log's applyCombiner); the gate
+  // probability P(Y>0) is precomputed by the caller from the node's separate gate model. In
+  // expected_value mode we return the per-draw expectation gateProb·amount — matching how count
+  // returns λ and binary returns its probability rather than drawing.
+  if (variable.valueType === "semicontinuous") {
+    const amount = safeExp(value);
+    if (!forceDraw && variable.simulation.mode === "expected_value") return gateProb * amount;
+    return rng() < gateProb ? amount : 0;
   }
   if (variable.valueType !== "binary") return applyCombiner(value, mechanism, regularContributions, leakTerm);
   const probability = binaryProbability(value, mechanism, contributions, leakTerm);

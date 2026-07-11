@@ -91,6 +91,8 @@ export function compileModel(graph: GraphModel, spec: SimulationSpec, order: str
   for (const id of order) {
     const variable = normalizeVariableModel(nodesById.get(id)?.variable);
     if (variable.valueType === "distributional") return null;
+    // Two-part gate needs the participation draw + raw parent values; run the interpreted path.
+    if (variable.valueType === "semicontinuous") return null;
     const mechanism = normalizeNodeMechanism(spec.nodes[id]);
     if (mechanism.combiner === "noisy_or") return null;
     // Copula marginal needs the inverse-CDF transform; run the interpreted path for it.

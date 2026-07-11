@@ -25,7 +25,7 @@ import {
 } from "./conditioning";
 import { empiricalDistribution, emptyEmpiricalDistribution, simulateEmpiricalDistributions } from "./empirical";
 import type { StructuralContribution } from "./interpreter";
-import { coerceVariableValue, edgeContribution, finalizeNodeValue, interactionContribution, sampleRootValue } from "./interpreter";
+import { coerceVariableValue, edgeContribution, finalizeNodeValue, gateProbability, interactionContribution, sampleRootValue } from "./interpreter";
 import { empiricalSampleSize } from "./math";
 
 export interface SimulationInterventionContext {
@@ -107,7 +107,8 @@ export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?
     const noise = sampleDistribution(mechanism.noise, rng);
     value += interaction + noise;
     const analytic = analyticForStructuralNode(activeGraph, id, spec, mechanism, analyticByNode);
-    const finalized = finalizeNodeValue(value, mechanism, variable, nodeContributions, mechanism.intercept + interaction + noise, rng);
+    const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mechanism, values) : 1;
+    const finalized = finalizeNodeValue(value, mechanism, variable, nodeContributions, mechanism.intercept + interaction + noise, rng, false, gateProb);
     values[id] = variable.valueType === "distributional" ? distributionProjection(analytic, finalized) : finalized;
     analyticByNode.set(id, analytic);
   }
@@ -227,7 +228,8 @@ export function runIntervenedEmpiricalSimulation(graph: GraphModel, spec: Simula
         const interaction = interactionContribution(values, mechanism);
         const noise = sampleDistribution(mechanism.noise, rng);
         value += interaction + noise;
-        values[id] = finalizeNodeValue(value, mechanism, variable, nodeContributions, mechanism.intercept + interaction + noise, rng, true);
+        const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mechanism, values) : 1;
+        values[id] = finalizeNodeValue(value, mechanism, variable, nodeContributions, mechanism.intercept + interaction + noise, rng, true, gateProb);
       }
       lastValues = values;
       for (const id of order) samples[id]?.push(values[id] ?? 0);

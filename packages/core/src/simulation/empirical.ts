@@ -27,7 +27,7 @@ import { compileModel, runCompiledForward } from "./compiled";
 import { prepareCopulaBlock, drawCopulaBlockSample } from "../copulaVine";
 import { VARIANCE_EPSILON } from "./constants";
 import type { StructuralContribution } from "./interpreter";
-import { coerceVariableValue, edgeContribution, finalizeNodeValue, interactionContribution, sampleRootValue } from "./interpreter";
+import { coerceVariableValue, edgeContribution, finalizeNodeValue, gateProbability, interactionContribution, sampleRootValue } from "./interpreter";
 import { clampProbability, empiricalSampleSize, inverseStandardNormalCdf, standardNormalCdf } from "./math";
 import { choleskyDecomposition } from "../stats/linalg";
 
@@ -184,7 +184,8 @@ export function simulateEmpiricalDistributions(
           }
           const noise = sampleDistribution(mechanism.noise, rng);
           value += interaction + noise;
-          values[id] = finalizeNodeValue(value, mechanism, variable, nodeContributions, mechanism.intercept + interaction + noise, rng, true);
+          const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mechanism, values) : 1;
+          values[id] = finalizeNodeValue(value, mechanism, variable, nodeContributions, mechanism.intercept + interaction + noise, rng, true, gateProb);
         }
       }
     }
