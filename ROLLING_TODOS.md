@@ -57,8 +57,15 @@ already does `Y = g⁻¹(η+ε)`, so the fitter just learns the link the node's 
       Related trap seen in the wild: user FIT treat→outcome (learning the confounded −0.413) instead of AUTHORING
       it — the UI makes "fit everything" the easy path, so there's no imposed truth. Consider warning when the
       exposure→outcome edge is fitted in a "recover the imposed effect" workflow.
-- [ ] **Compact share links** — the `#c=` payload is ~9KB of base64 for one example (whole doc inlined). Want
-      short/compact links (id + delta, or a hash-backed store). Raised during the replication debug.
+- [x] **Compact share links DONE** (2026-07-11; commits 43ff590, a0873b9, e306d48, 1d1acc6) — the 9.8KB link was
+      mostly a BUG: `lalonde-fit-recover-2part` was not a fixed point of reconcile (its configurator set δ without
+      re-fitting), so it drifted on load and fell off the `#example=` short-link path that 68/69 examples already
+      used. Fixed (iterate solve→reconcile), + an invariant test that all examples are fixed points. Then: pruned
+      all-default `{}` objects from the payload, 6-sig-fig numbers (integers guarded — the seed!), integer
+      positions, and native `CompressionStream` deflate with first-byte sniffing so old uncompressed links still
+      decode. Restored silently-dropped `copulaBlocks`; imported data now warns instead of arriving empty.
+      **9,828 → 1,846 chars as `#c=`, and 34 chars as `#example=`.** Fits got 2.5x faster on the way (nodeColumn
+      was being called per-row). E2E-verified in a browser: boot, short link, legacy link.
 - [ ] **core/empirical divergence** — empirical.ts had NO plasmode passthrough at all (it treated table_lookup as
       a plain additive edge); now aligned, but the two loops duplicate node-evaluation logic and drifted once
       already. Worth unifying into one evaluator.
