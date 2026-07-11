@@ -179,42 +179,55 @@
 .eq2-margin-tag { font-size: 8px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--accent, #23716f); opacity: 0.7; }
 
 /* Ghost number: text in the equation until clicked. The underline carries provenance. */
-.eq2-num { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 11px; padding: 0 2px; border-radius: 3px; cursor: text; border-bottom: 2px solid transparent; }
+.eq2-num { appearance: none; background: none; border: none; min-height: 0; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 11px; padding: 0 2px; border-radius: 3px 3px 0 0; cursor: pointer; border-bottom: 2px solid transparent; }
 .eq2-num:hover { background: rgba(0,0,0,0.05); }
 .eq2-num.st-fitted { color: #0d6b52; border-bottom-color: #23716f; }
 .eq2-num.st-authored { color: #8a5a12; border-bottom-color: #cf7a22; }
 .eq2-num.st-not-learned { color: var(--muted, #9aa0a8); border-bottom: 2px dashed #c9ccd4; font-weight: 500; }
-.eq2-num-input { width: 68px; border: 1px solid var(--accent, #23716f); background: var(--surface-0, #fff); outline: none; text-align: right; }
 
-/* THE CONTROL — 4 icon buttons in a 2x2 grid, sized to sit INSIDE the equation line (zero extra height).
-   NB: base.css sets a global `button { min-height: 32px }` (touch targets). min-height CLAMPS UPWARD, so
-   without `min-height: 0` these buttons silently render 32px tall, overflow their cells and get clipped —
-   which is exactly what turned the first attempt into an illegible vertical smear. */
-.eq2-ctl { flex: 0 0 auto; display: grid; grid-template-columns: 10px 10px; grid-template-rows: 10px 10px; gap: 1px; border-radius: 3px; }
-/* hover frame via box-shadow so it costs NO layout (a border would add 2px to every row). */
-.eq2-term:hover .eq2-ctl { background: var(--surface-0, #fff); box-shadow: 0 0 0 1px var(--border, #dfe1e6); }
-.eq2-ctl-b {
-  appearance: none; border: none; background: none; padding: 0; margin: 0;
-  width: 10px; height: 10px; min-height: 0;   /* ← defeats the global 32px touch-target clamp */
-  font-size: 8.5px; line-height: 10px; text-align: center; cursor: pointer; border-radius: 2px; opacity: 0.32;
+
+/* THE POPOVER — one affordance per number. The equation stays a plain equation; the number's underline
+   already says HOW it's set, and clicking it opens everything for that number (value + provenance).
+   NB: base.css sets a global `button { min-height: 32px }` (touch targets) and min-height CLAMPS UPWARD,
+   so any inline button in here needs `min-height: 0` or it silently renders 32px tall. */
+.eq2-cell { position: relative; display: inline-block; }
+.eq2-pop {
+  position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; min-width: 168px;
+  display: flex; flex-direction: column; gap: 2px; padding: 6px; text-align: left;
+  background: var(--surface-0, #fff); border: 1px solid var(--border, #dcdce6); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(15,18,30,0.16);
 }
-.eq2-ctl-b:hover { opacity: 1; background: rgba(0,0,0,0.10); }
-.eq2-ctl-b.active { opacity: 1; }
-.eq2-ctl-b.st-fitted { color: #23716f; }
-.eq2-ctl-b.st-authored { color: #cf7a22; }
-.eq2-ctl-b.active.st-not-learned { background: #e6e8ec; }
-.eq2-ctl-b.active.st-fitted { background: rgba(35,113,111,0.22); color: #0d5b52; }
-.eq2-ctl-b.active.st-authored { background: rgba(207,122,34,0.28); color: #8a5a12; }
-.eq2-ctl-info { color: var(--accent, #23716f); cursor: help; opacity: 0.4; }
+.eq2-pop-row { display: flex; align-items: center; gap: 6px; }
+.eq2-pop-label { font-size: 9px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted, #8a8f99); }
+.eq2-pop-input { flex: 1 1 auto; min-width: 0; width: 100%; font-family: ui-monospace, monospace; font-size: 11px; text-align: right; padding: 3px 6px; border: 1px solid var(--border, #dcdce6); border-radius: 5px; background: var(--surface-0, #fff); }
+.eq2-pop-input:focus { outline: none; border-color: var(--accent, #23716f); }
+.eq2-pop-sep { height: 1px; background: var(--border, #ececf2); margin: 3px 0; }
+.eq2-pop-state {
+  display: flex; align-items: center; justify-content: flex-start; gap: 6px; width: 100%; min-height: 0;
+  /* ← base.css buttons are min-height:32px AND justify-content:center; both must be defeated here. */
+  padding: 3px 5px; border: 1px solid transparent; border-radius: 5px; background: none;
+  font-size: 11px; text-align: left; cursor: pointer; color: var(--text, #202428);
+}
+.eq2-pop-state:hover { background: rgba(0,0,0,0.05); }
+.eq2-pop-glyph { width: 13px; text-align: center; font-size: 10px; }
+.eq2-pop-tick { margin-left: auto; font-size: 10px; font-weight: 700; }
+.eq2-pop-state.active.st-fitted { background: rgba(35,113,111,0.10); border-color: #9ed9c6; color: #0d6b52; }
+.eq2-pop-state.active.st-authored { background: rgba(207,122,34,0.12); border-color: #e0c48f; color: #8a5a12; }
+.eq2-pop-state.active.st-not-learned { background: #f0f1f4; border-color: #dfe1e6; color: var(--muted, #65717d); }
+.eq2-pop-note { font-size: 9.5px; line-height: 1.4; color: var(--muted, #8a8f99); margin-top: 2px; }
 
 @media (prefers-color-scheme: dark) {
   .eq2-body { background: #1b1b22; border-color: #34343e; }
   .eq2-shape-row { border-bottom-color: #2a2a33; }
   .eq2-shape { color: #c9d2da; }
-  .eq2-num:hover, .eq2-ctl-b:hover { background: rgba(255,255,255,0.10); }
+  .eq2-num:hover { background: rgba(255,255,255,0.10); }
+  .eq2-pop { background: #1b1b22; border-color: #34343e; box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+  .eq2-pop-input { background: #101014; border-color: #34343e; color: #e8e8ef; }
+  .eq2-pop-state { color: #e8e8ef; }
+  .eq2-pop-state:hover { background: rgba(255,255,255,0.07); }
+  .eq2-pop-sep { background: #34343e; }
   .eq2-num.st-fitted { color: #7fe3c6; }
   .eq2-num.st-authored { color: #e0b877; }
-  .eq2-num-input { background: #101014; color: #e8e8ef; }
 }
 
 /* Lab chrome for the chosen-direction feature section. */

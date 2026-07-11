@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EqNode, EqPart, EqTerm } from "./nodeSpecs";
-import { STATE_LABEL, cycle } from "./fixtures";
+import { STATE_GLYPH, STATE_LABEL } from "./fixtures";
 import type { DepState } from "./fixtures";
 
-// Equation view — family-aware, DENSE. One box. The shape line is line 1 and doubles as the
-// link/combiner control (click the ▾). Each number carries a compact 2×2 icon control that fits inside
-// the line height, so the real ∅/📌/✎ actions are back without costing a single pixel of height.
+// Equation view — family-aware, dense. The block reads as a plain equation: no per-row control clutter.
+// A number's UNDERLINE carries its provenance (teal = fitted, ochre = authored, dashed = not learned), and
+// clicking the number opens one small popover holding everything for that number — value + how it's set.
 
 function fmtCoef(v: number | null): string {
   if (v === null) return "—";
@@ -15,49 +15,68 @@ function fmtCoef(v: number | null): string {
   return a >= 1 ? v.toFixed(2) : v.toFixed(3);
 }
 
-function Ghost({ value, state, onChange }: { value: number | null; state: DepState; onChange: (v: number) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  if (value === null) return <span className="eq2-num st-not-learned">—</span>;
-  if (editing) {
-    return (
-      <input className={`eq2-num eq2-num-input st-${state}`} autoFocus value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => { const n = Number(draft); if (Number.isFinite(n)) onChange(n); setEditing(false); }}
-        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEditing(false); }} />
-    );
-  }
-  return (
-    <span className={`eq2-num st-${state}`} role="button" tabIndex={0} title="click to edit"
-      onClick={() => { setDraft(String(value)); setEditing(true); }}
-      onKeyDown={(e) => { if (e.key === "Enter") { setDraft(String(value)); setEditing(true); } }}>
-      {fmtCoef(value)}
-    </span>
-  );
-}
-
-// The real controls, back — but as a 2×2 icon grid sized to fit inside one equation line, so it costs
-// zero extra height. ∅ not learned · 📌 fit from data · ✎ author · ⓘ where this number came from.
-function TermControls({ state, info, onSet }: { state: DepState; info: string; onSet: (s: DepState) => void }) {
-  const btn = (s: DepState, glyph: string) => (
-    <button type="button" className={`eq2-ctl-b${state === s ? " active" : ""} st-${s}`}
-      title={STATE_LABEL[s]} onClick={() => onSet(s)}>{glyph}</button>
-  );
-  return (
-    <span className="eq2-ctl" role="group" aria-label="how this number is set">
-      {btn("not-learned", "∅")}
-      {btn("fitted", "●")}
-      {btn("authored", "✎")}
-      <button type="button" className="eq2-ctl-b eq2-ctl-info" title={info}>ⓘ</button>
-    </span>
-  );
-}
-
 const INFO: Record<DepState, string> = {
-  "not-learned": "No number: the arrow is structural only and contributes nothing to generation.",
-  fitted: "Fitted from the data column by the DGP fit — it will be re-learned whenever the fit re-runs.",
-  authored: "You set this number. The fit holds it fixed and fits everything else around it."
+  "not-learned": "No number — the arrow is structural only and contributes nothing to generation.",
+  fitted: "Learned from the data column. It is re-fitted whenever the fit re-runs.",
+  authored: "You set this. The fit holds it fixed and fits everything else around it."
 };
+
+const STATES: DepState[] = ["not-learned", "fitted", "authored"];
+
+/** The number, plus its popover — the single affordance for this coefficient. */
+function NumberCell({ value, state, onChange, onState }: {
+  value: number | null; state: DepState;
+  onChange: (v: number) => void; onState: (s: DepState) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const wrap = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+
+  const commit = () => { const n = Number(draft); if (Number.isFinite(n)) onChange(n); };
+
+  return (
+    <span className="eq2-cell" ref={wrap}>
+      <button type="button" className={`eq2-num st-${state}`}
+        title={`${STATE_LABEL[state]} — click to edit`}
+        onClick={() => { setDraft(value === null ? "0" : String(value)); setOpen((v) => !v); }}>
+        {fmtCoef(value)}
+      </button>
+
+      {open && (
+        <span className="eq2-pop" role="dialog">
+          <span className="eq2-pop-row">
+            <label className="eq2-pop-label">value</label>
+            <input className="eq2-pop-input" autoFocus value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => { if (e.key === "Enter") { commit(); setOpen(false); } }} />
+          </span>
+          <span className="eq2-pop-sep" />
+          <span className="eq2-pop-label">how it&rsquo;s set</span>
+          {STATES.map((s) => (
+            <button type="button" key={s}
+              className={`eq2-pop-state st-${s}${s === state ? " active" : ""}`}
+              onClick={() => { onState(s); setOpen(false); }}>
+              <span className="eq2-pop-glyph">{STATE_GLYPH[s]}</span>
+              <span>{STATE_LABEL[s]}</span>
+              {s === state && <span className="eq2-pop-tick">✓</span>}
+            </button>
+          ))}
+          <span className="eq2-pop-note">{INFO[state]}</span>
+        </span>
+      )}
+    </span>
+  );
+}
 
 function Predictor(props: {
   lead: string; part: EqPart;
@@ -69,22 +88,19 @@ function Predictor(props: {
     <>
       <div className="eq2-term">
         <span className="eq2-lead">{props.lead} =</span>
-        <Ghost value={part.intercept.value} state={part.intercept.state} onChange={props.onIntercept} />
-        <span className="eq2-tail" />
-        <TermControls state={part.intercept.state} info={INFO[part.intercept.state]} onSet={props.onInterceptState} />
+        <NumberCell value={part.intercept.value} state={part.intercept.state}
+          onChange={props.onIntercept} onState={props.onInterceptState} />
       </div>
       {part.terms.map((t: EqTerm) => {
         const off = t.state === "not-learned";
         return (
           <div className={`eq2-term${off ? " is-off" : ""}`} key={t.id}>
             <span className="eq2-lead eq2-op">+</span>
-            {off
-              ? <span className="eq2-parent" title={t.parent}>{t.parent} <i>not learned</i></span>
-              : <><Ghost value={t.coef} state={t.state} onChange={(v) => props.onCoef(t.id, v)} />
-                  <span className="eq2-mul">·</span>
-                  <span className="eq2-parent" title={t.parent}>{t.parent}</span></>}
-            <span className="eq2-tail" />
-            <TermControls state={t.state} info={INFO[t.state]} onSet={(s) => props.onState(t.id, s)} />
+            <NumberCell value={off ? null : t.coef} state={t.state}
+              onChange={(v) => props.onCoef(t.id, v)} onState={(s) => props.onState(t.id, s)} />
+            <span className="eq2-mul">·</span>
+            <span className="eq2-parent" title={t.parent}>{t.parent}</span>
+            {off && <span className="eq2-off">not learned</span>}
           </div>
         );
       })}
@@ -120,7 +136,6 @@ export function EquationV2({ node: initial }: { node: EqNode }) {
       </div>
 
       <div className="eq2-body">
-        {/* Line 1: the shape. Doubles as the link/combiner control — no separate dropdown row. */}
         <div className="eq2-term eq2-shape-row">
           <code className="eq2-shape">{shape}</code>
           <span className="eq2-tail" />
@@ -153,12 +168,10 @@ export function EquationV2({ node: initial }: { node: EqNode }) {
           <div className="eq2-term">
             <span className="eq2-lead">ε ~</span>
             <span className="eq2-dist">N(0,</span>
-            <Ghost value={node.noise.sd} state={node.noise.state}
-              onChange={(v) => setNode((n) => (n.noise ? { ...n, noise: { ...n.noise, sd: v } } : n))} />
+            <NumberCell value={node.noise.sd} state={node.noise.state}
+              onChange={(v) => setNode((n) => (n.noise ? { ...n, noise: { ...n.noise, sd: v } } : n))}
+              onState={(s) => setNode((n) => (n.noise ? { ...n, noise: { ...n.noise, state: s } } : n))} />
             <span className="eq2-dist">)</span>
-            <span className="eq2-tail" />
-            <TermControls state={node.noise.state} info={INFO[node.noise.state]}
-              onSet={(s) => setNode((n) => (n.noise ? { ...n, noise: { ...n.noise, state: s } } : n))} />
           </div>
         )}
       </div>
