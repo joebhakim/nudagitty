@@ -1084,6 +1084,8 @@ export function App() {
             // We never set coefficients: commitState runs reconcilePins, which DERIVES gamma/delta from it.
             onImposedEffect={(patch) => commit(setImposedEffect(document, patch))}
             onAuthorNumber={(key) => commit(unpinKey(document, key))}
+            // A DERIVED gate coefficient is changed by moving the STORY, on the effect's pad.
+            onSelectEdge={selectEdge}
           />
         </ModuleFrame>
       </aside>

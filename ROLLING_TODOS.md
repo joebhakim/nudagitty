@@ -66,6 +66,14 @@ already does `Y = g⁻¹(η+ε)`, so the fitter just learns the link the node's 
       decode. Restored silently-dropped `copulaBlocks`; imported data now warns instead of arriving empty.
       **9,828 → 1,846 chars as `#c=`, and 34 chars as `#example=`.** Fits got 2.5x faster on the way (nodeColumn
       was being called per-row). E2E-verified in a browser: boot, short link, legacy link.
+- [ ] **Per-margin provenance for the GATE (deferred, deliberate)** — a two-part node's gate is a SECOND
+      coefficient vector (`mechanism.gate.{intercept,coefficients}`), not on the edges, so gate numbers have no
+      provenance key. Today a parent's edge provenance governs BOTH its margins, and `gateCoefficientState()`
+      just reports that honestly (fitted / authored / derived / not-learned). Two things stay impossible:
+      (a) "fit the gate but AUTHOR the intensive" for the same parent, and (b) authoring the gate INTERCEPT
+      (it is always fitted — flagged by the equation-block work). Both need real keys: `g:<node>:<parent>`
+      and `gi:<node>`, plus pinNodeEquation / reconcile / normalize / share round-trip. Only build it if
+      someone actually wants a split-provenance parent.
 - [ ] **core/empirical divergence** — empirical.ts had NO plasmode passthrough at all (it treated table_lookup as
       a plain additive edge); now aligned, but the two loops duplicate node-evaluation logic and drifted once
       already. Worth unifying into one evaluator.

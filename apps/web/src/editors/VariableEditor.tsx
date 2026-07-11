@@ -269,6 +269,7 @@ export function SelectionEditor(props: {
   onEdgeMechanism: (edge: GraphEdge, patch: Partial<EdgeMechanism>) => void;
   onImposedEffect: (patch: Partial<ImposedEffect>) => void;
   onAuthorNumber: (key: string) => void;
+  onSelectEdge: (edgeId: string) => void;
   onDeleteEdge: (edgeId: string) => void;
   onSetDataMode: (nodeId: string, mode: "read" | "fit" | "author") => void;
   onPinNumber: (key: string) => void;
@@ -295,6 +296,7 @@ export function SelectionEditor(props: {
     onPinNumber={props.onPinNumber}
     onUnpinKey={props.onUnpinKey}
     onUnlearnNumber={props.onUnlearnNumber}
+    onSelectEdge={props.onSelectEdge}
   />;
   if (props.edge) return <EdgeEditor
     edge={props.edge}
@@ -621,6 +623,7 @@ export function VariableEditor(props: {
   onPinNumber: (key: string) => void;
   onUnpinKey: (key: string) => void;
   onUnlearnNumber: (key: string) => void;
+  onSelectEdge: (edgeId: string) => void;
 }) {
   const node = props.node;
   const variable = normalizeVariableModel(node.variable);
@@ -775,6 +778,7 @@ export function VariableEditor(props: {
                     <p className="muted generation-read">Arrows are <b>structural only</b> — fit (📌) or author (✎) a number to make {node.label} depend on its parents.</p>
                   )}
                   <EquationBlock
+                    onSelectEdge={props.onSelectEdge}
                     node={node}
                     document={props.document}
                     mechanism={mechanism}

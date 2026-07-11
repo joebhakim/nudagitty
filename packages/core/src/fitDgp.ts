@@ -367,6 +367,57 @@ export function imposedEffectContext(document: GraphDocument): ImposedEffectCont
   return { family, exposure, outcome, edgeId: edge.id, target, c0, amax, s, maxExtensiveShare, deltaFloor, deltaFor, decompose, solve };
 }
 
+/** Which edge an imposed effect lives on. Cheap — no dataset reads (unlike imposedEffectContext). */
+export function imposedEffectEdge(document: GraphDocument): { exposure: string; outcome: string; edgeId: string } | null {
+  const imposed = document.metadata.imposedEffect;
+  if (!imposed || !Number.isFinite(imposed.target)) return null;
+  const exposure = imposed.exposure ?? document.graph.nodes.find((n) => n.roles?.exposure)?.id;
+  const outcome = imposed.outcome ?? document.graph.nodes.find((n) => n.roles?.outcome)?.id;
+  if (!exposure || !outcome) return null;
+  const edge = document.graph.edges.find((e) => e.source === exposure && e.target === outcome && e.kind === "directed");
+  return edge ? { exposure, outcome, edgeId: edge.id } : null;
+}
+
+/**
+ * Who owns a two-part node's GATE coefficient for a given parent.
+ *
+ * The gate is a SECOND coefficient vector on the node (`mechanism.gate.coefficients`), NOT on the edges — so
+ * unlike an edge coefficient it has no provenance key of its own. That left the editor unable to tell whether
+ * typing into a gate cell would stick, and in two of the three cases it silently would NOT:
+ *
+ *   DERIVED  — an imposed effect covers this parent. reconcilePins re-solves γ from the ESTIMAND on every
+ *              commit, so a typed value is overwritten immediately. (You move γ by moving the STORY — the
+ *              extensive/intensive split — not by typing a log-odds.)
+ *   FITTED   — the parent's edge is pinned, so the gate logistic learns γ. A typed value is overwritten when
+ *              the gate's signature changes (the data or the parent set) — i.e. it appears to stick, then
+ *              reverts LATER. The silent-revert is the nastier of the two lies.
+ *   AUTHORED — the parent's edge is authored and no imposed effect covers it. You genuinely own γ.
+ *   NOT-LEARNED — no gate coefficient for this parent.
+ *
+ * A parent's provenance governs BOTH of its margins (gate and intensive); an imposed effect overrides the
+ * exposure's parent to `derived`. Per-margin provenance (fit the gate but author the intensive, for the SAME
+ * parent) would need real keys — logged, not built.
+ */
+export type GateNumberState = "derived" | "fitted" | "authored" | "not-learned";
+export function gateCoefficientState(document: GraphDocument, nodeId: string, parentId: string): GateNumberState {
+  const node = document.graph.nodes.find((n) => n.id === nodeId);
+  if (!node || normalizeVariableModel(node.variable).valueType !== "semicontinuous") return "not-learned";
+  const edge = document.graph.edges.find((e) => e.source === parentId && e.target === nodeId && e.kind === "directed");
+  if (!edge) return "not-learned";
+
+  // PRECEDENCE MUST MIRROR THE ENGINE. applyImposed() stands down when the effect edge is PINNED (you are
+  // FITTING the effect, not imposing it — see the fit-vs-author trap), and the gate logistic then learns γ
+  // like any other pinned parent. So `fitted` outranks `derived`; get this backwards and the helper simply
+  // tells a different lie.
+  if (document.metadata.pins?.includes(edgeKey(edge.id))) return "fitted";
+
+  const imposed = imposedEffectEdge(document);
+  if (imposed && imposed.edgeId === edge.id) return "derived";
+
+  const gate = normalizeNodeMechanism(document.simulation.nodes[nodeId]).gate;
+  return gate && Object.hasOwn(gate.coefficients, parentId) ? "authored" : "not-learned";
+}
+
 /**
  * Re-author the imposed effect's STORY (how much of it runs through the extensive margin) or its TARGET.
  * You never set γ/δ — reconcilePins derives them. The share is clamped to what the data can deliver.

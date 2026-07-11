@@ -1323,6 +1323,16 @@ button.prov-chip { cursor: pointer; }
    which is why the controls cost nothing: 18px is about a normal 11px line anyway. */
 .eq-term { display: flex; align-items: center; gap: 4px; font-size: 11px; min-height: 18px; }
 .eq-term.is-off { opacity: 0.5; }
+/* A DERIVED number: the engine owns it (it re-solves γ from the imposed estimand on every commit), so it is
+   not typeable — but it is not an error either. Accent teal, and the chip is the DOOR to where you legitimately
+   change it: the effect's pad. Never grey it like "not learned" — it IS learned, just not by you. */
+.eq-term.is-derived .eq-num { cursor: default; opacity: 0.85; }
+.eq-derived { appearance: none; margin-left: 2px; padding: 1px 6px; border: 1px solid var(--accent, #23716f); border-radius: 999px; background: var(--accent-soft, #dff0ee); color: var(--accent, #23716f); font-size: 9.5px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.eq-derived:hover { background: var(--accent, #23716f); color: #fff; }
+@media (prefers-color-scheme: dark) {
+  .eq-derived { background: #12302c; border-color: #2f6f68; color: #7fe3c6; }
+  .eq-derived:hover { background: #2f6f68; color: #fff; }
+}
 .eq-lead { flex: 0 0 auto; font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--muted, #65717d); }
 .eq-op, .eq-mul { color: var(--muted, #99a); font-family: ui-monospace, monospace; }
 .eq-parent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { normalizeVariableModel, pinKeys } from "@nudagitty/core";
 import type { GraphDocument, GraphEdge, GraphNode, NodeCombinerKind, NodeMechanism, VariableModel } from "@nudagitty/core";
+import { gateCoefficientState } from "@nudagitty/core";
 import { NODE_COMBINERS } from "../app/constants";
 
 // The generation block rendered as the node's REAL structural equation. The generative form is the thing
@@ -128,6 +129,8 @@ export function EquationBlock(props: {
   onPinNumber: (key: string) => void;
   onUnpinKey: (key: string) => void;
   onUnlearnNumber: (key: string) => void;
+  /** Jump to the edge carrying the imposed effect — where a DERIVED γ is legitimately changed. */
+  onSelectEdge?: (edgeId: string) => void;
 }) {
   const { node, document: doc, mechanism, isData, parents } = props;
   const variable = normalizeVariableModel(node.variable);
@@ -185,15 +188,34 @@ export function EquationBlock(props: {
             </div>
           );
         }
+        // The GATE coefficient has no provenance key of its own (it lives on mechanism.gate, not the edge),
+        // so ask core who actually owns it. Typing into a cell the ENGINE owns is the lie we're removing:
+        // a fitted γ silently reverts on the next gate re-fit, and a DERIVED γ is re-solved from the
+        // estimand on every commit. You move a derived γ by moving the STORY, on the pad.
+        const gateState = forGate ? gateCoefficientState(doc, node.id, p.edge.source) : null;
+        const derived = gateState === "derived";
+        const gateFitted = gateState === "fitted";
+        const cellState: DepState = derived ? "fitted" : state; // 📌-style chip; `derived` isn't a DepState
         return (
-          <div className={`eq-term${off ? " is-off" : ""}`} key={p.edge.id}>
+          <div className={`eq-term${off ? " is-off" : ""}${derived ? " is-derived" : ""}`} key={p.edge.id}>
             <span className="eq-lead eq-op">+</span>
-            <NumberCell value={off ? null : value} state={state} editable={!off} isData={isData}
+            <NumberCell value={off ? null : value} state={cellState}
+              editable={!off && !derived && !gateFitted} isData={isData}
               onValue={(v) => (forGate ? setGateCoef(p.edge.source, v) : props.onCoefficient(p.edge, v))}
-              onState={setState(p.key)} />
+              onState={derived ? () => {} : setState(p.key)} />
             <span className="eq-mul">·</span>
             <span className="eq-parent" title={p.label}>{p.label}</span>
             {off && <span className="eq-off">not learned</span>}
+            {derived && (
+              <button
+                type="button"
+                className="eq-derived"
+                title="This γ is DERIVED from the imposed effect — the engine re-solves it from the estimand on every commit, so typing it would be overwritten. Change it by moving the story (how much of the effect comes from more people working) on the effect's pad."
+                onClick={() => props.onSelectEdge?.(p.edge.id)}
+              >
+                derived · edit the effect →
+              </button>
+            )}
           </div>
         );
       })}
