@@ -32,6 +32,13 @@ export function applyLink(y: number, link: FitLink): number {
 // re-fit and keeps the carried values, which are already that fit's output.
 const fitSigCache = new Map<string, string>();
 
+// The two-part GATE fit has its own, narrower dependency set: it regresses 1(Y>0) on the PINNED parents with
+// a zero offset, so it does NOT depend on any AUTHORED coefficient. Without a separate signature, authoring a
+// treatment effect (which lives on the intensive margin) invalidates the whole node and needlessly re-runs the
+// expensive logistic IRLS. That made the two-part example's solve→reconcile fixed-point loop ~5x slower than
+// it needs to be, and slowed opening the example in the app.
+const gateSigCache = new Map<string, string>();
+
 // ---------- linear algebra ----------
 function solveLinear(a: number[][], b: number[]): number[] | null {
   const n = b.length;
@@ -224,17 +231,23 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
 
     // Target on the fit's LINK scale (identity for continuous — unchanged; log for positive, etc.). The
     // authored offset + coefficients live on that same scale (η), so this stays exact.
+    // Hoist the per-edge column lookup + mechanism normalization OUT of the row loops. These used to run for
+    // every ROW (nodeColumn scans the graph's edges), so a 2,675-row fit did ~16k graph scans and allocated a
+    // normalized mechanism per row — which dominated the cost of every fit.
+    const authoredCols = authoredEdges.map((edge) => {
+      const em = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
+      return { coef: em.kind === "linear" ? em.coefficient : 0, dataColumn: nodeColumn(document, edge.source)!.dataColumn };
+    });
+    const pinnedCols = pinnedEdges.map((edge) => nodeColumn(document, edge.source)!.dataColumn);
+    const baseOffset = fitIntercept ? 0 : mech.intercept;
+
     const yRaw = rows.map((r) => (isBinary ? (r[col.dataColumn] ?? 0) : applyLink(r[col.dataColumn] ?? 0, link)));
     const offsetRaw = rows.map((r) => {
-      let o = fitIntercept ? 0 : mech.intercept;
-      for (const edge of authoredEdges) {
-        const em = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
-        const coef = em.kind === "linear" ? em.coefficient : 0;
-        o += coef * (r[nodeColumn(document, edge.source)!.dataColumn] ?? 0);
-      }
+      let o = baseOffset;
+      for (const a of authoredCols) o += a.coef * (r[a.dataColumn] ?? 0);
       return o;
     });
-    const XRaw = rows.map((r) => pinnedEdges.map((edge) => r[nodeColumn(document, edge.source)!.dataColumn] ?? 0));
+    const XRaw = rows.map((r) => pinnedCols.map((c) => r[c] ?? 0));
     // Drop rows outside the link's domain (e.g. Y≤0 under a log link) so the fit only sees valid targets.
     const keep: number[] = [];
     for (let i = 0; i < yRaw.length; i += 1) if (Number.isFinite(yRaw[i]) && Number.isFinite(offsetRaw[i]) && XRaw[i]!.every(Number.isFinite)) keep.push(i);
@@ -275,19 +288,30 @@ export function reconcilePins(input: GraphDocument): { document: GraphDocument; 
     // so P(Y>0)·E[Y|Y>0] reproduces the overall mean including the zero spike.
     let gate: NodeGate | null = null;
     if (valueType === "semicontinuous") {
-      const gk: number[] = [];
-      for (let i = 0; i < XRaw.length; i += 1) if (XRaw[i]!.every(Number.isFinite)) gk.push(i);
-      const gateFit = fitLinearModel(
-        gk.map((i) => ((rows[i]![col.dataColumn] ?? 0) > 0 ? 1 : 0)),
-        gk.map((i) => XRaw[i]!),
-        gk.map(() => 0), true, true
-      );
-      if (gateFit) {
-        // Preserve any non-pinned gate coefficient (e.g. an authored/imposed treatment effect on the
-        // extensive margin) — only the pinned (fitted) confounder parents are overwritten here.
-        const coefficients: Record<string, number> = { ...(mech.gate?.coefficients ?? {}) };
-        for (let j = 0; j < pinnedEdges.length; j += 1) coefficients[pinnedEdges[j]!.source] = gateFit.coefs[j] ?? 0;
-        gate = { intercept: gateFit.intercept, coefficients };
+      // The gate depends only on the outcome column + the PINNED parents (zero offset, authored edges
+      // excluded) — NOT on any authored coefficient. Cache it under that narrower signature so authoring an
+      // intensive-margin effect doesn't needlessly redo the logistic IRLS.
+      const gateSig = [col.dataset, rows.length, col.dataColumn, ...pinnedEdges.map((e) => nodeColumn(document, e.source)?.dataColumn).sort()].join("|");
+      const gateKey = `${input.id}:${nodeId}:gate`;
+      if (gateSigCache.get(gateKey) === gateSig && mech.gate) {
+        gate = mech.gate; // inputs unchanged → carry the existing gate (incl. any authored coefficient)
+      } else {
+        const gk: number[] = [];
+        for (let i = 0; i < XRaw.length; i += 1) if (XRaw[i]!.every(Number.isFinite)) gk.push(i);
+        const gateFit = fitLinearModel(
+          gk.map((i) => ((rows[i]![col.dataColumn] ?? 0) > 0 ? 1 : 0)),
+          gk.map((i) => XRaw[i]!),
+          gk.map(() => 0), true, true
+        );
+        if (gateFit) {
+          // Preserve any non-pinned gate coefficient (e.g. an authored/imposed treatment effect on the
+          // extensive margin) — only the pinned (fitted) confounder parents are overwritten here.
+          const coefficients: Record<string, number> = { ...(mech.gate?.coefficients ?? {}) };
+          for (let j = 0; j < pinnedEdges.length; j += 1) coefficients[pinnedEdges[j]!.source] = gateFit.coefs[j] ?? 0;
+          gate = { intercept: gateFit.intercept, coefficients };
+          if (gateSigCache.size > 400) gateSigCache.clear();
+          gateSigCache.set(gateKey, gateSig);
+        }
       }
     }
     setNode(document, nodeId, { ...mech, intercept: newIntercept, combiner: isBinary ? "bernoulli_logit" : linkCombiner, noise: newNoise, ...(gate ? { gate } : {}) });

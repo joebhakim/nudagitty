@@ -1331,13 +1331,24 @@ export function configureLalondeFitRecoverTwoPart(document: GraphDocument): Grap
   if (effect) doc = authorNumber(doc, pinKeys.edge(effect.id));
   doc = reconcilePins(doc).document;
 
-  // Solve the extensive/intensive split of the $1,794 benchmark over the real covariate distribution.
-  const { gamma, delta } = solveTwoPartEffect(doc, 1794, 0.62);
-  const mech = normalizeNodeMechanism(doc.simulation.nodes["Earnings_78"]);
-  // Preserve the fitted mechanism (log-link combiner + retransformation-corrected intercept + noise);
-  // setNode replaces, so spreading `mech` is required — only the gate's In_program coefficient changes.
-  setNode(doc, "Earnings_78", { ...mech, gate: { intercept: mech.gate?.intercept ?? 0, coefficients: { ...(mech.gate?.coefficients ?? {}), In_program: gamma } } });
-  setLinearCoefficient(doc, "In_program", "Earnings_78", delta);
+  // Solve the extensive/intensive split of the $1,794 benchmark over the real covariate distribution, then
+  // ITERATE TO A FIXED POINT. δ is an AUTHORED offset in Earnings_78's intensive fit, so setting it changes
+  // the confounder fit — which changes the very η's the solve was computed against. Solving once and stopping
+  // leaves the example NOT a fixed point of reconcilePins: the app's own commit pipeline refits it on load,
+  // silently drifting every Earnings_78 coefficient (and knocking the doc off the short `#example=` share
+  // link). Looping until the fit and the solve agree makes the saved example exactly what the app recomputes.
+  const canon = (d: GraphDocument) => JSON.stringify({ graph: d.graph, simulation: d.simulation });
+  for (let pass = 0; pass < 8; pass += 1) {
+    const { gamma, delta } = solveTwoPartEffect(doc, 1794, 0.62);
+    const mech = normalizeNodeMechanism(doc.simulation.nodes["Earnings_78"]);
+    // setNode REPLACES, so spread the fitted mechanism (log-link combiner + retransformation-corrected
+    // intercept + noise); only the gate's In_program coefficient changes.
+    setNode(doc, "Earnings_78", { ...mech, gate: { intercept: mech.gate?.intercept ?? 0, coefficients: { ...(mech.gate?.coefficients ?? {}), In_program: gamma } } });
+    setLinearCoefficient(doc, "In_program", "Earnings_78", delta);
+    const before = canon(doc);
+    doc = reconcilePins(doc).document; // refit the confounders holding the new δ as an offset
+    if (canon(doc) === before) break;  // the fit reproduces what the solve assumed → fixed point
+  }
   // Record the analytic truth the DGP imposes (γ+δ solved so extensive+intensive = exactly this), so the
   // output can show it next to the MC-noisy simulated do()-oracle.
   doc.metadata = { ...doc.metadata, imposedEffect: 1794 };
