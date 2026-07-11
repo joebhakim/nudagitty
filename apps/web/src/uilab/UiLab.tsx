@@ -60,13 +60,13 @@ export function UiLab() {
       <section className="uilab-feature">
         <h2>C2 · Equation, family-aware <span className="uilab-pick">← chosen direction</span></h2>
         <p className="uilab-note uilab-note-wide">
-          The equation renders the node's <strong>actual generative form</strong>, because that form is the thing
-          worth teaching. A binary node is a logistic; the two-part outcome is a gate × an exp() — so the gate and
-          the <code>exp</code> stop being invisible tooltip lore and just become the equation. Coefficients are{" "}
-          <strong>ghost inputs</strong>: they read as part of the equation, click one to edit. The glyph on the
-          right is provenance (📌 fitted / ✎ authored / ∅ not learned) — click to change.
+          The equation is the node's real generative form — binary is a logistic, two-part is a gate × an
+          exp(). Coefficients are ghost inputs (click to edit); the underline carries provenance
+          (teal = fitted, ochre = authored, dashed = not learned) and the right-hand glyph cycles it.
+          <strong> current</strong> is shown first, same width, as the density reference.
         </p>
         <div className="uilab-grid">
+          <DensityRef width={width} />
           {EQ_NODES.map((n) => (
             <section className="uilab-col" key={n.id}>
               <h3>{n.label} <span className="muted">· {n.family}</span></h3>
@@ -85,6 +85,19 @@ export function UiLab() {
         ))}
       </div>
     </div>
+  );
+}
+
+// The ORIGINAL, same width, same node — so the density claim is checkable at a glance rather than asserted.
+function DensityRef({ width }: { width: number }) {
+  const state = useTerms(TERMS);
+  return (
+    <section className="uilab-col">
+      <h3>current <span className="muted">· density reference</span></h3>
+      <div className="uilab-pane" style={{ width }}>
+        <CurrentDependence {...state} />
+      </div>
+    </section>
   );
 }
 
