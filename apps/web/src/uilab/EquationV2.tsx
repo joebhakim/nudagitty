@@ -44,34 +44,34 @@ function NumberCell({ value, state, onChange, onState }: {
   const commit = () => { const n = Number(draft); if (Number.isFinite(n)) onChange(n); };
 
   return (
-    <span className="eq2-cell" ref={wrap}>
-      <button type="button" className={`eq2-num st-${state}`}
+    <span className="eq-cell" ref={wrap}>
+      <button type="button" className={`eq-num st-${state}`}
         title={`${STATE_LABEL[state]} — click to edit`}
         onClick={() => { setDraft(value === null ? "0" : String(value)); setOpen((v) => !v); }}>
         {fmtCoef(value)}
       </button>
 
       {open && (
-        <span className="eq2-pop" role="dialog">
-          <span className="eq2-pop-row">
-            <label className="eq2-pop-label">value</label>
-            <input className="eq2-pop-input" autoFocus value={draft}
+        <span className="eq-pop" role="dialog">
+          <span className="eq-pop-row">
+            <label className="eq-pop-label">value</label>
+            <input className="eq-pop-input" autoFocus value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onBlur={commit}
               onKeyDown={(e) => { if (e.key === "Enter") { commit(); setOpen(false); } }} />
           </span>
-          <span className="eq2-pop-sep" />
-          <span className="eq2-pop-label">how it&rsquo;s set</span>
+          <span className="eq-pop-sep" />
+          <span className="eq-pop-label">how it&rsquo;s set</span>
           {STATES.map((s) => (
             <button type="button" key={s}
-              className={`eq2-pop-state st-${s}${s === state ? " active" : ""}`}
+              className={`eq-pop-state st-${s}${s === state ? " active" : ""}`}
               onClick={() => { onState(s); setOpen(false); }}>
-              <span className="eq2-pop-glyph">{STATE_GLYPH[s]}</span>
+              <span className="eq-pop-glyph">{STATE_GLYPH[s]}</span>
               <span>{STATE_LABEL[s]}</span>
-              {s === state && <span className="eq2-pop-tick">✓</span>}
+              {s === state && <span className="eq-pop-tick">✓</span>}
             </button>
           ))}
-          <span className="eq2-pop-note">{INFO[state]}</span>
+          <span className="eq-pop-note">{INFO[state]}</span>
         </span>
       )}
     </span>
@@ -86,21 +86,21 @@ function Predictor(props: {
   const { part } = props;
   return (
     <>
-      <div className="eq2-term">
-        <span className="eq2-lead">{props.lead} =</span>
+      <div className="eq-term">
+        <span className="eq-lead">{props.lead} =</span>
         <NumberCell value={part.intercept.value} state={part.intercept.state}
           onChange={props.onIntercept} onState={props.onInterceptState} />
       </div>
       {part.terms.map((t: EqTerm) => {
         const off = t.state === "not-learned";
         return (
-          <div className={`eq2-term${off ? " is-off" : ""}`} key={t.id}>
-            <span className="eq2-lead eq2-op">+</span>
+          <div className={`eq-term${off ? " is-off" : ""}`} key={t.id}>
+            <span className="eq-lead eq-op">+</span>
             <NumberCell value={off ? null : t.coef} state={t.state}
               onChange={(v) => props.onCoef(t.id, v)} onState={(s) => props.onState(t.id, s)} />
-            <span className="eq2-mul">·</span>
-            <span className="eq2-parent" title={t.parent}>{t.parent}</span>
-            {off && <span className="eq2-off">not learned</span>}
+            <span className="eq-mul">·</span>
+            <span className="eq-parent" title={t.parent}>{t.parent}</span>
+            {off && <span className="eq-off">not learned</span>}
           </div>
         );
       })}
@@ -129,20 +129,20 @@ export function EquationV2({ node: initial }: { node: EqNode }) {
     : twoPart ? <>{chip} = works? × amount</> : <>{chip} = η + ε</>;
 
   return (
-    <div className="eq2-card">
-      <div className="eq2-head">
+    <div className="eq-card">
+      <div className="eq-head">
         <strong>Dependence</strong>
         <span className="muted">modeled on parents</span>
       </div>
 
-      <div className="eq2-body">
-        <div className="eq2-term eq2-shape-row">
-          <code className="eq2-shape">{shape}</code>
-          <span className="eq2-tail" />
-          <button type="button" className="eq2-link" title="change the link / combiner" onClick={() => setLinkOpen((v) => !v)}>▾</button>
+      <div className="eq-body">
+        <div className="eq-term eq-shape-row">
+          <code className="eq-shape">{shape}</code>
+          <span className="eq-tail" />
+          <button type="button" className="eq-link" title="change the link / combiner" onClick={() => setLinkOpen((v) => !v)}>▾</button>
         </div>
         {linkOpen && (
-          <div className="eq2-term eq2-link-row">
+          <div className="eq-term eq-link-row">
             <select defaultValue={twoPart ? "two-part" : node.family === "binary" ? "bernoulli logit" : "additive"}
               onChange={() => setLinkOpen(false)}>
               {LINKS.map((l) => <option key={l}>{l}</option>)}
@@ -152,11 +152,11 @@ export function EquationV2({ node: initial }: { node: EqNode }) {
 
         {twoPart && node.gate && (
           <>
-            <div className="eq2-term eq2-sub"><code>works? ~ Bernoulli( σ(η_gate) )</code><span className="eq2-tail" /><span className="eq2-margin-tag">ext</span></div>
+            <div className="eq-term eq-sub"><code>works? ~ Bernoulli( σ(η_gate) )</code><span className="eq-tail" /><span className="eq-margin-tag">ext</span></div>
             <Predictor lead="η_gate" part={node.gate}
               onCoef={setCoef("gate")} onState={setState("gate")}
               onIntercept={setInt("gate")} onInterceptState={setIntState("gate")} />
-            <div className="eq2-term eq2-sub"><code>amount = exp( η + ε )</code><span className="eq2-tail" /><span className="eq2-margin-tag">int</span></div>
+            <div className="eq-term eq-sub"><code>amount = exp( η + ε )</code><span className="eq-tail" /><span className="eq-margin-tag">int</span></div>
           </>
         )}
 
@@ -165,13 +165,13 @@ export function EquationV2({ node: initial }: { node: EqNode }) {
           onIntercept={setInt("eta")} onInterceptState={setIntState("eta")} />
 
         {node.noise && (
-          <div className="eq2-term">
-            <span className="eq2-lead">ε ~</span>
-            <span className="eq2-dist">N(0,</span>
+          <div className="eq-term">
+            <span className="eq-lead">ε ~</span>
+            <span className="eq-dist">N(0,</span>
             <NumberCell value={node.noise.sd} state={node.noise.state}
               onChange={(v) => setNode((n) => (n.noise ? { ...n, noise: { ...n.noise, sd: v } } : n))}
               onState={(s) => setNode((n) => (n.noise ? { ...n, noise: { ...n.noise, state: s } } : n))} />
-            <span className="eq2-dist">)</span>
+            <span className="eq-dist">)</span>
           </div>
         )}
       </div>

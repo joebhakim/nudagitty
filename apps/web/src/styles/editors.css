@@ -1248,3 +1248,95 @@ button.prov-chip { cursor: pointer; }
   .checks-group { border-color: #2a2a33; } .checks-run { background: #22222b; border-color: #34343e; }
   .checks-badge.ok { background: #123028; color: #7fe3c6; } .checks-badge.fail { background: #3a1a16; color: #e6a99f; } .checks-badge.none { background: #26262f; color: #7a8090; }
 }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   EQUATION BLOCK — the generation block rendered as the node's real structural
+   equation (see editors/EquationBlock.tsx). The LHS is the .node-name chip; the
+   RHS is the family's generative form. A number's underline carries provenance;
+   clicking it opens one popover (value + how it's set).
+
+   TRAP: base.css styles `button` with BOTH `min-height: 32px` and
+   `justify-content: center`. min-height CLAMPS UPWARD, so every custom button in
+   here must set `min-height: 0` (and re-assert justify-content) or it silently
+   renders 32px tall with centred content.
+   ─────────────────────────────────────────────────────────────────────────── */
+.eq-card { display: flex; flex-direction: column; }
+.eq-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+.eq-head > strong { font-size: 12px; }
+.eq-head > .muted { font-size: 11px; color: var(--muted, #65717d); }
+
+.eq-body { padding: 3px 6px; border: 1px solid var(--border, #e2e2ea); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
+
+/* One equation line. The 2x2 control is 18px tall, so the row height is set by IT, not by the text —
+   which is why the controls cost nothing: 18px is about a normal 11px line anyway. */
+.eq-term { display: flex; align-items: center; gap: 4px; font-size: 11px; min-height: 18px; }
+.eq-term.is-off { opacity: 0.5; }
+.eq-lead { flex: 0 0 auto; font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--muted, #65717d); }
+.eq-op, .eq-mul { color: var(--muted, #99a); font-family: ui-monospace, monospace; }
+.eq-parent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eq-parent > i { font-size: 9.5px; color: var(--muted, #9aa0a8); }
+.eq-tail { flex: 1 1 auto; }
+.eq-dist { font-family: ui-monospace, monospace; font-size: 10.5px; }
+
+/* Line 1 — the shape. The variable uses the house .node-name chip. */
+.eq-shape-row { padding-bottom: 2px; margin-bottom: 2px; border-bottom: 1px solid #eceef1; }
+.eq-shape { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; color: #2b3640; white-space: nowrap; }
+.eq-link { appearance: none; border: none; background: none; cursor: pointer; font-size: 10px; color: var(--muted, #99a); padding: 0 3px; border-radius: 3px; }
+.eq-link:hover { background: rgba(0,0,0,0.06); color: var(--text, #202428); }
+.eq-link-row > select { width: 100%; font-size: 10.5px; }
+
+/* Two-part margin headers — one tight line each. */
+.eq-sub > code { font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted, #65717d); white-space: nowrap; }
+.eq-margin-tag { font-size: 8px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--accent, #23716f); opacity: 0.7; }
+
+/* Ghost number: text in the equation until clicked. The underline carries provenance. */
+.eq-num { appearance: none; background: none; border: none; min-height: 0; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 11px; padding: 0 2px; border-radius: 3px 3px 0 0; cursor: pointer; border-bottom: 2px solid transparent; }
+.eq-num:hover { background: rgba(0,0,0,0.05); }
+.eq-num.st-fitted { color: #0d6b52; border-bottom-color: #23716f; }
+.eq-num.st-authored { color: #8a5a12; border-bottom-color: #cf7a22; }
+.eq-num.st-not-learned { color: var(--muted, #9aa0a8); border-bottom: 2px dashed #c9ccd4; font-weight: 500; }
+
+
+/* THE POPOVER — one affordance per number. The equation stays a plain equation; the number's underline
+   already says HOW it's set, and clicking it opens everything for that number (value + provenance).
+   NB: base.css sets a global `button { min-height: 32px }` (touch targets) and min-height CLAMPS UPWARD,
+   so any inline button in here needs `min-height: 0` or it silently renders 32px tall. */
+.eq-cell { position: relative; display: inline-block; }
+.eq-pop {
+  position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; min-width: 168px;
+  display: flex; flex-direction: column; gap: 2px; padding: 6px; text-align: left;
+  background: var(--surface-0, #fff); border: 1px solid var(--border, #dcdce6); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(15,18,30,0.16);
+}
+.eq-pop-row { display: flex; align-items: center; gap: 6px; }
+.eq-pop-label { font-size: 9px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted, #8a8f99); }
+.eq-pop-input { flex: 1 1 auto; min-width: 0; width: 100%; font-family: ui-monospace, monospace; font-size: 11px; text-align: right; padding: 3px 6px; border: 1px solid var(--border, #dcdce6); border-radius: 5px; background: var(--surface-0, #fff); }
+.eq-pop-input:focus { outline: none; border-color: var(--accent, #23716f); }
+.eq-pop-sep { height: 1px; background: var(--border, #ececf2); margin: 3px 0; }
+.eq-pop-state {
+  display: flex; align-items: center; justify-content: flex-start; gap: 6px; width: 100%; min-height: 0;
+  /* ← base.css buttons are min-height:32px AND justify-content:center; both must be defeated here. */
+  padding: 3px 5px; border: 1px solid transparent; border-radius: 5px; background: none;
+  font-size: 11px; text-align: left; cursor: pointer; color: var(--text, #202428);
+}
+.eq-pop-state:hover { background: rgba(0,0,0,0.05); }
+.eq-pop-glyph { width: 13px; text-align: center; font-size: 10px; }
+.eq-pop-tick { margin-left: auto; font-size: 10px; font-weight: 700; }
+.eq-pop-state.active.st-fitted { background: rgba(35,113,111,0.10); border-color: #9ed9c6; color: #0d6b52; }
+.eq-pop-state.active.st-authored { background: rgba(207,122,34,0.12); border-color: #e0c48f; color: #8a5a12; }
+.eq-pop-state.active.st-not-learned { background: #f0f1f4; border-color: #dfe1e6; color: var(--muted, #65717d); }
+.eq-pop-note { font-size: 9.5px; line-height: 1.4; color: var(--muted, #8a8f99); margin-top: 2px; }
+
+@media (prefers-color-scheme: dark) {
+  .eq-body { background: #1b1b22; border-color: #34343e; }
+  .eq-shape-row { border-bottom-color: #2a2a33; }
+  .eq-shape { color: #c9d2da; }
+  .eq-num:hover { background: rgba(255,255,255,0.10); }
+  .eq-pop { background: #1b1b22; border-color: #34343e; box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+  .eq-pop-input { background: #101014; border-color: #34343e; color: #e8e8ef; }
+  .eq-pop-state { color: #e8e8ef; }
+  .eq-pop-state:hover { background: rgba(255,255,255,0.07); }
+  .eq-pop-sep { background: #34343e; }
+  .eq-num.st-fitted { color: #7fe3c6; }
+  .eq-num.st-authored { color: #e0b877; }
+}
