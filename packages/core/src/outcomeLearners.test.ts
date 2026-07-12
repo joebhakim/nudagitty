@@ -50,14 +50,14 @@ describe("the OTHER axis — flexibility in L — DOES help, once the DGP is hon
 
     const err = (v: number) => Math.abs(v - 1794);
     const linear = at("linear"), quadratic = at("quadratic"), cubic = at("cubic");
-    expect(linear).toBeLessThan(0);            // −1,904 — biased low
-    expect(quadratic).toBeGreaterThan(0);      //   +540
-    expect(cubic).toBeGreaterThan(1500);       // +2,259 — closest of the three
+    expect(linear).toBeCloseTo(3611, -2);      // +3,611 — biased high by $1,817
+    expect(quadratic).toBeCloseTo(2836, -2);   // +2,836 — $1,042 out
+    expect(cubic).toBeCloseTo(2630, -2);       // +2,630 —   $836 out, closest of the three
 
-    // The point: each relaxation moves it CLOSER. This is a real ladder, not a fishing ground.
+    // The point: each relaxation moves it CLOSER, monotonically. A real ladder, not a fishing ground.
     expect(err(quadratic)).toBeLessThan(err(linear));
     expect(err(cubic)).toBeLessThan(err(quadratic));
-    expect(err(cubic)).toBeLessThan(600);
+    expect(err(cubic)).toBeLessThan(1000);
   }, 30000);
 });
 
@@ -79,9 +79,9 @@ describe("the honest ledger: NO rung recovers the truth, and the log-link rungs 
     //
     // So no rung recovers +$1,794, and the ladder's honest verdict is: you need the right family AND the
     // right predictor scale. That is precisely rung 4 (Mincer predictor transforms), still `planned`.
-    const ols = run("ols");                    // −1,904
-    const twoPart = run("two_part");           // −7,754
-    const ppml = run("ppml");                  // −7,651
+    const ols = run("ols");                    // +3,611
+    const twoPart = run("two_part");           // −5,674
+    const ppml = run("ppml");                  // −7,053
     expect(Math.abs(twoPart - 1794)).toBeGreaterThan(Math.abs(ols - 1794));
     expect(Math.abs(ppml - 1794)).toBeGreaterThan(Math.abs(ols - 1794));
     for (const v of [ols, twoPart, ppml, run("ols_interactions")]) expect(Math.abs(v - 1794)).toBeGreaterThan(500);

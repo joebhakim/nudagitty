@@ -40,10 +40,11 @@ function importAndWire(): GraphDocument {
   g = addEdge(g, "treat", "re78", "directed");
   doc = withGraph(doc, g);
   setVariable(doc, "re78", { valueType: "semicontinuous" });   // earnings are zero-or-positive, not Gaussian
-  // …and earnings HISTORY enters as a LOG, not as dollars — the Mincer specification. This is a real step a
-  // user takes (the edge's function picker), and it is not optional: feeding dollar-valued history into a
-  // log-link intensive margin makes E[Y|L] exponential in dollars and manufactures $2.9M earners.
-  for (const src of ["re74", "re75"]) setEdgeMechanism(doc, src, "re78", "log_linear", { offset: 1, baseline: 0, coefficient: 0 });
+  // …and earnings HISTORY enters through a CONCAVE transform, not as dollars. This is a real step a user
+  // takes (the edge's function picker), and it is not optional: feeding dollar-valued history into a
+  // log-link intensive margin makes E[Y|L] exponential in dollars and manufactures $2.6M earners. sqrt, not
+  // log — the app's own residual test says log(1+x) is WORSE than raw here (the mass at zero).
+  for (const src of ["re74", "re75"]) setEdgeMechanism(doc, src, "re78", "power_law", { exponent: 0.5, scale: 1, offset: 0, baseline: 0, coefficient: 0 });
   return doc;
 }
 

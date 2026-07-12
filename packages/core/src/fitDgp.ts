@@ -1189,13 +1189,19 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
     .map((edge) => {
       const pc = nodeColumn(document, edge.source);
       const em = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
-      return { edge, col: pc, coef: em.kind === "linear" ? em.coefficient : 0, kind: em.kind, label: document.graph.nodes.find((n) => n.id === edge.source)?.label ?? edge.source };
+      // Carry the MECHANISM, not just a coefficient. The fitted value must be reconstructed by the
+      // simulator's own edgeContribution, or a log_linear edge silently contributes ZERO to it — and the
+      // "residual" we then test is missing that whole term, so the diagnostic reports a huge spurious
+      // dependence on exactly the predictor the user just transformed. (It did: re75 dCor 0.53 on a
+      // correctly-specified log fit.) The gate has the same requirement: its coefficients are FIT on the
+      // basis columns, so they must be applied to basis(x) here too.
+      return { edge, col: pc, mech: em, basis: edgeBasis(em), kind: em.kind, label: document.graph.nodes.find((n) => n.id === edge.source)?.label ?? edge.source };
     })
     .filter((p): p is typeof p & { col: NonNullable<typeof p.col> } => Boolean(p.col));
   if (parentCols.length === 0) return empty;
 
   const sig = `${col.dataset}|${rows.length}|${col.dataColumn}|${mech.intercept}|${normalizeVariableModel(node.variable).valueType}|cap${cap}|p${perms}|s${seed}|` +
-    parentCols.map((p) => `${p.col.dataColumn}:${p.coef}`).join(",") +
+    parentCols.map((p) => `${p.col.dataColumn}:${JSON.stringify(p.mech)}`).join(",") +
     (mech.gate ? `|g${mech.gate.intercept}:${parentCols.map((p) => mech.gate!.coefficients[p.edge.source] ?? 0).join(",")}` : "");
   const cached = residCache.get(sig);
   if (cached) return cached;
@@ -1204,7 +1210,7 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
   // check test the assumption the model actually makes. Rows outside the link domain (Y≤0 under log) drop out.
   const scale = linkForValueType(normalizeVariableModel(node.variable).valueType).link;
   const gy = rows.map((r) => applyLink(r[col.dataColumn] ?? 0, scale));
-  const fitted = rows.map((r) => mech.intercept + parentCols.reduce((s, p) => s + p.coef * (r[p.col.dataColumn] ?? 0), 0));
+  const fitted = rows.map((r) => mech.intercept + parentCols.reduce((s, p) => s + edgeContribution(r[p.col.dataColumn] ?? 0, p.mech), 0));
   const resid = gy.map((v, i) => v - fitted[i]!);
   const valid: number[] = [];
   for (let i = 0; i < rows.length; i += 1) if (Number.isFinite(resid[i])) valid.push(i);
@@ -1241,7 +1247,10 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
       const gn = gidx.length;
       const sgm = (x: number) => 1 / (1 + Math.exp(-x));
       const part: number[] = gidx.map((i) => ((rows[i]![col.dataColumn] ?? 0) > 0 ? 1 : 0));
-      const pPred = gidx.map((i) => sgm(gm.intercept + parentCols.reduce((s, p) => s + (gm.coefficients[p.edge.source] ?? 0) * (rows[i]![p.col.dataColumn] ?? 0), 0)));
+      const pPred = gidx.map((i) => sgm(gm.intercept + parentCols.reduce((s, p) => {
+        const x = rows[i]![p.col.dataColumn] ?? 0;
+        return s + (gm.coefficients[p.edge.source] ?? 0) * (p.basis ? p.basis(x) : x);
+      }, 0)));
       const gResid = part.map((y, k) => y - pPred[k]!);
       const gSeries = parentCols.map((p) => gidx.map((i) => rows[i]![p.col.dataColumn] ?? 0));
       const gInd = dcorPermTest(centeredDistMulti(gSeries, gn), centeredDist(gResid), gn, perms, (0x7a8b9c ^ seed) >>> 0);

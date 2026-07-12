@@ -1327,21 +1327,30 @@ export function configureLalondeFitRecoverTwoPart(document: GraphDocument): Grap
   setEdgeMechanism(document, "Row_source", "Earnings_78", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "re78") });
   setVariable(document, "Earnings_78", { valueType: "semicontinuous" });
 
-  // THE MINCER TRANSFORM — and it is not cosmetic, it was corrupting the benchmark.
+  // EARNINGS HISTORY ENTERS THROUGH A CONCAVE TRANSFORM, and this was corrupting the benchmark.
   //
-  // The intensive margin has a LOG LINK. Feeding it DOLLAR-VALUED earnings history means E[Y|L] is
-  // exponential IN DOLLARS, which manufactured a world with $2.9M earners (real LaLonde max: $121k) and skew
-  // 33 (real: 1.3). The damage was not cosmetic: an analyst's OLS reported +$14,599 on our simulated rows
-  // where the REAL rows give +$752. We were punishing estimators for a world we invented, then calling it
-  // their failure.
+  // The intensive margin has a LOG LINK. Feeding it DOLLAR-VALUED earnings history makes E[Y|L] exponential
+  // IN DOLLARS, which manufactured a world with $2.6M earners (real LaLonde max: $121k) and skew 31 (real:
+  // 1.3). Not cosmetic: an analyst's OLS reported +$14,599 on our simulated rows where the REAL rows give
+  // +$752. We were punishing estimators for a world we invented, then calling it their failure.
   //
-  // So earnings history enters as a LOG — the Mincer specification, log your dollar regressors. The fit
-  // learns each coefficient on log(1 + x); the FORM is authored, the SCALE is fitted. After this the
-  // simulated marginal is skew 2.9 / max $295k (still imperfect — lognormal noise on log-earnings is heavy —
-  // but defensible), and an analyst's OLS lands at −$2.8k: still biased, still a hard benchmark, but hard for
-  // the RIGHT reason (positivity + misspecification) rather than because we built a world of millionaires.
+  // WHY sqrt AND NOT log. The obvious reach is the Mincer move — log your dollar regressors. It does fix the
+  // tail, but the app's OWN residual test says it is the WORST option on the books: log(1+x) leaves
+  // dCor(ε, re74) = 0.354, worse even than raw dollars (0.245). The reason is the mass at ZERO — a third of
+  // these rows have no 1974 earnings, and log(1+x) blows that point up into a violent jump while compressing
+  // everything above it. sqrt is concave enough to kill the tail and gentle enough at zero not to:
+  //
+  //     spec        marginal skew / max        dCor(ε, re74)
+  //     raw           30.6 / $2,620,368            0.245
+  //     log(1+x)       3.1 /   $389,874            0.354   <- fixes the tail, WRECKS the conditional fit
+  //     sqrt(x)        3.2 /   $428,654            0.240   <- fixes both
+  //     (real)         1.3 /   $121,174               —
+  //
+  // So: power_law with exponent 0.5. The FORM is authored, the SCALE is fitted. This is exactly the loop a
+  // practitioner runs — the residual panel names the offending predictor, you change its function, the panel
+  // re-scores — and it is the loop that caught my own first answer being wrong.
   for (const src of ["Earnings_74", "Earnings_75"]) {
-    setEdgeMechanism(document, src, "Earnings_78", "log_linear", { offset: 1, baseline: 0, coefficient: 0 });
+    setEdgeMechanism(document, src, "Earnings_78", "power_law", { exponent: 0.5, scale: 1, offset: 0, baseline: 0, coefficient: 0 });
   }
 
   // DECLARE THE ESTIMAND, don't type coefficients. The $1,794 benchmark is imposed extensive-led: 62% of

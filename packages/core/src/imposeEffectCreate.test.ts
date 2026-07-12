@@ -46,13 +46,13 @@ describe("imposeEffect — the create path", () => {
     // fit as log(1+x), the confounders soak up far more of the association, so the trap coefficient is
     // smaller — but it is still NEGATIVE, and the DGP it builds still carries a large negative "truth".)
     expect(coef).toBeLessThan(-0.05);
-    // …so the DGP's "true" ATE comes out at ≈ −$1,080 when it should be +$1,794: SIGN-FLIPPED and ~$2,900
-    // out. (It was < −$3,000 before the Mincer correction — with a better-specified confounder surface the
-    // fit absorbs more of the association, so the trap is less lurid. It is still a trap: the benchmark now
-    // carries a negative truth, and every estimator that "recovers" it recovers the bias.)
+    // …so the DGP's "true" ATE comes out at ≈ −$700 when it should be +$1,794: still SIGN-FLIPPED, ~$2,500
+    // out. (It was < −$3,000 when the confounder surface was badly specified; a better-specified surface
+    // absorbs more of the association, so the trap is less lurid. It is still a trap: the benchmark carries
+    // a NEGATIVE truth, and every estimator that "recovers" it is recovering the bias.)
     const trap = simulatedAte(doc);
     expect(trap).toBeLessThan(0);
-    expect(Math.abs(trap - 1794)).toBeGreaterThan(2500);
+    expect(Math.abs(trap - 1794)).toBeGreaterThan(2000);
   });
 
   it("the trapped edge is offerable — and imposing rescues it to exactly +$1,794", () => {
@@ -107,7 +107,7 @@ describe("dataImpliedEffect — what the data can and cannot tell you about the 
   it("…so the suggestion adopts the gate and SOLVES the amount for your target", () => {
     const s = suggestImposedShare(fitted, EXPOSURE, OUTCOME, 1794);
     expect(s.basis).toBe("gate-only");
-    expect(s.share).toBeCloseTo(0.162, 2);  // 16% extensive — not the 62% that was once hand-picked
+    expect(s.share).toBeCloseTo(0.128, 2);  // 13% extensive — not the 62% that was once hand-picked
     expect(s.clamped).toBe(false);
     expect(s.share).toBeLessThan(imposedEffectContext(fitted)!.maxExtensiveShare);
   });
