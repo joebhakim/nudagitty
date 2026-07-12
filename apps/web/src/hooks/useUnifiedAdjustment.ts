@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { analyzeAdjustment, deriveAdjustmentSpec, normalizeVariableModel } from "@nudagitty/core";
-import type { CovariateBasis, ExampleModel, GraphDocument } from "@nudagitty/core";
+import type { CovariateBasis, OutcomeLearnerId, ExampleModel, GraphDocument } from "@nudagitty/core";
 import { pairDerivedSummary } from "../compute/scatterStats";
 import type { buildSimulationDerivedCache } from "../compute/scatterStats";
 import type { ScatterPair } from "../shared/pairs";
@@ -15,6 +15,7 @@ export function useUnifiedAdjustment(
   activeExample: ExampleModel | null,
   computationDocument: GraphDocument,
   covariateBasis: CovariateBasis,
+  outcomeModel: OutcomeLearnerId,
   simulationDerived: SimulationDerived,
   activeOutputPair: ScatterPair,
   defaultOutputPair: ScatterPair
@@ -32,14 +33,14 @@ export function useUnifiedAdjustment(
     // still render via the structural diagnosis.
     const treatmentNode = computationDocument.graph.nodes.find((node) => node.id === (spec.treatments[0] ?? pair.x));
     if (treatmentNode && normalizeVariableModel(treatmentNode.variable).valueType !== "binary") return null;
-    const comparison = analyzeAdjustment(computationDocument, { ...spec, covariateBasis });
+    const comparison = analyzeAdjustment(computationDocument, { ...spec, covariateBasis, outcomeModel });
     if (!comparison) return null;
     const outcomeNode = computationDocument.graph.nodes.find((node) => node.id === spec.outcome);
     // Observed individual outcome-by-treatment points (the swarm + the observed mean/CI) for the
     // effect graph; treatment node id is kept so the graph can style the X axis like other charts.
     const observed = pairDerivedSummary(simulationDerived, spec.treatments[0] ?? pair.x, spec.outcome);
     return { comparison, outcomeScale: spec.outcomeScale, outcomeUnit: outcomeNode?.variable.unit ?? "", points: observed.points, treatmentId: spec.treatments[0] ?? pair.x };
-  }, [activeExample, computationDocument, covariateBasis, simulationDerived]);
+  }, [activeExample, computationDocument, covariateBasis, outcomeModel, simulationDerived]);
   const unifiedAdjustment = useMemo(() => computeUnifiedAdjustment(activeOutputPair), [computeUnifiedAdjustment, activeOutputPair]);
   const demoUnifiedAdjustment = useMemo(() => computeUnifiedAdjustment(defaultOutputPair), [computeUnifiedAdjustment, defaultOutputPair]);
   return { unifiedAdjustment, demoUnifiedAdjustment };

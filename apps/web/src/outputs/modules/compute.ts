@@ -95,7 +95,7 @@ export function computeWhatIfAdvancedOutput(context: OutputContext, moduleId: st
   // operations, then run the shared engine.
   const derivedSpec = deriveAdjustmentSpec(context.document);
   if (!derivedSpec) return null;
-  const spec = { ...derivedSpec, covariateBasis: context.covariateBasis ?? "linear" };
+  const spec = { ...derivedSpec, covariateBasis: context.covariateBasis ?? "linear", outcomeModel: context.outcomeModel };
   const outcomeScale: WhatIfOutputScale = spec.outcomeScale;
   const outcomeNode = context.document.graph.nodes.find((node) => node.id === spec.outcome);
   const outcomeUnit = outcomeNode?.variable.unit ?? "";

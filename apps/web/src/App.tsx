@@ -103,6 +103,7 @@ import type {
   EdgeMechanism,
   EffectKind,
   CovariateBasis,
+  OutcomeLearnerId,
   GraphDocument,
   GraphEdge,
   GraphModel,
@@ -340,12 +341,16 @@ export function App() {
   // How flexibly continuous confounders enter the parametric estimators (outcome
   // regression, AIPW). Drives the basis selector on the methods panel.
   const [covariateBasis, setCovariateBasis] = useState<CovariateBasis>("linear");
+  // The outcome-model rung. Default is the SMALLEST hypothesis class and stays that way: silently
+  // defaulting to the family that happens to match the DGP would make every benchmark circular.
+  const [outcomeModel, setOutcomeModel] = useState<OutcomeLearnerId>("ols");
   const outputContext = useMemo<OutputContext>(() => ({
     analysis,
     document: computationDocument,
     simulation,
-    covariateBasis
-  }), [analysis, computationDocument, simulation, covariateBasis]);
+    covariateBasis,
+    outcomeModel
+  }), [analysis, computationDocument, simulation, covariateBasis, outcomeModel]);
   const simulationDerived = useMemo(() => buildSimulationDerivedCache(simulation), [simulation]);
   const selectedNode = selection?.kind === "node" ? findNode(document.graph, selection.id) : undefined;
   const selectedEdge = selection?.kind === "edge" ? findEdge(document.graph, selection.id) : undefined;
@@ -389,7 +394,7 @@ export function App() {
   const exposureBinaryForLayout = exposureNodeForLayout ? normalizeVariableModel(exposureNodeForLayout.variable).valueType === "binary" : true;
   const showPairwiseScatter = !showAdjustedOutputColumn || !exposureBinaryForLayout;
 
-  const { unifiedAdjustment, demoUnifiedAdjustment } = useUnifiedAdjustment(activeExample, computationDocument, covariateBasis, simulationDerived, activeOutputPair, defaultOutputPair);
+  const { unifiedAdjustment, demoUnifiedAdjustment } = useUnifiedAdjustment(activeExample, computationDocument, covariateBasis, outcomeModel, simulationDerived, activeOutputPair, defaultOutputPair);
   const { continuousEffect, categoricalEffect } = useContinuousEffect(activeExample, document.graph, document.simulation, simulation, activeOutputPair);
   // Copula couplings (Tree-1 direct pairs) surfaced as bidirected arcs on the canvas.
   const copulaCouplings = useMemo<CopulaCoupling[]>(() => {
@@ -1251,6 +1256,8 @@ export function App() {
                     } : null}
                     basis={covariateBasis}
                     onBasisChange={setCovariateBasis}
+                    outcomeModel={outcomeModel}
+                    onOutcomeModelChange={setOutcomeModel}
                     pending={resultsPending}
                     hideOracle={false}
                   />

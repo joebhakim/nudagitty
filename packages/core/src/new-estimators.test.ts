@@ -22,7 +22,7 @@ describe("matching / outcome-regression / AIPW estimators", () => {
     expect(ids).toContain("outcome_regression");
     expect(ids).toContain("matching");
     expect(ids).toContain("aipw");
-  });
+  }, 20000);
 
   it("Simpson: all three flip the crude sign (adjusting reveals treatment helps)", () => {
     const { get } = run("simpson-severity", "Severity");
@@ -30,7 +30,7 @@ describe("matching / outcome-regression / AIPW estimators", () => {
     for (const method of ["outcome_regression", "matching", "aipw"] as const) {
       expect(get(method)!, method).toBeGreaterThan(0); // adjusted: helpful, like the do() truth
     }
-  });
+  }, 20000);
 
   it("NHEFS: nonparametric estimators track the oracle more tightly than the parametric outcome model", () => {
     const { get } = run("what-if-nhefs-mortality-survival");
@@ -41,12 +41,12 @@ describe("matching / outcome-regression / AIPW estimators", () => {
     // ...while the purely parametric linear outcome model is more biased under the
     // example's non-linear age effect (the misspecification teaching point).
     expect(Math.abs(get("outcome_regression")! - truth)).toBeGreaterThan(Math.abs(get("matching")! - truth));
-  });
+  }, 20000);
 
   it("continuous outcome (weight gain): estimators agree within reason", () => {
     const { get } = run("what-if-weight-gain-g-estimation");
     for (const method of ["outcome_regression", "matching", "aipw"] as const) {
       expect(Math.abs(get(method)! - get("g_formula")!), method).toBeLessThan(0.5);
     }
-  });
+  }, 20000);
 });

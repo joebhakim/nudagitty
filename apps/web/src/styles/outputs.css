@@ -1562,6 +1562,33 @@
 }
 .adjustment-methods-panel > .nested-method-table > summary { background: #fbfcfc; }
 
+/* ---- the outcome-model LADDER ----
+   Ordered by hypothesis class, smallest first. Planned rungs are RENDERED, greyed — a user has to be able
+   to see the ceiling and say "my model isn't here". */
+.outcome-ladder { display: grid; gap: 3px; margin-top: 10px; padding: 9px 10px; border: 1px solid var(--line, #e2e2ea); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
+.outcome-ladder-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+.outcome-ladder-head > span:first-child { font-size: 11px; font-weight: 700; color: #3d464e; }
+.outcome-ladder-axis { font-size: 9.5px; color: var(--muted, #667); text-transform: uppercase; letter-spacing: 0.03em; }
+.outcome-rung { display: flex; align-items: flex-start; gap: 7px; width: 100%; padding: 5px 7px; border: 1px solid transparent; border-radius: 6px; background: none; text-align: left; cursor: pointer; font: inherit; }
+.outcome-rung:hover:not(:disabled) { background: var(--surface-2, #f2f2f6); }
+.outcome-rung.selected { border-color: var(--accent, #23716f); background: var(--accent-soft, #eaf5f4); }
+.outcome-rung.planned { cursor: not-allowed; opacity: 0.5; }
+.outcome-rung-dot { flex: 0 0 auto; font-size: 10px; line-height: 15px; color: var(--accent, #23716f); }
+.outcome-rung-body { display: grid; gap: 1px; min-width: 0; }
+.outcome-rung-body > b { font-size: 11.5px; font-weight: 600; color: #263133; }
+.outcome-rung-planned { font-style: normal; font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: var(--muted, #8a93a0); letter-spacing: 0.03em; }
+.outcome-rung-class { font-size: 10.5px; line-height: 1.4; color: var(--muted, #667); }
+/* The REASON to move, not merely the option to. */
+.outcome-rung-unlock { font-size: 10px; line-height: 1.4; color: var(--muted, #8a93a0); font-style: italic; }
+.outcome-ladder-request { margin-top: 5px; font-size: 10.5px; color: var(--accent, #23716f); text-decoration: underline; }
+@media (prefers-color-scheme: dark) {
+  .outcome-ladder { background: #1b1b22; border-color: #34343e; }
+  .outcome-ladder-head > span:first-child { color: #d6d6de; }
+  .outcome-rung:hover:not(:disabled) { background: #26262f; }
+  .outcome-rung.selected { background: #17302f; }
+  .outcome-rung-body > b { color: #e4e4ea; }
+}
+
 .methods-estimator-settings {
   display: flex;
   align-items: center;

@@ -1,5 +1,5 @@
 import type { CovariateBasis, LongitudinalCohort } from "../types";
-import { fitOutcomeModel } from "./fit";
+import { fitOutcomeModel, fitPpmlOutcomeModel, fitTwoPartOutcomeModel } from "./fit";
 
 /**
  * The OUTCOME-MODEL LADDER.
@@ -110,20 +110,22 @@ export const OUTCOME_LEARNERS: readonly OutcomeLearner[] = [
     label: "Two-part (Cragg)",
     rung: 3,
     hypothesisClass: "P(Y>0) gate × E[Y | Y>0] log-amount — respects Y ≥ 0 and the zero spike",
-    status: "planned",
+    status: "usable",
     extrapolates: true,   // parametric — it CAN extrapolate, but only within the outcome's support
     needsCrossFitting: false,
-    unlockedBy: "the outcome model imputes impossible values (e.g. negative earnings)"
+    unlockedBy: "the outcome model imputes impossible values (e.g. negative earnings)",
+    fit: fitTwoPartOutcomeModel
   },
   {
     id: "ppml",
     label: "PPML (Poisson pseudo-ML)",
     rung: 3,
     hypothesisClass: "log link on the MEAN, zeros kept — Jensen-safe, no retransformation bias",
-    status: "planned",
+    status: "usable",
     extrapolates: true,
     needsCrossFitting: false,
-    unlockedBy: "a non-negative skewed outcome with zeros (log-OLS would silently drop them)"
+    unlockedBy: "a non-negative skewed outcome with zeros (log-OLS would silently drop them)",
+    fit: fitPpmlOutcomeModel
   },
   {
     id: "gamma_log",
