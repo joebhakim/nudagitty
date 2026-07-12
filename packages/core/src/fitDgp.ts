@@ -1,7 +1,8 @@
-import type { GraphDocument, ImposedEffect, NodeCombinerKind, NodeGate } from "./types";
+import type { EdgeMechanism, GraphDocument, ImposedEffect, NodeCombinerKind, NodeGate } from "./types";
 import { cloneDocument, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, reconcileSimulationSpec } from "./graph";
 import { setLinearCoefficient, setNode, ZERO_NOISE } from "./examples/builders";
 import { datasetRows, registerRuntimeDataset } from "./datasets";
+import { edgeBaseline, edgeBasis, edgeContribution } from "./simulation/interpreter";
 
 // ---------- provenance keys ----------
 const edgeKey = (id: string) => `e:${id}`;
@@ -124,6 +125,42 @@ function fitLinearModel(y: number[], X: number[][], offset: number[], fitInterce
   }
   const residualSd = Math.sqrt(ss / Math.max(1, n - cols));
   return { intercept, coefs, residualSd };
+}
+
+// ---------- fittable edge mechanisms: the user authors the FORM, the fit learns the SCALE ----------
+//
+// A mechanism is FITTABLE iff its contribution is `coefficient · f(x) + const` for some FIXED f. Then the
+// design column is f(x), the fitted number is `coefficient`, and everything else on the mechanism (offset,
+// scale, exponent, baseline) is AUTHORED SHAPE the fit must not touch. That one rule is what turns "specify
+// the functional form, then fit what ought to be fitted" into a single code path:
+//
+//   linear      f(x) = x
+//   log_linear  f(x) = log(x + offset)             ← the MINCER transform: log your dollar regressors
+//   power_law   f(x) = ((x + offset)/scale)^exp
+//
+// This is not a nicety. Fitting earnings with a LOG LINK on DOLLAR-VALUED regressors makes E[Y|L] exponential
+// in dollars, which manufactured a $2.9M tail (real max: $121k) and skew 33 (real: 1.3) — and made an
+// analyst's OLS report +$14,599 where the real rows give +$752. The benchmark was punishing estimators for a
+// world we invented. log_linear on the earnings-history edges is the fix.
+//
+// Anything else (splines, thresholds, hill) is not linear in one parameter, so it is treated as AUTHORED: its
+// contribution enters the fit as a fixed per-row offset, computed by the SIMULATOR'S OWN edgeContribution so
+// the fit and the generator cannot disagree.
+// (edgeBasis / edgeBaseline live in the interpreter, next to edgeContribution, so the fit and the generator
+// can never drift apart on what a given functional form MEANS.)
+function readCoefficient(mech: EdgeMechanism): number {
+  return mech.kind === "linear" || mech.kind === "log_linear" || mech.kind === "power_law" ? mech.coefficient : 0;
+}
+/**
+ * Write a fitted coefficient back WITHOUT clobbering the authored shape. `setLinearCoefficient` replaces the
+ * whole mechanism with a DEFAULT LINEAR one, so using it here would silently undo the user's chosen
+ * functional form on every reconcile — the fit would quietly delete the very thing they specified.
+ */
+function writeFittedCoefficient(document: GraphDocument, edgeId: string, coefficient: number): void {
+  const em = normalizeEdgeMechanism(document.simulation.edges[edgeId]);
+  if (em.kind === "linear" || em.kind === "log_linear" || em.kind === "power_law") {
+    document.simulation.edges[edgeId] = { ...em, coefficient };
+  }
 }
 
 // ---------- graph provenance helpers ----------
@@ -297,7 +334,9 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
     .map((e) => {
       const pc = nodeColumn(document, e.source);
       const em = normalizeEdgeMechanism(document.simulation.edges[e.id]);
-      return { source: e.source, col: pc, coef: em.kind === "linear" ? em.coefficient : 0 };
+      // The confounder's contribution is whatever its MECHANISM says it is (a log_linear edge contributes
+      // coef·log(1+x), not coef·x) — read it from the simulator so the solve matches what will be generated.
+      return { source: e.source, col: pc, mech: em, basis: edgeBasis(em) };
     })
     .filter((c): c is typeof c & { col: NonNullable<typeof c.col> } => Boolean(c.col));
 
@@ -306,8 +345,9 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
     let g = gate?.intercept ?? 0, a = mech.intercept;
     for (const c of confounders) {
       const v = r[c.col.dataColumn] ?? 0;
-      a += c.coef * v;
-      g += (gate?.coefficients[c.source] ?? 0) * v;
+      a += edgeContribution(v, c.mech);
+      // The gate's coefficients were FIT on the basis columns, so they must be applied to basis(v) here too.
+      g += (gate?.coefficients[c.source] ?? 0) * (c.basis ? c.basis(v) : v);
     }
     etaG.push(g);
     amount.push(Math.exp(a + h)); // exp(ηa + h) — the baseline expected amount for this row
@@ -684,8 +724,10 @@ export function reconcilePins(input: GraphDocument, depth = 0): { document: Grap
       rows.length ? (rows[rows.length >> 1]![col.dataColumn] ?? 0) : 0,
       col.dataColumn, isBinary ? "b" : link,
       fitIntercept ? "Pi" : `Ai${mech.intercept}`, fitNoise ? "Pn" : "-",
-      ...pinnedEdges.map((e) => `P${nodeColumn(document, e.source)?.dataColumn}`).sort(),
-      ...authoredEdges.map((e) => { const em = normalizeEdgeMechanism(document.simulation.edges[e.id]); return `A${nodeColumn(document, e.source)?.dataColumn}:${em.kind === "linear" ? em.coefficient : 0}`; }).sort()
+      // The mechanism's FORM is part of the fit's identity now — switching an edge to log_linear must
+      // invalidate the cache, not just changing its coefficient.
+      ...pinnedEdges.map((e) => `P${nodeColumn(document, e.source)?.dataColumn}:${normalizeEdgeMechanism(document.simulation.edges[e.id]).kind}`).sort(),
+      ...authoredEdges.map((e) => `A${nodeColumn(document, e.source)?.dataColumn}:${JSON.stringify(normalizeEdgeMechanism(document.simulation.edges[e.id]))}`).sort()
     ].join("|");
     const cacheKey = `${input.id}:${nodeId}`;
     if (fitSigCache.get(cacheKey) === sig) continue; // inputs unchanged → carried values are already this fit
@@ -695,20 +737,35 @@ export function reconcilePins(input: GraphDocument, depth = 0): { document: Grap
     // Hoist the per-edge column lookup + mechanism normalization OUT of the row loops. These used to run for
     // every ROW (nodeColumn scans the graph's edges), so a 2,675-row fit did ~16k graph scans and allocated a
     // normalized mechanism per row — which dominated the cost of every fit.
-    const authoredCols = authoredEdges.map((edge) => {
+    // AUTHORED edges enter as a fixed per-row offset — computed by the SIMULATOR'S OWN edgeContribution, so
+    // an authored non-linear edge (a log_linear confounder, say) can no longer contribute its full effect at
+    // generation while silently contributing ZERO to the fit. Those two used to disagree.
+    const authoredCols = authoredEdges.map((edge) => ({
+      mech: normalizeEdgeMechanism(document.simulation.edges[edge.id]),
+      dataColumn: nodeColumn(document, edge.source)!.dataColumn
+    }));
+    // A PINNED edge is only learnable if its contribution is coefficient · f(x) + const. If it is not (a
+    // spline, say), we cannot solve for one number — so it too becomes a fixed offset rather than a lie.
+    const fitEdges: Array<{ edge: typeof pinnedEdges[number]; dataColumn: number; basis: (x: number) => number; baseline: number }> = [];
+    const offsetPinned: Array<{ mech: EdgeMechanism; dataColumn: number }> = [];
+    for (const edge of pinnedEdges) {
       const em = normalizeEdgeMechanism(document.simulation.edges[edge.id]);
-      return { coef: em.kind === "linear" ? em.coefficient : 0, dataColumn: nodeColumn(document, edge.source)!.dataColumn };
-    });
-    const pinnedCols = pinnedEdges.map((edge) => nodeColumn(document, edge.source)!.dataColumn);
+      const basis = edgeBasis(em);
+      const dataColumn = nodeColumn(document, edge.source)!.dataColumn;
+      if (basis) fitEdges.push({ edge, dataColumn, basis, baseline: edgeBaseline(em) });
+      else offsetPinned.push({ mech: em, dataColumn });
+    }
     const baseOffset = fitIntercept ? 0 : mech.intercept;
 
     const yRaw = rows.map((r) => (isBinary ? (r[col.dataColumn] ?? 0) : applyLink(r[col.dataColumn] ?? 0, link)));
     const offsetRaw = rows.map((r) => {
       let o = baseOffset;
-      for (const a of authoredCols) o += a.coef * (r[a.dataColumn] ?? 0);
+      for (const a of authoredCols) o += edgeContribution(r[a.dataColumn] ?? 0, a.mech);
+      for (const a of offsetPinned) o += edgeContribution(r[a.dataColumn] ?? 0, a.mech);
+      for (const f of fitEdges) o += f.baseline;   // the mechanism's constant term is not part of the design
       return o;
     });
-    const XRaw = rows.map((r) => pinnedCols.map((c) => r[c] ?? 0));
+    const XRaw = rows.map((r) => fitEdges.map((f) => f.basis(r[f.dataColumn] ?? 0)));
     // Drop rows outside the link's domain (e.g. Y≤0 under a log link) so the fit only sees valid targets.
     const keep: number[] = [];
     for (let i = 0; i < yRaw.length; i += 1) if (Number.isFinite(yRaw[i]) && Number.isFinite(offsetRaw[i]) && XRaw[i]!.every(Number.isFinite)) keep.push(i);
@@ -719,10 +776,10 @@ export function reconcilePins(input: GraphDocument, depth = 0): { document: Grap
     if (!fit) continue;
     ensureClone(); // a real re-fit is happening → now we need our own copy to write into
 
-    for (let j = 0; j < pinnedEdges.length; j += 1) {
-      const edge = pinnedEdges[j]!;
-      const before = (() => { const em = normalizeEdgeMechanism(document.simulation.edges[edge.id]); return em.kind === "linear" ? em.coefficient : 0; })();
-      setLinearCoefficient(document, edge.source, nodeId, fit.coefs[j] ?? 0);
+    for (let j = 0; j < fitEdges.length; j += 1) {
+      const edge = fitEdges[j]!.edge;
+      const before = readCoefficient(normalizeEdgeMechanism(document.simulation.edges[edge.id]));
+      writeFittedCoefficient(document, edge.id, fit.coefs[j] ?? 0);   // preserves the authored FORM
       bump(edgeKey(edge.id), before, fit.coefs[j] ?? 0);
     }
     let newIntercept = fitIntercept ? fit.intercept : mech.intercept;
@@ -737,7 +794,7 @@ export function reconcilePins(input: GraphDocument, depth = 0): { document: Grap
       let genSum = 0, targetSum = 0;
       for (let i = 0; i < X.length; i += 1) {
         let eta = fit.intercept + offset[i]!;
-        for (let j = 0; j < pinnedEdges.length; j += 1) eta += (fit.coefs[j] ?? 0) * X[i]![j]!;
+        for (let j = 0; j < fitEdges.length; j += 1) eta += (fit.coefs[j] ?? 0) * X[i]![j]!;
         genSum += Math.exp(eta + half);
         targetSum += Math.exp(y[i]!); // y is log(Y_raw) → exp recovers the raw value
       }
@@ -752,7 +809,7 @@ export function reconcilePins(input: GraphDocument, depth = 0): { document: Grap
       // The gate depends only on the outcome column + the PINNED parents (zero offset, authored edges
       // excluded) — NOT on any authored coefficient. Cache it under that narrower signature so authoring an
       // intensive-margin effect doesn't needlessly redo the logistic IRLS.
-      const gateSig = [col.dataset, rows.length, col.dataColumn, ...pinnedEdges.map((e) => nodeColumn(document, e.source)?.dataColumn).sort()].join("|");
+      const gateSig = [col.dataset, rows.length, col.dataColumn, ...pinnedEdges.map((e) => `${nodeColumn(document, e.source)?.dataColumn}:${normalizeEdgeMechanism(document.simulation.edges[e.id]).kind}`).sort()].join("|");
       const gateKey = `${input.id}:${nodeId}:gate`;
       if (gateSigCache.get(gateKey) === gateSig && mech.gate) {
         gate = mech.gate; // inputs unchanged → carry the existing gate (incl. any authored coefficient)
@@ -768,7 +825,7 @@ export function reconcilePins(input: GraphDocument, depth = 0): { document: Grap
           // Preserve any non-pinned gate coefficient (e.g. an authored/imposed treatment effect on the
           // extensive margin) — only the pinned (fitted) confounder parents are overwritten here.
           const coefficients: Record<string, number> = { ...(mech.gate?.coefficients ?? {}) };
-          for (let j = 0; j < pinnedEdges.length; j += 1) coefficients[pinnedEdges[j]!.source] = gateFit.coefs[j] ?? 0;
+          for (let j = 0; j < fitEdges.length; j += 1) coefficients[fitEdges[j]!.edge.source] = gateFit.coefs[j] ?? 0;
           gate = { intercept: gateFit.intercept, coefficients };
           if (gateSigCache.size > 400) gateSigCache.clear();
           gateSigCache.set(gateKey, gateSig);

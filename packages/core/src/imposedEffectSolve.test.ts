@@ -16,13 +16,13 @@ describe("imposedEffectContext — the (γ,δ) iso-ATE manifold", () => {
   });
 
   it("computes the feasibility wall: employment ALONE cannot reach $1,794", () => {
-    expect(ctx.c0).toBeCloseTo(20614, -2);   // do(T=0) mean earnings
-    expect(ctx.amax).toBeCloseTo(22087, -2); // S(∞): everyone works
+    expect(ctx.c0).toBeCloseTo(20412, -2);   // do(T=0) mean earnings
+    expect(ctx.amax).toBeCloseTo(22065, -2); // S(∞): everyone works
     const maxExtensiveDollars = ctx.amax - ctx.c0;
-    expect(maxExtensiveDollars).toBeCloseTo(1473, -2);
+    expect(maxExtensiveDollars).toBeCloseTo(1653, -2);
     expect(maxExtensiveDollars).toBeLessThan(ctx.target);          // <-- the wall
-    expect(ctx.maxExtensiveShare).toBeCloseTo(0.821, 2);           // never 100%
-    expect(ctx.deltaFloor).toBeCloseTo(0.0144, 3);                 // pay MUST rise >= 1.5%
+    expect(ctx.maxExtensiveShare).toBeCloseTo(0.921, 2);           // never 100%
+    expect(ctx.deltaFloor).toBeCloseTo(0.0064, 3);                 // pay MUST still rise, ~0.6%
   });
 
   it("the closed-form contour holds the ATE at exactly the target, for ANY share", () => {
@@ -36,12 +36,12 @@ describe("imposedEffectContext — the (γ,δ) iso-ATE manifold", () => {
   });
 
   it("reproduces the example's operating point (62% extensive)", () => {
-    // γ ≈ 1.769 (not the 1.754 of the old one-pass configurator solve): now that the confounders are fit
-    // holding the REAL δ as an offset — and iterated to a fixed point — the η's differ slightly. The dollar
-    // decomposition and the target are what actually matter, and both are exact.
+    // γ ≈ 1.408 (was 1.769 before the Mincer correction to the DGP: earnings history now enters the fit as
+    // log(1+x), so the confounder η's — and therefore the γ that buys a 62% extensive share — differ). The
+    // dollar decomposition and the target are what actually matter, and both are still exact.
     const sol = ctx.solve(0.62);
-    expect(sol.gamma).toBeCloseTo(1.769, 2);
-    expect(sol.delta).toBeCloseTo(0.0309, 3);
+    expect(sol.gamma).toBeCloseTo(1.408, 2);
+    expect(sol.delta).toBeCloseTo(0.0312, 3);
     expect(sol.extensive).toBeCloseTo(1112, -2);   // 62% of $1,794
     expect(sol.intensive).toBeCloseTo(682, -2);    // 38%
     expect(sol.extensive + sol.intensive).toBeCloseTo(ctx.target, 6);

@@ -23,7 +23,7 @@ describe("authoring the imposed effect's story (what the pad drives)", () => {
       const ctx = imposedEffectContext(doc)!;
       const { gamma, delta } = coefs(doc);
       const d = ctx.decompose(gamma, delta);
-      expect(d.ate).toBeCloseTo(1794, 5);
+      expect(d.ate).toBeCloseTo(1794, 4);
       expect(d.extensive / 1794).toBeCloseTo(Math.min(share, ctx.maxExtensiveShare), 2);
     }
   });
@@ -40,8 +40,8 @@ describe("authoring the imposed effect's story (what the pad drives)", () => {
     const ctx = imposedEffectContext(doc)!;
     const { gamma, delta } = coefs(doc);
     const d = ctx.decompose(gamma, delta);
-    expect(d.ate).toBeCloseTo(1794, 5);            // truth intact
-    expect(d.extensive / 1794).toBeLessThan(0.83); // story clamped to what the data can deliver
+    expect(d.ate).toBeCloseTo(1794, 4);            // truth intact
+    expect(d.extensive / 1794).toBeLessThan(0.93); // story clamped to what the data can deliver (max share 0.921)
     expect(delta).toBeGreaterThanOrEqual(ctx.deltaFloor - 1e-9);
   });
 

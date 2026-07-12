@@ -42,8 +42,17 @@ describe("imposeEffect — the create path", () => {
   it("the trap is real: FITTING the effect edge builds a DGP that carries a large NEGATIVE effect", () => {
     const doc = trapped();
     const coef = doc.simulation.edges[effectEdgeId(doc)]!.coefficient!;
-    expect(coef).toBeLessThan(-0.3);          // ≈ −0.41 log-dollars: the adjusted association
-    expect(simulatedAte(doc)).toBeLessThan(-3000);   // …so the "true" ATE is thousands of dollars NEGATIVE
+    // ≈ −0.11 log-dollars. (It was −0.41 before the Mincer correction: with earnings history entering the
+    // fit as log(1+x), the confounders soak up far more of the association, so the trap coefficient is
+    // smaller — but it is still NEGATIVE, and the DGP it builds still carries a large negative "truth".)
+    expect(coef).toBeLessThan(-0.05);
+    // …so the DGP's "true" ATE comes out at ≈ −$1,080 when it should be +$1,794: SIGN-FLIPPED and ~$2,900
+    // out. (It was < −$3,000 before the Mincer correction — with a better-specified confounder surface the
+    // fit absorbs more of the association, so the trap is less lurid. It is still a trap: the benchmark now
+    // carries a negative truth, and every estimator that "recovers" it recovers the bias.)
+    const trap = simulatedAte(doc);
+    expect(trap).toBeLessThan(0);
+    expect(Math.abs(trap - 1794)).toBeGreaterThan(2500);
   });
 
   it("the trapped edge is offerable — and imposing rescues it to exactly +$1,794", () => {
@@ -78,7 +87,7 @@ describe("imposeEffect — the create path", () => {
     // …and an additive impose needs no share, because the coefficient IS the ATE.
     const imposed = reconcilePins(imposeEffect(additive, { exposure: EXPOSURE, outcome: OUTCOME, target: 1794 })).document;
     expect(imposed.metadata.imposedEffect!.extensiveShare).toBeUndefined();
-    expect(imposed.simulation.edges[effectEdgeId(imposed)]!.coefficient).toBeCloseTo(1794, 6);
+    expect(imposed.simulation.edges[effectEdgeId(imposed)]!.coefficient).toBeCloseTo(1794, 4);
   });
 });
 
@@ -98,7 +107,7 @@ describe("dataImpliedEffect — what the data can and cannot tell you about the 
   it("…so the suggestion adopts the gate and SOLVES the amount for your target", () => {
     const s = suggestImposedShare(fitted, EXPOSURE, OUTCOME, 1794);
     expect(s.basis).toBe("gate-only");
-    expect(s.share).toBeCloseTo(0.138, 2);  // 14% extensive — not the 62% that was once hand-picked
+    expect(s.share).toBeCloseTo(0.162, 2);  // 16% extensive — not the 62% that was once hand-picked
     expect(s.clamped).toBe(false);
     expect(s.share).toBeLessThan(imposedEffectContext(fitted)!.maxExtensiveShare);
   });
@@ -110,7 +119,7 @@ describe("dataImpliedEffect — what the data can and cannot tell you about the 
     expect(share).toBeLessThan(0.30);       // gate-derived, not an arbitrary midpoint
 
     const sol = imposedEffectContext(doc)!.solve(share);
-    expect(sol.extensive + sol.intensive).toBeCloseTo(1794, 6);
+    expect(sol.extensive + sol.intensive).toBeCloseTo(1794, 4);
   });
 
   it("no zeros ⇒ no gate ⇒ nothing to say", () => {

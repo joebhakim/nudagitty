@@ -1,6 +1,7 @@
 import { createSeededRandomSource, sampleDistribution } from "../distributions";
 import { directedParents, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel } from "../graph";
 import type {
+  EdgeMechanism,
   GraphModel,
   NodeDistribution,
   NodeMechanism,
@@ -163,11 +164,13 @@ export function simulateEmpiricalDistributions(
           const nodeContributions: StructuralContribution[] = [];
           let value = mechanism.intercept;
           let lookupContribution: number | null = null;
+          const parentMechanisms: Record<string, EdgeMechanism> = {};
           for (const parent of parents) {
             const edge = graph.edges.find((candidate) => candidate.kind === "directed" && candidate.source === parent && candidate.target === id);
             if (!edge) continue;
             const edgeMechanism = normalizeEdgeMechanism(spec.edges[edge.id]);
             if (!edgeMechanism.enabled) continue;
+            parentMechanisms[parent] = edgeMechanism;   // the gate needs each parent's basis
             const contribution = edgeContribution(values[parent] ?? 0, edgeMechanism);
             const absorbing = edgeMechanism.kind === "absorbing";
             nodeContributions.push({ value: contribution, absorbing });
@@ -192,7 +195,7 @@ export function simulateEmpiricalDistributions(
           }
           const noise = sampleDistribution(mech.noise, rng);
           value += interaction + noise;
-          const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mech, values) : 1;
+          const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mech, values, parentMechanisms) : 1;
           values[id] = finalizeNodeValue(value, mech, variable, nodeContributions, mech.intercept + interaction + noise, rng, true, gateProb);
         }
       }

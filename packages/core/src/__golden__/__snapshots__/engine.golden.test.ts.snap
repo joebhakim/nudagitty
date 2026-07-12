@@ -1002,7 +1002,7 @@ exports[`engine golden > lalonde-fit-recover — simulation + do-contrasts are s
 exports[`engine golden > lalonde-fit-recover-2part — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {
-    "do(In_program=1)−do(0) on Earnings_78": 1914.446347,
+    "do(In_program=1)−do(0) on Earnings_78": 1794.629365,
   },
   "nodes": {
     "Age": {
@@ -1022,8 +1022,8 @@ exports[`engine golden > lalonde-fit-recover-2part — simulation + do-contrasts
       "sd": 15039.524287,
     },
     "Earnings_78": {
-      "mean": 21726.974203,
-      "sd": 45619.458429,
+      "mean": 20428.408373,
+      "sd": 20168.052665,
     },
     "Education": {
       "mean": 12.0145,

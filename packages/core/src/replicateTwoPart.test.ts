@@ -4,7 +4,7 @@ import { LALONDE_OBS_DATASET } from "./data/lalonde-obs";
 import {
   parseCsvToDataFrame, documentFromDataFrame, runSimulation, setNodeRole, addEdge, withGraph,
   registerRuntimeDataset, setExampleSampleSize, setVariable, pinNodeEquation, reconcilePins,
-  imposeEffect, imposedEffectContext, imposableEffect, normalizeEdgeMechanism, normalizeNodeMechanism
+  imposeEffect, imposedEffectContext, imposableEffect, normalizeEdgeMechanism, normalizeNodeMechanism, setEdgeMechanism
 } from "./index";
 import type { GraphDocument } from "./types";
 
@@ -40,6 +40,10 @@ function importAndWire(): GraphDocument {
   g = addEdge(g, "treat", "re78", "directed");
   doc = withGraph(doc, g);
   setVariable(doc, "re78", { valueType: "semicontinuous" });   // earnings are zero-or-positive, not Gaussian
+  // …and earnings HISTORY enters as a LOG, not as dollars — the Mincer specification. This is a real step a
+  // user takes (the edge's function picker), and it is not optional: feeding dollar-valued history into a
+  // log-link intensive margin makes E[Y|L] exponential in dollars and manufactures $2.9M earners.
+  for (const src of ["re74", "re75"]) setEdgeMechanism(doc, src, "re78", "log_linear", { offset: 1, baseline: 0, coefficient: 0 });
   return doc;
 }
 
@@ -51,7 +55,8 @@ const ate = (doc: GraphDocument, seed = 11) => {
 const coefOf = (doc: GraphDocument, s: string, t: string) => {
   const e = doc.graph.edges.find((x) => x.source === s && x.target === t)!;
   const m = normalizeEdgeMechanism(doc.simulation.edges[e.id]);
-  return m.kind === "linear" ? m.coefficient : NaN;
+  // A fitted coefficient now lives on whatever FORM the user authored — linear, log_linear, power_law.
+  return m.kind === "linear" || m.kind === "log_linear" || m.kind === "power_law" ? m.coefficient : NaN;
 };
 
 describe("THE GOAL: build the two-part LaLonde benchmark from a raw CSV", () => {

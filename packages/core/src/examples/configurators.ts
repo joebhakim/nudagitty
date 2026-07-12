@@ -1327,6 +1327,23 @@ export function configureLalondeFitRecoverTwoPart(document: GraphDocument): Grap
   setEdgeMechanism(document, "Row_source", "Earnings_78", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "re78") });
   setVariable(document, "Earnings_78", { valueType: "semicontinuous" });
 
+  // THE MINCER TRANSFORM — and it is not cosmetic, it was corrupting the benchmark.
+  //
+  // The intensive margin has a LOG LINK. Feeding it DOLLAR-VALUED earnings history means E[Y|L] is
+  // exponential IN DOLLARS, which manufactured a world with $2.9M earners (real LaLonde max: $121k) and skew
+  // 33 (real: 1.3). The damage was not cosmetic: an analyst's OLS reported +$14,599 on our simulated rows
+  // where the REAL rows give +$752. We were punishing estimators for a world we invented, then calling it
+  // their failure.
+  //
+  // So earnings history enters as a LOG — the Mincer specification, log your dollar regressors. The fit
+  // learns each coefficient on log(1 + x); the FORM is authored, the SCALE is fitted. After this the
+  // simulated marginal is skew 2.9 / max $295k (still imperfect — lognormal noise on log-earnings is heavy —
+  // but defensible), and an analyst's OLS lands at −$2.8k: still biased, still a hard benchmark, but hard for
+  // the RIGHT reason (positivity + misspecification) rather than because we built a world of millionaires.
+  for (const src of ["Earnings_74", "Earnings_75"]) {
+    setEdgeMechanism(document, src, "Earnings_78", "log_linear", { offset: 1, baseline: 0, coefficient: 0 });
+  }
+
   // DECLARE THE ESTIMAND, don't type coefficients. The $1,794 benchmark is imposed extensive-led: 62% of
   // it from MORE PEOPLE WORKING (the gate γ), the rest from HIGHER PAY AMONG WORKERS (the intensive δ).
   // reconcilePins derives γ and δ from this — in closed form, clamped to what the data can actually deliver

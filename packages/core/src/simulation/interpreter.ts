@@ -109,11 +109,39 @@ export function plasmodePassthroughMechanism(mechanism: NodeMechanism): NodeMech
 // P(Y>0) for a two-part (semicontinuous) node: σ over the gate's own linear predictor. Needs raw
 // parent values, so the caller (which holds the `values` map) computes it and hands the result to
 // finalizeNodeValue. A node with no gate returns 1 (always participates ⇒ ordinary single-part).
-export function gateProbability(mechanism: NodeMechanism, values: Record<string, number>): number {
+/**
+ * The design column a FITTABLE mechanism contributes: contribution = coefficient · basis(x) + baseline.
+ * Lives here, next to edgeContribution, so the fit and the generator read the SAME definition of the form.
+ * (`log_linear` with offset=1 is the Mincer transform — log your dollar regressors.)
+ */
+export function edgeBasis(mech: EdgeMechanism): ((x: number) => number) | null {
+  if (mech.kind === "linear") return (x) => x;
+  if (mech.kind === "log_linear") return (x) => Math.log(Math.max(Number.EPSILON, x + mech.offset));
+  if (mech.kind === "power_law") return (x) => Math.pow(Math.max(0, (x + mech.offset) / mech.scale), mech.exponent);
+  return null;
+}
+export function edgeBaseline(mech: EdgeMechanism): number {
+  return mech.kind === "log_linear" || mech.kind === "power_law" ? mech.baseline : 0;
+}
+
+/**
+ * The two-part GATE, σ(intercept + Σ coef · basis(parent)).
+ *
+ * `parentMechanisms` matters: the gate's coefficients are FIT on the basis columns (log(1+x) for a
+ * log_linear edge), so applying them to a RAW parent value here would make the generator disagree with the
+ * fit — a log-scale coefficient multiplied by dollars. Callers pass the incoming edge mechanisms; the
+ * parameter is optional only so that a caller with no edges in hand still degrades to the identity basis.
+ */
+export function gateProbability(mechanism: NodeMechanism, values: Record<string, number>, parentMechanisms?: Record<string, EdgeMechanism>): number {
   const gate = mechanism.gate;
   if (!gate) return 1;
   let eta = gate.intercept;
-  for (const source in gate.coefficients) eta += (gate.coefficients[source] ?? 0) * (values[source] ?? 0);
+  for (const source in gate.coefficients) {
+    const raw = values[source] ?? 0;
+    const mech = parentMechanisms?.[source];
+    const basis = mech ? edgeBasis(mech) : null;
+    eta += (gate.coefficients[source] ?? 0) * (basis ? basis(raw) : raw);
+  }
   return sigmoid(eta);
 }
 

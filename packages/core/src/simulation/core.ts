@@ -3,6 +3,7 @@ import { createSeededRandomSource, sampleDistribution } from "../distributions";
 import { directedParents, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel } from "../graph";
 import { registerRuntimeDataset } from "../datasets";
 import type {
+  EdgeMechanism,
   GraphModel,
   NodeDistribution,
   NodeMechanism,
@@ -88,11 +89,13 @@ export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?
     let value = mechanism.intercept;
     const nodeContributions: StructuralContribution[] = [];
     let lookupContribution: number | null = null;
+    const parentMechanisms: Record<string, EdgeMechanism> = {};   // the gate needs each parent's basis
     for (const parent of parents) {
       const edge = activeGraph.edges.find((candidate) => candidate.kind === "directed" && candidate.source === parent && candidate.target === id);
       if (!edge) continue;
       const edgeMechanism = normalizeEdgeMechanism(spec.edges[edge.id]);
       if (!edgeMechanism.enabled) continue;
+      parentMechanisms[parent] = edgeMechanism;
       const contribution = edgeContribution(values[parent] ?? 0, edgeMechanism);
       contributions[edge.id] = contribution;
       const absorbing = edgeMechanism.kind === "absorbing";
@@ -110,7 +113,7 @@ export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?
     const noise = sampleDistribution(mech.noise, rng);
     value += interaction + noise;
     const analytic = analyticForStructuralNode(activeGraph, id, spec, mech, analyticByNode);
-    const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mech, values) : 1;
+    const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mech, values, parentMechanisms) : 1;
     const finalized = finalizeNodeValue(value, mech, variable, nodeContributions, mech.intercept + interaction + noise, rng, false, gateProb);
     values[id] = variable.valueType === "distributional" ? distributionProjection(analytic, finalized) : finalized;
     analyticByNode.set(id, analytic);
@@ -216,11 +219,13 @@ export function runIntervenedEmpiricalSimulation(graph: GraphModel, spec: Simula
         const nodeContributions: StructuralContribution[] = [];
         let value = mechanism.intercept;
         let lookupContribution: number | null = null;
+        const parentMechanisms: Record<string, EdgeMechanism> = {};
         for (const parent of parents) {
           const edge = activeGraph.edges.find((candidate) => candidate.kind === "directed" && candidate.source === parent && candidate.target === id);
           if (!edge) continue;
           const edgeMechanism = normalizeEdgeMechanism(spec.edges[edge.id]);
           if (!edgeMechanism.enabled) continue;
+          parentMechanisms[parent] = edgeMechanism;   // the gate needs each parent's basis
           const contribution = edgeContribution(values[parent] ?? 0, edgeMechanism);
           const absorbing = edgeMechanism.kind === "absorbing";
           nodeContributions.push({ value: contribution, absorbing });
@@ -233,7 +238,7 @@ export function runIntervenedEmpiricalSimulation(graph: GraphModel, spec: Simula
         const interaction = interactionContribution(values, mech);
         const noise = sampleDistribution(mech.noise, rng);
         value += interaction + noise;
-        const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mech, values) : 1;
+        const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mech, values, parentMechanisms) : 1;
         values[id] = finalizeNodeValue(value, mech, variable, nodeContributions, mech.intercept + interaction + noise, rng, true, gateProb);
       }
       lastValues = values;
