@@ -186,3 +186,81 @@ function irlsLogistic(design: number[][], response: number[], weights: number[],
   }
   return beta && beta.every(Number.isFinite) ? beta : null;
 }
+
+/**
+ * RUNG 2 — linear, but with treatment × covariate interactions: a separate surface per arm. Still linear in
+ * L (so it still extrapolates, and can still emit a negative), but the treatment effect is now allowed to
+ * VARY with L instead of being one constant beta_T. That is the honest first relaxation: rung 1 does not
+ * merely mis-estimate the effect, it assumes there is only one.
+ */
+export function fitInteractionOutcomeModel(cohort: LongitudinalCohort, outcome: string, treatments: string[], covariates: string[], binary: boolean, basis: CovariateBasis = "linear"): ((row: Record<string, number>, assignment: Map<string, number> | null) => number) | null {
+  const plan = buildCovariatePlan(cohort, covariates, basis);
+  const k = treatments.length;
+  // [1, T..., L...] then every T × L product.
+  const expand = (row: Record<string, number>, assignment: Map<string, number> | null): number[] => {
+    const base = designRow(row, treatments, plan, assignment);
+    const cov = base.slice(1 + k);
+    const out = [...base];
+    for (let i = 0; i < k; i += 1) for (const c of cov) out.push(base[1 + i]! * c);
+    return out;
+  };
+  const indices = cohort.rows.map((_, i) => i).filter((i) => { const y = cohort.rows[i]![outcome]; return y !== undefined && Number.isFinite(y); });
+  if (indices.length === 0) return null;
+  const design = indices.map((i) => expand(cohort.rows[i]!, null));
+  const params = design[0]!.length;
+  if (indices.length < params + 2) return null;   // interactions are expensive in df — refuse rather than overfit
+  const response = indices.map((i) => cohort.rows[i]![outcome]!);
+  const weights = indices.map((i) => cohort.weights[i] ?? 1);
+
+  const beta = binary
+    ? irlsLogistic(design, response, weights, params)
+    : solveNormalEquations(design, response, weights, { ridge: 1e-6 });
+  if (!beta || !beta.every(Number.isFinite)) return null;
+  return (row, assignment) => {
+    const linear = dot(expand(row, assignment), beta);
+    return binary ? sigmoid(linear) : linear;
+  };
+}
+
+/**
+ * RUNG 3 — GAMMA GLM with a log link. E[Y|x] = exp(x'b), Var ∝ μ². Same log link as PPML; the two differ
+ * ONLY in the IRLS weight (gamma: 1, Poisson: μ), i.e. in what they assume about the variance. Gamma is the
+ * positive-skew workhorse — but the gamma density is undefined at zero, so it REFUSES an outcome with a zero
+ * spike rather than quietly dropping those rows. On LaLonde earnings (12% exact zeros) it therefore declines
+ * to fit at all, which is the correct and informative answer: this family cannot describe this outcome.
+ */
+export function fitGammaLogOutcomeModel(cohort: LongitudinalCohort, outcome: string, treatments: string[], covariates: string[], binary: boolean, basis: CovariateBasis = "linear"): ((row: Record<string, number>, assignment: Map<string, number> | null) => number) | null {
+  if (binary) return null;
+  const plan = buildCovariatePlan(cohort, covariates, basis);
+  const rows = cohort.rows.filter((r) => { const y = r[outcome]; return y !== undefined && Number.isFinite(y); });
+  if (rows.some((r) => (r[outcome] ?? 0) <= 0)) return null;      // gamma has no mass at (or below) zero
+  const params = 1 + treatments.length + plan.reduce((s, t) => s + t.degree, 0);
+  if (rows.length < params + 2) return null;
+
+  const design = rows.map((r) => designRow(r, treatments, plan, null));
+  const response = rows.map((r) => r[outcome]!);
+  const baseWeights = rows.map((_, i) => cohort.weights[i] ?? 1);
+  const scale = Math.max(1e-9, response.reduce((a, b) => a + b, 0) / response.length);
+
+  let beta: number[] | null = new Array<number>(params).fill(0);
+  beta[0] = Math.log(scale);
+  for (let iter = 0; iter < 40; iter += 1) {
+    const working: number[] = [];
+    const weights: number[] = [];
+    for (let r = 0; r < design.length; r += 1) {
+      const eta = Math.max(-30, Math.min(30, dot(design[r]!, beta!)));
+      const mu = Math.max(1e-6 * scale, Math.exp(eta));
+      weights.push(baseWeights[r] ?? 1);                          // gamma/log: the IRLS weight is 1
+      working.push(eta + ((response[r] ?? 0) - mu) / mu);
+    }
+    const next = solveNormalEquations(design, working, weights, { ridge: 1e-6 });
+    if (!next || !next.every(Number.isFinite)) break;
+    let delta = 0;
+    for (let i = 0; i < params; i += 1) delta += Math.abs(next[i]! - beta![i]!);
+    beta = next;
+    if (delta < 1e-9) break;
+  }
+  if (!beta || !beta.every(Number.isFinite)) return null;
+  const coefficients = beta;
+  return (row, assignment) => Math.exp(Math.max(-30, Math.min(30, dot(designRow(row, treatments, plan, assignment), coefficients))));
+}

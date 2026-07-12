@@ -17,7 +17,7 @@ describe("the outcome-model ladder", () => {
 
   it("renders the PLANNED rungs too — a user must be able to see the ceiling and ask for what is missing", () => {
     const planned = OUTCOME_LEARNERS.filter((l) => l.status === "planned");
-    expect(planned.length).toBeGreaterThan(3);
+    expect(planned.length).toBeGreaterThanOrEqual(3);   // mincer, gam, forest — the ceiling is still visible
     for (const l of planned) {
       expect(l.fit).toBeUndefined();          // planned means planned; nothing pretends to work
       expect(l.hypothesisClass).toBeTruthy(); // …but the UI can still SHOW what it would buy you
@@ -90,4 +90,38 @@ describe("rung 3 — the family-aware learners, on the real ledger", () => {
     const cohort = { rows: [{ y: -5, t: 1, l: 2 }, { y: 3, t: 0, l: 1 }], weights: [1, 1], sampleSize: 2 } as never;
     for (const l of learners) expect(l.fit!(cohort, "y", ["t"], ["l"], false, "linear")).toBeNull();
   });
+});
+
+describe("climbing the ladder within the WRONG axis does not help", () => {
+  const run = (outcomeModel: "ols" | "ols_interactions") => {
+    const doc = exampleDocument("lalonde-fit-recover-2part")!;
+    const spec = deriveAdjustmentSpec(doc)!;
+    return analyzeAdjustment(doc, { ...spec, outcomeModel })!.estimates.find((e) => e.id === "outcome_regression")!.estimate!;
+  };
+
+  it("rung 2 relaxes the constant-effect assumption — and SIGN-FLIPS instead of improving", () => {
+    // Rung 1 assumes there is only ONE effect. Rung 2 lets it vary with L, which is a real and honest
+    // relaxation... and the estimate goes from +18,088 to −3,996 against a truth of +1,794. Both rungs are
+    // still LINEAR IN THE OUTCOME'S SUPPORT, so both still impute impossible counterfactual earnings; the
+    // extra flexibility just redistributes the lie. Flexibility was never the problem. SUPPORT was.
+    expect(run("ols")).toBeGreaterThan(15000);
+    expect(run("ols_interactions")).toBeLessThan(0);
+    expect(Math.abs(run("ols_interactions") - 1794)).toBeGreaterThan(3000);
+  }, 30000);
+});
+
+describe("a learner that cannot describe your outcome REFUSES, and says why", () => {
+  it("gamma-log declines an outcome with a zero spike instead of quietly dropping the zeros", () => {
+    // The gamma density has no mass at zero. 12.4% of LaLonde earnings are exactly zero. Silently dropping
+    // them is precisely the sin (that IS what log-OLS does); refusing is the informative answer.
+    const doc = exampleDocument("lalonde-fit-recover-2part")!;
+    const spec = deriveAdjustmentSpec(doc)!;
+    const rep = analyzeAdjustment(doc, { ...spec, outcomeModel: "gamma_log" })!;
+    const or = rep.estimates.find((e) => e.id === "outcome_regression")!;
+    expect(or.estimate).toBeNull();
+    expect(or.diagnostics?.[0]).toContain("Gamma GLM");
+    expect(or.diagnostics?.[0]).toContain("no mass at zero");
+
+    expect(OUTCOME_LEARNERS.find((l) => l.id === "gamma_log")!.requires).toBeTruthy();
+  }, 30000);
 });

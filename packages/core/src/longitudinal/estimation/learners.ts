@@ -1,5 +1,5 @@
 import type { CovariateBasis, LongitudinalCohort } from "../types";
-import { fitOutcomeModel, fitPpmlOutcomeModel, fitTwoPartOutcomeModel } from "./fit";
+import { fitGammaLogOutcomeModel, fitInteractionOutcomeModel, fitOutcomeModel, fitPpmlOutcomeModel, fitTwoPartOutcomeModel } from "./fit";
 
 /**
  * The OUTCOME-MODEL LADDER.
@@ -79,6 +79,10 @@ export interface OutcomeLearner {
   needsCrossFitting: boolean;
   /** The diagnostic that licenses relaxing to this rung — the UI shows it as the REASON to move. */
   unlockedBy: string;
+  /** What the learner needs of the outcome. Shown when it REFUSES to fit, so a refusal explains itself
+   *  instead of surfacing as a generic "not enough data". A model declining to describe your outcome is an
+   *  informative answer, not an error. */
+  requires?: string;
   /** Present iff status === "usable". */
   fit?: OutcomeModelFit;
 }
@@ -100,10 +104,11 @@ export const OUTCOME_LEARNERS: readonly OutcomeLearner[] = [
     label: "+ treatment interactions",
     rung: 2,
     hypothesisClass: "linear in L, but a separate surface per arm (heterogeneous effect)",
-    status: "planned",
+    status: "usable",
     extrapolates: true,
     needsCrossFitting: false,
-    unlockedBy: "evidence of effect heterogeneity across L"
+    unlockedBy: "evidence of effect heterogeneity across L — rung 1 does not merely mis-estimate the effect, it assumes there is only one",
+    fit: fitInteractionOutcomeModel
   },
   {
     id: "two_part",
@@ -114,6 +119,7 @@ export const OUTCOME_LEARNERS: readonly OutcomeLearner[] = [
     extrapolates: true,   // parametric — it CAN extrapolate, but only within the outcome's support
     needsCrossFitting: false,
     unlockedBy: "the outcome model imputes impossible values (e.g. negative earnings)",
+    requires: "Y ≥ 0 — a negative value would be silently relabelled as “it never happened” by the gate",
     fit: fitTwoPartOutcomeModel
   },
   {
@@ -125,6 +131,7 @@ export const OUTCOME_LEARNERS: readonly OutcomeLearner[] = [
     extrapolates: true,
     needsCrossFitting: false,
     unlockedBy: "a non-negative skewed outcome with zeros (log-OLS would silently drop them)",
+    requires: "Y ≥ 0 — exp(x'b) is strictly positive",
     fit: fitPpmlOutcomeModel
   },
   {
@@ -132,10 +139,12 @@ export const OUTCOME_LEARNERS: readonly OutcomeLearner[] = [
     label: "Gamma GLM (log link)",
     rung: 3,
     hypothesisClass: "log link, gamma variance — the positive-skew workhorse",
-    status: "planned",
+    status: "usable",
     extrapolates: true,
     needsCrossFitting: false,
-    unlockedBy: "a strictly positive skewed outcome"
+    unlockedBy: "a strictly positive skewed outcome",
+    requires: "Y > 0 for every row — the gamma density has no mass at zero, so an outcome with a zero spike cannot be described by it",
+    fit: fitGammaLogOutcomeModel
   },
   {
     id: "mincer",

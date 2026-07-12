@@ -10,8 +10,12 @@ export function aipwEstimate(cohort: LongitudinalCohort, config: GMethodsCompari
   // AIPW is doubly robust: consistent if EITHER this outcome model or the propensity model is right. On
   // lalonde-fit-recover-2part BOTH are broken (the linear model imputes negative earnings; the propensity
   // has a median of 0.0007), so it has no leg to stand on and simply inherits the outcome-model bias.
-  const model = outcomeLearner(config.outcomeModel).fit!(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary, config.covariateBasis ?? "linear");
-  if (!model) return emptyEstimate("aipw", "Doubly-robust (AIPW)", left, right, "Could not fit the outcome model for the augmentation term.");
+  const learner = outcomeLearner(config.outcomeModel);
+  const model = learner.fit!(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary, config.covariateBasis ?? "linear");
+  if (!model) return emptyEstimate("aipw", "Doubly-robust (AIPW)", left, right,
+    learner.requires
+      ? `${learner.label} cannot be fit here (it requires ${learner.requires}), so there is no augmentation term.`
+      : `${learner.label} could not be fit for the augmentation term.`);
   const propensityTables = config.treatmentVariables.map((treatment, index) => ({
     treatment,
     table: binaryProbabilityTable(cohort, treatment, 1, treatmentHistory(treatment, config.treatmentVariables.slice(0, index), config.timeVaryingCovariates))

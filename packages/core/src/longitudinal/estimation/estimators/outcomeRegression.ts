@@ -9,7 +9,12 @@ export function outcomeRegressionEstimate(cohort: LongitudinalCohort, config: GM
   // The outcome model is a LEARNER, chosen on the ladder — not hardcoded. Default: the smallest class.
   const learner = outcomeLearner(config.outcomeModel);
   const model = learner.fit!(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary, config.covariateBasis ?? "linear");
-  if (!model) return emptyEstimate("outcome_regression", "Outcome regression", left, right, "Not enough data to fit the parametric outcome model.");
+  // A learner that DECLINES to describe your outcome is an informative answer, not an error — so say which
+  // model refused and why, rather than the old generic "not enough data".
+  if (!model) return emptyEstimate("outcome_regression", "Outcome regression", left, right,
+    learner.requires
+      ? `${learner.label} cannot be fit here: it requires ${learner.requires}.`
+      : `${learner.label} could not be fit: not enough data for its parameters.`);
   const predictArm = (strategy: TreatmentStrategy): { mean: number | null; points: ArmPoint[] } => {
     let sum = 0;
     let weight = 0;
