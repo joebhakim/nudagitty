@@ -18,4 +18,5 @@ export * from "./dataframe";
 export * from "./dataImport";
 export * from "./fitDgp";
 export * from "./familyGuardrail";
+export * from "./longitudinal/estimation/learners";
 export { buildDistributionQuantile } from "./distributions";

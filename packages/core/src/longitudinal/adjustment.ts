@@ -89,7 +89,8 @@ export function analyzeAdjustment(document: GraphDocument, spec: AdjustmentSpec)
     strategies: spec.strategies,
     censoringVariables: spec.censoring.length > 0 ? spec.censoring : undefined,
     outcomeScale: spec.outcomeScale,
-    covariateBasis: spec.covariateBasis ?? "linear"
+    covariateBasis: spec.covariateBasis ?? "linear",
+    outcomeModel: spec.outcomeModel      // absent ⇒ `ols`, the smallest hypothesis class
   });
 }
 
@@ -133,7 +134,8 @@ export function adjustmentOverlap(document: GraphDocument, spec: AdjustmentSpec)
     strategies: spec.strategies,
     censoringVariables: spec.censoring.length > 0 ? spec.censoring : undefined,
     outcomeScale: spec.outcomeScale,
-    covariateBasis: spec.covariateBasis ?? "linear"
+    covariateBasis: spec.covariateBasis ?? "linear",
+    outcomeModel: spec.outcomeModel      // absent ⇒ `ols`, the smallest hypothesis class
   });
 }
 

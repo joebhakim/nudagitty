@@ -1,11 +1,14 @@
 import type { TreatmentStrategy } from "../../../types";
 import type { ArmPoint, GMethodEstimate, GMethodsComparisonConfig, LongitudinalCohort } from "../../types";
-import { fitOutcomeModel, strategyAssignmentMap } from "../fit";
+import { strategyAssignmentMap } from "../fit";
+import { outcomeLearner } from "../learners";
 import { armSummary, difference, emptyEstimate } from "../shared";
 
 export function outcomeRegressionEstimate(cohort: LongitudinalCohort, config: GMethodsComparisonConfig, left: TreatmentStrategy, right: TreatmentStrategy): GMethodEstimate {
   const binary = (config.outcomeScale ?? "risk") === "risk";
-  const model = fitOutcomeModel(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary, config.covariateBasis ?? "linear");
+  // The outcome model is a LEARNER, chosen on the ladder — not hardcoded. Default: the smallest class.
+  const learner = outcomeLearner(config.outcomeModel);
+  const model = learner.fit!(cohort, config.outcome, config.treatmentVariables, config.timeVaryingCovariates, binary, config.covariateBasis ?? "linear");
   if (!model) return emptyEstimate("outcome_regression", "Outcome regression", left, right, "Not enough data to fit the parametric outcome model.");
   const predictArm = (strategy: TreatmentStrategy): { mean: number | null; points: ArmPoint[] } => {
     let sum = 0;

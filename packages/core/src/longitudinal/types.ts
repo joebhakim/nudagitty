@@ -63,6 +63,10 @@ export interface SurvivalCurvePoint {
 // AIPW). Higher degree = a more flexible basis expansion of the confounder, able to
 // absorb non-linear confounding the linear form leaves behind.
 export type CovariateBasis = "linear" | "quadratic" | "cubic";
+/** Which outcome model the model-based estimators use. Absent ⇒ the smallest hypothesis class (`ols`).
+ *  See `estimation/learners.ts` — this is the RESPONSE-FAMILY axis, orthogonal to CovariateBasis above. */
+import type { OutcomeLearnerId } from "./estimation/learners";
+export type { OutcomeLearnerId };
 
 export interface GMethodsComparisonConfig {
   treatmentVariables: string[];
@@ -74,6 +78,8 @@ export interface GMethodsComparisonConfig {
   censoringVariables?: string[];
   outcomeScale?: "risk" | "mean";
   covariateBasis?: CovariateBasis;
+  /** The outcome-model rung. Absent ⇒ `ols`, the smallest hypothesis class — never silently upgraded. */
+  outcomeModel?: OutcomeLearnerId;
 }
 
 // A single unit's contribution to an arm mean: its outcome value (observed, predicted,
@@ -155,6 +161,8 @@ export interface AdjustmentSpec {
   outcomeScale: "risk" | "mean";
   strategies: [TreatmentStrategy, TreatmentStrategy];
   covariateBasis?: CovariateBasis;
+  /** The outcome-model rung. Absent ⇒ `ols`, the smallest hypothesis class — never silently upgraded. */
+  outcomeModel?: OutcomeLearnerId;
 }
 
 // Overlap / positivity diagnostic for a point-treatment adjustment: the per-arm distribution of
