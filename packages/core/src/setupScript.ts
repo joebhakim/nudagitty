@@ -36,6 +36,12 @@ export const SETUP_GLYPHS = {
   postY: "↑",        // a DESCENDANT of the outcome — conditioning on it is conditioning on Y
   unmeasured: "◌",   // a dotted ghost: not in your data
   adjusted: "|",     // THE CONDITIONING BAR. P(Y | X)
+  selected: "⊂",     // SAMPLE RESTRICTION — you kept a SUBSET. Not the same act as adjusting, and worse:
+                     // you cannot undo it by dropping a covariate. This is the Berkson mechanism.
+  declaredIv: "⊢",   // declared an instrument (⊢ — it entails the exposure and nothing else)
+  measError: "±",    // measured WITH ERROR — ± is already the notation for it
+  missing: "?",      // missing at some rate
+  coupled: "≈",      // bound into a copula block — its dependence is authored, not structural
   // family — the glyph IS the support
   continuous: "∼", binary: "½", twopart: "≥", positive: ">", count: "λ",
   categorical: "χ", ordinal: "≤", proportion: "%",
@@ -49,7 +55,11 @@ export const SETUP_GLYPHS = {
   none: "·", blank: " "
 } as const;
 
-export type SetupRowKey = "estimand" | "struct" | "seen" | "adj" | "family" | "link" | "noise" | "modifier" | "owner";
+export type SetupRowKey =
+  | "estimand" | "struct" | "seen"                        // WHO IT IS — derived, or declared
+  | "adj" | "sel" | "instr"                               // WHAT YOU DID TO IT
+  | "family" | "link" | "noise" | "error" | "coupled" | "modifier"   // WHAT IT IS
+  | "ownI" | "ownB" | "ownN";                             // WHOSE NUMBER IT IS — per NUMBER, not per node
 export type SetupGroup = "exposure" | "outcome" | "adjusted" | "other" | "latent";
 
 export interface SetupNode {
@@ -182,6 +192,9 @@ export function analyzeSetup(doc: GraphDocument): SetupScript {
     : n.roles?.latent ? "latent" : n.roles?.adjusted ? "adjusted" : "other";
   const RANK: Record<SetupGroup, number> = { exposure: 0, outcome: 1, adjusted: 2, other: 3, latent: 4 };
 
+  const pins = new Set(doc.metadata.pins ?? []);
+  const authoredKeys = new Set(doc.metadata.authored ?? []);
+
   const nodes: SetupNode[] = [...g.nodes]
     .sort((a, b) => RANK[groupOf(a)] - RANK[groupOf(b)] || g.nodes.indexOf(a) - g.nodes.indexOf(b))
     .map((n) => {
@@ -197,6 +210,20 @@ export function analyzeSetup(doc: GraphDocument): SetupScript {
         : G.authored;   // no data column ⇒ every number in it is yours
       const modifies = mech.interactions.some((i) =>
         i.kind === "product" ? exposures.includes(i.left) || exposures.includes(i.right) : exposures.includes(i.source));
+      const vm = normalizeVariableModel(n.variable);
+      const coupled = (doc.simulation.copulaBlocks ?? []).some((b) => (b.nodes ?? []).includes(n.id));
+
+      // PROVENANCE IS PER-NUMBER, NOT PER NODE. There are 63 of them in the LaLonde benchmark and exactly
+      // one is authored — the effect. Collapsing them to a single glyph hid the only cell that matters, so
+      // the ink now splits along the axis the provenance keys already use: intercept · coefficients · noise.
+      const ownerOf = (key: string) =>
+        authoredKeys.has(key) ? G.authored : pins.has(key) ? G.fitted : owner;
+      const inEdges = g.edges.filter((e) => e.target === n.id && e.kind === "directed");
+      const INK = [G.plumbing, G.fromData, G.fitted, G.authored];      // ordered by how much of it is YOU
+      const coefInk = inEdges.length === 0 ? G.blank : inEdges
+        .map((e) => normalizeEdgeMechanism(doc.simulation.edges[e.id]).kind === "table_lookup"
+          ? G.plumbing : ownerOf(`e:${e.id}`))
+        .reduce((a, b) => (INK.indexOf(b) > INK.indexOf(a) ? b : a), G.plumbing);   // MAX ink: show the effect
 
       // A WARNING is a CONTRADICTION or a bias you are actively creating — never merely an observation.
       // A precision covariate is GOOD (it buys variance). An unadjusted collider is FINE. Only the pairing
@@ -206,11 +233,16 @@ export function analyzeSetup(doc: GraphDocument): SetupScript {
       // exposure and the outcome, so a position-only check calls it harmless — while conditioning on it opens
       // a backdoor through two unmeasured causes. `classifyConditioned` already answers this by d-separation;
       // asking it is the difference between a linter that is right and one that is merely plausible.
-      const opens = n.roles?.adjusted ? classifyConditioned(g, n.id).opensBiasingPath : false;
+      const conditioned = Boolean(n.roles?.adjusted || n.roles?.selected);
+      const opens = conditioned ? classifyConditioned(g, n.id).opensBiasingPath : false;
 
       const warn: SetupNode["warn"] = {};
       if (n.roles?.exposure && n.roles?.outcome) warn.estimand = "exposure AND outcome — a node cannot cause itself";
-      if (n.roles?.adjusted && opens) warn.adj = "conditioning on it OPENS a biasing path — this MANUFACTURES bias (M-bias / collider)";
+      // SELECTING on it is conditioning on it — and it is the worse of the two, because no choice of
+      // covariates downstream can undo a sample you never collected. Berkson, the birthweight paradox and
+      // the obesity paradox are all this cell. It was previously invisible.
+      if (n.roles?.selected && opens) warn.sel = "SELECTING on it OPENS a biasing path — and unlike adjusting, you cannot undo this";
+      else if (n.roles?.adjusted && opens) warn.adj = "conditioning on it OPENS a biasing path — this MANUFACTURES bias (M-bias / collider)";
       else if (n.roles?.adjusted && n.roles?.latent) warn.adj = "conditioning on a variable you never measured";
       else if (n.roles?.adjusted && st.glyph === G.mediator) warn.adj = "conditioning on a MEDIATOR — this removes the effect you are estimating";
       else if (n.roles?.adjusted && st.glyph === G.postY) warn.adj = "conditioning on a DESCENDANT of the outcome";
@@ -220,6 +252,8 @@ export function analyzeSetup(doc: GraphDocument): SetupScript {
       if (opens && st.glyph === G.inert) st.glyph = G.collider;
       // A latent CONFOUNDER is fatal… unless it is the plasmode row-source, whose whole job is to be the
       // shared hidden cause that reproduces the real joint. Its children are the observed covariates.
+      if (n.roles?.instrument && st.glyph !== G.instrument && st.glyph !== G.none)
+        warn.instr = `declared an INSTRUMENT, but the DAG makes it ${st.glyph === G.confounder ? "a confounder" : "something else"} — exclusion fails`;
       if (n.roles?.latent && st.glyph === G.confounder && owner !== G.plumbing)
         warn.seen = "an UNMEASURED CONFOUNDER — no adjustment can fix this";
       for (const w of Object.values(warn)) if (w) warnings.push(`${n.id}: ${w}`);
@@ -231,23 +265,27 @@ export function analyzeSetup(doc: GraphDocument): SetupScript {
         group: groupOf(n),
         warn,
         cells: {
-          estimand: n.roles?.exposure && n.roles?.outcome ? G.exposure
-            : n.roles?.exposure ? G.exposure : n.roles?.outcome ? G.outcome : G.blank,
+          estimand: n.roles?.exposure ? G.exposure : n.roles?.outcome ? G.outcome : G.blank,
           struct: st.glyph,
           seen: n.roles?.latent ? G.unmeasured : G.blank,
-          adj: n.roles?.adjusted ? G.adjusted : G.none,
+          adj: n.roles?.adjusted ? G.adjusted : G.blank,
+          sel: n.roles?.selected ? G.selected : G.blank,
+          instr: n.roles?.instrument ? G.declaredIv : G.blank,
           family: FAMILY[vt] ?? G.none,
           link: LINK[mech.combiner] ?? G.none,
           noise: NOISE[mech.noise.kind] ?? G.none,
+          error: vm.measurement.errorSd > 0 ? G.measError
+            : vm.measurement.missingRate > 0 ? G.missing : G.blank,
+          coupled: coupled ? G.coupled : G.blank,
           modifier: modifies ? G.modifier : G.blank,
-          owner
+          ownI: ownerOf(`ni:${n.id}`),
+          ownB: coefInk,
+          ownN: ownerOf(`nn:${n.id}`)
         }
       };
     });
 
   const directed = g.edges.filter((e) => e.kind === "directed");
-  const pins = new Set(doc.metadata.pins ?? []);
-  const authoredKeys = new Set(doc.metadata.authored ?? []);
   let plumbing = 0, fitted = 0, authored = 0;
   for (const e of directed) {
     const kind = normalizeEdgeMechanism(doc.simulation.edges[e.id]).kind;
@@ -275,21 +313,42 @@ export function analyzeSetup(doc: GraphDocument): SetupScript {
   };
 }
 
+/** Bands, in the order a reader asks the questions: who is it · what did you do to it · what is it · whose
+ *  numbers are these. A row whose every cell is blank is DROPPED — the script shows only the axes this
+ *  particular setup actually uses, which is why a 3-node toy stays 6 rows and a plasmode benchmark grows. */
 const ROWS: Array<[string, SetupRowKey] | null> = [
-  ["estimand", "estimand"], ["struct", "struct"], ["seen", "seen"], ["in model", "adj"], null,
-  ["family", "family"], ["link", "link"], ["noise", "noise"], ["modifier", "modifier"], null,
-  ["owner", "owner"]
+  ["estimand", "estimand"], ["struct", "struct"], ["seen", "seen"], null,
+  ["in model", "adj"], ["selected", "sel"], ["instrum", "instr"], null,
+  ["family", "family"], ["link", "link"], ["noise", "noise"],
+  ["error", "error"], ["coupled", "coupled"], ["modifier", "modifier"], null,
+  ["intercept", "ownI"], ["coefs", "ownB"], ["noise·own", "ownN"]
 ];
 const GROUP_LABEL: Record<SetupGroup, string> = {
   exposure: "τ", outcome: "Υ", adjusted: "ADJUSTED", other: "OTHER", latent: "LATENT"
 };
 
 /** Render the script as mono-safe text. One glyph per cell; every column is exactly `cw` wide. */
+/**
+ * Render as mono-safe text. `cw` is the column width:
+ *   4 — readable: every column carries its own 4-char key.
+ *   1 — HYPERDENSE: one character per node, the group rules doing all the separating. A whole 13-node
+ *       benchmark is then ~24 characters wide, and the keys line below carries the names. This is the mode
+ *       where the SHAPE of a setup becomes recognisable at a glance, the way a chess position is.
+ */
 export function renderSetupScript(s: SetupScript, cw = 4): string {
-  const LBL = 9;
+  const LBL = 10;
+  const dense = cw === 1;
   const groups: SetupGroup[] = ["exposure", "outcome", "adjusted", "other", "latent"];
   const present = groups.filter((gr) => s.nodes.some((n) => n.group === gr));
   const cols = present.map((gr) => s.nodes.filter((n) => n.group === gr));
+  // In hyperdense mode a 4-char key cannot fit, so each node gets one index character and the keys line
+  // below does the naming. 1-9 then a-z then A-Z — 61 nodes before it runs out, which is past the point
+  // where a glyph is useful anyway.
+  const IDX = "123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const tag = (n: SetupNode) => dense ? (IDX[s.nodes.indexOf(n)] ?? "?") : n.key;
+  // Only rows that carry something. `error`, `coupled`, `selected`, `instrum`, `modifier`, `seen` vanish on
+  // a setup that does not use them — so the script never pads itself with blanks pretending to be content.
+  const live = ROWS.filter((r) => !r || s.nodes.some((n) => n.cells[r[1]].trim() !== ""));
   // TRUNCATE, never overflow: a label wider than its group silently pushes every column right of it.
   const centre = (t: string, w: number) => {
     const cut = [...t].slice(0, w).join("");
@@ -302,10 +361,10 @@ export function renderSetupScript(s: SetupScript, cw = 4): string {
   const L: string[] = [];
   L.push(`⟦ ${s.title} ⟧`);
   L.push(rule("┌", "┬", "┐"));
-  L.push(" ".repeat(LBL) + cols.map((c, i) => "│" + centre(GROUP_LABEL[present[i]!], c.length * cw)).join("") + "│");
-  L.push(" ".repeat(LBL) + cols.map((c) => "│" + c.map((n) => centre(n.key, cw)).join("")).join("") + "│");
+  if (!dense) L.push(" ".repeat(LBL) + cols.map((c, i) => "│" + centre(GROUP_LABEL[present[i]!], c.length * cw)).join("") + "│");
+  L.push(" ".repeat(LBL) + cols.map((c) => "│" + c.map((n) => centre(tag(n), cw)).join("")).join("") + "│");
   L.push(rule("├", "┼", "┤"));
-  for (const row of ROWS) {
+  for (const row of live) {
     if (!row) { L.push(rule("├", "┼", "┤")); continue; }
     const [label, key] = row;
     L.push(label.padEnd(LBL) + cols.map((c) => "│" + c.map((n) => centre(n.cells[key], cw)).join("")).join("") + "│");
@@ -313,7 +372,7 @@ export function renderSetupScript(s: SetupScript, cw = 4): string {
   L.push(rule("└", "┴", "┘"));
   L.push("");
   const e = s.edges;
-  L.push("edges    " + SETUP_GLYPHS.plumbing.repeat(e.plumbing) + SETUP_GLYPHS.fitted.repeat(e.fitted) +
+  L.push("edges     " + SETUP_GLYPHS.plumbing.repeat(e.plumbing) + SETUP_GLYPHS.fitted.repeat(e.fitted) +
          SETUP_GLYPHS.authored.repeat(e.authored));
   for (const f of s.facts) L.push(f);
   if (s.effectOwner) L.push(`effect    ${s.effectOwner === "authored" ? "█ authored — the imposed truth is intact" : "▒ FITTED — the imposed truth is GONE"}`);
@@ -326,7 +385,7 @@ export function renderSetupScript(s: SetupScript, cw = 4): string {
     for (const n of s.notes) L.push("  · " + n);
   }
   L.push("");
-  L.push("keys     " + s.nodes.map((n) => `${n.key}=${n.id}`).join("  "));
+  L.push("keys      " + s.nodes.map((n) => `${tag(n)}=${n.id}`).join("  "));
   return L.join("\n");
 }
 

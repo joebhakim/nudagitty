@@ -1161,6 +1161,7 @@ export function App() {
         residualVerdicts={residualVerdicts}
         changedElements={changedElements}
         disabledEdgeIds={new Set(Object.entries(document.simulation.edges).filter(([, mechanism]) => !mechanism.enabled).map(([id]) => id))}
+        inertEdgeIds={new Set(replay.inertEdges)}
         highlightedEdges={highlightedEdges}
         ancestorIds={ancestorIds}
         showNoiseNodes={showNoiseNodes}
@@ -1208,16 +1209,24 @@ export function App() {
                 <b>Nothing is being generated.</b> <b>{replay.targets.length}</b>{" "}
                 {replay.targets.length === 1 ? "variable is" : "variables are"} replaying{" "}
                 {replay.targets.length === 1 ? "its" : "their"} real data column, so your{" "}
-                <b>{replay.inertEdges.length} arrows have no effect</b> — and because the outcome is one of
-                them, <b>do() cannot move it</b>. This is an <b>adjustment</b> graph, not a data-generating
-                model yet.
+                <b>
+                  {replay.inertEdges.length}{" "}
+                  {replay.inertEdges.length === 1 ? "arrow has" : "arrows have"} no effect
+                </b>{" "}
+                — and because the outcome is one of them, <b>do() cannot move it</b>: the re-simulated oracle
+                has nothing to report. This is an <b>adjustment</b> graph, not a data-generating model yet.
               </>
             ) : (
               <>
-                <b>{replay.inertEdges.length} arrows aren&rsquo;t running.</b> They point into{" "}
+                <b>
+                  {replay.inertEdges.length}{" "}
+                  {replay.inertEdges.length === 1 ? "arrow isn’t running." : "arrows aren’t running."}
+                </b>{" "}
+                {replay.inertEdges.length === 1 ? "It points" : "They point"} into{" "}
                 <b>{replay.targets.map((t) => labelOf(t)).join(", ")}</b>, which{" "}
-                {replay.targets.length === 1 ? "replays its" : "replay their"} real data column — so those
-                coefficients have <b>no effect on the simulation</b>. They still define the adjustment set.
+                {replay.targets.length === 1 ? "replays its" : "replay their"} real data column — so{" "}
+                {replay.inertEdges.length === 1 ? "its coefficient has" : "those coefficients have"}{" "}
+                <b>no effect on the simulation</b>. They still define the adjustment set.
               </>
             )}
           </span>

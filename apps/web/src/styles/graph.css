@@ -352,6 +352,29 @@
   opacity: 0.32;
 }
 
+/* INERT — drawn, but the engine ignores it: its target is replaying its data column, so this arrow
+   contributes NOTHING to generation. Not `disabled` (a switch the user flipped) — the user drew this one
+   and expected it to work. It used to render as a confident `linear coef +1.00`.
+   Dashed + faded + no number, so the canvas stops promising a model that isn't running. It still reads as
+   an arrow, because it IS still doing real work: it defines the adjustment set. */
+.edge.inert .edge-line {
+  stroke-dasharray: 5 4;
+  opacity: 0.45;
+}
+.edge.inert .edge-arrow-head {
+  opacity: 0.4;
+}
+.edge.inert .edge-value {
+  opacity: 0.75;
+}
+.edge.inert .edge-value-context {
+  font-style: italic;
+  fill: var(--danger, #a33b34);
+}
+.edge.inert .edge-value-number {
+  fill: var(--muted, #65717d);
+}
+
 .edge.causal .edge-line {
   stroke: var(--causal);
 }

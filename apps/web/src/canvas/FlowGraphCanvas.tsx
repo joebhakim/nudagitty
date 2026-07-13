@@ -279,11 +279,12 @@ function FlowGraphCanvasInner(props: GraphCanvasProps) {
         enabled,
         denseEdges,
         pinned: props.edgeProvenanceById.get(edge.id) === "fitted",
+        inert: props.inertEdgeIds?.has(edge.id) ?? false,
         onSelect: props.onEdgeClick
       },
       className: `prov-${props.edgeProvenanceById.get(edge.id) ?? "authored"}${flashing.edgeIds.has(edge.id) ? " prov-flash" : ""}`
     };
-  }), [denseEdges, flashing, hiddenNodeIds, liveNodesById, props.disabledEdgeIds, props.edgeMechanisms, props.edgeProvenanceById, props.graph.edges, props.highlightedEdges, props.onEdgeClick, props.selection]);
+  }), [denseEdges, flashing, hiddenNodeIds, liveNodesById, props.disabledEdgeIds, props.edgeMechanisms, props.edgeProvenanceById, props.graph.edges, props.highlightedEdges, props.inertEdgeIds, props.onEdgeClick, props.selection]);
 
   useEffect(() => {
     setNodes(computedNodes); // computedNodes.selected already reflects selectedIds — no merge needed
@@ -661,8 +662,10 @@ function FlowGraphArrowLayer({ edges }: { edges: FlowGraphEdge[] }) {
           const startArrow = showStartArrow ? arrowHeadGeometry(data.geometry.start, data.geometry.control, width) : null;
           const endArrow = showEndArrow ? arrowHeadGeometry(data.geometry.end, data.geometry.control, width) : null;
           const label = data.geometry.label;
-          const edgeLabel = edgeMechanismCanvasLabel(data.mechanism);
-          const showEdgeLabel = data.enabled && (data.mechanism.kind !== "linear" || Math.abs(edgeStrength) > 0.001);
+          // An INERT edge must never print a coefficient. `+1.00` on an arrow the engine ignores is the
+          // canvas promising a model that is not running — so it says what it is instead.
+          const edgeLabel = data.inert ? INERT_EDGE_LABEL : edgeMechanismCanvasLabel(data.mechanism);
+          const showEdgeLabel = data.enabled && (data.inert || data.mechanism.kind !== "linear" || Math.abs(edgeStrength) > 0.001);
           if (!startArrow && !endArrow && !showEdgeLabel) return null;
           return (
             <g key={edge.id} className={flowEdgeClassName(data, edge.selected)}>
@@ -848,6 +851,9 @@ function edgeMechanismTitle(edge: GraphEdge, source: GraphNode, target: GraphNod
   const label = edgeMechanismCanvasLabel(mechanism);
   return `${source.label} ${connector} ${target.label}: ${mechanismLabel(mechanism.kind)} mechanism, ${label.value}. Select the edge to inspect or edit it.`;
 }
+
+/** What a drawn-but-ignored edge says instead of a coefficient. It has no number, because it has no effect. */
+const INERT_EDGE_LABEL = { context: "not learned", value: "—" };
 
 function edgeMechanismCanvasLabel(mechanism: EdgeMechanism): { context: string; value: string } {
   if (mechanism.kind === "linear") return { context: "linear coef", value: formatSignedValue(mechanism.coefficient) };

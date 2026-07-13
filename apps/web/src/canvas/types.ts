@@ -46,6 +46,9 @@ export interface GraphCanvasProps {
   onNoiseClick: (id: string) => void;
   changedElements: { nodeIds: Set<string>; edgeIds: Set<string> };
   disabledEdgeIds: Set<string>;
+  /** Edges that are drawn but contribute NOTHING to generation, because their target replays its data
+   *  column. Not the same as disabled — the user never switched these off; the engine just ignores them. */
+  inertEdgeIds?: Set<string>;
   highlightedEdges: Map<string, "causal" | "biasing">;
   ancestorIds: Set<string>;
   showNoiseNodes: boolean;

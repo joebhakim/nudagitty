@@ -22,7 +22,10 @@ import {
 export function flowEdgeClassName(data: FlowGraphEdgeData, selected?: boolean): string {
   const edgeStrength = edgeMechanismDisplayStrength(data.mechanism);
   const coefficientClass = edgeStrength > 0 ? "coefficient-positive" : edgeStrength < 0 ? "coefficient-negative" : "coefficient-zero";
-  return `edge ${coefficientClass} ${selected ? "selected" : ""} ${data.semantic ?? ""} ${data.enabled ? "" : "disabled"}`;
+  // `inert` is NOT `disabled`: disabled is a switch the user flipped; inert is an arrow they drew that the
+  // engine silently ignores because its target replays its data column. It has to LOOK dead, or the canvas
+  // keeps promising a model that isn't running.
+  return `edge ${coefficientClass} ${selected ? "selected" : ""} ${data.semantic ?? ""} ${data.enabled ? "" : "disabled"} ${data.inert ? "inert" : ""}`;
 }
 
 export function graphPointToFlowPoint(point: Point): Point {

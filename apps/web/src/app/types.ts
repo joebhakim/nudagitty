@@ -198,6 +198,10 @@ export type FlowGraphEdgeData = Record<string, unknown> & {
   enabled: boolean;
   denseEdges: boolean;
   pinned?: boolean;
+  /** INERT: drawn, but contributing nothing to generation because its target is replaying its data column.
+   *  Distinct from `enabled: false` (which the user switched off deliberately) — this one the user never
+   *  chose, and the canvas used to render it as a live `linear coef +1.00`. See core's replay.ts. */
+  inert?: boolean;
   onSelect: (id: string) => void;
 };
 export type ModulationLink = { id: string; gateId: string; sourceId: string; targetId: string; sign: number; coefficient: number };

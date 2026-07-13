@@ -11,16 +11,30 @@ import { analyzeSetup, setupScript, SETUP_GLYPHS as G } from "./setupScript";
 const of = (id: string) => analyzeSetup(exampleDocument(id)!);
 const cellOf = (id: string, node: string, row: Parameters<typeof rowKey>[0]) =>
   of(id).nodes.find((n) => n.id === node)!.cells[row];
-const rowKey = (r: "struct" | "family" | "link" | "owner" | "adj" | "seen" | "estimand") => r;
+const rowKey = (r: "struct" | "family" | "link" | "ownI" | "ownB" | "adj" | "sel" | "seen" | "estimand") => r;
 
 describe("setupScript renders every example without throwing", () => {
+  it("EMPTY ROWS ARE DROPPED — the script shows only the axes a setup actually uses", () => {
+    // galton-regression declares no exposure and no outcome, so `estimand` is blank end to end and vanishes.
+    // A 3-node toy stays short; a plasmode benchmark grows. The alternative — padding every script with rows
+    // of blanks — would make the dense mode unreadable and dishonest about what is being used.
+    expect(setupScript(exampleDocument("galton-regression")!)).not.toContain("estimand");
+    expect(setupScript(exampleDocument("lalonde-fit-recover-2part")!)).toContain("estimand");
+    // …and the rows that only some setups need appear only there.
+    expect(setupScript(exampleDocument("berkson-hospital")!)).toContain("selected");
+    expect(setupScript(exampleDocument("tutoring-scores")!)).not.toContain("selected");
+    expect(setupScript(exampleDocument("confounder-joint-copula")!)).toContain("coupled");
+    expect(setupScript(exampleDocument("tutoring-scores")!)).not.toContain("coupled");
+  }, 60000);
+
   it("all 70 of them", () => {
     for (const ex of EXAMPLES) {
       const doc = exampleDocument(ex.id);
       expect(doc, ex.id).toBeTruthy();
       const text = setupScript(doc!);
-      expect(text, ex.id).toContain("estimand");
-      expect(text, ex.id).toContain("owner");
+      expect(text, ex.id).toContain("┌");        // it renders a grid
+      expect(text, ex.id).toContain("intercept"); // …and provenance is never absent
+      expect(text, ex.id).toContain("keys");
     }
   }, 120000);
 
@@ -66,7 +80,7 @@ describe("the derived structure disagrees with the author — correctly", () => 
   }, 60000);
 
   it("finds the point of each teaching example without being told what it is", () => {
-    expect(of("berkson-hospital").warnings.join(" ")).toContain("MANUFACTURES bias");
+    expect(of("berkson-hospital").warnings.join(" ")).toContain("OPENS a biasing path");   // by SELECTION
     expect(of("front-door-smoking").warnings.join(" ")).toContain("MEDIATOR");
     expect(of("bias-amplification-z").warnings.join(" ")).toContain("AMPLIFIES bias");
     expect(of("john-snow-cholera").warnings.join(" ")).toContain("UNMEASURED CONFOUNDER");
@@ -80,7 +94,7 @@ describe("the derived structure disagrees with the author — correctly", () => 
     const row = s.nodes.find((n) => n.id === "Row_source")!;
     expect(row.cells.struct).toBe(G.confounder);
     expect(row.cells.seen).toBe(G.unmeasured);
-    expect(row.cells.owner).toBe(G.plumbing);
+    expect(row.cells.ownI).toBe(G.plumbing);
     expect(s.warnings.some((w) => w.startsWith("Row_source"))).toBe(false);
   }, 60000);
 });
@@ -92,14 +106,29 @@ describe("the glyphs say what they mean", () => {
     expect(cellOf("tutoring-scores", "Test_score", rowKey("family"))).toBe(G.continuous);          // ∼
   }, 60000);
 
-  it("owner is INK: a from-scratch model is all █; a fitted plasmode is mostly ░", () => {
+  it("owner is INK, and it is PER NUMBER — the one authored cell is the whole benchmark", () => {
     const toy = of("tutoring-scores");
-    expect(toy.nodes.every((n) => n.cells.owner === G.authored)).toBe(true);   // every number is yours
+    expect(toy.nodes.every((n) => n.cells.ownI === G.authored)).toBe(true);   // every number is yours
 
     const lal = of("lalonde-fit-recover-2part");
-    const ink = lal.nodes.map((n) => n.cells.owner);
-    expect(ink.filter((i) => i === G.fromData).length).toBe(10);   // the data wrote the covariates
+    const ink = lal.nodes.map((n) => n.cells.ownI);
+    expect(ink.filter((i) => i === G.fromData).length).toBe(10);   // the data wrote the covariates' intercepts
     expect(ink.filter((i) => i === G.fitted).length).toBe(2);      // the fit wrote treat + outcome
     expect(lal.effectOwner).toBe("authored");                      // …and YOU wrote the effect
+
+    // …and THIS is why provenance had to split. Of 63 numbers exactly ONE is authored — the effect edge —
+    // and it lives in the outcome's COEFFICIENTS. A single glyph per node could not show it.
+    const outcome = lal.nodes.find((n) => n.id === "Earnings_78")!;
+    expect(outcome.cells.ownI).toBe(G.fitted);      // its intercept: learned from the data
+    expect(outcome.cells.ownN).toBe(G.fitted);      // its noise:     learned from the data
+    expect(outcome.cells.ownB).toBe(G.authored);    // its COEFFICIENTS: one of them is the imposed truth
+  }, 60000);
+
+  it("SELECTION is its own row — the act you cannot undo", () => {
+    // 15 of the 70 examples restrict the sample, and every one of them was invisible before this row.
+    const berk = of("berkson-hospital");
+    const h = berk.nodes.find((n) => n.id === "Hospitalized")!;
+    expect(h.cells.sel).toBe(G.selected);                          // ⊂ — you kept a SUBSET
+    expect(berk.warnings.join(" ")).toContain("cannot undo");
   }, 60000);
 });
