@@ -196,7 +196,7 @@ export function simulateEmpiricalDistributions(
           const noise = sampleDistribution(mech.noise, rng);
           value += interaction + noise;
           const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mech, values, parentMechanisms) : 1;
-          values[id] = finalizeNodeValue(value, mech, variable, nodeContributions, mech.intercept + interaction + noise, rng, true, gateProb, noise);
+          values[id] = finalizeNodeValue(value, mech, variable, nodeContributions, mech.intercept + interaction + noise, rng, true, gateProb, noise, rawLookup);
         }
       }
     }

@@ -41,6 +41,7 @@ export function EdgeEditor(props: {
   const sourceLabel = sourceNode ? nodeOutputLabel(sourceNode) : props.edge.source;
   const targetLabel = targetNode ? nodeOutputLabel(targetNode) : props.edge.target;
   const editablePoints = draft.kind === "piecewise_linear" || draft.kind === "monotone_spline";
+  const imposed = imposedEffectEdge(props.document)?.edgeId === props.edge.id;
   return (
     <div className="selection-editor connection-editor" aria-label={`Connection ${props.edge.source} to ${props.edge.target}`}>
       <div className="selection-editor-header">
@@ -65,6 +66,26 @@ export function EdgeEditor(props: {
         )}
         <ImposeEffectCard document={props.document} edgeId={props.edge.id} onImpose={props.onImposeEffect} />
         <ImposedEffectPad document={props.document} edgeId={props.edge.id} onChange={props.onImposedEffect} onClear={props.onClearImposedEffect} />
+        {/* When this edge CARRIES an imposed effect its coefficient is DERIVED — re-solved from the estimand
+            on every commit. Showing an editable "coefficient", a transfer plot and an enabled-checkbox
+            alongside the pad invited the user to type a number that would be silently overwritten, and the
+            "current contribution" read +0.00 because it is evaluated at the exposure's MEAN. The pad is the
+            control; the raw mechanism is its output. Collapsed, not deleted — you can still inspect it. */}
+        {imposed ? (
+          <details className="edge-derived-mech">
+            <summary>the derived mechanism (read-only — the pad above is the control)</summary>
+            <EdgeTransferPlot
+              mechanism={committed}
+              state={sourceState}
+              sourceLabel={sourceLabel}
+              targetLabel={targetLabel}
+            />
+            <p className="muted">
+              δ&nbsp;=&nbsp;<b>{committed.kind === "linear" ? formatValue(committed.coefficient) : "—"}</b>{" "}
+              — <b>derived</b> from the imposed estimand, never typed. Change it by moving the story on the pad.
+            </p>
+          </details>
+        ) : (<>
         <EdgeTransferPlot
           mechanism={draft}
           state={sourceState}
@@ -83,6 +104,7 @@ export function EdgeEditor(props: {
           </button>
           <button type="button" disabled={!dirty} onClick={() => setDraft(committed)}>Reset</button>
         </div>
+        </>)}
         <div className="button-row">
           <button type="button" onClick={() => props.onDelete(props.edge.id)}>delete</button>
         </div>

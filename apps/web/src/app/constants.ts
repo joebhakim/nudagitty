@@ -56,15 +56,18 @@ export const NODE_COMBINERS: Array<{ kind: NodeCombinerKind; label: string }> = 
   { kind: "noisy_or", label: "noisy-OR probability" }
 ];
 
+// The RESPONSE FAMILY — what kind of thing this variable IS, which decides how it is fit and how it is
+// generated. The labels say what the family ASSUMES, because "continuous" / "positive real" told a user
+// nothing about which one their variable actually needs.
 export const VARIABLE_TYPES: Array<[VariableModel["valueType"], string]> = [
-  ["continuous", "continuous"],
-  ["binary", "binary"],
-  ["categorical", "categorical"],
-  ["ordinal", "ordinal"],
-  ["count", "count"],
-  ["positive", "positive real"],
-  ["semicontinuous", "two-part (zeros + positive)"],
-  ["proportion", "proportion"],
+  ["continuous", "continuous — any real value, symmetric noise (a linear model)"],
+  ["binary", "binary — 0/1 (logistic)"],
+  ["categorical", "categorical — unordered labels"],
+  ["ordinal", "ordinal — ordered levels"],
+  ["count", "count — non-negative integers (Poisson)"],
+  ["positive", "positive — strictly > 0, right-skewed (log link)"],
+  ["semicontinuous", "two-part — a mass at zero × a positive amount (earnings, spending)"],
+  ["proportion", "proportion — between 0 and 1 (logit)"],
   ["time_to_event", "time to event"],
   ["vector", "vector"],
   ["time_series", "time series"],

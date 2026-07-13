@@ -163,7 +163,18 @@ export function softplusMean(eta: number, intercept: number): number {
   return scale * Math.log1p(Math.exp(Math.max(-30, z)));
 }
 
-export function finalizeNodeValue(value: number, mechanism: NodeMechanism, variable: VariableModel, contributions: StructuralContribution[], leakTerm: number, rng: () => number, forceDraw = false, gateProb = 1, noise = 0): number {
+/**
+ * @param passthrough This node is PLASMODE: it is replaying its data column, and `value` IS the cell. No
+ *   family transform may be applied to it — a node reading its column IS the column.
+ *
+ *   This was a live bug. A `semicontinuous` node in read mode fell into the two-part branch and got
+ *   EXPONENTIATED: safeExp(re78) = exp(121,174), clamped to exp(30) = 1.07e13, so the marginal plot ran to
+ *   "10,686,474.6M". It never showed on the shipped example (whose outcome GENERATES, lookup disabled) —
+ *   only in the from-scratch flow, where a user naturally picks the family BEFORE fitting. The other
+ *   families were accidentally safe (additive is the identity; a Bernoulli draw at p ∈ {0,1} is
+ *   deterministic), so this makes explicit what they were relying on.
+ */
+export function finalizeNodeValue(value: number, mechanism: NodeMechanism, variable: VariableModel, contributions: StructuralContribution[], leakTerm: number, rng: () => number, forceDraw = false, gateProb = 1, noise = 0, passthrough = false): number {
   // Gaussian copula: η (= value, built from latent-Gaussian parents + noise) is mapped through
   // Φ then the node's target marginal — deterministic given η, for both continuous and binary
   // marginals (so the cross-covariate correlation carried by the shared latent is preserved).
@@ -236,6 +247,13 @@ export function finalizeNodeValue(value: number, mechanism: NodeMechanism, varia
   // LEFT tail. The identity+gamma form is what the literature actually fits (levels), and it measures at
   // skew 2.5 / max $237k against a real 1.3 / $121k. See docs/lalonde-specification.md.
   if (variable.valueType === "semicontinuous") {
+    // Replaying the data column: the cell IS the value. Do NOT exponentiate it.
+    //
+    // (Scoped to this family on purpose. The other families are accidentally safe here — additive is the
+    // identity, and a Bernoulli draw at p ∈ {0,1} is deterministic — but they still CONSUME an rng() call,
+    // so short-circuiting them would desynchronise the random stream and change every downstream draw. The
+    // golden net caught exactly that.)
+    if (passthrough) return value;
     if (mechanism.combiner !== "positive_softplus") {
       const amount = safeExp(value);                       // the log link — the default, and the old behaviour
       if (!forceDraw && variable.simulation.mode === "expected_value") return gateProb * amount;

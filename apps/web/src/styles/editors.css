@@ -1464,3 +1464,12 @@ button.prov-chip { cursor: pointer; }
    which made the exposure → outcome edge unreachable from a fresh import. */
 .eq-parent-link { appearance: none; border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; border-bottom: 1px dotted transparent; }
 .eq-parent-link:hover { color: var(--accent, #23716f); border-bottom-color: currentColor; }
+
+/* The imposed effect's DERIVED mechanism — collapsed, read-only. The pad is the control; this is its
+   output. Showing an editable coefficient next to the pad invited typing a number that reconcile would
+   silently overwrite on the next commit. */
+.edge-derived-mech { margin: 8px 0; padding: 7px 9px; border: 1px dashed var(--line, #d8d8e0); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
+.edge-derived-mech > summary { cursor: pointer; font-size: 11px; color: var(--muted, #667); list-style: revert; }
+.edge-derived-mech > summary:hover { color: var(--text, #222); }
+.edge-derived-mech > p { margin: 6px 0 0; font-size: 11px; line-height: 1.45; }
+@media (prefers-color-scheme: dark) { .edge-derived-mech { background: #1b1b22; border-color: #34343e; } }
