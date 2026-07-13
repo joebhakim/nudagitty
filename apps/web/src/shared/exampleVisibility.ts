@@ -56,6 +56,15 @@ export const VERIFIED_EXAMPLE_IDS: readonly string[] = [
   // the payoff is the Σ panel's Overlap/positivity section. Needs the benchmark grading panel before
   // it's truly user-ready.
   "lalonde-recover-rct",
+  // The fitted-DGP benchmark and its two heterogeneous variants — the outcome-model ladder's evidence.
+  // All three impose the SAME +$1,794 on the SAME data with the SAME confounding, so the ledger across
+  // them isolates the SHAPE of the effect and nothing else:
+  //   ...-2part      homogeneous            → the two-part-LEVELS rung recovers it (+$1,814) — a TAUTOLOGY,
+  //                                            and the ladder says so.
+  //   ...heterogeneous          T × nodegree → +$978 for graduates, +$3,756 for dropouts. The rung that
+  //                                            matches EXISTS and the data cannot identify it (6.9% treated).
+  "lalonde-fit-recover-2part",
+  "lalonde-heterogeneous",
   // The DGM-toolbox contrast: smoking -> weight gain, same true effect (+3.5 kg), five different
   // confounder joints (independent / confounder-DAG / copula / real plasmode / generative). Open
   // the DGP panel (Σ) on each to see the correlation matrix change while the truth is fixed.

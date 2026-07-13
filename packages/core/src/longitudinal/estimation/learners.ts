@@ -1,7 +1,7 @@
 import type { CovariateBasis, LongitudinalCohort } from "../types";
 import type { GraphDocument } from "../../types";
 import { normalizeNodeMechanism, normalizeVariableModel } from "../../graph";
-import { fitGammaLogOutcomeModel, fitInteractionOutcomeModel, fitOutcomeModel, fitPpmlOutcomeModel, fitTwoPartIdentityOutcomeModel, fitTwoPartOutcomeModel } from "./fit";
+import { fitGammaLogOutcomeModel, fitInteractionOutcomeModel, fitOutcomeModel, fitPpmlOutcomeModel, fitTwoPartIdentityInteractionOutcomeModel, fitTwoPartIdentityOutcomeModel, fitTwoPartOutcomeModel } from "./fit";
 
 /**
  * The OUTCOME-MODEL LADDER.
@@ -53,6 +53,7 @@ export type OutcomeLearnerId =
   | "two_part_identity" // rung 3 — LEVELS amount
   | "ppml"              // rung 3
   | "gamma_log"         // rung 3
+  | "two_part_identity_interactions" // rung 4 — LEVELS amount, heterogeneous effect
   | "mincer"            // rung 4
   | "gam"               // rung 5
   | "forest";           // rung 6
@@ -162,6 +163,18 @@ export const OUTCOME_LEARNERS: readonly OutcomeLearner[] = [
     fit: fitGammaLogOutcomeModel
   },
   {
+    id: "two_part_identity_interactions",
+    label: "Two-part in LEVELS + treatment interactions",
+    rung: 4,
+    hypothesisClass: "gate × amount in levels, both carrying T × L — a heterogeneous effect, still LINEAR in the modifier",
+    status: "usable",
+    extrapolates: true,
+    needsCrossFitting: false,
+    unlockedBy: "a two-part outcome AND evidence the effect differs across L — rung 3 has the right family but still assumes ONE effect for everybody",
+    requires: "Y ≥ 0 — a negative value would be silently relabelled as “it never happened” by the gate",
+    fit: fitTwoPartIdentityInteractionOutcomeModel
+  },
+  {
     id: "mincer",
     label: "Mincer predictor transforms",
     rung: 4,
@@ -226,16 +239,32 @@ export function specificationMatch(document: GraphDocument, outcomeModel?: Outco
   if (!node) return null;
 
   const family = normalizeVariableModel(node.variable).valueType;
-  const combiner = normalizeNodeMechanism(document.simulation.nodes[node.id]).combiner;
+  const mech = normalizeNodeMechanism(document.simulation.nodes[node.id]);
+  const combiner = mech.combiner;
   const chosen = outcomeLearner(outcomeModel).id;
 
+  // Does the DGP carry an EFFECT MODIFIER — an authored interaction that moves with the exposure? Then a
+  // model with one constant effect is misspecified in SHAPE however right its family is, and the model that
+  // matches is the one carrying T × L. This is still reading the DGP's FORM, not its effect: "the effect
+  // depends on schooling" is a structural claim, the same kind as "earnings have a mass at zero". Its SIZE
+  // stays hidden.
+  const exposure = document.metadata.imposedEffect.exposure ?? document.graph.nodes.find((n) => n.roles?.exposure)?.id;
+  const modified = exposure !== undefined && mech.interactions.some((i) =>
+    i.kind === "product" ? i.left === exposure || i.right === exposure : i.source === exposure);
+
+  const twoPartFamily = chosen === "two_part" || chosen === "two_part_identity" || chosen === "two_part_identity_interactions";
   if (family === "semicontinuous") {
-    const dgp = combiner === "positive_softplus" ? "two_part_identity" : "two_part";
-    if (chosen === dgp) return "exact";                        // same family AND same amount link
-    if (chosen === "two_part" || chosen === "two_part_identity") return "family";  // right family, wrong link
+    const dgp = combiner === "positive_softplus"
+      ? (modified ? "two_part_identity_interactions" : "two_part_identity")
+      : "two_part";
+    if (chosen === dgp) return "exact";              // same family, same amount link, same effect shape
+    if (twoPartFamily) return "family";              // right family — wrong link, or wrong effect shape
     return "none";
   }
-  if (family === "continuous") return chosen === "ols" ? "exact" : "none";
+  if (family === "continuous") {
+    const dgp = modified ? "ols_interactions" : "ols";
+    return chosen === dgp ? "exact" : "none";
+  }
   if (family === "positive") return chosen === "gamma_log" || chosen === "ppml" ? "family" : "none";
   return "none";
 }

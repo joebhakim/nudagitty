@@ -61,6 +61,7 @@ describe("example catalog", () => {
       "lalonde-recover-rct",
       "lalonde-fit-recover",
       "lalonde-fit-recover-2part",
+      "lalonde-heterogeneous",
       "what-if-hiv-cd4-variants",
       "what-if-censoring-ipcw",
       "what-if-dynamic-g-formula",

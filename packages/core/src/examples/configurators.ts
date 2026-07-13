@@ -1319,7 +1319,25 @@ export function configureLalondeFitRecover(document: GraphDocument): GraphDocume
 // delivers ~62% of the effect, then δ (the intensive log shift) is solved so higher-earnings-among-workers
 // makes the deterministic two-part do()-contrast EXACTLY $1,794. Both margins are authored (the known truth);
 // the confounders are fit treat-free (In_program→Earnings_78 is authored, so it is excluded from both fits).
+/**
+ * An EFFECT MODIFIER on the two-part LaLonde benchmark: `gate` modulates the In_program → Earnings_78 edge,
+ * so the treatment effect is no longer one number. The ATE stays IMPOSED at the same +$1,794, which is what
+ * makes the heterogeneous example a clean A/B against the homogeneous one: same estimand, same data, same
+ * confounding — only the SHAPE of the effect differs, so any change in the ledger is attributable to shape
+ * alone.
+ *
+ * We use smooth_gated rather than a raw `product` for two reasons: the canvas renders it (a dashed arrow from
+ * the modifier onto the edge it bends — a `product` interaction would be an invisible term in the DGP), and
+ * one primitive then covers both cases we want. With a BINARY gate and a steep slope it is a plain T·X
+ * interaction; with a CONTINUOUS gate it is a STEP in X, which no linear-in-X estimator can express.
+ */
+type LalondeModifier = { gate: string; coefficient: number; threshold: number; steepness: number };
+
 export function configureLalondeFitRecoverTwoPart(document: GraphDocument): GraphDocument {
+  return configureLalondeTwoPart(document, null);
+}
+
+function configureLalondeTwoPart(document: GraphDocument, modifier: LalondeModifier | null): GraphDocument {
   configureLalondeBase(document);
   setContinuousVariable(document, "Row_source", "Uniform draw over the embedded observational LaLonde rows (shared row index, unobserved).", "row");
   addPlasmodeCovariates(document, "Row_source", "lalonde-obs", LALONDE_DGM_COVS);
@@ -1362,6 +1380,13 @@ export function configureLalondeFitRecoverTwoPart(document: GraphDocument): Grap
   // this up and switches from log-OLS to OLS on the raw amounts.
   setNode(document, "Earnings_78", { combiner: "positive_softplus" });
 
+  // The modifier bends the INTENSIVE margin only (an interaction lands in the amount's η, not the gate). The
+  // story that makes: the program raises everyone's chance of working by the same amount, but the RAISE it
+  // buys you depends on who you are. The imposed solve now derives δ knowing the modifier is also paying out.
+  if (modifier) {
+    setSmoothGate(document, "Earnings_78", "In_program", modifier.gate, modifier.coefficient, modifier.threshold, modifier.steepness);
+  }
+
   // DECLARE THE ESTIMAND, don't type coefficients. The $1,794 benchmark is imposed extensive-led: 62% of
   // it from MORE PEOPLE WORKING (the gate γ), the rest from HIGHER PAY AMONG WORKERS (the intensive δ).
   // reconcilePins derives γ and δ from this — in closed form, clamped to what the data can actually deliver
@@ -1374,6 +1399,22 @@ export function configureLalondeFitRecoverTwoPart(document: GraphDocument): Grap
   if (effect) doc = authorNumber(doc, pinKeys.edge(effect.id)); // AUTHORED, never fitted — fitting it would
   doc.metadata = { ...doc.metadata, imposedEffect: { target: 1794, extensiveShare: 0.62, exposure: "In_program", outcome: "Earnings_78" } };
   return reconcilePins(doc).document; // fits the confounders AND derives γ/δ, to convergence
+}
+
+/**
+ * HETEROGENEITY — a BINARY modifier, i.e. a plain T·X interaction.
+ *
+ * Same $1,794 ATE, same data, same confounding as `lalonde-fit-recover-2part`. The only difference: the raise
+ * the program buys depends on whether you finished high school. This is the substantive claim in the training
+ * literature — the program is aimed at the least advantaged, and that is who it moves.
+ *
+ * A steep sigmoid on a 0/1 gate IS a product interaction (σ(20·0.5) = 0.99995), so this DGP sits exactly
+ * inside the hypothesis class of any estimator carrying treatment × covariate interactions — and OUTSIDE the
+ * class of every additive one. That is the whole point: it is the DGP the ladder's second axis exists for,
+ * and the ATE is unchanged, so the ledger isolates the cost of getting the effect's SHAPE wrong.
+ */
+export function configureLalondeHeterogeneous(document: GraphDocument): GraphDocument {
+  return configureLalondeTwoPart(document, { gate: "No_degree", coefficient: 3000, threshold: 0.5, steepness: 20 });
 }
 
 function disableEdge(document: GraphDocument, source: string, target: string) {

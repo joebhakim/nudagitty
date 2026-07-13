@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { exampleDocument } from "./examples";
-import { OUTCOME_LEARNERS, outcomeLearner, deriveAdjustmentSpec, analyzeAdjustment } from "./index";
+import { OUTCOME_LEARNERS, outcomeLearner, deriveAdjustmentSpec, analyzeAdjustment, specificationMatch } from "./index";
 
 describe("the outcome-model ladder", () => {
   it("is ordered by hypothesis class, and the DEFAULT is the smallest one", () => {
@@ -127,4 +127,39 @@ describe("THE MISSING RUNG: two-part with a LEVELS amount — the ladder finally
       expect(err(run(wrong))).toBeGreaterThan(5 * right);
     }
   }, 90000);
+});
+
+describe("heterogeneity: the right hypothesis class, and no way to fit it", () => {
+  const or = (id: string, outcomeModel: "ols" | "two_part_identity" | "two_part_identity_interactions") => {
+    const doc = exampleDocument(id)!;
+    const spec = deriveAdjustmentSpec(doc)!;
+    return analyzeAdjustment(doc, { ...spec, outcomeModel })!.estimates.find((e) => e.id === "outcome_regression")!.estimate!;
+  };
+
+  it("the rung that recovers the HOMOGENEOUS truth is off by ~$900 once the effect has a shape", () => {
+    // Same $1,794, same data, same confounding — only the SHAPE of the effect differs. two_part_identity
+    // recovers the homogeneous benchmark to $20 and misses this one by ~$900, and it misses by the same
+    // ~$900 at n = 4,000 / 20,000 / 80,000 (+2,703 / +2,603 / +2,617). A hypothesis class that assumes ONE
+    // effect cannot be argued out of it with more rows.
+    expect(or("lalonde-fit-recover-2part", "two_part_identity")).toBeCloseTo(1814, -2);
+    expect(or("lalonde-heterogeneous", "two_part_identity")).toBeCloseTo(2703, -2);
+  }, 120000);
+
+  it("…and the CORRECTLY SPECIFIED rung does no better, because 6.9% of rows are treated", () => {
+    // This is the LaLonde disease, not a broken learner: T × L is fitted on 185 off-support rows (pre-program
+    // earnings $2,096 vs the controls' $19,428) and extrapolated onto 2,490 that resemble none of them. It
+    // swings +4,352 / +1,427 / +936 with n and never settles. Given clean overlap the SAME learner recovers
+    // both subgroup effects almost exactly — see outcomeLearnerCorrectness.test.ts.
+    const got = or("lalonde-heterogeneous", "two_part_identity_interactions");
+    expect(got).toBeCloseTo(4352, -2);
+    expect(Math.abs(got - 1794)).toBeGreaterThan(1000);   // the right model, still nowhere near
+  }, 120000);
+
+  it("specificationMatch reads the effect's SHAPE, not just the outcome's family", () => {
+    // With a modifier on the DGP, the model that MATCHES is the one carrying T×L — so the tautology warning
+    // has to move with it, or it would flatter the wrong rung.
+    expect(specificationMatch(exampleDocument("lalonde-fit-recover-2part")!, "two_part_identity")).toBe("exact");
+    expect(specificationMatch(exampleDocument("lalonde-heterogeneous")!, "two_part_identity")).toBe("family");
+    expect(specificationMatch(exampleDocument("lalonde-heterogeneous")!, "two_part_identity_interactions")).toBe("exact");
+  });
 });

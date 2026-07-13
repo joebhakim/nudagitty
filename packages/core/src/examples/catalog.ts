@@ -4,7 +4,7 @@ import { datasetColumnIndex, datasetRows } from "../datasets";
 import { defaultEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "../graph";
 import type { EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, NodeDistribution, NodeInteraction, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "../types";
 import { HIV_CD4_SEQUENCE_VISITS, UNIT_NORMAL, ZERO_NOISE, addCopulaCovariates, addPlasmodeCovariates, applyWhatIfMetadata, binaryStrategies, dynamicLowRiskStrategy, exampleSeed, layoutExampleDocument, markExposures, prepareDocument, riskEstimand, setBinaryVariable, setContinuousVariable, setEdgeMechanism, setExampleSampleSize, setLinearCoefficient, setLogitNode, setNode, setSelection, setSmoothGate, setVariable, staticStrategy, survivalSpec } from "./builders";
-import { configureBerksonHospital, configureBirthweightParadox, configureCaseControlSelection, configureCategoricalRegimen, configureCatsHighriseSyndrome, configureCausalMlRefutation, configureChessIntelligencePractice, configureChessIntelligenceSimpleFlip, configureCollegeEarnings, configureBiasAmplificationZ, configureConfounderJointCopula, configureConfounderTripleCopula, configureContinuousDoseResponse, configureDiscreteMarginConfession, configureGlut4DoseResponse, configureImmortalTimeBias, configureModeratedConfounding, configureReceptorSynergyCopula, configureSuppressorConfounding, configureTable2Fallacy, configureTailDependentConfounders, configureEducationMediation, configureErVisitsCount, configureEffectModificationCrossover, configureEffectModificationOrdinal, configureEpistasisCoatColor, configureFlexibleAdjustment, configureFrontDoorSmoking, configureGaltonExample, configureIcuMortalityTriage, configureIncrementalityUplift, configureInstrumentalEncouragement, configureJohnSnowCholera, configureLalondeGenerative, configureLalondeIndependent, configureLalondePlasmode, configureLalondeReplay, configureLalondeFitRecover, configureLalondeFitRecoverTwoPart, configureLordsParadox, configureMBiasAdjustment, configureMeasurementErrorLatent, configureMediationDirectTotal, configureModeratedMediation, configureObesityParadox, configureOpsRootCause, configureOtaGeneProgramTraits, configurePolicingEncounters, configurePolicyEventStudy, configurePositivityCorrelatedConfounders, configureRestaurantCollider, configureSimpsonSeverity, configureTargetTrialFollowup, configureTutoringScores, configureWhatIfCensoringIpcw, configureWhatIfDynamicGFormula, configureWhatIfHazardSelection, configureWhatIfHivCd4Variants, configureWhatIfIpwPseudopopulation, configureWhatIfNhefsMortalitySurvival, configureWhatIfNhefsWeightGain, configureWhatIfNhefsWeightGainConfounderDag, configureWhatIfNhefsWeightGainCopula, configureWhatIfNhefsWeightGainGenerative, configureWhatIfNhefsWeightGainPlasmode, configureWhatIfNhefsWeightGainPositivity, configureWhatIfSnaftSurvival, configureWhatIfTreatmentFeedback, configureWhatIfWeightGainGEstimation } from "./configurators";
+import { configureBerksonHospital, configureBirthweightParadox, configureCaseControlSelection, configureCategoricalRegimen, configureCatsHighriseSyndrome, configureCausalMlRefutation, configureChessIntelligencePractice, configureChessIntelligenceSimpleFlip, configureCollegeEarnings, configureBiasAmplificationZ, configureConfounderJointCopula, configureConfounderTripleCopula, configureContinuousDoseResponse, configureDiscreteMarginConfession, configureGlut4DoseResponse, configureImmortalTimeBias, configureModeratedConfounding, configureReceptorSynergyCopula, configureSuppressorConfounding, configureTable2Fallacy, configureTailDependentConfounders, configureEducationMediation, configureErVisitsCount, configureEffectModificationCrossover, configureEffectModificationOrdinal, configureEpistasisCoatColor, configureFlexibleAdjustment, configureFrontDoorSmoking, configureGaltonExample, configureIcuMortalityTriage, configureIncrementalityUplift, configureInstrumentalEncouragement, configureJohnSnowCholera, configureLalondeGenerative, configureLalondeIndependent, configureLalondePlasmode, configureLalondeReplay, configureLalondeFitRecover, configureLalondeFitRecoverTwoPart, configureLalondeHeterogeneous, configureLordsParadox, configureMBiasAdjustment, configureMeasurementErrorLatent, configureMediationDirectTotal, configureModeratedMediation, configureObesityParadox, configureOpsRootCause, configureOtaGeneProgramTraits, configurePolicingEncounters, configurePolicyEventStudy, configurePositivityCorrelatedConfounders, configureRestaurantCollider, configureSimpsonSeverity, configureTargetTrialFollowup, configureTutoringScores, configureWhatIfCensoringIpcw, configureWhatIfDynamicGFormula, configureWhatIfHazardSelection, configureWhatIfHivCd4Variants, configureWhatIfIpwPseudopopulation, configureWhatIfNhefsMortalitySurvival, configureWhatIfNhefsWeightGain, configureWhatIfNhefsWeightGainConfounderDag, configureWhatIfNhefsWeightGainCopula, configureWhatIfNhefsWeightGainGenerative, configureWhatIfNhefsWeightGainPlasmode, configureWhatIfNhefsWeightGainPositivity, configureWhatIfSnaftSurvival, configureWhatIfTreatmentFeedback, configureWhatIfWeightGainGEstimation } from "./configurators";
 
 export const EXAMPLE_DOMAINS = [
   { id: "classic", label: "Classic DAG patterns", description: "Compact examples for teaching and fast bias checks." },
@@ -120,6 +120,51 @@ function buildHivCd4SequenceCode(visits: number): string {
   lines.push("}");
   return lines.join("\n");
 }
+
+/**
+ * The LaLonde fitted-DGM topology, shared by the two-part benchmark and its two heterogeneous variants. They
+ * differ ONLY in the DGP the configurator attaches (an effect modifier, or none) — same nodes, same edges,
+ * same confounding — so the ledger across them isolates the shape of the effect and nothing else. Sharing the
+ * string is what guarantees that claim stays true.
+ *
+ * The zero-indicator nodes (Earnings_74_is_zero / _75) are NOT here: addPointMassIndicator adds them, exactly
+ * as the "add a zero-indicator" button does for a user.
+ */
+const LALONDE_DGM_CODE = `dag {
+  Row_source [latent,label="LaLonde rows (resample)",pos="0.0,4.4"]
+  Age [adjusted,label="age",pos="-3.3,2.7"]
+  Education [adjusted,label="education",pos="-2.35,3.15"]
+  Black [adjusted,label="black",pos="-1.4,3.35"]
+  Hispanic [adjusted,label="hispanic",pos="-0.45,3.45"]
+  Married [adjusted,label="married",pos="0.5,3.45"]
+  No_degree [adjusted,label="no degree",pos="1.45,3.35"]
+  Earnings_74 [adjusted,label="earnings '74",pos="2.4,3.15"]
+  Earnings_75 [adjusted,label="earnings '75",pos="3.35,2.7"]
+  In_program [exposure,label="in program",pos="-1.75,0.7"]
+  Earnings_78 [outcome,label="earnings '78",pos="1.6,-1.7"]
+  Row_source -> Age
+  Row_source -> Education
+  Row_source -> Black
+  Row_source -> Hispanic
+  Row_source -> Married
+  Row_source -> No_degree
+  Row_source -> Earnings_74
+  Row_source -> Earnings_75
+  Row_source -> In_program
+  Row_source -> Earnings_78
+  Age -> In_program
+  Age -> Earnings_78
+  Education -> In_program
+  Education -> Earnings_78
+  No_degree -> In_program
+  No_degree -> Earnings_78
+  Earnings_74 -> In_program
+  Earnings_74 -> Earnings_78
+  Earnings_75 -> In_program
+  Earnings_75 -> Earnings_78
+  Married -> Earnings_78
+  In_program -> Earnings_78
+}`;
 
 export const EXAMPLES: ExampleModel[] = [
   {
@@ -1255,41 +1300,14 @@ export const EXAMPLES: ExampleModel[] = [
     title: "Job training → earnings (two-part DGP, recover +$1,794)",
     domain: "dgm",
     summary: "The two-part fitted-DGP positive control, now specified the way the LITERATURE specifies it — and the simulated world finally looks like LaLonde. Real re78: mean $20.5k, sd $15.6k, max $121k, skew 1.3, 12.4% zeros. Ours: mean $20.9k, sd $16.5k, max $153k, skew 1.7, 10.9% zeros. (The previous version, with a log link and lognormal noise, produced $1.6M earners and skew 16.) THREE FIXES, each of which we first got wrong by guessing. (1) EARNINGS HISTORY IN LEVELS PLUS A ZERO-INDICATOR: nobody in this literature logs the earnings regressor — zero papers — and Smith-Todd Table 3 shows why, with the indicator's logit coefficient at 1.94-3.26 against a dollar-slope of -0.00007. The point mass carries the selection signal; the amount carries none; and NO smooth transform of a column can represent a discontinuity at a point (we tried log, then sqrt). Imbens (2015) uses ln(1+earn75) as a regressor as his CAUTIONARY EXAMPLE on this exact data. (2) THE INTENSIVE MARGIN IS LINEAR IN LEVELS, NOT A LOG LINK: log(re78) among earners is LEFT-skewed (-1.79) with excess kurtosis 5.34 — it is not lognormal, and a log link fed dollar regressors is exponential IN DOLLARS. (3) THE NOISE IS GAMMA, not lognormal, matching the real conditional CV. The +$1,794 benchmark is still IMPOSED (62% extensive-led), and delta is now a per-worker RAISE IN DOLLARS ($719) rather than a log-dollar shift. TWO HONEST CONSEQUENCES. The famous FEASIBILITY WALL was an artefact of the log spec: employment alone can now deliver $1,835, so it no longer binds at $1,794 (it still binds at $4,000). And NOTHING recovers the truth — OLS +$3.5k, +interactions -$2.8k, two-part -$1.7k, PPML +$3.9k — because the estimator suite has no two-part-IDENTITY learner: right family, wrong link. The residual panel's worst offender is now the zero-indicator itself, which is precisely why Dehejia-Wahba include u74 x black and u74 x hispanic interactions. Full autopsy: docs/lalonde-specification.md.",
-    code: `dag {
-  Row_source [latent,label="LaLonde rows (resample)",pos="0.0,4.4"]
-  Age [adjusted,label="age",pos="-3.3,2.7"]
-  Education [adjusted,label="education",pos="-2.35,3.15"]
-  Black [adjusted,label="black",pos="-1.4,3.35"]
-  Hispanic [adjusted,label="hispanic",pos="-0.45,3.45"]
-  Married [adjusted,label="married",pos="0.5,3.45"]
-  No_degree [adjusted,label="no degree",pos="1.45,3.35"]
-  Earnings_74 [adjusted,label="earnings '74",pos="2.4,3.15"]
-  Earnings_75 [adjusted,label="earnings '75",pos="3.35,2.7"]
-  In_program [exposure,label="in program",pos="-1.75,0.7"]
-  Earnings_78 [outcome,label="earnings '78",pos="1.6,-1.7"]
-  Row_source -> Age
-  Row_source -> Education
-  Row_source -> Black
-  Row_source -> Hispanic
-  Row_source -> Married
-  Row_source -> No_degree
-  Row_source -> Earnings_74
-  Row_source -> Earnings_75
-  Row_source -> In_program
-  Row_source -> Earnings_78
-  Age -> In_program
-  Age -> Earnings_78
-  Education -> In_program
-  Education -> Earnings_78
-  No_degree -> In_program
-  No_degree -> Earnings_78
-  Earnings_74 -> In_program
-  Earnings_74 -> Earnings_78
-  Earnings_75 -> In_program
-  Earnings_75 -> Earnings_78
-  Married -> Earnings_78
-  In_program -> Earnings_78
-}`
+    code: LALONDE_DGM_CODE
+  },
+  {
+    id: "lalonde-heterogeneous",
+    title: "Job training → earnings (the effect depends on WHO you are)",
+    domain: "dgm",
+    summary: "THE SAME +$1,794, THE SAME DATA, THE SAME CONFOUNDING as the two-part benchmark — the only thing that changes is the SHAPE of the effect, so every difference in the ledger is attributable to shape alone. Here the program's payoff depends on schooling: the treatment→earnings edge is modulated by 'no degree' (the dashed arrow on the canvas), and the average hides a 4x spread — +$978 for a high-school graduate, +$3,756 for a dropout. Both positive: nobody is harmed; the gate (more people working) is the same for everyone, and it is the RAISE that differs. THE POINT IS WHAT THE ESTIMATORS DO. The two-part-LEVELS rung, which recovers the homogeneous benchmark to within $20, now misses by ~$900 — and it misses by the SAME ~$900 at n=4,000, 20,000 and 80,000 (+2,703 / +2,603 / +2,617). That is not noise: it is a model that assumes ONE effect being asked about a world that has two, and no amount of data fixes a hypothesis class. So climb the ladder: rung 4 (two-part in levels + treatment interactions) is EXACTLY the right class, and on this data it CANNOT BE ESTIMATED — +4,352 / +1,427 / +936 across those same sample sizes, never settling, its swing dwarfing the bias it was introduced to remove. The reason is the LaLonde disease itself: 185 of 2,675 rows are treated (6.9%), and their pre-program earnings are $2,096 against the controls' $19,428 — a NINE-FOLD gap. T x L has to be fitted on 185 off-support rows and then extrapolated onto 2,490 that look like none of them. THE RUNG IS NOT BROKEN: given clean overlap it recovers both subgroup effects almost exactly (5.82 / 13.88 against an oracle 6.08 / 13.43, where the additive rung collapses them to a single 9). And note what randomisation would buy you — under a coin flip, EVERY rung gets the ATE right even while getting the shape wrong, because there is no counterfactual to impute across arms. Under confounding the shape is load-bearing. This is Smith-Todd (2005) in one screen: the right model, no way to fit it, and a benchmark that stays out of reach.",
+    code: LALONDE_DGM_CODE
   },
   {
     id: "what-if-hiv-cd4-variants",
@@ -3207,6 +3225,7 @@ function configurePractitionerExample(document: GraphDocument, id: string): Grap
   if (id === "lalonde-recover-rct") return configureLalondeReplay(next);
   if (id === "lalonde-fit-recover") return configureLalondeFitRecover(next);
   if (id === "lalonde-fit-recover-2part") return configureLalondeFitRecoverTwoPart(next);
+  if (id === "lalonde-heterogeneous") return configureLalondeHeterogeneous(next);
   if (id === "what-if-weight-gain-g-estimation") return configureWhatIfWeightGainGEstimation(next);
   if (id === "what-if-hiv-cd4-variants") return configureWhatIfHivCd4Variants(next);
   if (id === "what-if-censoring-ipcw") return configureWhatIfCensoringIpcw(next);

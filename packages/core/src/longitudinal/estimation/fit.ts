@@ -311,3 +311,69 @@ export function fitTwoPartIdentityOutcomeModel(cohort: LongitudinalCohort, outco
     return p * Math.max(0, dot(x, amount));
   };
 }
+
+/**
+ * TWO-PART, AMOUNT IN LEVELS, WITH TREATMENT INTERACTIONS — the two axes of the ladder, together.
+ *
+ * `two_part_identity` gets the FAMILY right (a gate × an amount in levels) but still assumes ONE effect for
+ * everybody. On a DGP where the effect depends on who you are, that is not a small error: it recovers the
+ * homogeneous benchmark to $20, and misses the same benchmark with a modifier attached by ~$1,000.
+ *
+ * So this rung crosses the two axes — the outcome's FAMILY and the effect's SHAPE — by expanding both margins
+ * with T × L. It is the smallest class that contains a heterogeneous two-part effect.
+ *
+ * It buys nothing for free, in two ways.
+ *
+ * The interaction is LINEAR IN THE MODIFIER: it can say "dropouts gain more than graduates" and cannot say
+ * "the payoff falls off a cliff at thirty". That is the ceiling of every rung we ship, and lifting it is
+ * exactly what the planned GAM / forest rungs are for.
+ *
+ * And a hypothesis class you cannot ESTIMATE is worth nothing either. On lalonde-heterogeneous this rung is
+ * the correctly specified model and it still fails, because 6.9% of rows are treated and their pre-program
+ * earnings differ NINE-FOLD from the controls': T × L then has to be fitted on 185 off-support rows and
+ * extrapolated onto 2,490 that resemble none of them. It swings +4,352 / +1,427 / +936 as n grows and never
+ * settles, while the additive rung sits placidly at a WRONG +2,650 forever. Right class, no identification.
+ *
+ * Given clean overlap it does exactly what it says (see outcomeLearnerCorrectness.test.ts: CATEs 5.82 / 13.88
+ * against an oracle 6.08 / 13.43, where the additive rung collapses both to 9). The learner is not the
+ * problem. LaLonde is the problem, which is why LaLonde is famous.
+ */
+export function fitTwoPartIdentityInteractionOutcomeModel(cohort: LongitudinalCohort, outcome: string, treatments: string[], covariates: string[], binary: boolean, basis: CovariateBasis = "linear"): ((row: Record<string, number>, assignment: Map<string, number> | null) => number) | null {
+  if (binary) return null;
+  const plan = buildCovariatePlan(cohort, covariates, basis);
+  const k = treatments.length;
+  // [1, T..., L...] then every T × L product — on BOTH margins: treatment may move who works AND what they earn.
+  const expand = (row: Record<string, number>, assignment: Map<string, number> | null): number[] => {
+    const base = designRow(row, treatments, plan, assignment);
+    const cov = base.slice(1 + k);
+    const out = [...base];
+    for (let i = 0; i < k; i += 1) for (const c of cov) out.push(base[1 + i]! * c);
+    return out;
+  };
+  const rows = cohort.rows.filter((r) => { const y = r[outcome]; return y !== undefined && Number.isFinite(y); });
+  if (rows.length === 0) return null;
+  if (rows.some((r) => (r[outcome] ?? 0) < 0)) return null;   // same refusal as the additive two-part rung
+  const params = expand(rows[0]!, null).length;
+  const positive = rows.filter((r) => (r[outcome] ?? 0) > 0);
+  if (positive.length < params + 2) return null;              // interactions are expensive in df — refuse, don't overfit
+
+  const anyZero = positive.length < rows.length;
+  let gate: number[] | null = null;
+  if (anyZero) {
+    const design = rows.map((r) => expand(r, null));
+    const response = rows.map((r) => ((r[outcome] ?? 0) > 0 ? 1 : 0));
+    const weights = rows.map((_, i) => cohort.weights[i] ?? 1);
+    gate = irlsLogistic(design, response, weights, params);
+    if (!gate) return null;
+  }
+  const posDesign = positive.map((r) => expand(r, null));
+  const posResponse = positive.map((r) => r[outcome]!);
+  const amount = solveNormalEquations(posDesign, posResponse, positive.map(() => 1), { ridge: 1e-6 });
+  if (!amount || !amount.every(Number.isFinite)) return null;
+
+  return (row, assignment) => {
+    const x = expand(row, assignment);
+    const p = gate ? sigmoid(dot(x, gate)) : 1;
+    return p * Math.max(0, dot(x, amount));
+  };
+}
