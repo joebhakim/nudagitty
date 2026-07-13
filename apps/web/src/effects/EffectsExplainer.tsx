@@ -1,7 +1,13 @@
 /**
  * The long-form companion to the ⓘ dots. Everything here was learned the hard way — mostly from one user's
- * failed replication — and would otherwise live only in a docs/ file nobody opens. Numbers are real:
- * measured on the embedded LaLonde observational rows.
+ * failed replication — and would otherwise live only in a docs/ file nobody opens.
+ *
+ * EVERY NUMBER HERE IS MEASURED ON THE LIVE DGP, and `effectsExplainer.test.ts` re-derives them from the
+ * engine and fails if they drift. That guard exists because this page went stale once and it was ugly: after
+ * the amount link moved from LOG to IDENTITY, the page still taught δ as "log-DOLLARS", still printed the old
+ * coefficients, and — worst — still ran a bolded PROOF that "training just gets people jobs is mathematically
+ * impossible here", which the corrected DGP had quietly made FALSE. A prose page that asserts numbers is a
+ * cache, and this is its invalidation.
  */
 export function EffectsExplainer() {
   return (
@@ -25,11 +31,21 @@ export function EffectsExplainer() {
           both.
         </p>
         <p>So a two-part outcome has <b>two</b> treatment coefficients:</p>
-        <pre className="fx-math">{`P(Y > 0)   = σ(η_gate + γ·T)      γ  —  log-ODDS   (who works)
-E[Y | Y>0] = exp(η_amt + δ·T + h)  δ  —  log-DOLLARS (how much, if you do)`}</pre>
+        <pre className="fx-math">{`P(Y > 0)   = σ(η_gate + γ·T)        γ — log-ODDS  (who works)
+
+E[Y | Y>0] = softplus(η_amt + δ·T)  δ — DOLLARS per worker   ← this DGP
+           = exp(η_amt + δ·T + h)   δ — log-DOLLARS          ← the other link`}</pre>
         <p>
-          <b>Neither is in dollars.</b> And because σ and exp are curved, each person's dollar gain is
-          different. So <b>no coefficient equals the ATE.</b>
+          The amount margin has a <b>choice of link</b>, and it changes what δ <i>means</i>. Under the identity
+          link — the one the earnings literature actually fits, and the one this example uses — δ is an honest
+          number of dollars. Under the log link it is a percentage.
+        </p>
+        <p>
+          <b>But neither is the ATE, under either link.</b> γ is log-odds. δ is dollars{" "}
+          <i>per worker, among people who work</i> — while the ATE is dollars <i>per person</i>, averaged over
+          a population that includes people who earn nothing at all. And because σ (and, under the log link,
+          exp) are curved, each person's dollar gain is different anyway. So <b>no coefficient equals the
+          ATE</b> — which is the whole problem.
         </p>
         <aside className="fx-aside">
           With a plain <b>additive</b> outcome none of this arises: <code>do(1) − do(0) = β</code> for every
@@ -45,15 +61,45 @@ E[Y | Y>0] = exp(η_amt + δ·T + h)  δ  —  log-DOLLARS (how much, if you do)
           answer — it picks a <b>curve</b>. Every point on that curve is a different causal story that delivers
           the same dollar effect:
         </p>
-        <ul className="fx-list">
-          <li><b>All pay:</b> employment unchanged, wages up <b>8.7%</b>.</li>
-          <li><b>Mixed:</b> employment 88% → 97%, wages up 3.1%. ($1,112 from working + $682 from pay.)</li>
-          <li><b>Mostly employment:</b> as far as the data will let you go — see §3.</li>
-        </ul>
-        <p>Happily, δ factors out of the exponential, so the whole curve is available in closed form:</p>
-        <pre className="fx-math">{`ATE(γ,δ) = e^δ · S(γ) − C₀     S(γ) = mean[ σ(η_gate+γ) · exp(η_amt+h) ],  C₀ = S(0)
+        <table className="fx-table fx-table-wide">
+          <thead>
+            <tr><th>story</th><th>γ</th><th>δ</th><th>from working</th><th>from pay</th><th>ATE</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>All pay</b><br /><small>employment unchanged</small></td>
+              <td>0</td><td>+$2,047<small>/worker</small></td>
+              <td>$0</td><td><b>$1,794</b></td><td>$1,794</td>
+            </tr>
+            <tr className="fx-row-strong">
+              <td><b>Mixed</b><br /><small>the imposed default — 62% extensive</small></td>
+              <td>1.315</td><td>+$719<small>/worker</small></td>
+              <td><b>$1,112</b></td><td><b>$682</b></td><td>$1,794</td>
+            </tr>
+            <tr>
+              <td><b>All employment</b><br /><small>nobody's pay changes at all</small></td>
+              <td>4.493</td><td>$0</td>
+              <td><b>$1,794</b></td><td>$0</td><td>$1,794</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          Every row is the same $1,794 and a completely different claim about the world. The middle one moves
+          employment from <b>86.7% → 94.7%</b> and adds <b>$719</b> to each worker's pay (about <b>3%</b>).
+          The last one is <i>pure</i> job-finding: the program puts people into work and not one person gets a
+          raise. Nothing in "the ATE is $1,794" chooses between them. <b>You do.</b>
+        </p>
+        <p>Solving the curve is easy under either amount link, for the same reason: δ never interacts with γ.</p>
+        <pre className="fx-math">{`extensive(γ)   = mean[ (σ(η_gate+γ) − σ(η_gate)) · a₀ ]   WHO works
+intensive(γ,δ) = mean[ σ(η_gate+γ) · (a₁ − a₀) ]          HOW MUCH they earn
+ATE            = extensive + intensive                    ← telescopes exactly
 
-  ⇒   δ(γ) = ln( (C₀ + A) / S(γ) )        ← the entire iso-ATE contour, in one line`}</pre>
+LOG link       δ factors out of exp() ⇒ closed form, no search:
+                 δ(γ) = ln( (C₀ + A) / S(γ) )
+
+IDENTITY link  δ is DOLLARS inside softplus, so it does NOT factor out.
+                 But the ATE is monotone in δ ⇒ one bisection lands it
+                 exactly. Cheaper than being clever.`}</pre>
         <p>
           That contour <i>is</i> the manifold pad in the editor. You slide along it; the dollar total never
           moves.
@@ -61,28 +107,37 @@ E[Y | Y>0] = exp(η_amt + δ·T + h)  δ  —  log-DOLLARS (how much, if you do)
       </section>
 
       <section id="wall">
-        <h2>3. The wall: some stories are <em>impossible</em></h2>
+        <h2>3. The wall: some stories are <em>impossible</em> — but check which ones</h2>
         <p>
-          The gate can, at most, put <b>everyone</b> into work. So the extensive margin has a hard ceiling —
-          and on this data it is <b>lower than the target</b>:
+          The gate can, at most, put <b>everyone</b> into work. So the extensive margin has a hard ceiling
+          (<code>S(γ) ≤ S(∞)</code> always). On this data:
         </p>
         <table className="fx-table">
           <tbody>
-            <tr><td>mean earnings under <code>do(T=0)</code></td><td><b>$20,614</b></td></tr>
-            <tr><td>mean if <i>everyone</i> worked</td><td><b>$22,087</b></td></tr>
-            <tr><td>⇒ most employment can <i>ever</i> deliver</td><td><b>$1,473</b></td></tr>
+            <tr><td>mean earnings under <code>do(T=0)</code></td><td><b>$20,465</b></td></tr>
+            <tr><td>mean if <i>everyone</i> worked</td><td><b>$22,299</b></td></tr>
+            <tr><td>⇒ most employment can <i>ever</i> deliver</td><td><b>$1,835</b></td></tr>
             <tr className="fx-row-strong"><td>the imposed target</td><td><b>$1,794</b></td></tr>
           </tbody>
         </table>
         <p className="fx-punch">
-          $1,794 &gt; $1,473. <b>"Training just gets people jobs" is mathematically impossible here.</b> Pay
-          must rise by at least <b>1.5%</b>, no matter what, and the employment share can never exceed{" "}
-          <b>~82%</b>.
+          $1,835 &gt; $1,794 — by $41. <b>The wall does not bind here.</b> "Training just gets people jobs" is,
+          barely, a story this data can tell: the third row of the table above. Ask for <b>$4,000</b> instead
+          and it bites hard — employment alone can supply only <b>46%</b> of it, and pay <i>must</i> rise.
         </p>
+        <aside className="fx-aside">
+          <b>This page used to claim the opposite</b>, in bold: a $1,473 ceiling, a hard 82% cap, pay that{" "}
+          <i>must</i> rise by 1.5%. It was a real theorem applied to a <b>broken DGP</b> — a log link fed
+          dollar-valued regressors, which is exponential <i>in dollars</i> and manufactured $1.6M earners.
+          Fixing the specification moved the ceiling to $1,835 and the impossibility evaporated. The wall is a
+          proof about a model; <b>a proof about the wrong model is just a confident mistake</b>, and it is worth
+          knowing that this is what a modelling error looks like from the inside: not an error message, a
+          <i>result</i>. See <code>docs/lalonde-specification.md</code>.
+        </aside>
         <p>
-          This is a proof, not a preference (<code>S(γ) ≤ S(∞)</code> always). The pad greys that region out.
-          Ask for 100% and it will <b>clamp your story — and still hit your number exactly.</b> We bend the
-          story; never the truth.
+          The machinery is unchanged and still right: the pad greys out whatever region is genuinely
+          unreachable, and if you ask for more than the data can deliver it will <b>clamp your story — and
+          still hit your number exactly.</b> We bend the story; never the truth.
         </p>
       </section>
 
@@ -96,7 +151,7 @@ E[Y | Y>0] = exp(η_amt + δ·T + h)  δ  —  log-DOLLARS (how much, if you do)
         <p>So the tool stores what you actually meant:</p>
         <pre className="fx-math">{`imposedEffect: { target: 1794, extensiveShare: 0.62 }     ← what you AUTHOR
 
-γ = 1.769,  δ = 0.0309                                    ← DERIVED, every reconcile`}</pre>
+γ = 1.315,  δ = $719 per worker                           ← DERIVED, every reconcile`}</pre>
         <p>
           The coefficients are re-solved from the estimand on every fit. The truth is exact by construction and{" "}
           <b>self-healing</b>: change anything, and it re-lands on $1,794.
@@ -118,10 +173,30 @@ E[Y | Y>0] = exp(η_amt + δ·T + h)  δ  —  log-DOLLARS (how much, if you do)
         </p>
         <p>
           Fit it and you learn the bias, then hand it to the simulator as the causal mechanism. On the LaLonde
-          PSID controls this gives a <b>−34%</b> "effect" of job training. <code>do()</code> will faithfully
-          report your own confounding back to you, and there is no imposed truth left to recover.
+          PSID controls the fit puts <b>δ = −$5,259</b> on that edge, and the simulated world then reports:
         </p>
-        <p>The editor now warns, and offers the one-click fix: <b>author it instead</b>.</p>
+        <table className="fx-table">
+          <tbody>
+            <tr><td>the imposed truth</td><td><b>+$1,794</b></td></tr>
+            <tr className="fx-row-strong"><td><code>do(1) − do(0)</code> after fitting the effect edge</td><td><b>−$3,553</b></td></tr>
+          </tbody>
+        </table>
+        <p className="fx-punch">
+          Job training now <b>destroys</b> $3,553 of earnings — in a world you built to contain a +$1,794
+          benefit. <code>do()</code> faithfully reports your own confounding back to you, and there is no
+          imposed truth left to recover.
+        </p>
+        <p>
+          The trap has <b>three doors</b>, and the third was the nastiest: fit the edge by hand; hit "fit
+          everything"; or — the one that bit a real replication — click <b>"Fit all from data"</b> a second
+          time <i>after</i> imposing, which silently re-pinned the effect edge. All three now refuse to touch
+          it, and the editor offers the one-click fix: <b>author it instead</b>.
+        </p>
+        <aside className="fx-aside">
+          <b>The diagnostic to keep:</b> if the <code>do()</code>-oracle is not ≈ your target, the truth is not
+          in your DGP — whatever the badge says. The imposed effect is metadata; only <code>do()</code> is
+          evidence.
+        </aside>
       </section>
 
       <section id="honesty">
@@ -156,9 +231,19 @@ E[Y | Y>0] = exp(η_amt + δ·T + h)  δ  —  log-DOLLARS (how much, if you do)
         <p>
           Each row buys a better-looking marginal by <b>spending a diagnostic</b>. We refuse the last one. An
           un-falsifiable model that also buries the endogeneity warning is the worst possible trade for a
-          teaching tool: it looks perfect and teaches nothing. So the two-part model exists, and the residual
-          check still <b>fails honestly</b> on the intensive margin — because log-normal earnings on dollar
-          predictors really is misspecified.
+          teaching tool: it looks perfect and teaches nothing.
+        </p>
+        <p>
+          So we took the first row, twice. The intensive margin is now <b>identity + gamma noise</b>, not
+          log + log-normal — because <code>log(Y)</code> among earners on these rows is <b>left</b>-skewed
+          (−1.79, excess kurtosis 5.34). It is not log-normal, and exponentiating a normal was wrong in{" "}
+          <i>shape</i>, not just in scale. And the earnings history enters in <b>levels plus a zero-indicator</b>,
+          which is what every paper in this literature does.
+        </p>
+        <p>
+          The residual check still <b>fails honestly</b> — exogeneity ε ⊥ X comes back dCor 0.31. That is the
+          point. The model got better and the diagnostic still refuses to sign off, because a better model is
+          not the same thing as a true one, and <b>we did not spend the test to buy the picture</b>.
         </p>
       </section>
 
@@ -220,7 +305,19 @@ E[Y | Y>0] = exp(η_amt + δ·T + h)  δ  —  log-DOLLARS (how much, if you do)
           <dt>Two-part / hurdle <small>(Cragg 1971)</small>; Tobit <small>(Tobin 1958)</small></dt>
           <dd>
             Model the two margins <b>separately and on purpose</b>. This is the one we implemented — and it is
-            the constructive answer to Chen–Roth.
+            the constructive answer to Chen–Roth. Note the amount margin is fitted in <b>levels</b>: Mincer's
+            log-normality is a claim about the <i>wages of the employed</i>, and this is <i>annual earnings</i>{" "}
+            including part-year workers, which is why its log has a long <b>left</b> tail instead.
+          </dd>
+
+          <dt>Zero-indicators <small>(Dehejia &amp; Wahba 1999/2002; Smith &amp; Todd 2005)</small></dt>
+          <dd>
+            <b>Not optional.</b> In Smith–Todd's table the coefficient on <code>1(re74 == 0)</code> is{" "}
+            <b>1.94–3.26</b>; the coefficient on re74 <i>in dollars</i> is <b>−0.00007</b>. The step at zero
+            carries essentially all of the selection signal and the amount carries none — and{" "}
+            <b>no smooth transform of a column can represent a discontinuity at a point.</b> That single fact
+            rules out log, sqrt, asinh and every other reparameterisation, on principle rather than on a fit
+            statistic.
           </dd>
         </dl>
         <p className="fx-punch">
@@ -233,8 +330,11 @@ E[Y | Y>0] = exp(η_amt + δ·T + h)  δ  —  log-DOLLARS (how much, if you do)
 
       <footer className="fx-footer">
         <p>
-          Deeper: <code>docs/fitting-outcome-marginals.md</code> (with a full bibliography) and{" "}
-          <code>docs/plan-imposed-estimand.md</code>.
+          Deeper: <code>docs/lalonde-specification.md</code> — how this outcome has to be modelled, with
+          citations, and an autopsy of the four things we got wrong first by guessing instead of reading.
+          Also <code>docs/plan-imposed-estimand.md</code>, and{" "}
+          <code>docs/fitting-outcome-marginals.md</code> for the philosophy (its earnings model is superseded
+          by the first).
         </p>
         <nav><a href="/">← back to nudagitty</a></nav>
       </footer>
