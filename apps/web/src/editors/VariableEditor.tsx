@@ -274,6 +274,7 @@ export function SelectionEditor(props: {
   onClearImposedEffect: () => void;
   onChangeFamily: (nodeId: string, kind: VariableModel["valueType"]) => void;
   onAddIndicator: (nodeId: string) => void;
+  onAddDummies: (nodeId: string) => void;
   onAuthorNumber: (key: string) => void;
   onSelectEdge: (edgeId: string) => void;
   onDeleteEdge: (edgeId: string) => void;
@@ -305,6 +306,7 @@ export function SelectionEditor(props: {
     onSelectEdge={props.onSelectEdge}
     onChangeFamily={props.onChangeFamily}
     onAddIndicator={props.onAddIndicator}
+    onAddDummies={props.onAddDummies}
   />;
   if (props.edge) return <EdgeEditor
     edge={props.edge}
@@ -637,6 +639,7 @@ export function VariableEditor(props: {
   onSelectEdge: (edgeId: string) => void;
   onChangeFamily: (nodeId: string, kind: VariableModel["valueType"]) => void;
   onAddIndicator: (nodeId: string) => void;
+  onAddDummies: (nodeId: string) => void;
 }) {
   const node = props.node;
   const variable = normalizeVariableModel(node.variable);
@@ -724,6 +727,7 @@ export function VariableEditor(props: {
           samples={state?.empirical.samples}
           onChangeFamily={props.onChangeFamily}
           onAddIndicator={props.onAddIndicator}
+          onAddDummies={props.onAddDummies}
         />
         {(() => {
           const isData = nodeProvenance(props.document, node.id) === "data"; // marginal comes from the data column

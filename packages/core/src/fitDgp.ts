@@ -2,7 +2,7 @@ import type { EdgeMechanism, GraphDocument, ImposedEffect, NodeCombinerKind, Nod
 import { addEdge, addNode, cloneDocument, defaultEdgeMechanism, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, reconcileSimulationSpec, withGraph } from "./graph";
 import { setLinearCoefficient, setNode, ZERO_NOISE } from "./examples/builders";
 import { datasetRows, lookupDataset, registerRuntimeDataset } from "./datasets";
-import { findPointMassColumn, pointMassColumnName, pointMassShare, withPointMassIndicator } from "./data/pointMass";
+import { categoryCandidate, findPointMassColumn, pointMassColumnName, pointMassShare, withCategoryDummies, withPointMassIndicator } from "./data/pointMass";
 import { edgeBaseline, edgeBasis, edgeContribution } from "./simulation/interpreter";
 
 // ---------- provenance keys ----------
@@ -1363,5 +1363,80 @@ export function addPointMassIndicator(input: GraphDocument, nodeId: string, at =
   const created = out.graph.edges.find((e) => e.source === lookupEdge.source && e.target === indicatorId)!;
   out.simulation.edges[created.id] = { ...defaultEdgeMechanism("table_lookup"), dataset: col.dataset, dataColumn };
   out.simulation.nodes[indicatorId] = { ...normalizeNodeMechanism(undefined), combiner: "additive", intercept: 0, noise: ZERO_NOISE };
+  return out;
+}
+
+/** Is this node's column an unordered category that needs dummies? (The OTHER thing edges cannot express.) */
+export function categoryIndicatorCandidate(document: GraphDocument, nodeId: string): { levels: number[] } | null {
+  const col = nodeColumn(document, nodeId);
+  if (!col) return null;
+  const ds = lookupDataset(col.dataset);
+  const column = ds?.columns[col.dataColumn];
+  if (!ds || !column) return null;
+  const node = document.graph.nodes.find((n) => n.id === nodeId);
+  if (!node || normalizeVariableModel(node.variable).valueType !== "categorical") return null;
+  const cand = categoryCandidate(ds, column);
+  if (!cand) return null;
+  // Already dummied? (a node reading a column that is exactly 1(x == level) for some level)
+  const already = document.graph.nodes.some((n) => n.id.startsWith(`${nodeId}_is_`));
+  return already ? null : cand;
+}
+
+/**
+ * k−1 indicator NODES for an unordered categorical, unwired. The omitted (most common) level is the
+ * REFERENCE — every other coefficient is read against it, so it is named in the label.
+ *
+ * A linear mechanism cannot consume an unordered category at all: there is no coefficient you can put on
+ * "regimen A / B / C". This is a missing WORD in the vocabulary, like the point-mass indicator — not a
+ * missing shortcut. See docs/scope-boundary.md.
+ */
+export function addCategoryDummies(input: GraphDocument, nodeId: string): GraphDocument {
+  const col = nodeColumn(input, nodeId);
+  const node = input.graph.nodes.find((n) => n.id === nodeId);
+  if (!col || !node) return input;
+  const base = lookupDataset(col.dataset);
+  const sourceColumn = base?.columns[col.dataColumn];
+  if (!base || !sourceColumn) return input;
+
+  const variable = normalizeVariableModel(node.variable);
+  const labels: Record<number, string> = {};
+  variable.categories.forEach((name, i) => { labels[i] = name.replace(/\W+/g, "_").toLowerCase(); });
+
+  const built = withCategoryDummies(base, sourceColumn, { labels });
+  if (!built) return input;
+  registerRuntimeDataset(col.dataset, built.dataset);
+
+  const lookupEdge = input.graph.edges.find((e) => e.id === col.lookupEdgeId);
+  if (!lookupEdge) return input;
+
+  const document = cloneDocument(input);
+  if (document.simulation.datasets?.[col.dataset]) document.simulation.datasets[col.dataset] = built.dataset;
+  const refLabel = variable.categories[built.reference] ?? String(built.reference);
+
+  let graph = document.graph;
+  built.levels.forEach((level, i) => {
+    const id = `${nodeId}_is_${level.value}`;
+    if (graph.nodes.some((n) => n.id === id)) return;
+    graph = addNode(graph, {
+      id,
+      label: `${variable.categories[level.value] ?? level.value} (vs ${refLabel})`,
+      position: { x: node.position.x, y: node.position.y + 90 + i * 70 },
+      roles: { ...node.roles, exposure: false, outcome: false },
+      variable: normalizeVariableModel({ ...node.variable, valueType: "binary", categories: [], unit: "" })
+    });
+    graph = addEdge(graph, lookupEdge.source, id, "directed");
+  });
+  const out = withGraph(document, graph);
+  built.levels.forEach((level) => {
+    const id = `${nodeId}_is_${level.value}`;
+    const created = out.graph.edges.find((e) => e.source === lookupEdge.source && e.target === id);
+    if (!created) return;
+    out.simulation.edges[created.id] = {
+      ...defaultEdgeMechanism("table_lookup"),
+      dataset: col.dataset,
+      dataColumn: built.dataset.columns.indexOf(level.column)
+    };
+    out.simulation.nodes[id] = { ...normalizeNodeMechanism(undefined), combiner: "additive", intercept: 0, noise: ZERO_NOISE };
+  });
   return out;
 }

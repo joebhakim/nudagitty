@@ -80,3 +80,67 @@ export function pointMassShare(dataset: CovariateDataset, column: string, at = 0
   for (const row of dataset.rows) if ((row[index] ?? Number.NaN) === at) hits += 1;
   return hits / dataset.rows.length;
 }
+
+// ================= the OTHER primitive: categorical dummies =================
+//
+// Same admission rule (docs/scope-boundary.md): a linear mechanism cannot consume an UNORDERED CATEGORY at
+// all. There is no coefficient you can put on "red / green / blue" — the arithmetic is not defined. So this
+// too is a missing WORD in the vocabulary, not a missing shortcut.
+//
+// k levels ⇒ k−1 indicators. The omitted level is the REFERENCE, and every other coefficient is read
+// against it. We drop the most common level by default, which is the convention and also the most stable
+// choice (the reference gets the most data).
+
+/** k−1 indicator columns for an unordered categorical column. Returns the new dataset + the level map. */
+export function withCategoryDummies(
+  dataset: CovariateDataset,
+  from: string,
+  options: { reference?: number; labels?: Record<number, string> } = {}
+): { dataset: CovariateDataset; reference: number; levels: Array<{ value: number; column: string }> } | null {
+  const source = dataset.columns.indexOf(from);
+  if (source < 0 || dataset.rows.length === 0) return null;
+
+  const counts = new Map<number, number>();
+  for (const row of dataset.rows) {
+    const v = row[source];
+    if (v === undefined || !Number.isFinite(v)) continue;
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  const values = [...counts.keys()].sort((a, b) => a - b);
+  // 2 levels is already an indicator; >20 is an id, not a category — refuse rather than emit 500 columns.
+  if (values.length < 3 || values.length > 20) return null;
+
+  // The reference level is the MOST COMMON one unless told otherwise: it gets the most data, so every other
+  // coefficient — which is read AGAINST it — is estimated most precisely.
+  const reference = options.reference ?? [...counts.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+  const levels = values
+    .filter((v) => v !== reference)
+    .map((v) => ({ value: v, column: `${from}_${options.labels?.[v] ?? v}` }))
+    .filter((l) => !dataset.columns.includes(l.column));
+  if (levels.length === 0) return null;
+
+  return {
+    dataset: {
+      ...dataset,
+      columns: [...dataset.columns, ...levels.map((l) => l.column)],
+      rows: dataset.rows.map((row) => [...row, ...levels.map((l) => (row[source] === l.value ? 1 : 0))])
+    },
+    reference,
+    levels
+  };
+}
+
+/** Is this column an unordered category worth dummying? (3..20 distinct values, all integers.) */
+export function categoryCandidate(dataset: CovariateDataset, column: string): { levels: number[] } | null {
+  const source = dataset.columns.indexOf(column);
+  if (source < 0 || dataset.rows.length === 0) return null;
+  const values = new Set<number>();
+  for (const row of dataset.rows) {
+    const v = row[source];
+    if (v === undefined || !Number.isFinite(v)) continue;
+    if (!Number.isInteger(v)) return null;              // a continuous column is not a category
+    values.add(v);
+    if (values.size > 20) return null;                  // an id, not a category
+  }
+  return values.size >= 3 ? { levels: [...values].sort((a, b) => a - b) } : null;
+}

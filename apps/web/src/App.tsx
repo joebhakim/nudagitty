@@ -63,6 +63,7 @@ import {
   authorNumber,
   unlearnNumber,
   setImposedEffect,
+  addCategoryDummies,
   addPointMassIndicator,
   imposeEffect,
   clearImposedEffect,
@@ -244,6 +245,7 @@ import { Checkbox, IconButton, ModuleFrame, RadioGroup, Section } from "./contro
 import { FlowGraphCanvas } from "./canvas/FlowGraphCanvas";
 import type { JointSourceCloud, CopulaCoupling } from "./canvas/types";
 import { applyFamilyChange } from "./editors/familyChange";
+import { DataPrepNote } from "./panels/DataPrepNote";
 import { SelectionEditor } from "./editors/VariableEditor";
 import { useMediaQuery } from "./app/useMediaQuery";
 import { BibliographyPanel, EffectPanel, ImplicationPanel, SummaryPanel } from "./panels/analysis";
@@ -1101,6 +1103,7 @@ export function App() {
             // A point mass is a discontinuity; no edge mechanism can represent it. It gets its own NODE,
             // unwired — the user decides what it causes. See docs/scope-boundary.md.
             onAddIndicator={(id) => commit(addPointMassIndicator(document, id))}
+            onAddDummies={(id) => commit(addCategoryDummies(document, id))}
             onAuthorNumber={(key) => commit(unpinKey(document, key))}
             // A DERIVED gate coefficient is changed by moving the STORY, on the effect's pad.
             onSelectEdge={selectEdge}
@@ -1455,6 +1458,7 @@ export function App() {
               <button type="button" aria-label="Close data table" onClick={() => setShowData(false)}><X size={16} /></button>
             </div>
             <DataTablePanel graph={document.graph} simulation={simulation} title={activeExample?.title ?? document.title} orphanColumns={dataOrphans} />
+            <DataPrepNote />
           </div>
         </div>
       )}

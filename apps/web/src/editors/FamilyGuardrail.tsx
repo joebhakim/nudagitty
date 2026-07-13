@@ -19,6 +19,15 @@ const INDICATOR_TIP =
   "A point mass is a DISCONTINUITY, and no smooth basis function — no polynomial, log, sqrt, spline or asinh — can represent one. So no functional form you can put on this edge will ever capture it; the mass needs its OWN regressor. This is not a stylistic point. On the LaLonde data the indicator 1(earnings-74 == 0) has a logit coefficient of 1.94–3.26 for programme participation, while earnings-74 IN DOLLARS has a coefficient of −0.00007 (Smith & Todd 2005, Table 3). The mass carries essentially all of the selection signal; the amount carries none. It becomes a NODE rather than a hidden term because it is a different causal construct — \"was this person employed?\" can have different causes and different effects from \"how much did they earn?\".";
 
 function Body({ w, label }: { w: FamilyWarning; label: string }) {
+  if (w.kind === "category-needs-dummies") {
+    return (
+      <p>
+        <b>{label}</b> is an <b>unordered category</b> used as a predictor. A linear term cannot consume one
+        at all — there is no coefficient you can put on a label. It needs <b>indicator variables</b>, one per
+        level against a reference.
+      </p>
+    );
+  }
   if (w.kind === "point-mass-predictor-needs-indicator") {
     return (
       <p>
@@ -66,6 +75,7 @@ export function FamilyGuardrail(props: {
   samples?: readonly number[];
   onChangeFamily: (nodeId: string, kind: VariableModel["valueType"]) => void;
   onAddIndicator?: (nodeId: string) => void;
+  onAddDummies?: (nodeId: string) => void;
 }) {
   const warnings = useMemo(
     () => familyWarnings(props.document, props.nodeId, props.samples),
@@ -81,13 +91,14 @@ export function FamilyGuardrail(props: {
   // The SAME detected fact — a pile-up at exactly zero — gets a different fix depending on the variable's
   // ROLE: as an outcome it needs a two-part family; as a predictor it needs its own indicator.
   const needsIndicator = warnings.some((w) => w.kind === "point-mass-predictor-needs-indicator");
-  const onlyIndicator = needsIndicator && fixes.length === 0;
+  const needsDummies = warnings.some((w) => w.kind === "category-needs-dummies");
+  const onlyRepresentation = (needsIndicator || needsDummies) && fixes.length === 0;
 
   return (
     <div className="family-guardrail">
       <strong>
-        {onlyIndicator ? "⚠ This predictor has a point mass" : "⚠ The family cannot produce this variable"}
-        {<InfoDot tip={onlyIndicator ? INDICATOR_TIP : GUARD_TIP} href="/effects.html#honesty" />}
+        {onlyRepresentation ? "⚠ This predictor cannot be represented as it stands" : "⚠ The family cannot produce this variable"}
+        {<InfoDot tip={onlyRepresentation ? INDICATOR_TIP : GUARD_TIP} href="/effects.html#honesty" />}
       </strong>
       {warnings.map((w) => <Body key={w.kind} w={w} label={label} />)}
       <div className="family-guardrail-fixes">
@@ -99,6 +110,11 @@ export function FamilyGuardrail(props: {
         {needsIndicator && props.onAddIndicator && (
           <button type="button" onClick={() => props.onAddIndicator!(props.nodeId)}>
             add a zero-indicator
+          </button>
+        )}
+        {needsDummies && props.onAddDummies && (
+          <button type="button" onClick={() => props.onAddDummies!(props.nodeId)}>
+            add indicator variables
           </button>
         )}
       </div>

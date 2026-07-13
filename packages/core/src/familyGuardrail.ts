@@ -1,7 +1,7 @@
 import type { GraphDocument, VariableValueType } from "./types";
 import { normalizeVariableModel } from "./graph";
 import { datasetRows } from "./datasets";
-import { nodeColumn, nodeGenerates, pointMassCandidate } from "./fitDgp";
+import { categoryIndicatorCandidate, nodeColumn, nodeGenerates, pointMassCandidate } from "./fitDgp";
 
 /**
  * Guardrails: does the declared response FAMILY match the variable it claims to model?
@@ -37,7 +37,10 @@ export type FamilyWarningKind =
   /** A PREDICTOR whose data piles up at zero. Its point mass needs its OWN regressor — no smooth basis
    *  function can represent a discontinuity, so no edge mechanism will ever do this job. Same detected fact
    *  as `zero-spike-under-additive`, different fix, selected by the variable's ROLE. */
-  | "point-mass-predictor-needs-indicator";
+  | "point-mass-predictor-needs-indicator"
+  /** An unordered CATEGORICAL used as a predictor. A linear mechanism cannot consume one at all — there is
+   *  no coefficient you can put on an unordered label. The other missing word in the vocabulary. */
+  | "category-needs-dummies";
 
 export interface FamilyWarning {
   kind: FamilyWarningKind;
@@ -112,7 +115,13 @@ export function familyWarnings(document: GraphDocument, nodeId: string, generate
     if (candidate) out.push({ kind: "point-mass-predictor-needs-indicator", nodeId, fraction: candidate.share });
   }
 
-  // 4. Negatives in the data under a log-scale family — those rows are being silently reinterpreted.
+  // 4. An unordered CATEGORY used as a predictor. Not a matter of degree like the others: a linear term
+  //    cannot consume "regimen A / B / C" AT ALL. k−1 indicator nodes, most common level as the reference.
+  if (feedsSomething && categoryIndicatorCandidate(document, nodeId)) {
+    out.push({ kind: "category-needs-dummies", nodeId, fraction: 0 });
+  }
+
+  // 5. Negatives in the data under a log-scale family — those rows are being silently reinterpreted.
   if (generates && (valueType === "positive" || valueType === "semicontinuous") && negatives.length > 0) {
     out.push({
       kind: "negatives-under-positive-family", nodeId, fraction: negatives.length / n,
