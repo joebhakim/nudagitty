@@ -1581,13 +1581,6 @@
 /* The REASON to move, not merely the option to. */
 .outcome-rung-unlock { font-size: 10px; line-height: 1.4; color: var(--muted, #8a93a0); font-style: italic; }
 .outcome-ladder-request { margin-top: 5px; font-size: 10.5px; color: var(--accent, #23716f); text-decoration: underline; }
-@media (prefers-color-scheme: dark) {
-  .outcome-ladder { background: #1b1b22; border-color: #34343e; }
-  .outcome-ladder-head > span:first-child { color: #d6d6de; }
-  .outcome-rung:hover:not(:disabled) { background: #26262f; }
-  .outcome-rung.selected { background: #17302f; }
-  .outcome-rung-body > b { color: #e4e4ea; }
-}
 
 .methods-estimator-settings {
   display: flex;
@@ -1678,12 +1671,6 @@
 .dataprep-row > pre { margin: 0; padding: 6px 8px; overflow-x: auto; border-radius: 5px; background: var(--surface-0, #fff); border: 1px solid var(--line, #e6e6ee); font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px; line-height: 1.5; white-space: pre; }
 .dataprep-foot { margin: 9px 0 0 !important; padding-top: 8px; border-top: 1px solid var(--line, #e6e6ee); font-size: 11px !important; line-height: 1.55; color: var(--muted, #667); }
 .dataprep-foot code { font-family: var(--font-mono, ui-monospace, monospace); }
-@media (prefers-color-scheme: dark) {
-  .dataprep { background: #1b1b22; border-color: #34343e; }
-  .dataprep-row { background: #26262f; }
-  .dataprep-row > pre, .dataprep-tools > button { background: #141419; border-color: #2a2a33; color: #d6d6de; }
-  .dataprep-tools > button.selected { background: #17302f; }
-}
 
 /* The specification-match WARNING. The ladder is dangerously flattering without it: the rung that matches
    the DGP recovers the truth by tautology, and read naively that says "this estimator is good". */
@@ -1692,8 +1679,3 @@
 .outcome-specmatch > span { font-size: 10.5px; line-height: 1.5; color: var(--text, #333); }
 .outcome-specmatch.soft { border-color: var(--line, #d8d8e0); border-left-color: var(--muted, #8a93a0); background: var(--surface-2, #f2f2f6); }
 .outcome-specmatch.soft > b { color: var(--muted, #667); }
-@media (prefers-color-scheme: dark) {
-  .outcome-specmatch { background: #2a2210; border-color: #5a4a24; }
-  .outcome-specmatch > b { color: #e0b877; }
-  .outcome-specmatch.soft { background: #26262f; border-color: #34343e; }
-}

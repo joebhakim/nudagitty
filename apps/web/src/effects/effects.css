@@ -64,10 +64,3 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .fx-footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--fx-line);
   font-size: 13px; color: var(--fx-muted); }
 
-@media (prefers-color-scheme: dark) {
-  :root { --fx-text: #e6e8ea; --fx-muted: #98a2ac; --fx-line: #2f333a; --fx-panel: #17191d; --fx-bg: #101215;
-    --fx-accent: #58b3ae; }
-  code { background: #22262b; }
-  .fx-table th, .fx-row-strong td { background: #1c2226; }
-  .fx-punch { background: #14262a; }
-}

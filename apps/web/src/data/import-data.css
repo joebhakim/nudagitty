@@ -31,9 +31,3 @@
 .import-builtin-title > em { font-style: normal; font-size: 10.5px; color: var(--muted, #8a93a0); font-variant-numeric: tabular-nums; }
 .import-builtin-title > i { font-style: normal; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: var(--accent-soft, #eaf5f4); color: var(--accent, #23716f); }
 .import-builtin-blurb { font-size: 11px; line-height: 1.45; color: var(--muted, #667); }
-@media (prefers-color-scheme: dark) {
-  .import-builtin { background: #1b1b22; border-color: #34343e; }
-  .import-builtin-row { background: #141419; }
-  .import-builtin-row:hover { background: #17302f; }
-  .import-builtin-title > b { color: #e4e4ea; }
-}

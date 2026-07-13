@@ -68,14 +68,3 @@
 .tutorial-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--border, #d0d0dc); }
 .tutorial-dots span.on { background: #6b40b0; }
 
-@media (prefers-color-scheme: dark) {
-  .tutorial-panel { background: #1c1c24; border-color: #34343e; }
-  .tutorial-progress, .tutorial-next { }
-  .tutorial-progress { color: #c9adf0; }
-  .tutorial-title { color: #f0f0f5; }
-  .tutorial-instruction { color: #d5d5dd; }
-  .tutorial-action { background: #2a2140; border-color: #4a3b66; color: #c9adf0; }
-  .tutorial-action:hover { background: #342a4e; }
-  .tutorial-back { background: #24242c; }
-  .tutorial-spotlight { box-shadow: 0 0 0 9999px rgba(5, 6, 12, 0.55), 0 0 0 2px #a983e0, 0 0 18px 3px rgba(169, 131, 224, 0.5); }
-}

@@ -42,8 +42,8 @@ export function UiLab() {
             Five directions, at real editor width, each stacked above the <strong>ResidualCheck</strong> precedent
             it has to sit next to. Click a provenance chip / coefficient to cycle{" "}
             <code>not-learned → fitted → authored</code> and watch how each style carries state. Numbers are the
-            real fitted values from <code>lalonde-fit-recover</code>. Dark follows your OS/browser theme
-            (the app styles dark via <code>prefers-color-scheme</code>, so a fake in-page toggle would lie).
+            real fitted values from <code>lalonde-fit-recover</code>. The app is light-only — see the note in
+            <code>base.css</code> for why the old <code>prefers-color-scheme</code> rules had to go.
           </p>
         </div>
         <div className="uilab-controls">

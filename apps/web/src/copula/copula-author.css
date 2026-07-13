@@ -2,9 +2,6 @@
 :root {
   --bg: #f7f8fa; --panel: #fff; --ink: #1a222b; --muted: #5a6670; --line: #e2e5e9; --accent: #2f7d6b;
 }
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #121619; --panel: #1b2126; --ink: #e7ecf0; --muted: #93a1ac; --line: #2c353c; --accent: #56b39c; }
-}
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 .ca-page { max-width: 960px; margin: 0 auto; padding: 28px 20px 64px; }

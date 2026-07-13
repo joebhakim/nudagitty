@@ -3,8 +3,10 @@
    --accent teal = "from data" (matches the prov-badge.data language), --chart-series-2 ochre = "you set it"
    (matches prov-badge.modeled). Purple is deliberately gone.
 
-   Dark uses @media (prefers-color-scheme: dark) — the SAME convention every real component uses — so these
-   rules are directly portable into the app once a variant is chosen (and so the lab can't lie about dark). */
+   THE APP IS LIGHT-ONLY (base.css declares `color-scheme: light` and never defines a dark palette), so the
+   lab is too. It used to carry dark rules "so the lab can't lie about dark" — but the app had no working
+   dark mode to be honest about: see the note in base.css. Do not reintroduce them here; the lab is where the
+   convention got taught. */
 
 .uilab { padding: 20px 24px 60px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: var(--text, #202428); background: #f6f7f8; min-height: 100vh; }
 .uilab-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 20px; }
@@ -115,33 +117,6 @@
 /* ───────────────────────────────────────────────────────────────────────────
    DARK — the app's real convention, so what you see here is what you'd ship.
    ─────────────────────────────────────────────────────────────────────────── */
-@media (prefers-color-scheme: dark) {
-  .uilab { background: #101014; color: #e8e8ef; }
-  .uilab-pane { background: #17171d; border-color: #2a2a33; }
-  .uilab-note, .uilab-sub, .uilab-controls { color: #8a8f99; }
-  .uilab-sub code { background: rgba(255,255,255,0.08); }
-
-  .dl-rows { background: #1b1b22; border-color: #34343e; }
-  .dl-row.st-fitted { background: rgba(35,113,111,0.20); }
-  .dl-row.st-fitted .dl-chip { color: #7fe3c6; background: #123028; border-color: #2c5a4c; }
-  .dl-row.st-authored { background: rgba(207,122,34,0.18); }
-  .dl-row.st-authored .dl-chip { color: #e0b877; background: #302610; border-color: #5a4a24; }
-  .dl-row.st-not-learned { border-left-color: #3a3a45; }
-  .dl-row.st-not-learned .dl-chip { color: #8a8f99; background: #26262f; border-color: #34343e; }
-  .dl-quiet .dl-row.st-fitted .dl-chip { color: #7fe3c6; }
-  .dl-quiet .dl-row.st-fitted:hover { background: rgba(255,255,255,0.04); }
-  .dl-fit:hover { background: rgba(35,113,111,0.20); }
-
-  .de-eq { background: #1b1b22; border-color: #34343e; }
-  .de-coef.st-fitted { color: #7fe3c6; background: rgba(35,113,111,0.22); }
-  .de-coef.st-authored { color: #e0b877; background: rgba(207,122,34,0.20); }
-
-  .dt-table { background: #1b1b22; border-color: #34343e; }
-  .dt-table th { border-bottom-color: #34343e; }
-  .dt-table td { border-bottom-color: rgba(255,255,255,0.05); }
-  .dt-table tr.st-fitted .dt-from button { color: #7fe3c6; }
-  .dt-table tr.st-authored .dt-from button { color: #e0b877; }
-}
 
 /* Lab chrome for the chosen-direction feature section. */
 .uilab-feature { margin-bottom: 34px; padding-bottom: 22px; border-bottom: 1px solid #e2e2ea; }
@@ -152,7 +127,3 @@
 .uilab-col h3 { margin: 0 0 6px; font-size: 12px; font-weight: 700; }
 .uilab-col h3 .muted { font-weight: 500; color: var(--muted, #8a8f99); }
 .uilab-section-title { margin: 0 0 12px; font-size: 15px; }
-@media (prefers-color-scheme: dark) {
-  .uilab-feature { border-bottom-color: #2a2a33; }
-  .uilab-note-wide code { background: rgba(255,255,255,0.08); }
-}

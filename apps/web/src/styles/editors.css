@@ -1138,7 +1138,6 @@ button.prov-chip { cursor: pointer; }
 .prov-chip.authored { color: #c08a2e; }
 .generation-fit { align-self: flex-start; appearance: none; border: none; background: #6b40b0; color: #fff; font-size: 12.5px; font-weight: 700; border-radius: 7px; padding: 7px 13px; cursor: pointer; margin-top: 8px; }
 .generation-fit:hover { background: #5a2fa0; }
-@media (prefers-color-scheme: dark) { .generation-equation { border-color: #34343e; background: #1b1b22; } .prov-chip.pinned { background: #2a2140; border-color: #4a3b66; color: #c9adf0; } }
 
 /* Marginal (from data) — a stated fact, separate from the learned dependence. */
 .marginal-row { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 10px; font-size: 12px; line-height: 1.4; flex-wrap: wrap; }
@@ -1161,7 +1160,6 @@ button.prov-chip { cursor: pointer; }
 .dep-control button:nth-child(1).active { background: #9aa0b4; }
 .dep-control button:nth-child(2).active { background: #6b40b0; }
 .dep-control button:nth-child(3).active { background: #c08a2e; }
-@media (prefers-color-scheme: dark) { .prov-badge.data { color: #7fe3c6; background: #123028; border-color: #2c5a4c; } .prov-badge.modeled { color: #e0b877; background: #302610; border-color: #5a4a24; } .dep-control { border-color: #34343e; } .dep-control button + button { border-left-color: #34343e; } }
 
 /* Residual-independence (exogeneity) check — the ANM spec test on a fitted continuous node. */
 .residual-check { margin-top: 12px; padding: 9px 10px; border: 1px solid var(--border, #e2e2ea); border-left-width: 3px; border-radius: 7px; background: var(--surface-1, #fbfbfd); }
@@ -1185,7 +1183,6 @@ button.prov-chip { cursor: pointer; }
 .rtest.warn { background: rgba(192,138,46,0.10); border-left-color: #c08a2e; }
 .rt-name { font-weight: 600; }
 .rt-stat { font-variant-numeric: tabular-nums; color: var(--text-muted, #667); white-space: nowrap; }
-@media (prefers-color-scheme: dark) { .residual-identif { background: #2a2140; color: #c9adf0; border-color: #4a3b66; } }
 .residual-scatter { display: block; margin: 6px 0; border: 1px solid var(--border, #ececf2); border-radius: 5px; background: var(--surface-0, #fff); }
 .resid-zero { stroke: #b9b9c6; stroke-width: 1; stroke-dasharray: 3 3; }
 .resid-axis { stroke: var(--line, #c9c9d4); stroke-width: 1; }
@@ -1202,12 +1199,6 @@ button.prov-chip { cursor: pointer; }
 .effect-fit-warning code { font-family: var(--font-mono, ui-monospace, monospace); }
 .effect-fit-warning > button { appearance: none; border: 1px solid #c08a2e; background: #fff; color: #8a5a12; border-radius: 6px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; cursor: pointer; }
 .effect-fit-warning > button:hover { background: #f6ecd8; }
-@media (prefers-color-scheme: dark) {
-  .effect-fit-warning { background: #2a2210; border-color: #5a4a24; }
-  .effect-fit-warning > strong { color: #e0b877; }
-  .effect-fit-warning > button { background: #1b1b22; color: #e0b877; border-color: #5a4a24; }
-  .effect-fit-warning > button:hover { background: #302610; }
-}
 
 /* ---- family guardrail: the declared family cannot have produced this variable ----
    RED, unlike the ochre fit-warning: this is not a design choice with a tradeoff, it is a model that
@@ -1219,12 +1210,6 @@ button.prov-chip { cursor: pointer; }
 .family-guardrail-fixes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
 .family-guardrail-fixes > button { appearance: none; border: 1px solid #b64a4a; background: #fff; color: #8f2f2f; border-radius: 6px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; cursor: pointer; }
 .family-guardrail-fixes > button:hover { background: #f7e0e0; }
-@media (prefers-color-scheme: dark) {
-  .family-guardrail { background: #2b1717; border-color: #5c3030; }
-  .family-guardrail > strong { color: #e59a9a; }
-  .family-guardrail-fixes > button { background: #1b1b22; color: #e59a9a; border-color: #5c3030; }
-  .family-guardrail-fixes > button:hover { background: #3a1e1e; }
-}
 
 /* ---- impose-an-effect: the create card ----
    Deliberately the ACCENT frame, not the ochre warning frame — imposing is the correct, constructive act,
@@ -1242,11 +1227,6 @@ button.prov-chip { cursor: pointer; }
 .impose-shape { margin: 7px 0 0 !important; padding: 6px 8px; font-size: 10.5px !important; line-height: 1.5; border-radius: 5px; background: var(--surface-2, #f2f2f6); }
 .imposed-clear { margin-left: auto; appearance: none; border: none; background: none; padding: 0; font-size: 10.5px; color: var(--muted, #667); text-decoration: underline; cursor: pointer; }
 .imposed-clear:hover { color: var(--text, #222); }
-@media (prefers-color-scheme: dark) {
-  .impose-card { background: #1b1b22; border-color: #34343e; }
-  .impose-row input { background: #141419; border-color: #2a2a33; }
-  .impose-shape { background: #26262f; }
-}
 
 /* ---- imposed-effect manifold pad: one target, many stories ---- */
 .imposed-pad { margin: 8px 0; padding: 9px 10px; border: 1px solid var(--border, #e2e2ea); border-left: 3px solid var(--accent, #23716f); border-radius: 7px; background: var(--surface-1, #fbfbfd); }
@@ -1278,12 +1258,6 @@ button.prov-chip { cursor: pointer; }
 .imposed-readout span { color: var(--muted, #667); }
 .imposed-readout b { font-variant-numeric: tabular-nums; }
 .imposed-foot { font-size: 10.5px !important; opacity: 0.9; margin-top: 5px !important; line-height: 1.45; }
-@media (prefers-color-scheme: dark) {
-  .imposed-pad { background: #1b1b22; border-color: #34343e; }
-  .imposed-pad-svg { background: #141419; border-color: #2a2a33; }
-  .imposed-readout > div { background: #26262f; }
-  .ipad-handle { stroke: #141419; }
-}
 
 .marginal-dist { margin: 4px 0 2px; }
 .marginal-dist > summary { cursor: pointer; font-size: 11px; color: var(--muted, #667); list-style: revert; }
@@ -1293,7 +1267,6 @@ button.prov-chip { cursor: pointer; }
    distinct sub-population, NOT an error (so deliberately not the fail-red used by the residual verdict). */
 .marg-bar { fill: var(--chart-series-1, #23716f); opacity: 0.5; }
 .marg-spike { fill: var(--chart-series-2, #cf7a22); opacity: 0.9; }
-@media (prefers-color-scheme: dark) { .marginal-plot { background: #141419; border-color: #2a2a33; } }
 .residual-bars { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
 .residual-bar-row { display: flex; align-items: center; gap: 7px; font-size: 11px; }
 .rb-label { flex: 0 0 80px; color: var(--text-muted, #667); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1301,7 +1274,6 @@ button.prov-chip { cursor: pointer; }
 .rb-track > i { display: block; height: 100%; background: #6b40b0; }
 .rb-val { flex: 0 0 30px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted, #667); }
 .residual-foot { font-size: 10.5px !important; opacity: 0.85; }
-@media (prefers-color-scheme: dark) { .residual-check { background: #1b1b22; border-color: #34343e; } .residual-scatter { background: #141419; border-color: #2a2a33; } .rb-track { background: #2a2a33; } .resid-axis { stroke: #3a3a45; } .resid-tick, .resid-axlabel { fill: #8a8f99; } }
 
 /* Diagnostics ledger — a collapsible section in the left column; collapsed unless a check needs review. */
 .checks-panel { border: 1px solid #cbd5dc; border-left: 4px solid #8a93a5; border-radius: 9px; background: #fff; box-shadow: 0 1px 3px rgba(24,35,42,0.07); overflow: hidden; }
@@ -1333,12 +1305,6 @@ button.prov-chip { cursor: pointer; }
 .cr-p { color: var(--text-muted, #667); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cr-glyph { flex: 0 0 14px; text-align: center; font-weight: 700; }
 .check-row.pass .cr-glyph { color: #1f8a6d; } .check-row.warn .cr-glyph { color: #c08a2e; } .check-row.fail .cr-glyph { color: #c0392b; }
-@media (prefers-color-scheme: dark) {
-  .checks-panel { background: #1b1b22; border-color: #34343e; }
-  .checks-node { background: #202029; border-bottom-color: #2a2a33; } .checks-node:hover { background: #26262f; }
-  .checks-group { border-color: #2a2a33; } .checks-run { background: #22222b; border-color: #34343e; }
-  .checks-badge.ok { background: #123028; color: #7fe3c6; } .checks-badge.fail { background: #3a1a16; color: #e6a99f; } .checks-badge.none { background: #26262f; color: #7a8090; }
-}
 
 /* ───────────────────────────────────────────────────────────────────────────
    EQUATION BLOCK — the generation block rendered as the node's real structural
@@ -1368,10 +1334,6 @@ button.prov-chip { cursor: pointer; }
 .eq-term.is-derived .eq-num { cursor: default; opacity: 0.85; }
 .eq-derived { appearance: none; margin-left: 2px; padding: 1px 6px; border: 1px solid var(--accent, #23716f); border-radius: 999px; background: var(--accent-soft, #dff0ee); color: var(--accent, #23716f); font-size: 9.5px; font-weight: 700; white-space: nowrap; cursor: pointer; }
 .eq-derived:hover { background: var(--accent, #23716f); color: #fff; }
-@media (prefers-color-scheme: dark) {
-  .eq-derived { background: #12302c; border-color: #2f6f68; color: #7fe3c6; }
-  .eq-derived:hover { background: #2f6f68; color: #fff; }
-}
 .eq-lead { flex: 0 0 auto; font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--muted, #65717d); }
 .eq-op, .eq-mul { color: var(--muted, #99a); font-family: ui-monospace, monospace; }
 .eq-parent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1428,19 +1390,6 @@ button.prov-chip { cursor: pointer; }
 .eq-pop-state.active.st-not-learned { background: #f0f1f4; border-color: #dfe1e6; color: var(--muted, #65717d); }
 .eq-pop-note { font-size: 9.5px; line-height: 1.4; color: var(--muted, #8a8f99); margin-top: 2px; }
 
-@media (prefers-color-scheme: dark) {
-  .eq-body { background: #1b1b22; border-color: #34343e; }
-  .eq-shape-row { border-bottom-color: #2a2a33; }
-  .eq-shape { color: #c9d2da; }
-  .eq-num:hover { background: rgba(255,255,255,0.10); }
-  .eq-pop { background: #1b1b22; border-color: #34343e; box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
-  .eq-pop-input { background: #101014; border-color: #34343e; color: #e8e8ef; }
-  .eq-pop-state { color: #e8e8ef; }
-  .eq-pop-state:hover { background: rgba(255,255,255,0.07); }
-  .eq-pop-sep { background: #34343e; }
-  .eq-num.st-fitted { color: #7fe3c6; }
-  .eq-num.st-authored { color: #e0b877; }
-}
 
 /* ---- two-part AMOUNT MODEL: the second, independent choice ----
    Previously reachable only via an unlabelled "▾" offering "positive softplus" — so the specification the
@@ -1453,11 +1402,6 @@ button.prov-chip { cursor: pointer; }
 .amount-choice > button.selected { border-color: var(--accent, #23716f); background: var(--accent-soft, #eaf5f4); }
 .amount-choice > button > b { font-size: 11.5px; color: var(--text, #222); }
 .amount-choice > button > span { font-size: 10px; line-height: 1.35; color: var(--muted, #8a93a0); }
-@media (prefers-color-scheme: dark) {
-  .amount-choice > button { background: #141419; border-color: #2a2a33; }
-  .amount-choice > button.selected { background: #17302f; }
-  .amount-choice > button > b { color: #e4e4ea; }
-}
 
 /* The equation's parent term is a link to its arrow. The canvas cannot be relied on: an imported grid
    layout draws an edge between two NEIGHBOURING nodes entirely underneath them, so it is unclickable —
@@ -1472,4 +1416,3 @@ button.prov-chip { cursor: pointer; }
 .edge-derived-mech > summary { cursor: pointer; font-size: 11px; color: var(--muted, #667); list-style: revert; }
 .edge-derived-mech > summary:hover { color: var(--text, #222); }
 .edge-derived-mech > p { margin: 6px 0 0; font-size: 11px; line-height: 1.45; }
-@media (prefers-color-scheme: dark) { .edge-derived-mech { background: #1b1b22; border-color: #34343e; } }

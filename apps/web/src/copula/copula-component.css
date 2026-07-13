@@ -5,12 +5,6 @@
   --ca-accent: #2f7d6b; --ca-accent2: #2563aa; --ca-chip: #eef3f1; --ca-sel: #dcefe9;
   font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--ca-ink);
 }
-@media (prefers-color-scheme: dark) {
-  .copula-author {
-    --ca-bg: #121619; --ca-panel: #1b2126; --ca-ink: #e7ecf0; --ca-muted: #93a1ac; --ca-line: #2c353c;
-    --ca-accent: #56b39c; --ca-accent2: #6fa8dc; --ca-chip: #23302c; --ca-sel: #24463d;
-  }
-}
 .copula-author * { box-sizing: border-box; }
 .ca-line { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px; background: var(--ca-panel); border: 1px solid var(--ca-line); border-radius: 10px; margin-bottom: 12px; }
 .ca-chip { flex: 1; min-width: 130px; border: 1px solid var(--ca-line); border-radius: 8px; padding: 7px 8px; background: var(--ca-bg); }
@@ -59,7 +53,6 @@
 .ca-confess-btn { margin-left: 8px; border: 1px solid var(--ca-line); background: transparent; color: var(--ca-accent2); border-radius: 6px; padding: 1px 8px; font-size: 10.5px; cursor: pointer; }
 .ca-confess-note { border-left: 3px solid var(--ca-accent2); }
 .ca-confess { color: #b4231f; font-weight: 700; }
-@media (prefers-color-scheme: dark) { .ca-confess { color: #ef6b64; } }
 
 /* rich conditional-function editor */
 .ca-edge-moderated { cursor: pointer; }
