@@ -1,9 +1,9 @@
-import type { EdgeMechanism, GraphDocument, ImposedEffect, NodeCombinerKind, NodeDistribution, NodeGate } from "./types";
+import type { EdgeMechanism, GraphDocument, ImposedEffect, NodeCombinerKind, NodeDistribution, NodeGate, NodeMechanism } from "./types";
 import { addEdge, addNode, cloneDocument, defaultEdgeMechanism, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, reconcileSimulationSpec, withGraph } from "./graph";
 import { setLinearCoefficient, setNode, ZERO_NOISE } from "./examples/builders";
 import { datasetRows, lookupDataset, registerRuntimeDataset } from "./datasets";
 import { categoryCandidate, findPointMassColumn, pointMassColumnName, pointMassShare, withCategoryDummies, withPointMassIndicator } from "./data/pointMass";
-import { edgeBaseline, edgeBasis, edgeContribution, softplusMean } from "./simulation/interpreter";
+import { edgeBaseline, edgeBasis, edgeContribution, interactionContribution, softplusMean } from "./simulation/interpreter";
 
 // ---------- provenance keys ----------
 const edgeKey = (id: string) => `e:${id}`;
@@ -284,6 +284,9 @@ export interface ImposedEffectContext {
   decompose: (gamma: number, delta: number) => { extensive: number; intensive: number; ate: number };
   /** Solve the contour for a requested extensive share (clamped to what's feasible). */
   solve: (share: number) => ImposedEffectSolution;
+  /** True if an AUTHORED INTERACTION also moves with the exposure — i.e. the effect is HETEROGENEOUS, so the
+   *  target is a population average and no single unit need receive it. δ is then a residual, not "the effect". */
+  heterogeneous: boolean;
 }
 
 export interface ImposedEffectSolution {
@@ -296,6 +299,44 @@ export interface ImposedEffectSolution {
 }
 
 const sigmoid01 = (x: number) => 1 / (1 + Math.exp(-Math.max(-40, Math.min(40, x))));
+
+/**
+ * The per-row shift an AUTHORED INTERACTION adds to η when the exposure flips 0 → 1.
+ *
+ * An interaction (γ·T·X, or T gated by a soft step in X) is PART OF THE EFFECT: it moves the linear predictor
+ * when — and only when — T flips. So the treated arm's η is `ηa + δ + shift_i`, not `ηa + δ`, and every
+ * equation in imposedEffectContext ("choose δ to hold the ATE at the target") solves for the WRONG δ if the
+ * shift is dropped. It WAS dropped: the pad reported exactly $1,794 while do() delivered $2,433, and on the
+ * additive branch the miss was exactly κ·E[X] — dead-on linear in the coefficient nobody was looking at.
+ *
+ * The shift does not involve δ, so it is a per-row CONSTANT and slots into the existing math without changing
+ * its shape — even the LOG closed form survives, with S(γ) reweighted by e^shift.
+ *
+ * Returns [] when there are no interactions (the fast paths stay bit-identical, and the additive branch stays
+ * data-free), or null when a modifier's value cannot be read — better a missing pad than a confident lie.
+ */
+function interactionShifts(document: GraphDocument, outcome: string, exposure: string, mech: NodeMechanism): number[] | null {
+  if (mech.interactions.length === 0) return [];
+  const ids = new Set<string>();
+  for (const it of mech.interactions) {
+    if (it.kind === "product") { ids.add(it.left); ids.add(it.right); }
+    else { ids.add(it.source); ids.add(it.gate); }
+  }
+  ids.delete(exposure);                          // the exposure is what we FLIP, not something we read
+  const cols: Array<[string, number]> = [];
+  for (const id of ids) {
+    const c = nodeColumn(document, id);
+    if (!c) return null;                         // a synthetic modifier: no column ⇒ no distribution to average over
+    cols.push([id, c.dataColumn]);
+  }
+  const own = nodeColumn(document, outcome);
+  if (!own) return null;
+  return datasetRows(own.dataset).map((r) => {
+    const v: Record<string, number> = {};
+    for (const [id, ci] of cols) v[id] = r[ci] ?? 0;
+    return interactionContribution({ ...v, [exposure]: 1 }, mech) - interactionContribution({ ...v, [exposure]: 0 }, mech);
+  });
+}
 
 /** Bisection for a monotone-increasing f: find x with f(x) = target, expanding the bracket as needed. */
 function bisectMonotone(f: (x: number) => number, target: number, lo: number, hi: number): number {
@@ -329,16 +370,28 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
     valueType === "semicontinuous" ? "two_part" : valueType === "positive" ? "log" : "additive";
   const target = imposed.target;
 
-  // ADDITIVE: the coefficient IS the ATE. No data needed — this is why the additive example is
-  // hand-reproducible (you literally type the number).
+  const mech = normalizeNodeMechanism(document.simulation.nodes[outcome]);
+  // The EFFECT MODIFIERS. Must be read before any branch: an interaction moves η with T on EVERY family, so
+  // "the coefficient IS the ATE" is only true when there are none.
+  const shifts = interactionShifts(document, outcome, exposure, mech);
+  if (shifts === null) return null;                 // a modifier we cannot evaluate ⇒ no pad, rather than a wrong one
+  const heterogeneous = shifts.some((v) => v !== 0);
+  const shiftAt = (i: number) => shifts[i] ?? 0;
+  const meanShift = shifts.length > 0 ? shifts.reduce((s, v) => s + v, 0) / shifts.length : 0;
+
+  // ADDITIVE: the coefficient IS the ATE — unless a modifier is also switched on by T, in which case the
+  // modifier already delivers mean(shift) of the effect for free and δ must give back exactly that much.
+  // (With no interactions meanShift is 0, no data is read, and this stays the hand-reproducible branch:
+  //  you literally type the number.)
   if (family === "additive") {
-    const solve = (): ImposedEffectSolution => ({ gamma: 0, delta: target, extensiveShare: 0, clamped: false, extensive: 0, intensive: target });
+    const delta = target - meanShift;
+    const solve = (): ImposedEffectSolution => ({ gamma: 0, delta, extensiveShare: 0, clamped: false, extensive: 0, intensive: target });
     return {
       family, identityAmount: false, exposure, outcome, edgeId: edge.id, target,
       c0: 0, amax: 0, s: () => 0, maxExtensiveShare: 0, deltaFloor: -Infinity,
-      deltaFor: () => target,
+      deltaFor: () => delta,
       decompose: () => ({ extensive: 0, intensive: target, ate: target }),
-      solve
+      solve, heterogeneous
     };
   }
 
@@ -348,7 +401,6 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
   const rows = datasetRows(col.dataset);
   if (rows.length < 4) return null;
 
-  const mech = normalizeNodeMechanism(document.simulation.nodes[outcome]);
   const sd = mech.noise.kind === "normal" ? mech.noise.sd : 0;
   const h = (sd * sd) / 2;
   const gate = mech.gate;
@@ -386,29 +438,52 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
     amount.push(identityAmount ? softplusMean(a, mech.intercept) : Math.exp(a + h));
   }
   const n = rows.length;
+  // The treated arm sits at ηa + δ + shift_i. Under the LOG link that is a0·e^δ·e^shift — δ still factors out,
+  // which is what keeps the closed form alive; under IDENTITY it is just another dollar term inside softplus.
   const amountAt = (i: number, delta: number) =>
-    identityAmount ? softplusMean(etaA[i]! + delta, mech.intercept) : amount[i]! * Math.exp(delta);
+    identityAmount ? softplusMean(etaA[i]! + delta + shiftAt(i), mech.intercept) : amount[i]! * Math.exp(delta + shiftAt(i));
 
-  // LOG (single-part, no gate): everyone "participates", so ATE = (e^δ − 1)·Ā ⇒ δ = ln(1 + A/Ā).
+  // Ā = the baseline mean amount (untreated). Āₘ reweights it by the modifier, e^shift — so under the log link
+  // it is the mean amount a treated worker would earn at δ = 0, i.e. from the interaction ALONE. They are the
+  // same number whenever there are no interactions, which is what keeps every existing example bit-identical.
   const abar = amount.reduce((s, v) => s + v, 0) / n;
+  const abarMod = heterogeneous
+    ? amount.reduce((s, v, i) => s + v * Math.exp(shiftAt(i)), 0) / n
+    : abar;
+
+  // LOG (single-part, no gate): everyone "participates", so ATE = e^δ·Āₘ − Ā ⇒ δ = ln((Ā + A)/Āₘ).
+  // With no modifier Āₘ = Ā and this collapses to the familiar δ = ln(1 + A/Ā).
   if (family === "log") {
-    const delta = Math.log(1 + target / Math.max(1e-9, abar));
+    const delta = Math.log(Math.max(1e-9, abar + target) / Math.max(1e-9, abarMod));
     const solve = (): ImposedEffectSolution => ({ gamma: 0, delta, extensiveShare: 0, clamped: false, extensive: 0, intensive: target });
     return {
       family, identityAmount: false, exposure, outcome, edgeId: edge.id, target,
       c0: abar, amax: abar, s: () => abar, maxExtensiveShare: 0, deltaFloor: -Infinity,
       deltaFor: () => delta,
       decompose: () => ({ extensive: 0, intensive: target, ate: target }),
-      solve
+      solve, heterogeneous
     };
   }
 
   // TWO-PART.
+  // S(γ) stays on BASELINE amounts: it is the gate's own reach, and it is what c0 / amax / maxExtensiveShare
+  // (the feasibility wall) are all defined against. The modifier does not change WHO works — only what the
+  // ones who do work earn — so it must NOT leak into this sum.
   const s = (gamma: number) => {
     let acc = 0;
     for (let i = 0; i < n; i += 1) acc += sigmoid01(etaG[i]! + gamma) * amount[i]!;
     return acc / n;
   };
+  // …whereas the ATE needs the amounts the TREATED actually earn, which the modifier does move. Under the log
+  // link δ factors out of exp(ηa + δ + shift), so the whole δ-dependence is still a single e^δ multiplying
+  // this sum — the closed form survives, just reweighted by e^shift. Identical to `s` when nothing is modified.
+  const sMod = heterogeneous
+    ? (gamma: number) => {
+        let acc = 0;
+        for (let i = 0; i < n; i += 1) acc += sigmoid01(etaG[i]! + gamma) * amount[i]! * Math.exp(shiftAt(i));
+        return acc / n;
+      }
+    : s;
   const c0 = s(0);
   const amax = abar;                                     // S(+∞): everyone participates
   const maxExtensive = Math.max(0, amax - c0);           // the most employment alone can ever deliver
@@ -431,9 +506,9 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
   //            δ = (A − extensive(γ)) / mean[σ(ηg+γ)] is an excellent SEED but not exact. The ATE is
   //            monotone increasing in δ, so one bisection makes it exact — cheaper than being clever.
   const ateAt = (gamma: number, delta: number) => decompose(gamma, delta).ate;
-  const deltaFloorLog = Math.log((c0 + target) / Math.max(1e-9, amax));
+  const deltaFloorLog = Math.log((c0 + target) / Math.max(1e-9, abarMod));
   const deltaFor = (gamma: number) => {
-    if (!identityAmount) return Math.log((c0 + target) / Math.max(1e-9, s(gamma)));
+    if (!identityAmount) return Math.log((c0 + target) / Math.max(1e-9, sMod(gamma)));
     let lo = -Math.abs(mech.intercept) - Math.abs(target), hi = Math.abs(mech.intercept) + Math.abs(target) * 4;
     for (let k = 0; k < 90; k += 1) { const m = (lo + hi) / 2; if (ateAt(gamma, m) < target) lo = m; else hi = m; }
     return (lo + hi) / 2;
@@ -452,7 +527,7 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
     return { gamma, delta, extensiveShare: share, clamped, extensive: d.extensive, intensive: d.intensive };
   };
 
-  return { family, identityAmount, exposure, outcome, edgeId: edge.id, target, c0, amax, s, maxExtensiveShare, deltaFloor, deltaFor, decompose, solve };
+  return { family, identityAmount, exposure, outcome, edgeId: edge.id, target, c0, amax, s, maxExtensiveShare, deltaFloor, deltaFor, decompose, solve, heterogeneous };
 }
 
 /** Which edge an imposed effect lives on. Cheap — no dataset reads (unlike imposedEffectContext). */
