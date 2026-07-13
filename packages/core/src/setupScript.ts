@@ -50,8 +50,14 @@ export const SETUP_GLYPHS = {
   normal: "Φ", gamma: "Γ", bernoulli: "β", poisson: "λ", lognormal: "Λ", uniform: "∪",
   student: "t", beta: "β", laplace: "L", exponential: "ε", constant: "·", categoricalNoise: "χ",
   modifier: "×",     // it IS the interaction, T × L
-  // owner — the ink ramp
-  plumbing: "·", fromData: "░", fitted: "▒", authored: "█",
+  // PROVENANCE — and here too, the notation already exists. `^` is the HAT: β̂ has meant "estimated from
+  // data" to every statistician alive. `*` is β*/θ*, the standard mark for the TRUE or declared parameter —
+  // the one you set rather than learned. `x` is the raw datum: this node simply replays its column, so its
+  // equation numbers are not parameters at all. Visual weight still rises · < x < ^ < *, so the gestalt of
+  // "how much of this model is ME" survives — but now every mark also SAYS what it is.
+  //   (Block shading said only "more ink". Blocks measure; symbols mean. Blocks are kept for real
+  //    MAGNITUDES — `extensive ██████░░░░ 62%` — which is the one job a symbol cannot do.)
+  plumbing: "·", fromData: "x", fitted: "^", authored: "*",
   none: "·", blank: " "
 } as const;
 
@@ -348,7 +354,16 @@ export function renderSetupScript(s: SetupScript, cw = 4): string {
   const tag = (n: SetupNode) => dense ? (IDX[s.nodes.indexOf(n)] ?? "?") : n.key;
   // Only rows that carry something. `error`, `coupled`, `selected`, `instrum`, `modifier`, `seen` vanish on
   // a setup that does not use them — so the script never pads itself with blanks pretending to be content.
-  const live = ROWS.filter((r) => !r || s.nodes.some((n) => n.cells[r[1]].trim() !== ""));
+  const kept = ROWS.filter((r) => !r || s.nodes.some((n) => n.cells[r[1]].trim() !== ""));
+  // …and a BAND whose every row vanished must take its separator with it, or the script draws two rules back
+  // to back around nothing (tutoring-scores adjusts for nothing, so its entire middle band is empty). Keep
+  // EXACTLY ONE rule between any two surviving bands — never zero, never two.
+  const live: typeof ROWS = [];
+  for (const r of kept) {
+    if (r) live.push(r);
+    else if (live.length && live[live.length - 1]) live.push(null);
+  }
+  while (live.length && !live[live.length - 1]) live.pop();
   // TRUNCATE, never overflow: a label wider than its group silently pushes every column right of it.
   const centre = (t: string, w: number) => {
     const cut = [...t].slice(0, w).join("");
@@ -375,7 +390,9 @@ export function renderSetupScript(s: SetupScript, cw = 4): string {
   L.push("edges     " + SETUP_GLYPHS.plumbing.repeat(e.plumbing) + SETUP_GLYPHS.fitted.repeat(e.fitted) +
          SETUP_GLYPHS.authored.repeat(e.authored));
   for (const f of s.facts) L.push(f);
-  if (s.effectOwner) L.push(`effect    ${s.effectOwner === "authored" ? "█ authored — the imposed truth is intact" : "▒ FITTED — the imposed truth is GONE"}`);
+  if (s.effectOwner) L.push(`effect    ${s.effectOwner === "authored"
+    ? "*  authored — the imposed truth is intact"
+    : "^  FITTED — the imposed truth is GONE; the DGP now carries the confounded association"}`);
   if (s.warnings.length) {
     L.push("");
     for (const w of s.warnings) L.push("  ✗ " + w);
