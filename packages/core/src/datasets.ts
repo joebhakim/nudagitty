@@ -101,3 +101,75 @@ export function documentDatasets(document: GraphDocument): Array<{ dataset: stri
 export function orphanDataColumns(document: GraphDocument): string[] {
   return documentDatasets(document).flatMap((entry) => entry.orphanColumns);
 }
+
+// ---------- built-in datasets, offerable as a starting point ----------
+//
+// Every one of these is already compiled into the bundle (that is how `table_lookup` resolves them), so
+// "hosting" them costs nothing: we just have to let a user START from one, the way they would from an
+// uploaded CSV. Same code path, same type inference, same practitioner walkthrough — minus the upload.
+
+export interface BuiltInDataset {
+  id: string;
+  label: string;
+  blurb: string;
+  rows: number;
+  columns: number;
+  treatment?: string;
+  outcome?: string;
+  /** The experimental benchmark, where one exists — the number an imposed effect would be set to. */
+  trueAte?: number;
+}
+
+const BUILT_IN_BLURBS: Record<string, { label: string; blurb: string }> = {
+  "lalonde-obs": {
+    label: "LaLonde — NSW treated + PSID controls",
+    blurb: "The canonical observational-methods benchmark. Job training vs earnings, with a comparison group so unlike the treated that no observational method reliably recovers the experimental answer. Carries u74/u75 (the zero-earnings indicators every paper in this literature uses)."
+  },
+  lalonde: {
+    label: "LaLonde — the NSW randomised trial",
+    blurb: "The experiment itself. Treatment is randomised, so the crude difference IS the causal effect — the yardstick the observational version is graded against."
+  },
+  nhefs: {
+    label: "NHEFS — smoking cessation → weight gain",
+    blurb: "The epidemiology workhorse (Hernán & Robins). Real covariates; quitting smoking vs 10-year weight change."
+  },
+  ihdp: {
+    label: "IHDP — infant health, CATE benchmark",
+    blurb: "Real covariates, simulated outcome, so the individual treatment effect is KNOWN. The standard heterogeneous-effect benchmark."
+  },
+  twins: {
+    label: "Twins — both potential outcomes",
+    blurb: "Same-sex twins under 2kg: the co-twin gives you Y(0) and Y(1) for the same pair. Ground truth without simulation."
+  }
+};
+
+/** The datasets we offer as a starting point, with the metadata a user needs to choose between them. */
+export function builtInDatasets(): BuiltInDataset[] {
+  return Object.keys(BUILT_IN_BLURBS)
+    .map((id) => {
+      const ds = DATASETS[id];
+      const meta = BUILT_IN_BLURBS[id];
+      if (!ds || !meta) return null;
+      return {
+        id, label: meta.label, blurb: meta.blurb,
+        rows: ds.rows.length, columns: ds.columns.length,
+        ...(ds.treatment ? { treatment: ds.treatment } : {}),
+        ...(ds.outcome ? { outcome: ds.outcome } : {}),
+        ...(typeof ds.trueAte === "number" ? { trueAte: ds.trueAte } : {})
+      };
+    })
+    .filter((d): d is BuiltInDataset => d !== null);
+}
+
+/**
+ * A built-in dataset as CSV. Deliberately routed through the SAME text→DataFrame→document path an uploaded
+ * file takes, rather than a shortcut: identical type inference, identical node construction, so anything
+ * that works here works on the user's own file too. (If we short-circuited it, the built-ins would be a
+ * privileged path that silently diverged.)
+ */
+export function csvFromDataset(name: string): string | null {
+  const ds = lookupDataset(name);
+  if (!ds) return null;
+  const round = (v: number) => (Number.isInteger(v) ? String(v) : String(Number(v.toFixed(4))));
+  return [ds.columns.join(","), ...ds.rows.map((row) => row.map(round).join(","))].join("\n");
+}

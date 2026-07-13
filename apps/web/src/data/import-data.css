@@ -17,3 +17,23 @@
 .import-cancel { border: 1px solid var(--line, #e2e5e9); background: var(--panel, #fff); color: var(--muted, #5a6670); border-radius: 8px; padding: 7px 14px; font: inherit; font-size: 13px; cursor: pointer; }
 .import-go { border: none; background: var(--accent, #2f7d6b); color: #fff; border-radius: 8px; padding: 7px 16px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .import-go:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---- built-in datasets: start without an upload ----
+   They are already in the bundle; the only thing missing was the affordance. */
+.import-builtin { display: grid; gap: 5px; margin-bottom: 14px; padding: 10px 11px; border: 1px solid var(--line, #e2e2ea); border-radius: 8px; background: var(--surface-1, #fbfbfd); }
+.import-builtin-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+.import-builtin-head > b { font-size: 12.5px; }
+.import-builtin-head > span { font-size: 10px; color: var(--muted, #8a93a0); text-transform: uppercase; letter-spacing: 0.03em; }
+.import-builtin-row { display: grid; gap: 2px; width: 100%; padding: 7px 9px; border: 1px solid transparent; border-radius: 6px; background: var(--surface-0, #fff); text-align: left; cursor: pointer; font: inherit; }
+.import-builtin-row:hover { border-color: var(--accent, #23716f); background: var(--accent-soft, #eaf5f4); }
+.import-builtin-title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.import-builtin-title > b { font-size: 12px; color: var(--text, #222); }
+.import-builtin-title > em { font-style: normal; font-size: 10.5px; color: var(--muted, #8a93a0); font-variant-numeric: tabular-nums; }
+.import-builtin-title > i { font-style: normal; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: var(--accent-soft, #eaf5f4); color: var(--accent, #23716f); }
+.import-builtin-blurb { font-size: 11px; line-height: 1.45; color: var(--muted, #667); }
+@media (prefers-color-scheme: dark) {
+  .import-builtin { background: #1b1b22; border-color: #34343e; }
+  .import-builtin-row { background: #141419; }
+  .import-builtin-row:hover { background: #17302f; }
+  .import-builtin-title > b { color: #e4e4ea; }
+}
