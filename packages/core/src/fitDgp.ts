@@ -1,7 +1,8 @@
 import type { EdgeMechanism, GraphDocument, ImposedEffect, NodeCombinerKind, NodeGate } from "./types";
-import { cloneDocument, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, reconcileSimulationSpec } from "./graph";
+import { addEdge, addNode, cloneDocument, defaultEdgeMechanism, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, reconcileSimulationSpec, withGraph } from "./graph";
 import { setLinearCoefficient, setNode, ZERO_NOISE } from "./examples/builders";
-import { datasetRows, registerRuntimeDataset } from "./datasets";
+import { datasetRows, lookupDataset, registerRuntimeDataset } from "./datasets";
+import { findPointMassColumn, pointMassColumnName, pointMassShare, withPointMassIndicator } from "./data/pointMass";
 import { edgeBaseline, edgeBasis, edgeContribution } from "./simulation/interpreter";
 
 // ---------- provenance keys ----------
@@ -1270,4 +1271,97 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
   if (residCache.size > 400) residCache.clear();
   residCache.set(sig, result);
   return result;
+}
+
+// ================= the point-mass indicator: the one derived column we build =================
+//
+// `docs/scope-boundary.md` carries the rule that admits this and rejects everything else:
+//
+//     Add a derived-column primitive only when the existing modelling vocabulary is STRUCTURALLY INCAPABLE
+//     of expressing the thing — not when it is merely convenient.
+//
+// A point mass is a DISCONTINUITY, and no smooth basis function can represent one. So no edge mechanism we
+// have (linear / log_linear / power_law / quadratic / spline) or could add will ever do this job — unlike
+// log, sqrt, x², standardize, bin, winsorize, lag or ratio, all of which are re-expressions of the SAME
+// variable and belong on an edge or in the user's spreadsheet.
+//
+// It becomes a NODE rather than a bend in an existing arrow because it is a different causal CONSTRUCT:
+// "was this person employed in 1974?" can have different parents and different children from "how much did
+// they earn in 1974?". On LaLonde it carries essentially all of the selection signal (logit coefficient
+// 1.94–3.26) while the dollar amount carries none (−0.00007). See docs/lalonde-specification.md.
+
+/** Is this node's column a point-mass candidate — i.e. does its data pile up at a single value? */
+export function pointMassCandidate(document: GraphDocument, nodeId: string, at = 0): { column: string; share: number } | null {
+  const col = nodeColumn(document, nodeId);
+  if (!col) return null;
+  const ds = lookupDataset(col.dataset);
+  const column = ds?.columns[col.dataColumn];
+  if (!ds || !column) return null;
+  const distinct = new Set(ds.rows.map((r) => r[col.dataColumn])).size;
+  if (distinct <= 2) return null;                                          // already binary — nothing to indicate
+  // Match an existing indicator by VALUE, not by name — lalonde's is called `u74`, not `re74_is_zero`. And
+  // it is only "already handled" once a NODE actually reads it; an unused column helps nobody.
+  const existing = findPointMassColumn(ds, column, at);
+  const existingIndex = existing ? ds.columns.indexOf(existing) : -1;
+  if (existingIndex >= 0) {
+    const wired = document.graph.nodes.some((n) => {
+      const c = nodeColumn(document, n.id);
+      return c && c.dataset === col.dataset && c.dataColumn === existingIndex;
+    });
+    if (wired) return null;
+  }
+  const share = pointMassShare(ds, column, at);
+  return share > 0 ? { column, share } : null;
+}
+
+/**
+ * Give a predictor's point mass its own regressor: a new binary NODE, read from a derived data column,
+ * fed by the same row-source as the variable it indicates. It arrives UNWIRED — the user decides what it
+ * causes, which is the whole reason it is a node and not a hidden basis term.
+ */
+export function addPointMassIndicator(input: GraphDocument, nodeId: string, at = 0): GraphDocument {
+  const col = nodeColumn(input, nodeId);
+  const node = input.graph.nodes.find((n) => n.id === nodeId);
+  if (!col || !node) return input;
+  const base = lookupDataset(col.dataset);
+  const sourceColumn = base?.columns[col.dataColumn];
+  if (!base || !sourceColumn) return input;
+
+  // Reuse an existing indicator column if the dataset already has one (LaLonde ships `u74`/`u75`); only
+  // derive a new one when it genuinely does not. Matched by value, since the name is a convention.
+  const existing = findPointMassColumn(base, sourceColumn, at);
+  const columnName = existing ?? pointMassColumnName(sourceColumn, at);
+  let dataset = base;
+  if (!existing) {
+    // A derived column lives on the DATASET: extend the document's own copy AND the runtime registry, which
+    // is what `table_lookup` resolves through.
+    dataset = withPointMassIndicator(base, sourceColumn, { at, name: columnName });
+    registerRuntimeDataset(col.dataset, dataset);
+  }
+  const dataColumn = dataset.columns.indexOf(columnName);
+  if (dataColumn < 0) return input;
+
+  // The row-source is whatever feeds the original column — the indicator must be read from the SAME row.
+  const lookupEdge = input.graph.edges.find((e) => e.id === col.lookupEdgeId);
+  if (!lookupEdge) return input;
+
+  const indicatorId = `${nodeId}_is_zero`;
+  if (input.graph.nodes.some((n) => n.id === indicatorId)) return input;
+
+  const document = cloneDocument(input);
+  if (document.simulation.datasets?.[col.dataset]) document.simulation.datasets[col.dataset] = dataset;
+
+  let graph = addNode(document.graph, {
+    id: indicatorId,
+    label: `no ${node.label.toLowerCase()}`,
+    position: { x: node.position.x, y: node.position.y + 90 },
+    roles: { ...node.roles, exposure: false, outcome: false },
+    variable: normalizeVariableModel({ ...node.variable, valueType: "binary", unit: "" })
+  });
+  graph = addEdge(graph, lookupEdge.source, indicatorId, "directed");
+  const out = withGraph(document, graph);
+  const created = out.graph.edges.find((e) => e.source === lookupEdge.source && e.target === indicatorId)!;
+  out.simulation.edges[created.id] = { ...defaultEdgeMechanism("table_lookup"), dataset: col.dataset, dataColumn };
+  out.simulation.nodes[indicatorId] = { ...normalizeNodeMechanism(undefined), combiner: "additive", intercept: 0, noise: ZERO_NOISE };
+  return out;
 }

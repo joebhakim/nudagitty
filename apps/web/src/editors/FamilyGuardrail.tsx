@@ -15,7 +15,19 @@ const FAMILY_NAME: Partial<Record<VariableModel["valueType"], string>> = {
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 const money = (v: number) => (Math.abs(v) >= 1000 ? `${v < 0 ? "−" : ""}${Math.abs(Math.round(v)).toLocaleString()}` : String(Math.round(v)));
 
+const INDICATOR_TIP =
+  "A point mass is a DISCONTINUITY, and no smooth basis function — no polynomial, log, sqrt, spline or asinh — can represent one. So no functional form you can put on this edge will ever capture it; the mass needs its OWN regressor. This is not a stylistic point. On the LaLonde data the indicator 1(earnings-74 == 0) has a logit coefficient of 1.94–3.26 for programme participation, while earnings-74 IN DOLLARS has a coefficient of −0.00007 (Smith & Todd 2005, Table 3). The mass carries essentially all of the selection signal; the amount carries none. It becomes a NODE rather than a hidden term because it is a different causal construct — \"was this person employed?\" can have different causes and different effects from \"how much did they earn?\".";
+
 function Body({ w, label }: { w: FamilyWarning; label: string }) {
+  if (w.kind === "point-mass-predictor-needs-indicator") {
+    return (
+      <p>
+        <b>{pct(w.fraction)}</b> of <b>{label}</b> sits at <b>exactly zero</b>, and it is used as a{" "}
+        <b>predictor</b>. A point mass is a discontinuity — <i>no</i> curve you put on this edge can
+        represent it. It needs its own indicator.
+      </p>
+    );
+  }
   if (w.kind === "generates-impossible-negatives") {
     return (
       <p>
@@ -53,6 +65,7 @@ export function FamilyGuardrail(props: {
   nodeId: string;
   samples?: readonly number[];
   onChangeFamily: (nodeId: string, kind: VariableModel["valueType"]) => void;
+  onAddIndicator?: (nodeId: string) => void;
 }) {
   const warnings = useMemo(
     () => familyWarnings(props.document, props.nodeId, props.samples),
@@ -65,10 +78,17 @@ export function FamilyGuardrail(props: {
   // draws are one misspecification, not two), so the fix is offered once per distinct family — not once per
   // finding, which would just stack identical buttons.
   const fixes = [...new Set(warnings.map((w) => w.suggest).filter(Boolean))] as Array<VariableModel["valueType"]>;
+  // The SAME detected fact — a pile-up at exactly zero — gets a different fix depending on the variable's
+  // ROLE: as an outcome it needs a two-part family; as a predictor it needs its own indicator.
+  const needsIndicator = warnings.some((w) => w.kind === "point-mass-predictor-needs-indicator");
+  const onlyIndicator = needsIndicator && fixes.length === 0;
 
   return (
     <div className="family-guardrail">
-      <strong>⚠ The family cannot produce this variable{<InfoDot tip={GUARD_TIP} href="/effects.html#honesty" />}</strong>
+      <strong>
+        {onlyIndicator ? "⚠ This predictor has a point mass" : "⚠ The family cannot produce this variable"}
+        {<InfoDot tip={onlyIndicator ? INDICATOR_TIP : GUARD_TIP} href="/effects.html#honesty" />}
+      </strong>
       {warnings.map((w) => <Body key={w.kind} w={w} label={label} />)}
       <div className="family-guardrail-fixes">
         {fixes.map((kind) => (
@@ -76,6 +96,11 @@ export function FamilyGuardrail(props: {
             switch to {FAMILY_NAME[kind] ?? kind}
           </button>
         ))}
+        {needsIndicator && props.onAddIndicator && (
+          <button type="button" onClick={() => props.onAddIndicator!(props.nodeId)}>
+            add a zero-indicator
+          </button>
+        )}
       </div>
     </div>
   );

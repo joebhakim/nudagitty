@@ -63,6 +63,7 @@ import {
   authorNumber,
   unlearnNumber,
   setImposedEffect,
+  addPointMassIndicator,
   imposeEffect,
   clearImposedEffect,
   pinNumber,
@@ -1097,6 +1098,9 @@ export function App() {
             onClearImposedEffect={() => commit(clearImposedEffect(document))}
             // Family + its canonical link move together, in one commit — shared with the guardrail's fix.
             onChangeFamily={(id, kind) => commit(applyFamilyChange(document, id, kind))}
+            // A point mass is a discontinuity; no edge mechanism can represent it. It gets its own NODE,
+            // unwired — the user decides what it causes. See docs/scope-boundary.md.
+            onAddIndicator={(id) => commit(addPointMassIndicator(document, id))}
             onAuthorNumber={(key) => commit(unpinKey(document, key))}
             // A DERIVED gate coefficient is changed by moving the STORY, on the effect's pad.
             onSelectEdge={selectEdge}

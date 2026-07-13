@@ -1,7 +1,7 @@
 import type { GraphDocument, VariableValueType } from "./types";
 import { normalizeVariableModel } from "./graph";
 import { datasetRows } from "./datasets";
-import { nodeColumn } from "./fitDgp";
+import { nodeColumn, nodeGenerates, pointMassCandidate } from "./fitDgp";
 
 /**
  * Guardrails: does the declared response FAMILY match the variable it claims to model?
@@ -33,7 +33,11 @@ export type FamilyWarningKind =
   /** The data HAS negatives but the family is log-scale (positive / semicontinuous). The fit takes
    *  log(Y) on Y>0, so those rows are silently dropped — and for two-part they are lumped in with the
    *  zeros as "did not participate", which is a different claim entirely. */
-  | "negatives-under-positive-family";
+  | "negatives-under-positive-family"
+  /** A PREDICTOR whose data piles up at zero. Its point mass needs its OWN regressor — no smooth basis
+   *  function can represent a discontinuity, so no edge mechanism will ever do this job. Same detected fact
+   *  as `zero-spike-under-additive`, different fix, selected by the variable's ROLE. */
+  | "point-mass-predictor-needs-indicator";
 
 export interface FamilyWarning {
   kind: FamilyWarningKind;
@@ -71,16 +75,20 @@ export function familyWarnings(document: GraphDocument, nodeId: string, generate
   const distinct = new Set(data).size;
 
   const out: FamilyWarning[] = [];
+  // The FAMILY rules only apply to a node that GENERATES. A plasmode covariate that replays its data column
+  // IS the data — its declared family is never consulted, so it cannot be wrong. Warning about it was a
+  // false positive that fired on every zero-inflated covariate in every plasmode example.
+  const generates = nodeGenerates(document, nodeId);
 
   // 1. A zero spike under an additive family. Requires a genuinely continuous, non-negative column — a 0/1
   //    column is binary, not a spike, and a column that already goes negative has no floor to violate.
-  if (valueType === "continuous" && neverNegative && distinct > 3 && zeroShare >= ZERO_SPIKE_FLOOR) {
+  if (generates && valueType === "continuous" && neverNegative && distinct > 3 && zeroShare >= ZERO_SPIKE_FLOOR) {
     out.push({ kind: "zero-spike-under-additive", nodeId, fraction: zeroShare, suggest: "semicontinuous" });
   }
 
   // 2. The DGP emits negatives for a column that is never negative. Measured off the draws — the one check
   //    that catches the failure rather than predicting it.
-  if (generated && generated.length >= 8 && neverNegative) {
+  if (generates && generated && generated.length >= 8 && neverNegative) {
     const bad = generated.filter((v) => v < 0);
     const fraction = bad.length / generated.length;
     if (fraction >= NEGATIVE_DRAW_FLOOR) {
@@ -93,8 +101,19 @@ export function familyWarnings(document: GraphDocument, nodeId: string, generate
     }
   }
 
-  // 3. Negatives in the data under a log-scale family — those rows are being silently reinterpreted.
-  if ((valueType === "positive" || valueType === "semicontinuous") && negatives.length > 0) {
+  // 3. A PREDICTOR with a point mass at zero. Same evidence as rule 1 — a pile-up at exactly zero — but the
+  //    fix is decided by the variable's ROLE: as an OUTCOME the answer is a two-part family (rule 1); as a
+  //    PREDICTOR the answer is to give the point mass its own regressor. On LaLonde the indicator's logit
+  //    coefficient is 1.94-3.26 while the dollar slope is -0.00007: the mass carries the selection signal
+  //    and the amount carries none, and NO smooth transform of the column can express that discontinuity.
+  const feedsSomething = document.graph.edges.some((e) => e.kind === "directed" && e.source === nodeId);
+  if (feedsSomething && !node.roles?.outcome && neverNegative && zeroShare >= ZERO_SPIKE_FLOOR && distinct > 3) {
+    const candidate = pointMassCandidate(document, nodeId);
+    if (candidate) out.push({ kind: "point-mass-predictor-needs-indicator", nodeId, fraction: candidate.share });
+  }
+
+  // 4. Negatives in the data under a log-scale family — those rows are being silently reinterpreted.
+  if (generates && (valueType === "positive" || valueType === "semicontinuous") && negatives.length > 0) {
     out.push({
       kind: "negatives-under-positive-family", nodeId, fraction: negatives.length / n,
       extreme: Math.min(...negatives), suggest: "continuous"

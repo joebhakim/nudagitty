@@ -9,6 +9,7 @@ export * from "./longitudinal";
 export * from "./instrument";
 export * from "./copula";
 export * from "./datasets";
+export * from "./data/pointMass";
 export * from "./doseResponse";
 export * from "./continuousEffect";
 export * from "./categoricalEffect";

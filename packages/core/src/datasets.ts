@@ -7,6 +7,7 @@ import { TWINS_DATASET } from "./data/twins";
 import { LALONDE_DATASET } from "./data/lalonde";
 import { LALONDE_OBS_DATASET } from "./data/lalonde-obs";
 import { LALONDE_SYNTHETIC } from "./data/lalonde-synthetic";
+import { withPointMassIndicator } from "./data/pointMass";
 
 export type { CovariateDataset };
 
@@ -24,7 +25,12 @@ export const DATASETS: Record<string, CovariateDataset> = {
   ihdp: IHDP_DATASET,
   twins: TWINS_DATASET,
   lalonde: LALONDE_DATASET,
-  "lalonde-obs": LALONDE_OBS_DATASET,
+  // u74/u75 = 1(re74 == 0), 1(re75 == 0). These are CANONICAL LaLonde columns, not an embellishment: every
+  // paper in the literature carries them (DW 1999/2002, Smith-Todd, Diamond-Sekhon, Imbens 2015, Imbens-Xu
+  // 2024), and the R `Matching::lalonde` dataset ships them. Their logit coefficient is 1.94-3.26 against a
+  // dollar-slope of -0.00007 — the point mass carries the selection signal, the dollar amount carries none.
+  // APPENDED, so every existing column index is unchanged and no example that ignores them is affected.
+  "lalonde-obs": withPointMassIndicator(withPointMassIndicator(LALONDE_OBS_DATASET, "re74", { name: "u74" }), "re75", { name: "u75" }),
   "lalonde-synthetic": LALONDE_SYNTHETIC
 };
 
