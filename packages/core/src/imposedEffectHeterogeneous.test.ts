@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { exampleDocument } from "./examples";
 import { runSimulation, reconcilePins, imposedEffectContext, normalizeNodeMechanism } from "./index";
+import { LALONDE_OBS_DATASET } from "./data/lalonde-obs";
 import { setNode } from "./examples/builders";
 import type { GraphDocument, NodeInteraction } from "./types";
 
@@ -107,6 +108,29 @@ describe("imposed effect × an authored effect modifier", () => {
         // The miss used to grow with κ (+$266 → +$639). It must now be κ-INDEPENDENT: whatever is left is the
         // finite-sample error this seed already had with no interaction at all.
         expect(Math.abs(realized - base)).toBeLessThan(40);
+      }
+    });
+  });
+
+  describe("the FIT treats an authored modifier as an offset (not as something to absorb)", () => {
+    it("the outcome's marginal stays on the data it was fitted to, however large κ gets", () => {
+      // The fit's rule is that an AUTHORED contribution enters as a fixed per-row offset, computed by the
+      // simulator. Interactions were not in that offset, so the confounders and the intercept absorbed the
+      // modifier — and generation then added κ·T·X a SECOND time on top:
+      //     κ=1600  mean $20,566 (+$64)      κ=12000  mean $20,972 (+$470, 2.3% off the data)
+      // and the fitted intercept slid −2611 → −1736 doing it. That is a treatment effect being credited to
+      // the covariates, which is the fit-vs-author trap in a different hat.
+      const ci = LALONDE_OBS_DATASET.columns.indexOf("re78");
+      const dataMean = LALONDE_OBS_DATASET.rows.reduce((s, r) => s + (r[ci] ?? 0), 0) / LALONDE_OBS_DATASET.rows.length;
+
+      for (const kappa of [0, 1600, 12000]) {
+        const doc = kappa === 0
+          ? exampleDocument("lalonde-fit-recover-2part")!
+          : withModifier("lalonde-fit-recover-2part", "No_degree", kappa);
+        const gen = runSimulation(doc.graph, { ...doc.simulation, seed: 11 }).nodeStates["Earnings_78"]!.empirical.mean!;
+        // Now flat: $3 / $5 / $28. The residual at κ=12000 is the gate×softplus nonlinearity — an offset on
+        // the η scale cannot exactly preserve a mean pushed through a nonlinear link — not absorption.
+        expect(Math.abs(gen - dataMean) / dataMean).toBeLessThan(0.005);
       }
     });
   });

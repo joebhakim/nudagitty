@@ -338,6 +338,43 @@ function interactionShifts(document: GraphDocument, outcome: string, exposure: s
   });
 }
 
+/**
+ * What the node's AUTHORED INTERACTIONS contribute at the OBSERVED data values — a fixed per-row fit offset.
+ *
+ * This file's own rule (see the FITTABLE comment above): an authored contribution enters the fit as an offset
+ * computed by the SIMULATOR'S OWN evaluator, or the fit hands its effect to whatever IS in the design. An
+ * interaction was not in that offset, so the confounders and the intercept absorbed the modifier (the
+ * intercept slid −2611 → −1736 as κ grew) and generation then added κ·T·X a SECOND time on top, drifting the
+ * outcome's mean 2.3% off the very data it was fitted to. Crediting a treatment effect to the covariates is
+ * the fit-vs-author trap wearing a different hat.
+ *
+ * The GATE is deliberately untouched: an interaction lands in the AMOUNT's η (see finalizeNodeValue), and the
+ * gate fit runs on a zero offset by design.
+ *
+ * Returns zeros when there is nothing to offset — or when a modifier has no readable column — so every
+ * existing fit stays bit-identical.
+ */
+function interactionOffsets(document: GraphDocument, mech: NodeMechanism, rows: number[][]): number[] {
+  const zero = rows.map(() => 0);
+  if (mech.interactions.length === 0) return zero;
+  const ids = new Set<string>();
+  for (const it of mech.interactions) {
+    if (it.kind === "product") { ids.add(it.left); ids.add(it.right); }
+    else { ids.add(it.source); ids.add(it.gate); }
+  }
+  const cols: Array<[string, number]> = [];
+  for (const id of ids) {
+    const c = nodeColumn(document, id);
+    if (!c) return zero;
+    cols.push([id, c.dataColumn]);
+  }
+  return rows.map((r) => {
+    const v: Record<string, number> = {};
+    for (const [id, ci] of cols) v[id] = r[ci] ?? 0;
+    return interactionContribution(v, mech);
+  });
+}
+
 /** Bisection for a monotone-increasing f: find x with f(x) = target, expanding the bracket as needed. */
 function bisectMonotone(f: (x: number) => number, target: number, lo: number, hi: number): number {
   let a = lo, b = hi;
@@ -851,6 +888,9 @@ export function reconcilePins(input: GraphDocument, depth = 0): { document: Grap
       rows.length ? (rows[rows.length >> 1]![col.dataColumn] ?? 0) : 0,
       col.dataColumn, isBinary ? "b" : link,
       fitIntercept ? "Pi" : `Ai${mech.intercept}`, fitNoise ? "Pn" : "-",
+      // Interactions are an authored OFFSET now, so retuning κ changes the fit's inputs — it must bust the
+      // cache. Without this, editing a modifier's coefficient would leave a stale offset silently in place.
+      mech.interactions.length ? `X${JSON.stringify(mech.interactions)}` : "-",
       // The mechanism's FORM is part of the fit's identity now — switching an edge to log_linear must
       // invalidate the cache, not just changing its coefficient.
       ...pinnedEdges.map((e) => `P${nodeColumn(document, e.source)?.dataColumn}:${normalizeEdgeMechanism(document.simulation.edges[e.id]).kind}`).sort(),
@@ -883,10 +923,12 @@ export function reconcilePins(input: GraphDocument, depth = 0): { document: Grap
       else offsetPinned.push({ mech: em, dataColumn });
     }
     const baseOffset = fitIntercept ? 0 : mech.intercept;
+    // Authored interactions are authored: they belong in the offset, exactly like a non-fittable edge.
+    const interactionOffset = interactionOffsets(document, mech, rows);
 
     const yRaw = rows.map((r) => (isBinary ? (r[col.dataColumn] ?? 0) : applyLink(r[col.dataColumn] ?? 0, link)));
-    const offsetRaw = rows.map((r) => {
-      let o = baseOffset;
+    const offsetRaw = rows.map((r, i) => {
+      let o = baseOffset + interactionOffset[i]!;
       for (const a of authoredCols) o += edgeContribution(r[a.dataColumn] ?? 0, a.mech);
       for (const a of offsetPinned) o += edgeContribution(r[a.dataColumn] ?? 0, a.mech);
       for (const f of fitEdges) o += f.baseline;   // the mechanism's constant term is not part of the design
