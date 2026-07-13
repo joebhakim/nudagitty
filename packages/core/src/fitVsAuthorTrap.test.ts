@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { exampleDocument } from "./examples";
-import { pinNumber, unpinKey, pinKeys, reconcilePins, imposedEffectContext, normalizeEdgeMechanism } from "./index";
+import { pinNumber, unpinKey, pinKeys, reconcilePins, imposedEffectContext, normalizeEdgeMechanism, imposedEffectEdge, normalizeNodeMechanism, pinNodeEquation
+} from "./index";
 
 // THE TRAP (hit by a real user): they FITTED the exposure→outcome edge instead of authoring it. That learns
 // the CONFOUNDED association (−0.413 on the log scale) and hands it to the simulator as the causal mechanism
@@ -43,5 +44,45 @@ describe("fitting the exposure→outcome edge destroys the imposed truth", () =>
     const gamma = (fixed.simulation.nodes["Earnings_78"] as { gate?: { coefficients: Record<string, number> } }).gate?.coefficients["In_program"] ?? 0;
     const delta = m.kind === "linear" ? m.coefficient : 0;
     expect(ctx.decompose(gamma, delta).ate).toBeCloseTo(1794, 4);
+  });
+});
+
+describe("the trap re-entered: 'Fit all from data' AFTER imposing", () => {
+  it("no longer re-pins the effect edge and silently destroys the imposed truth", () => {
+    // Found by decoding a real share link from a real session. The document had metadata.imposedEffect
+    // {target: 1794} sitting there looking authoritative — and "e:directed:treat->re78" in metadata.PINS,
+    // with no `authored` array at all. applyImposed() deliberately stands down on a pinned effect edge
+    // ("the user is FITTING the effect, not imposing it"), so the DGP was carrying the CONFOUNDED fitted
+    // coefficient while the UI still showed an imposed $1,794.
+    //
+    // The cause: `pinNodeEquation` — the "Fit all from data →" button — pins EVERY drawn parent, including
+    // the effect edge. Impose first, then click it again, and the benchmark quietly dies. Measured before
+    // the fix: do() fell from $1,753 to $1,278 against an imposed $1,794.
+    //
+    // The original fit-vs-author trap was "fit the effect edge by hand". This is the same trap through a
+    // different door: "fit everything, twice".
+    const doc = exampleDocument("lalonde-fit-recover-2part")!;
+    const effect = imposedEffectEdge(doc)!;
+    const key = pinKeys.edge(effect.edgeId);
+
+    expect(doc.metadata.authored).toContain(key);       // imposed ⇒ the effect edge is AUTHORED
+    expect(doc.metadata.pins).not.toContain(key);
+
+    // …now re-run the bulk fit on the outcome, exactly as the button does.
+    const refit = reconcilePins(pinNodeEquation(doc, effect.outcome)).document;
+    expect(refit.metadata.pins).not.toContain(key);     // still not fitted
+    expect(refit.metadata.authored).toContain(key);     // still authored ⇒ applyImposed still runs
+
+    // and the DGP still carries the imposed truth, exactly
+    const ctx = imposedEffectContext(refit)!;
+    const gamma = normalizeNodeMechanism(refit.simulation.nodes[effect.outcome]).gate!.coefficients[effect.exposure]!;
+    const delta = (refit.simulation.edges[effect.edgeId] as { coefficient: number }).coefficient;
+    expect(ctx.decompose(gamma, delta).ate).toBeCloseTo(1794, 3);
+
+    // every OTHER parent is still fitted — the bulk fit does its job, it just does not eat the estimand
+    const other = refit.graph.edges.find((e) =>
+      e.target === effect.outcome && e.source !== effect.exposure && e.kind === "directed" &&
+      normalizeEdgeMechanism(refit.simulation.edges[e.id]).kind !== "table_lookup")!;   // a real covariate
+    expect(refit.metadata.pins).toContain(pinKeys.edge(other.id));
   });
 });

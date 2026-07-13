@@ -211,7 +211,19 @@ export function pinNodeEquation(input: GraphDocument, nodeId: string): GraphDocu
   if (drawn.length === 0) return input;
   document.simulation.edges[col.lookupEdgeId] = { ...normalizeEdgeMechanism(document.simulation.edges[col.lookupEdgeId]), enabled: false };
   const pins = new Set(document.metadata.pins);
-  for (const edge of drawn) pins.add(edgeKey(edge.id));
+  // NEVER pin the edge that carries an IMPOSED EFFECT. Pinning it means "learn the effect from the data",
+  // and applyImposed deliberately stands down when it sees a pinned effect edge — so a bulk "Fit all from
+  // data" run AFTER imposing silently converts the benchmark's known truth back into the confounded
+  // association, with no warning at all. Measured: do() drops from $1,753 to $1,278 against an imposed
+  // $1,794, and metadata.imposedEffect stays in the document looking authoritative while doing nothing.
+  //
+  // This is the fit-vs-author trap re-entered through a different door: the original was "fit the effect
+  // edge by hand", this one is "fit everything, twice". The edge stays AUTHORED; everything else is pinned.
+  const effect = imposedEffectEdge(document);
+  for (const edge of drawn) {
+    if (effect && edge.id === effect.edgeId) continue;
+    pins.add(edgeKey(edge.id));
+  }
   pins.add(interceptKey(nodeId));
   if (normalizeVariableModel(document.graph.nodes.find((n) => n.id === nodeId)!.variable).valueType !== "binary") pins.add(noiseKey(nodeId));
   document.metadata.pins = [...pins];
