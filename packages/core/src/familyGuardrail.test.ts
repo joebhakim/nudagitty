@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { exampleDocument } from "./examples";
-import { familyWarnings, lookupDataset, registerRuntimeDataset, runSimulation, setVariable } from "./index";
+import { familyWarnings, lookupDataset, reconcilePins, registerRuntimeDataset, runSimulation, setNode, setVariable } from "./index";
 import type { GraphDocument } from "./types";
 
 const draws = (doc: GraphDocument, id: string) =>
@@ -75,4 +75,29 @@ describe("familyWarnings — does the family match the variable?", () => {
     expect(w.map((x) => x.kind)).toEqual(["zero-spike-under-additive"]);
     expect(w[0]!.suggest).toBe("semicontinuous");
   });
+});
+
+describe("generates-beyond-support — the rule that would have caught OUR OWN bug", () => {
+  it("is silent on the correct DGP and fires on the log-link one", () => {
+    // We shipped a log-link intensive margin for weeks. It built a world containing $1.6M earners against a
+    // real LaLonde maximum of $121k, and NOTHING in the app said so — this rule was on my own "obvious next
+    // rules" list when the guardrail was built, and I skipped it. Measured:
+    //     levels + gamma  (correct)   max $153,270 = 1.3x the data's max   ⇒ silent
+    //     log + lognormal (the bug)   max $1,571,370 = 13x                 ⇒ fires
+    // Two conditions (max > 5x AND p99.9 > 1.5x) so one freak draw cannot trip it: a good model SHOULD be
+    // able to exceed its sample. Thirteen-fold is not "exceeding"; it is a different world.
+    const good = exampleDocument("lalonde-fit-recover-2part")!;
+    const gy = runSimulation(good.graph, good.simulation).nodeStates["Earnings_78"]!.empirical.samples ?? [];
+    expect(familyWarnings(good, "Earnings_78", gy)).toEqual([]);
+
+    const flipped = structuredClone(good);
+    setNode(flipped, "Earnings_78", { combiner: "gamma_log" });   // back to the log amount model
+    const bad = reconcilePins(flipped).document;
+    const by = runSimulation(bad.graph, bad.simulation).nodeStates["Earnings_78"]!.empirical.samples ?? [];
+
+    const hit = familyWarnings(bad, "Earnings_78", by).find((w) => w.kind === "generates-beyond-support")!;
+    expect(hit).toBeDefined();
+    expect(hit.extreme).toBeGreaterThan(500_000);      // measured: $1,571,370
+    expect(hit.fraction).toBeGreaterThan(0.002);       // measured: 0.88% of draws beyond the data's max
+  }, 60000);
 });

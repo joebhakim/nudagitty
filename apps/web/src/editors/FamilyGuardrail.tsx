@@ -37,6 +37,17 @@ function Body({ w, label }: { w: FamilyWarning; label: string }) {
       </p>
     );
   }
+  if (w.kind === "generates-beyond-support") {
+    return (
+      <p>
+        This DGP emits values <b>far beyond anything in the data</b>: simulated <b>{label}</b> reaches{" "}
+        <b>{money(w.extreme ?? 0)}</b>, and <b>{pct(w.fraction)}</b> of draws exceed the largest value your
+        data actually contains. A model should be able to <i>exceed</i> its sample — it should not be
+        describing a different world. If this is a log-link model on a value with a long right tail, the
+        <b> amount model</b> is the usual culprit.
+      </p>
+    );
+  }
   if (w.kind === "generates-impossible-negatives") {
     return (
       <p>

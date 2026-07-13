@@ -155,8 +155,10 @@ export function ImposedEffectPad(props: {
   const maxShare = ctx.maxExtensiveShare;
   const committed = ctx.solve(share);
   const at = preview ?? committed;
-  const shownAte = Math.exp(at.delta) * ctx.s(at.gamma) - ctx.c0;
+  // decompose() is LINK-AGNOSTIC; the closed form e^δ·S(γ) − C₀ is the LOG link's only. On the identity
+  // link δ is in DOLLARS, so exp(δ) = exp(580) = 1e252 and the pad printed a 250-digit number.
   const shownSplit = ctx.decompose(at.gamma, at.delta);
+  const shownAte = shownSplit.ate;
 
   // ---- geometry ----
   const W = 260, H = 178, mL = 42, mR = 10, mT = 24, mB = 34;
@@ -186,13 +188,13 @@ export function ImposedEffectPad(props: {
       cells.push({
         px: mL + (c / COLS) * plotW, py: mT + (r / ROWS) * plotH,
         w: plotW / COLS + 0.6, h: plotH / ROWS + 0.6,
-        over: Math.exp(d) * ctx.s(g) - ctx.c0 > ctx.target
+        over: ctx.decompose(g, d).ate > ctx.target
       });
     }
   }
 
   const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
-  const money = (v: number) => `$${Math.round(v).toLocaleString()}`;
+  const money = (v: number) => (v < 0 ? `−$${Math.abs(Math.round(v)).toLocaleString()}` : `$${Math.round(v).toLocaleString()}`);
   // Under the IDENTITY intensive link δ is a per-worker RAISE IN DOLLARS, not a log-dollar shift. Rendering
   // it as exp(δ)−1 would print Infinity (exp(719)). The pad shows whichever the DGP actually uses.
   const payLabel = (delta: number) => (ctx.identityAmount ? money(delta) : `+${pct(Math.exp(delta) - 1)}`);
@@ -218,9 +220,9 @@ export function ImposedEffectPad(props: {
       props.onChange({ extensiveShare: Math.min(maxShare, Math.max(0, (ctx.s(p.gamma) - ctx.c0) / ctx.target)) });
       return;
     }
-    const ate = Math.exp(p.delta) * ctx.s(p.gamma) - ctx.c0;
-    if (!(ate > 1e-6)) return; // a non-positive ATE has no meaningful split — refuse rather than fake one
     const d = ctx.decompose(p.gamma, p.delta);
+    const ate = d.ate;                                    // link-agnostic; never the log link's closed form
+    if (!(ate > 1e-6)) return; // a non-positive ATE has no meaningful split — refuse rather than fake one
     props.onChange({ target: ate, extensiveShare: Math.min(1, Math.max(0, d.extensive / ate)) });
   };
 
@@ -295,8 +297,21 @@ export function ImposedEffectPad(props: {
       </div>
 
       <p className="muted imposed-foot">
-        At most {pct(maxShare)} can come from employment — putting <i>everyone</i> into work yields only{" "}
-        {money(ctx.amax - ctx.c0)}, short of {money(ctx.target)}, so pay must rise ≥&nbsp;{payLabel(ctx.deltaFloor)}.
+        {/* The wall does not always BIND. Under the corrected LaLonde DGP the ceiling ($1,840) sits just
+            ABOVE the $1,794 target, so employment alone could do all of it — and the old copy read
+            "yields only $1,840, short of $1,794", which is a contradiction. */}
+        {maxShare < 0.999 ? (
+          <>
+            At most {pct(maxShare)} can come from employment — putting <i>everyone</i> into work yields only{" "}
+            {money(ctx.amax - ctx.c0)}, short of {money(ctx.target)}, so pay must rise ≥&nbsp;{payLabel(ctx.deltaFloor)}.
+          </>
+        ) : (
+          <>
+            Employment alone <i>could</i> deliver all of it: putting everyone into work yields{" "}
+            {money(ctx.amax - ctx.c0)}, which covers the {money(ctx.target)} target — so the wall does not
+            bind here, and pay need only change by&nbsp;{payLabel(ctx.deltaFloor)} at the extreme.
+          </>
+        )}
         {" "}γ&nbsp;=&nbsp;{at.gamma.toFixed(3)} (log-odds), δ&nbsp;=&nbsp;{ctx.identityAmount ? at.delta.toFixed(0) : at.delta.toFixed(4)} ({ctx.identityAmount ? "$/worker" : "log-$"}) are{" "}
         <b>derived</b> from the estimand — never typed.
       </p>

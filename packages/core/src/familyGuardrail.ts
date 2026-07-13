@@ -40,7 +40,12 @@ export type FamilyWarningKind =
   | "point-mass-predictor-needs-indicator"
   /** An unordered CATEGORICAL used as a predictor. A linear mechanism cannot consume one at all — there is
    *  no coefficient you can put on an unordered label. The other missing word in the vocabulary. */
-  | "category-needs-dummies";
+  | "category-needs-dummies"
+  /** The DGP emits values ORDERS OF MAGNITUDE beyond anything in the data. Not "impossible" like a negative
+   *  — just absurd. This is the rule that would have caught OUR OWN bug: a log link fed dollar-valued
+   *  regressors is exponential IN DOLLARS, and it built a world containing $1.6M earners against a real
+   *  maximum of $121k. Every estimate underneath was computed on a population that does not exist. */
+  | "generates-beyond-support";
 
 export interface FamilyWarning {
   kind: FamilyWarningKind;
@@ -56,6 +61,10 @@ export interface FamilyWarning {
 /** Below this share we do not nag — a stray draw is not a misspecification. */
 const NEGATIVE_DRAW_FLOOR = 0.005;
 const ZERO_SPIKE_FLOOR = 0.02;
+/** How far past the data's maximum the DGP's 99.9th percentile must go before we call it absurd. Generous
+ *  on purpose: a good model should be ABLE to exceed its sample. Five-fold is not "exceeding"; it is a
+ *  different world. (Our own bug was 13x, at the 99.9th percentile.) */
+const BEYOND_SUPPORT_FACTOR = 5;
 
 /**
  * @param generated The node's simulated draws, when available (`nodeStates[id].empirical.samples`). Without
@@ -115,13 +124,34 @@ export function familyWarnings(document: GraphDocument, nodeId: string, generate
     if (candidate) out.push({ kind: "point-mass-predictor-needs-indicator", nodeId, fraction: candidate.share });
   }
 
-  // 4. An unordered CATEGORY used as a predictor. Not a matter of degree like the others: a linear term
+  // 4. The DGP emits values ORDERS OF MAGNITUDE beyond the data's support. The rule that would have caught
+  //    our own $1.6M-earner bug — and it is measured off the DRAWS, so it catches the failure rather than
+  //    predicting it. Deliberately generous (5x the data's max, and only above the 99.9th percentile of the
+  //    draws) so a fat but plausible tail does not nag: an honest model SHOULD be able to exceed its sample.
+  if (generates && generated && generated.length >= 100) {
+    const dataMax = Math.max(...data);
+    const sorted = [...generated].sort((a, b) => a - b);
+    const p999 = sorted[Math.floor(0.999 * (sorted.length - 1))] ?? 0;
+    const genMax = sorted[sorted.length - 1] ?? 0;
+    // TWO conditions, so one freak draw cannot trip it and a fat-but-honest tail is left alone. Measured on
+    // LaLonde earnings (data max $121,174):
+    //     levels + gamma  (correct)   max $153,270 = 1.3x   p99.9 $122,141 = 1.0x   ⇒ silent
+    //     log + lognormal (our bug)   max $1,571,370 = 13x  p99.9 $414,440 = 3.4x   ⇒ fires
+    if (dataMax > 0 && genMax > BEYOND_SUPPORT_FACTOR * dataMax && p999 > 1.5 * dataMax) {
+      out.push({
+        kind: "generates-beyond-support", nodeId, extreme: genMax,
+        fraction: generated.filter((v) => v > dataMax).length / generated.length
+      });
+    }
+  }
+
+  // 5. An unordered CATEGORY used as a predictor. Not a matter of degree like the others: a linear term
   //    cannot consume "regimen A / B / C" AT ALL. k−1 indicator nodes, most common level as the reference.
   if (feedsSomething && categoryIndicatorCandidate(document, nodeId)) {
     out.push({ kind: "category-needs-dummies", nodeId, fraction: 0 });
   }
 
-  // 5. Negatives in the data under a log-scale family — those rows are being silently reinterpreted.
+  // 6. Negatives in the data under a log-scale family — those rows are being silently reinterpreted.
   if (generates && (valueType === "positive" || valueType === "semicontinuous") && negatives.length > 0) {
     out.push({
       kind: "negatives-under-positive-family", nodeId, fraction: negatives.length / n,

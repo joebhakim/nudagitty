@@ -473,6 +473,9 @@ function DepControl(props: {
 // RESIT (Peters et al. 2014) residual diagnostics on a fitted continuous node. Distance correlation ≡ HSIC
 // (Sejdinovic 2013), significance by permutation. Three tests: exogeneity ε⊥X, homoskedasticity via
 // dCor(ε²,X), and residual non-Gaussianity (Jarque–Bera). Refutations, not confirmations.
+const AMOUNT_MODEL_TIP =
+  "A two-part outcome has a SECOND choice, independent of the family: how the positive amount is built. LOG-SCALE is the textbook default — E[Y|Y>0] = exp(η) with normal noise on the log scale, i.e. lognormal. It is right for health spending, and it is WRONG for earnings. On the LaLonde data log(re78) among earners is LEFT-skewed (−1.79) with excess kurtosis 5.34 — it is not lognormal — and a log link fed dollar-valued regressors is exponential IN DOLLARS, which manufactures a world containing $1.6M earners against a real maximum of $121k. LEVELS is what every paper in that literature actually fits: E[Y|Y>0] = softplus(η) — linear wherever it matters, bending smoothly to a small positive number instead of going negative — with GAMMA noise matching the real conditional spread. It cannot produce an absurd tail, needs no retransformation correction, and makes δ a per-worker raise in DOLLARS rather than a log-dollar shift. If your outcome's log is roughly normal, take log-scale. If it is money with a floor at zero and a heavy right tail, take levels — and check the simulated maximum against your data's.";
+
 const TWO_PART_FAMILY_TIP =
   "Two-part (semicontinuous): the outcome is a participation gate P(Y>0)=σ(η_gate) times a positive amount exp(η+ε). The fit learns them separately — logistic on 1(Y>0) for the gate, log-linear on Y>0 for the amount — so the marginal can reproduce a spike at $0 plus a skewed positive tail. A coefficient on the amount is on the LOG scale (e.g. +0.03 ≈ +3% among workers), NOT dollars; the dollar effect is the do-contrast in the output.";
 const TWO_PART_RESID_TIP =
@@ -781,6 +784,36 @@ export function VariableEditor(props: {
                     {VARIABLE_TYPES.map(([kind, label]) => (<option value={kind} key={kind} disabled={!REALIZED_FAMILIES.has(kind) && kind !== variable.valueType}>{label}{REALIZED_FAMILIES.has(kind) ? "" : " (planned)"}</option>))}
                   </select>
                 </label>
+              )}
+              {/* THE AMOUNT MODEL. A two-part outcome has a second, independent choice — how E[Y | Y>0] is
+                  built — and it was previously reachable only through an unlabelled "▾" in the equation
+                  block, offering "positive softplus", which tells a practitioner nothing. Nobody would
+                  ever find the specification the LaLonde literature actually uses. Now it is a visible
+                  choice with the tradeoff stated. */}
+              {!isRoot && variable.valueType === "semicontinuous" && (
+                <div className="field two-part-amount">
+                  <span>amount model — E[Y | Y &gt; 0]{<InfoDot tip={AMOUNT_MODEL_TIP} href="/effects.html#honesty" />}</span>
+                  <div className="amount-choice">
+                    <button
+                      type="button"
+                      aria-pressed={mechanism.combiner !== "positive_softplus"}
+                      className={mechanism.combiner !== "positive_softplus" ? "selected" : ""}
+                      onClick={() => props.onMechanism(node.id, { combiner: "gamma_log" })}
+                    >
+                      <b>log-scale</b>
+                      <span>exp(η), lognormal noise — the textbook two-part</span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={mechanism.combiner === "positive_softplus"}
+                      className={mechanism.combiner === "positive_softplus" ? "selected" : ""}
+                      onClick={() => props.onMechanism(node.id, { combiner: "positive_softplus" })}
+                    >
+                      <b>levels</b>
+                      <span>softplus(η), gamma noise — what the earnings literature fits</span>
+                    </button>
+                  </div>
+                </div>
               )}
               {isRoot ? (
                 // A root has no parents → no dependence. A data root simply IS its column; a from-scratch root is authored.

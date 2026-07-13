@@ -191,7 +191,13 @@ export function inferValueTypeFromMechanism(isRoot: boolean, mechanism: NodeMech
   if (!isRoot) {
     if (mechanism.combiner === "bernoulli_logit" || mechanism.combiner === "noisy_or") return "binary";
     if (mechanism.combiner === "poisson_log") return "count";
-    if (mechanism.combiner === "gamma_log" || mechanism.combiner === "positive_softplus") return "positive";
+    if (mechanism.combiner === "gamma_log" || mechanism.combiner === "positive_softplus") {
+      // BOTH of these are valid combiners on a TWO-PART node — they are its two AMOUNT MODELS (gamma_log =
+      // log-scale/lognormal, positive_softplus = levels/gamma). Collapsing them to `positive` clobbered the
+      // family, so changing the amount model silently destroyed the two-part outcome. That made the
+      // specification the earnings literature actually uses UNREACHABLE, not merely hard to find.
+      return fallback === "semicontinuous" ? "semicontinuous" : "positive";
+    }
     if (mechanism.combiner === "bounded_logistic") return "proportion";
   }
   return valueTypeFromDistribution(isRoot ? mechanism.distribution : mechanism.noise, fallback);

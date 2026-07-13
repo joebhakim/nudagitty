@@ -204,7 +204,16 @@ export function EquationBlock(props: {
               onValue={(v) => (forGate ? setGateCoef(p.edge.source, v) : props.onCoefficient(p.edge, v))}
               onState={derived ? () => {} : setState(p.key)} />
             <span className="eq-mul">·</span>
-            <span className="eq-parent" title={p.label}>{p.label}</span>
+            {/* Click the parent to open ITS arrow. The canvas is not a reliable route: the import lays nodes
+                out in a grid, so an edge between two NEIGHBOURS is drawn entirely underneath them and cannot
+                be clicked at all — which made the exposure → outcome edge (and therefore "impose an effect")
+                unreachable from a fresh import. The equation always knows which edge each term belongs to. */}
+            <button
+              type="button"
+              className="eq-parent eq-parent-link"
+              title={`${p.label} → open this arrow`}
+              onClick={() => props.onSelectEdge?.(p.edge.id)}
+            >{p.label}</button>
             {off && <span className="eq-off">not learned</span>}
             {derived && (
               <button

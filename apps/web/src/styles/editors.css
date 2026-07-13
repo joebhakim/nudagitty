@@ -1441,3 +1441,26 @@ button.prov-chip { cursor: pointer; }
   .eq-num.st-fitted { color: #7fe3c6; }
   .eq-num.st-authored { color: #e0b877; }
 }
+
+/* ---- two-part AMOUNT MODEL: the second, independent choice ----
+   Previously reachable only via an unlabelled "▾" offering "positive softplus" — so the specification the
+   earnings literature actually uses was, in practice, unreachable. */
+.two-part-amount { display: grid; gap: 4px; }
+.two-part-amount > span { display: flex; align-items: center; gap: 2px; font-size: 11px; color: var(--muted, #667); }
+.amount-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.amount-choice > button { display: grid; gap: 1px; padding: 6px 8px; border: 1px solid var(--line, #d8d8e0); border-radius: 6px; background: var(--surface-0, #fff); text-align: left; cursor: pointer; font: inherit; }
+.amount-choice > button:hover { border-color: var(--accent, #23716f); }
+.amount-choice > button.selected { border-color: var(--accent, #23716f); background: var(--accent-soft, #eaf5f4); }
+.amount-choice > button > b { font-size: 11.5px; color: var(--text, #222); }
+.amount-choice > button > span { font-size: 10px; line-height: 1.35; color: var(--muted, #8a93a0); }
+@media (prefers-color-scheme: dark) {
+  .amount-choice > button { background: #141419; border-color: #2a2a33; }
+  .amount-choice > button.selected { background: #17302f; }
+  .amount-choice > button > b { color: #e4e4ea; }
+}
+
+/* The equation's parent term is a link to its arrow. The canvas cannot be relied on: an imported grid
+   layout draws an edge between two NEIGHBOURING nodes entirely underneath them, so it is unclickable —
+   which made the exposure → outcome edge unreachable from a fresh import. */
+.eq-parent-link { appearance: none; border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; border-bottom: 1px dotted transparent; }
+.eq-parent-link:hover { color: var(--accent, #23716f); border-bottom-color: currentColor; }
