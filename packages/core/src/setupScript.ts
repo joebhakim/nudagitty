@@ -30,10 +30,16 @@ export const SETUP_GLYPHS = {
   confounder: "∧",   // a FORK:      X ← L → Y
   collider: "∨",     // a COLLISION: X → C ← Y
   mediator: "→",     // on the causal path
-  precision: "↓",    // predicts Y only — not a confounder
-  instrument: "⇒",   // implies the exposure and nothing else
+  // A SYMMETRIC PAIR, and it documents itself: the arrow points at the thing the node predicts.
+  //   ↑ predicts the TREATMENT only — an instrument, or a bias amplifier if you adjust for it
+  //   ↓ predicts the OUTCOME only   — precision, not confounding
+  // (Was ⇒ for treatment-only. U+21D2 is a coverage gap in common mono faces — it falls back to a
+  //  PROPORTIONAL font and drifts the column, which is what broke incrementality-uplift. → ↑ ↓ are all
+  //  U+219x, all present, none with an emoji variant.)
+  precision: "↓",
+  instrument: "↑",
   inert: "ø",        // irrelevant to the estimand — it cannot confound anything
-  postY: "↑",        // a DESCENDANT of the outcome — conditioning on it is conditioning on Y
+  postY: "←",        // a DESCENDANT of the outcome — the arrow comes back from Y
   unmeasured: "◌",   // a dotted ghost: not in your data
   adjusted: "|",     // THE CONDITIONING BAR. P(Y | X)
   selected: "⊂",     // SAMPLE RESTRICTION — you kept a SUBSET. Not the same act as adjusting, and worse:
@@ -375,16 +381,27 @@ export function renderSetupScript(s: SetupScript, cw = 4): string {
 
   const L: string[] = [];
   L.push(`⟦ ${s.title} ⟧`);
-  L.push(rule("┌", "┬", "┐"));
-  if (!dense) L.push(" ".repeat(LBL) + cols.map((c, i) => "│" + centre(GROUP_LABEL[present[i]!], c.length * cw)).join("") + "│");
-  L.push(" ".repeat(LBL) + cols.map((c) => "│" + c.map((n) => centre(tag(n), cw)).join("")).join("") + "│");
-  L.push(rule("├", "┼", "┤"));
-  for (const row of live) {
-    if (!row) { L.push(rule("├", "┼", "┤")); continue; }
-    const [label, key] = row;
-    L.push(label.padEnd(LBL) + cols.map((c) => "│" + c.map((n) => centre(n.cells[key], cw)).join("")).join("") + "│");
+
+  if (dense) {
+    // COMPACT: no box at all. A single SPACE separates the groups — it costs one column instead of one
+    // column PLUS a heavy glyph, and it separates just as well. Bands separate with a BLANK LINE, which is
+    // free horizontally. What is left is signal and almost nothing else, which is the entire point of a mode
+    // called compact. The keys line names the columns; in a presentation the legend does it instead.
+    const row = (label: string, cell: (n: SetupNode) => string) =>
+      (label.padEnd(LBL) + cols.map((c) => c.map(cell).join("")).join(" ")).replace(/\s+$/, "");
+    L.push(row("", tag));
+    for (const r of live) L.push(r ? row(r[0], (n) => n.cells[r[1]]) : "");
+  } else {
+    L.push(rule("┌", "┬", "┐"));
+    L.push(" ".repeat(LBL) + cols.map((c, i) => "│" + centre(GROUP_LABEL[present[i]!], c.length * cw)).join("") + "│");
+    L.push(" ".repeat(LBL) + cols.map((c) => "│" + c.map((n) => centre(tag(n), cw)).join("")).join("") + "│");
+    L.push(rule("├", "┼", "┤"));
+    for (const r of live) {
+      if (!r) { L.push(rule("├", "┼", "┤")); continue; }
+      L.push(r[0].padEnd(LBL) + cols.map((c) => "│" + c.map((n) => centre(n.cells[r[1]], cw)).join("")).join("") + "│");
+    }
+    L.push(rule("└", "┴", "┘"));
   }
-  L.push(rule("└", "┴", "┘"));
   L.push("");
   const e = s.edges;
   L.push("edges     " + SETUP_GLYPHS.plumbing.repeat(e.plumbing) + SETUP_GLYPHS.fitted.repeat(e.fitted) +
