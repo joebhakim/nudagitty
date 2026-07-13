@@ -59,6 +59,7 @@ import {
   edgeProvenance,
   pinKeyElement,
   pinKeys,
+  replayState,
   setNodeDataMode,
   authorNumber,
   unlearnNumber,
@@ -1118,6 +1119,26 @@ export function App() {
   // the fix.
   const missingData = useMemo(() => missingDatasets(document), [document]);
 
+  // REPLAY: which nodes are reading their data column, and therefore which drawn arrows are dead. The
+  // targets are the nodes with dead arrows pointing INTO them — those, and only those, are what the banner
+  // offers to fit. A plain covariate replaying its column is CORRECT (that is the whole point of a plasmode);
+  // it only becomes a problem once you draw a structural edge into it and expect that edge to do something.
+  const replay = useMemo(() => {
+    const state = replayState(document);
+    const targets = [...new Set(state.inertEdges
+      .map((id) => document.graph.edges.find((e) => e.id === id)?.target)
+      .filter((t): t is string => t !== undefined))];
+    return { ...state, targets, any: targets.length > 0 };
+  }, [document]);
+  const labelOf = useCallback(
+    (id: string) => document.graph.nodes.find((n) => n.id === id)?.label ?? id,
+    [document]
+  );
+  const fitReplayTargets = useCallback(
+    (doc: GraphDocument, ids: string[]) => ids.reduce((acc, id) => setNodeDataMode(acc, id, "fit"), doc),
+    []
+  );
+
   const renderCanvasPane = (order: number) => (
     <Panel id="canvas" defaultSize={compactWorkspace ? 42 : isBasicMode ? (basicResultsOpen ? 48 : 78) : presentationActive ? 58 : 44} minSize={compactWorkspace ? 32 : 32} className="workspace-panel canvas-panel" key="canvas">
       <FlowGraphCanvas
@@ -1174,6 +1195,39 @@ export function App() {
           </div>
         );
       })()}
+      {/* REPLAY — the loudest thing on the canvas, because it is the quietest failure in the app.
+          Every imported node replays its data column, which DISCARDS its incoming structural edges. So a
+          freshly drawn DAG generates nothing, and if the OUTCOME is replaying then do() is exactly 0 — a
+          precise, confident, structurally-guaranteed-wrong causal effect. Not dismissible: the state is not
+          a notification, it is what the model currently IS. It clears when you fit. */}
+      {replay.any && (
+        <div className="wire-prompt replay" role="status">
+          <span>
+            {replay.outcomeReplays ? (
+              <>
+                <b>Nothing is being generated.</b> <b>{replay.targets.length}</b>{" "}
+                {replay.targets.length === 1 ? "variable is" : "variables are"} replaying{" "}
+                {replay.targets.length === 1 ? "its" : "their"} real data column, so your{" "}
+                <b>{replay.inertEdges.length} arrows have no effect</b> — and because the outcome is one of
+                them, <b>do() cannot move it</b>. This is an <b>adjustment</b> graph, not a data-generating
+                model yet.
+              </>
+            ) : (
+              <>
+                <b>{replay.inertEdges.length} arrows aren&rsquo;t running.</b> They point into{" "}
+                <b>{replay.targets.map((t) => labelOf(t)).join(", ")}</b>, which{" "}
+                {replay.targets.length === 1 ? "replays its" : "replay their"} real data column — so those
+                coefficients have <b>no effect on the simulation</b>. They still define the adjustment set.
+              </>
+            )}
+          </span>
+          <div className="wire-prompt-actions">
+            <button type="button" className="wp-fit" onClick={() => commit(fitReplayTargets(document, replay.targets))}>
+              Fit {replay.targets.map((t) => labelOf(t)).join(" + ")} from data →
+            </button>
+          </div>
+        </div>
+      )}
       {missingData.length > 0 && (
         <div className="wire-prompt data-missing" role="status">
           <span>

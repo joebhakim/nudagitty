@@ -864,6 +864,15 @@
 .wire-prompt.data-missing { border-color: #e0c48f; background: #fdf7ec; }
 .wire-prompt.data-missing .wp-fit { background: var(--warn, #8a5f00); }
 .wire-prompt.data-missing .wp-fit:hover { background: #6f4d00; }
+
+/* REPLAY — "your DAG isn't running". Deliberately the loudest prompt on the canvas, because it is the app's
+   quietest failure: the arrows are drawn, the coefficients are printed, the oracle used to print a causal
+   effect, and NONE of it was generated. Uses the --danger tone (not --warn): this is not a caveat about a
+   result, it is the absence of one. Not dismissible — it is the model's current state, not a notification,
+   and it clears itself the moment you fit. */
+.wire-prompt.replay { border-color: #d99a94; background: #fdf1f0; box-shadow: 0 6px 22px rgba(163, 59, 52, 0.18); }
+.wire-prompt.replay .wp-fit { background: var(--danger, #a33b34); }
+.wire-prompt.replay .wp-fit:hover { background: #8a2f29; }
 .copula-coupling-label {
   fill: #9b6dd6; font-size: 10px; font-weight: 700; paint-order: stroke; stroke: var(--panel, #fff); stroke-width: 3px;
 }

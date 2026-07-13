@@ -18,6 +18,8 @@ export * from "./copulaBlockEdit";
 export * from "./dataframe";
 export * from "./dataImport";
 export * from "./fitDgp";
+export * from "./replay";
+export * from "./setupScript";
 export * from "./familyGuardrail";
 export * from "./longitudinal/estimation/learners";
 export { buildDistributionQuantile } from "./distributions";

@@ -36,7 +36,9 @@ export function compareLongitudinalGMethods(document: GraphDocument, config: GMe
   const estimates: GMethodEstimate[] = [
     naiveEstimate(cohort, config, leftStrategy, rightStrategy),
     stratifiedEstimate(cohort, config, leftStrategy, rightStrategy),
-    gFormulaEstimate(leftStrategy, rightStrategy, strategyEvaluations),
+    // The document, so the oracle can REFUSE when the outcome is replaying its data column (do() would be
+    // exactly 0 by construction, which is not an estimate of anything). See replay.ts.
+    gFormulaEstimate(leftStrategy, rightStrategy, strategyEvaluations, document),
     ipwEstimate(cohort, config, leftStrategy, rightStrategy),
     gEstimationEstimate(cohort, config, leftStrategy, rightStrategy),
     outcomeRegressionEstimate(cohort, config, leftStrategy, rightStrategy),
