@@ -1684,3 +1684,16 @@
   .dataprep-row > pre, .dataprep-tools > button { background: #141419; border-color: #2a2a33; color: #d6d6de; }
   .dataprep-tools > button.selected { background: #17302f; }
 }
+
+/* The specification-match WARNING. The ladder is dangerously flattering without it: the rung that matches
+   the DGP recovers the truth by tautology, and read naively that says "this estimator is good". */
+.outcome-specmatch { display: grid; gap: 3px; margin: 4px 0 6px; padding: 7px 9px; border: 1px solid #e0c48f; border-left: 3px solid #c08a2e; border-radius: 6px; background: #fdf6e7; }
+.outcome-specmatch > b { display: flex; align-items: center; gap: 2px; font-size: 11px; color: #8a5a12; }
+.outcome-specmatch > span { font-size: 10.5px; line-height: 1.5; color: var(--text, #333); }
+.outcome-specmatch.soft { border-color: var(--line, #d8d8e0); border-left-color: var(--muted, #8a93a0); background: var(--surface-2, #f2f2f6); }
+.outcome-specmatch.soft > b { color: var(--muted, #667); }
+@media (prefers-color-scheme: dark) {
+  .outcome-specmatch { background: #2a2210; border-color: #5a4a24; }
+  .outcome-specmatch > b { color: #e0b877; }
+  .outcome-specmatch.soft { background: #26262f; border-color: #34343e; }
+}

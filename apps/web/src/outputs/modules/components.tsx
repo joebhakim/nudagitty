@@ -7,7 +7,7 @@ import { deterministicJitter } from "../../charts/jitter";
 import { SERIES_COLORS } from "../../charts/chartColors";
 import { CategoryOutcomePlot, binaryOutcomeSummaries, continuousOutcomeSummaries, wilsonInterval } from "../../charts/CategoryOutcomePlot";
 import { OutcomeModelLadder } from "./OutcomeModelLadder";
-import type { CovariateBasis, OutcomeLearnerId, GMethodEstimate, GMethodsComparison } from "@nudagitty/core";
+import type { CovariateBasis, GraphDocument, OutcomeLearnerId, GMethodEstimate, GMethodsComparison } from "@nudagitty/core";
 import type { CategoryOutcomeSummary, ScatterPoint } from "../../charts/CategoryOutcomePlot";
 import type { CompletedOutputRenderOptions } from "../types";
 import type {
@@ -582,7 +582,7 @@ export function EffectByArmGraph(props: { comparison: GMethodsComparison; outcom
   );
 }
 
-export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean; primaryId?: GMethodEstimate["id"]; onPrimaryChange?: (id: GMethodEstimate["id"]) => void; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void; outcomeModel?: OutcomeLearnerId; onOutcomeModelChange?: (id: OutcomeLearnerId) => void; points?: ScatterPoint[]; treatmentId?: string }) {
+export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; defaultOpen?: boolean; primaryId?: GMethodEstimate["id"]; onPrimaryChange?: (id: GMethodEstimate["id"]) => void; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void; outcomeModel?: OutcomeLearnerId; onOutcomeModelChange?: (id: OutcomeLearnerId) => void; document?: GraphDocument; points?: ScatterPoint[]; treatmentId?: string }) {
   const { comparison, outcomeScale, outcomeUnit } = props;
   // Units go in the column headers, not redundantly in every cell (risk shows % inline, so no
   // suffix there).
@@ -696,7 +696,7 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
       {/* The RESPONSE-FAMILY axis: which model fills the E[Y|T,L] slot. Ordered by hypothesis class,
           defaulting to the smallest. This is the axis that actually fixes the impossible counterfactual. */}
       {props.onOutcomeModelChange && (
-        <OutcomeModelLadder value={props.outcomeModel} onChange={props.onOutcomeModelChange} />
+        <OutcomeModelLadder value={props.outcomeModel} onChange={props.onOutcomeModelChange} document={props.document} />
       )}
       {/* The OTHER axis: flexibility IN L. Deliberately still a plain select and NOT a ladder — it does not
           converge on truth (linear +18,088 / quadratic −5,347 / cubic +5,083 against a real +1,794), so it
@@ -723,7 +723,7 @@ export const MethodsComparisonPanel = memo(function MethodsComparisonPanel(props
 // Shared readout used by the classic (non-what-if) adjustment output: the effect graph + the
 // methods table, with one selected method linking the two. (The what-if path composes the same
 // pieces inline.) This is how the redesign reaches every adjustment example, not just what-if.
-export function UnifiedAdjustmentReadout(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; points?: ScatterPoint[]; treatmentId?: string; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void; outcomeModel?: OutcomeLearnerId; onOutcomeModelChange?: (id: OutcomeLearnerId) => void }) {
+export function UnifiedAdjustmentReadout(props: { comparison: GMethodsComparison; outcomeScale: "risk" | "mean"; outcomeUnit: string; points?: ScatterPoint[]; treatmentId?: string; basis?: CovariateBasis; onBasisChange?: (basis: CovariateBasis) => void; outcomeModel?: OutcomeLearnerId; onOutcomeModelChange?: (id: OutcomeLearnerId) => void; document?: GraphDocument }) {
   const [primaryId, setPrimaryId] = useState<GMethodEstimate["id"]>(() => defaultPrimaryMethod(props.comparison));
   return (
     <>
@@ -733,7 +733,7 @@ export function UnifiedAdjustmentReadout(props: { comparison: GMethodsComparison
           <EffectByArmGraph comparison={props.comparison} outcomeScale={props.outcomeScale} selectedId={primaryId} points={props.points} treatmentId={props.treatmentId} show={["observed", "truth"]} />
         </div>
       </details>
-      <MethodsComparisonPanel comparison={props.comparison} outcomeScale={props.outcomeScale} outcomeUnit={props.outcomeUnit} defaultOpen primaryId={primaryId} onPrimaryChange={setPrimaryId} basis={props.basis} onBasisChange={props.onBasisChange} outcomeModel={props.outcomeModel} onOutcomeModelChange={props.onOutcomeModelChange} points={props.points} treatmentId={props.treatmentId} />
+      <MethodsComparisonPanel comparison={props.comparison} outcomeScale={props.outcomeScale} outcomeUnit={props.outcomeUnit} defaultOpen primaryId={primaryId} onPrimaryChange={setPrimaryId} basis={props.basis} onBasisChange={props.onBasisChange} outcomeModel={props.outcomeModel} onOutcomeModelChange={props.onOutcomeModelChange} document={props.document} points={props.points} treatmentId={props.treatmentId} />
     </>
   );
 }

@@ -264,3 +264,50 @@ export function fitGammaLogOutcomeModel(cohort: LongitudinalCohort, outcome: str
   const coefficients = beta;
   return (row, assignment) => Math.exp(Math.max(-30, Math.min(30, dot(designRow(row, treatments, plan, assignment), coefficients))));
 }
+
+/**
+ * TWO-PART with an IDENTITY amount margin. P(Y>0) = σ(x'γ) — a logistic gate — times E[Y | Y>0] = x'β,
+ * fit by OLS on the positive rows in LEVELS. No log, no exponential, no retransformation.
+ *
+ * This is the rung the ladder was missing. `two_part` (fitTwoPartOutcomeModel) has the right FAMILY but a
+ * LOG amount link: it fits log(Y) on the positive rows and then exponentiates, so on a DGP whose amount
+ * margin is linear it is misspecified — right family, wrong link — and it missed the imposed +$1,794 by
+ * $3,500. It is also the model the LaLonde literature actually fits: every paper puts re78 in LEVELS.
+ *
+ * The mean is floored at zero rather than softplus'd: an estimator should not have to know the generator's
+ * softplus scale, and a linear amount model that predicts a negative wage is telling you something true
+ * about itself. (E[Y|x] = P(Y>0|x)·0 = 0 there, which is at least a value the outcome can actually take.)
+ */
+export function fitTwoPartIdentityOutcomeModel(cohort: LongitudinalCohort, outcome: string, treatments: string[], covariates: string[], binary: boolean, basis: CovariateBasis = "linear"): ((row: Record<string, number>, assignment: Map<string, number> | null) => number) | null {
+  if (binary) return null;
+  const plan = buildCovariatePlan(cohort, covariates, basis);
+  const rows = cohort.rows.filter((r) => { const y = r[outcome]; return y !== undefined && Number.isFinite(y); });
+  // A negative value would be silently relabelled "it never happened" by the gate. Refuse rather than lie.
+  if (rows.some((r) => (r[outcome] ?? 0) < 0)) return null;
+  const params = 1 + treatments.length + plan.reduce((s, t) => s + t.degree, 0);
+  const positive = rows.filter((r) => (r[outcome] ?? 0) > 0);
+  if (positive.length < params + 2) return null;
+
+  // Extensive margin — over ALL rows (participation is observed for everyone).
+  const anyZero = positive.length < rows.length;
+  let gate: number[] | null = null;
+  if (anyZero) {
+    const design = rows.map((r) => designRow(r, treatments, plan, null));
+    const response = rows.map((r) => ((r[outcome] ?? 0) > 0 ? 1 : 0));
+    const weights = rows.map((_, i) => cohort.weights[i] ?? 1);
+    gate = irlsLogistic(design, response, weights, params);
+    if (!gate) return null;
+  }
+
+  // Intensive margin — OLS on the AMOUNTS themselves, over the positive rows. Levels, not logs.
+  const posDesign = positive.map((r) => designRow(r, treatments, plan, null));
+  const posResponse = positive.map((r) => r[outcome]!);
+  const amount = solveNormalEquations(posDesign, posResponse, positive.map(() => 1), { ridge: 1e-6 });
+  if (!amount || !amount.every(Number.isFinite)) return null;
+
+  return (row, assignment) => {
+    const x = designRow(row, treatments, plan, assignment);
+    const p = gate ? sigmoid(dot(x, gate)) : 1;
+    return p * Math.max(0, dot(x, amount));
+  };
+}

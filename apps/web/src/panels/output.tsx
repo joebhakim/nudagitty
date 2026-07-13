@@ -1,4 +1,4 @@
-import type { CategoricalEffectComparison, ContinuousEffectComparison, CovariateBasis, GMethodsComparison, OutcomeLearnerId } from "@nudagitty/core";
+import type { GraphDocument, CategoricalEffectComparison, ContinuousEffectComparison, CovariateBasis, GMethodsComparison, OutcomeLearnerId } from "@nudagitty/core";
 import { ContinuousEffectReadout } from "../outputs/ContinuousEffectReadout";
 import { CategoricalEffectReadout } from "../outputs/CategoricalEffectReadout";
 import type { ScatterPoint } from "../charts/CategoryOutcomePlot";
@@ -104,11 +104,12 @@ export function AdjustedOutputPanel(props: {
   onBasisChange?: (basis: CovariateBasis) => void;
   outcomeModel?: OutcomeLearnerId;
   onOutcomeModelChange?: (id: OutcomeLearnerId) => void;
+  document?: GraphDocument;
   pending?: ResultPendingState;
   hideOracle?: boolean;
 }) {
   const unifiedPanel = props.unified
-    ? <UnifiedAdjustmentReadout comparison={props.unified.comparison} outcomeScale={props.unified.outcomeScale} outcomeUnit={props.unified.outcomeUnit} points={props.unified.points} treatmentId={props.unified.treatmentId} basis={props.basis} onBasisChange={props.onBasisChange} outcomeModel={props.outcomeModel} onOutcomeModelChange={props.onOutcomeModelChange} />
+    ? <UnifiedAdjustmentReadout comparison={props.unified.comparison} outcomeScale={props.unified.outcomeScale} outcomeUnit={props.unified.outcomeUnit} points={props.unified.points} treatmentId={props.unified.treatmentId} basis={props.basis} onBasisChange={props.onBasisChange} outcomeModel={props.outcomeModel} onOutcomeModelChange={props.onOutcomeModelChange} document={props.document} />
     : null;
   // Non-binary-exposure analogs of the unified panel: the dose-response method
   // comparison (ordered exposures) or the per-level multi-arm table (categorical).

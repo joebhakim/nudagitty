@@ -1,5 +1,7 @@
 import type { CovariateBasis, LongitudinalCohort } from "../types";
-import { fitGammaLogOutcomeModel, fitInteractionOutcomeModel, fitOutcomeModel, fitPpmlOutcomeModel, fitTwoPartOutcomeModel } from "./fit";
+import type { GraphDocument } from "../../types";
+import { normalizeNodeMechanism, normalizeVariableModel } from "../../graph";
+import { fitGammaLogOutcomeModel, fitInteractionOutcomeModel, fitOutcomeModel, fitPpmlOutcomeModel, fitTwoPartIdentityOutcomeModel, fitTwoPartOutcomeModel } from "./fit";
 
 /**
  * The OUTCOME-MODEL LADDER.
@@ -47,7 +49,8 @@ import { fitGammaLogOutcomeModel, fitInteractionOutcomeModel, fitOutcomeModel, f
 export type OutcomeLearnerId =
   | "ols"               // rung 1 — the naive baseline, and the default. Never change this default.
   | "ols_interactions"  // rung 2
-  | "two_part"          // rung 3
+  | "two_part"          // rung 3 — LOG amount
+  | "two_part_identity" // rung 3 — LEVELS amount
   | "ppml"              // rung 3
   | "gamma_log"         // rung 3
   | "mincer"            // rung 4
@@ -111,10 +114,22 @@ export const OUTCOME_LEARNERS: readonly OutcomeLearner[] = [
     fit: fitInteractionOutcomeModel
   },
   {
-    id: "two_part",
-    label: "Two-part (Cragg)",
+    id: "two_part_identity",
+    label: "Two-part, amount in LEVELS",
     rung: 3,
-    hypothesisClass: "P(Y>0) gate × E[Y | Y>0] log-amount — respects Y ≥ 0 and the zero spike",
+    hypothesisClass: "P(Y>0) gate × E[Y | Y>0] = x'β — no log, no exponential, no retransformation",
+    status: "usable",
+    extrapolates: true,
+    needsCrossFitting: false,
+    unlockedBy: "a zero spike AND an amount that is linear in its predictors — what the earnings literature fits (nobody logs re78)",
+    requires: "Y ≥ 0 — a negative value would be silently relabelled as “it never happened” by the gate",
+    fit: fitTwoPartIdentityOutcomeModel
+  },
+  {
+    id: "two_part",
+    label: "Two-part (Cragg), amount in LOGS",
+    rung: 3,
+    hypothesisClass: "P(Y>0) gate × E[Y | Y>0] = exp(x'β) — the textbook Cragg model",
     status: "usable",
     extrapolates: true,   // parametric — it CAN extrapolate, but only within the outcome's support
     needsCrossFitting: false,
@@ -184,4 +199,43 @@ export const OUTCOME_LEARNERS: readonly OutcomeLearner[] = [
 export function outcomeLearner(id?: OutcomeLearnerId): OutcomeLearner {
   const found = OUTCOME_LEARNERS.find((l) => l.id === id && l.status === "usable");
   return found ?? OUTCOME_LEARNERS[0]!;
+}
+
+/**
+ * DOES THE CHOSEN OUTCOME MODEL MATCH THE DGP'S OWN?
+ *
+ * This is a WARNING, not an aid. It reads the DGP's FORM (family + link) — never its effect, which would be
+ * the answer sheet — and it exists because the ladder is otherwise dangerously flattering.
+ *
+ * On lalonde-fit-recover-2part the `two_part_identity` rung recovers the imposed +$1,794 to within $20,
+ * while every other rung misses by $1.6k–$4.6k. Read naively that says "two-part-levels is the right
+ * estimator". It says nothing of the kind. It recovers the truth BECAUSE IT IS THE GENERATING MODEL —
+ * correct specification is what buys correct extrapolation across a support gap, and on real data nobody
+ * hands you the generating model. That is precisely why LaLonde is famous: Smith & Todd showed no
+ * observational method reliably recovers the experimental benchmark, and a tool that quietly taught
+ * "match the family and win" would be teaching the opposite of its own literature.
+ *
+ * Returns null when there is no imposed effect — i.e. when this is not a benchmark and the question is moot.
+ */
+export type SpecificationMatch = "exact" | "family" | "none";
+
+export function specificationMatch(document: GraphDocument, outcomeModel?: OutcomeLearnerId): SpecificationMatch | null {
+  if (!document.metadata.imposedEffect) return null;          // not a benchmark ⇒ nothing to be smug about
+  const outcomeId = document.metadata.imposedEffect.outcome ?? document.graph.nodes.find((n) => n.roles?.outcome)?.id;
+  const node = document.graph.nodes.find((n) => n.id === outcomeId);
+  if (!node) return null;
+
+  const family = normalizeVariableModel(node.variable).valueType;
+  const combiner = normalizeNodeMechanism(document.simulation.nodes[node.id]).combiner;
+  const chosen = outcomeLearner(outcomeModel).id;
+
+  if (family === "semicontinuous") {
+    const dgp = combiner === "positive_softplus" ? "two_part_identity" : "two_part";
+    if (chosen === dgp) return "exact";                        // same family AND same amount link
+    if (chosen === "two_part" || chosen === "two_part_identity") return "family";  // right family, wrong link
+    return "none";
+  }
+  if (family === "continuous") return chosen === "ols" ? "exact" : "none";
+  if (family === "positive") return chosen === "gamma_log" || chosen === "ppml" ? "family" : "none";
+  return "none";
 }

@@ -487,7 +487,25 @@ $1,473 < $1,794, so the extensive share can never exceed 82%."* Under the correc
 `maxExtensiveShare = 1.0`. The machinery is unchanged and still correct (ask for $4,000 and it bites); the
 *number* was a property of a log link on dollar-valued regressors, not a fact about job training.
 
-**2. Nothing recovers the truth, and the reason is now nameable.** OLS **+$3,460**, +interactions
+**2. ~~Nothing recovers the truth~~ — the missing rung is now built.** `two_part_identity` (a logistic gate
+× an OLS amount model **in levels**) recovers **+$1,814** against the imposed **+$1,794** — off by **$20**,
+and AIPW lands on **+$1,793**, off by **$1**. Every other rung misses by $1,666–$4,584:
+
+| rung | outcome model | estimate | off by |
+|---|---|---|---|
+| 1 | Linear / logistic, additive | +3,460 | $1,666 |
+| 2 | + treatment interactions | −2,790 | $4,584 |
+| **3** | **Two-part, amount in LEVELS** | **+1,814** | **$20** ✓ |
+| 3 | Two-part (Cragg), amount in LOGS | −1,715 | $3,509 |
+| 3 | PPML | +3,921 | $2,127 |
+| 3 | Gamma GLM | REFUSED | *(no mass at zero)* |
+
+**And the ladder now warns you when you have matched the DGP** (`specificationMatch`), because that table
+read naively says *"two-part-levels is the right estimator"* — which is exactly the lie this literature
+exists to refute. It recovers the truth **because it is the generating model**. The original diagnosis,
+retained:
+
+**Nothing recovers the truth [with a MISSPECIFIED model], and the reason is now nameable.** OLS **+$3,460**, +interactions
 **−$2,790**, two-part **−$1,715**, PPML **+$3,921** against a true **+$1,794**. The DGP is
 `gate(L,T) × softplus(L,T)` — a *product* of two linear pieces, so not linear, so plain OLS cannot be right.
 And our `two_part` learner fits `log(Y)` on the positive rows — a **log** amount link — while this DGP's

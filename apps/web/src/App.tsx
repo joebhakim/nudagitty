@@ -1265,6 +1265,7 @@ export function App() {
                     onBasisChange={setCovariateBasis}
                     outcomeModel={outcomeModel}
                     onOutcomeModelChange={setOutcomeModel}
+                    document={document}
                     pending={resultsPending}
                     hideOracle={false}
                   />

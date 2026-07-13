@@ -99,3 +99,32 @@ describe("a learner that cannot describe your outcome REFUSES, and says why", ()
     expect(OUTCOME_LEARNERS.find((l) => l.id === "gamma_log")!.requires).toBeTruthy();
   }, 30000);
 });
+
+describe("THE MISSING RUNG: two-part with a LEVELS amount — the ladder finally lands on the truth", () => {
+  const run = (outcomeModel: "ols" | "ols_interactions" | "two_part" | "two_part_identity" | "ppml", id = "outcome_regression") => {
+    const doc = exampleDocument("lalonde-fit-recover-2part")!;
+    const spec = deriveAdjustmentSpec(doc)!;
+    return analyzeAdjustment(doc, { ...spec, outcomeModel })!.estimates.find((e) => e.id === id)!.estimate!;
+  };
+
+  it("recovers the imposed +$1,794 that every other rung missed", () => {
+    // The DGP is gate(L,T) × softplus(L,T) with gamma noise. This learner is a logistic gate × an OLS
+    // amount model in LEVELS — the same shape, and the shape every paper in the LaLonde literature fits.
+    // Nothing else on the ladder can: rung 1 is linear (but the truth is a PRODUCT, so not linear); rung 2
+    // adds flexibility on the wrong axis; `two_part` has the right FAMILY but a LOG amount link and so
+    // EXPONENTIATES its own misspecification; PPML puts a log link on a linear mean.
+    const got = run("two_part_identity");
+    expect(Math.abs(got - 1794)).toBeLessThan(150);          // measured: +1,814 — off by $20
+    expect(Math.abs(run("two_part_identity", "aipw") - 1794)).toBeLessThan(150);   // measured: +1,793 — off by $1
+  }, 60000);
+
+  it("…and every WRONG rung is wrong for a nameable reason", () => {
+    const err = (v: number) => Math.abs(v - 1794);
+    const right = err(run("two_part_identity"));
+    for (const wrong of ["ols", "ols_interactions", "two_part", "ppml"] as const) {
+      // each misses by $1.6k–$4.6k, and by at least an order of magnitude more than the correct rung
+      expect(err(run(wrong))).toBeGreaterThan(1000);
+      expect(err(run(wrong))).toBeGreaterThan(5 * right);
+    }
+  }, 90000);
+});
