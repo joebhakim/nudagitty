@@ -9,6 +9,28 @@ Machine-readable references: `docs/references/outcome-marginals-earnings.bib`. S
 `docs/data-generating-mechanisms.md`, `docs/track-b-benchmark-mode.md`,
 `docs/lalonde-recover-rct.md`.
 
+> ## ⚠️ PARTIALLY SUPERSEDED — read `docs/lalonde-specification.md` first
+>
+> The **philosophy** in this note stands (improve the model, never force the marginal; keep the
+> diagnostics falsifiable). The **specific earnings model it recommends does not.**
+>
+> §5–§6 below prescribe a two-part outcome whose intensive margin is fit by **log-OLS with normal noise on
+> the log scale** — i.e. a lognormal `E[Y|Y>0]`. Measurement says that is wrong at the foundation:
+> **`log(re78) | re78>0` is LEFT-skewed (−1.79) with excess kurtosis 5.34.** It is not lognormal.
+> Exponentiating a normal is wrong in shape *and* manufactures a **$2.4M** tail against a real max of
+> **$121k**.
+>
+> §7's literature survey is also incomplete in a way that mattered. It cites Mincer as licence to log —
+> but Mincer is fit on the earnings of the **employed** (strictly positive), says nothing about zeros, and
+> **never puts lagged earnings on the right-hand side**. In the LaLonde literature proper, **no paper logs
+> the earnings regressor**; the canonical vector is levels **plus zero-indicators** (`u74 = 1(re74==0)`),
+> whose logit coefficient is **1.94–3.26** against a dollar-slope of **−0.00007**. And Imbens (2015 §3.2)
+> uses `ln(1 + earn75)` as a regressor as his *cautionary example on this exact dataset*.
+>
+> The corrected recommendation — two-part gate on the canonical vector **with `u74`/`u75`**, intensive
+> margin **linear in levels** (no log link), **gamma** noise — is in `docs/lalonde-specification.md`,
+> with the tables and citations.
+
 ---
 
 ## 1. The setup: what "fit a DGP to data" actually asks of us

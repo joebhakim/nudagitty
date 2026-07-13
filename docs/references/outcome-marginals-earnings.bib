@@ -184,3 +184,133 @@
   pages   = {2263--2291},
   note    = {Distance correlation is equivalent to HSIC}
 }
+
+% ---- added for docs/lalonde-specification.md ----
+
+@article{heckman1979sample,
+  author  = {Heckman, James J.},
+  title   = {Sample Selection Bias as a Specification Error},
+  journal = {Econometrica},
+  volume  = {47},
+  number  = {1},
+  pages   = {153--161},
+  year    = {1979},
+  note    = {The selection correction. Appropriate when zero means the outcome is MISSING (a wage offer
+             exists but is unobserved) --- NOT when zero is an observed corner solution, which is the
+             earnings-in-a-training-evaluation case. LaLonde (1986) Table 6 runs it.}
+}
+
+@article{dehejia2005practical,
+  author  = {Dehejia, Rajeev},
+  title   = {Practical Propensity Score Matching: A Reply to Smith and Todd},
+  journal = {Journal of Econometrics},
+  volume  = {125},
+  number  = {1--2},
+  pages   = {355--364},
+  year    = {2005},
+  note    = {The reply: Smith and Todd applied DW's balance-selected score to a DIFFERENT sample without
+             re-running the balance search. Re-specifying on the Early RA sample gives $2,705 (CPS) /
+             $2,711 (PSID) against a benchmark of $2,717. Unresolved; both sides partly right.}
+}
+
+@article{diamond2013genetic,
+  author  = {Diamond, Alexis and Sekhon, Jasjeet S.},
+  title   = {Genetic Matching for Estimating Causal Effects: A General Multivariate Matching Method for
+             Achieving Balance in Observational Studies},
+  journal = {Review of Economics and Statistics},
+  volume  = {95},
+  number  = {3},
+  pages   = {932--945},
+  year    = {2013},
+  note    = {GenMatch. Matching covariate set is the canonical one: age, educ, black, hisp, married,
+             nodegr, u74, u75, re75, re74 --- LEVELS + zero indicators. Also shows DW's own scores fail
+             balance (KS p < 0.01 on every continuous covariate) even where they "work".}
+}
+
+@article{abadie2006large,
+  author  = {Abadie, Alberto and Imbens, Guido W.},
+  title   = {Large Sample Properties of Matching Estimators for Average Treatment Effects},
+  journal = {Econometrica},
+  volume  = {74},
+  number  = {1},
+  pages   = {235--267},
+  year    = {2006},
+  note    = {Matching on continuous covariates carries a conditional bias vanishing slower than
+             n^{-1/2}; fix by regression-adjusting the within-pair difference. A bias correction, not a
+             covariate-transform recommendation --- it takes the covariate list as given.}
+}
+
+@article{imbens2015matching,
+  author  = {Imbens, Guido W.},
+  title   = {Matching Methods in Practice: Three Examples},
+  journal = {Journal of Human Resources},
+  volume  = {50},
+  number  = {2},
+  pages   = {373--419},
+  year    = {2015},
+  note    = {THE DIRECT HIT. Section 3.2 uses log(1+earn75) as a RHS regressor as its cautionary example on
+             the LaLonde data: the imputed counterfactual for the treated swings 6.88 -> 2.81 ($000s), a
+             $4,070 error against a ~$2,000 ATT, because the treated are massed at ZERO earnings and the
+             prediction region is pure extrapolation. Under poor overlap the transform IS the identifying
+             assumption. Also: selects re74, re75, u74, u75 for AUTOMATIC INCLUSION in the propensity
+             score, then stepwise second-order terms.}
+}
+
+@article{imbens2024lalonde,
+  author  = {Imbens, Guido W. and Xu, Yiqing},
+  title   = {LaLonde (1986) after Nearly Four Decades: Lessons Learned},
+  journal = {Journal of Economic Perspectives (forthcoming); arXiv:2406.00827},
+  year    = {2024},
+  note    = {"Following Dehejia and Wahba (1999), we may augment this vector to include 1974 and 1975
+             earnings and INDICATORS FOR ZERO EARNINGS (unemployment) in each year." Nine modern
+             estimators: on LDW-CPS all positive and near $1,794; on LDW-PSID they range $4 to $2,420 ---
+             the PSID arm remains unsolved. After trimming, the experimental benchmark itself falls to
+             $306 and is insignificant.}
+}
+
+@article{heckman1999pre,
+  author  = {Heckman, James J. and Smith, Jeffrey A.},
+  title   = {The Pre-Programme Earnings Dip and the Determinants of Participation in a Social Programme:
+             Implications for Simple Programme Evaluation Strategies},
+  journal = {The Economic Journal},
+  volume  = {109},
+  number  = {457},
+  pages   = {313--348},
+  year    = {1999},
+  note    = {Labour-force STATUS in the months before the participation decision predicts programme
+             participation better than annual or quarterly EARNINGS. The extensive margin carries the
+             selection signal --- which is why a smooth transform of re74 (log, sqrt, asinh) throws away
+             the most predictive feature of the data.}
+}
+
+@incollection{lemieux2006mincer,
+  author    = {Lemieux, Thomas},
+  title     = {The ``Mincer Equation'' Thirty Years after \emph{Schooling, Experience, and Earnings}},
+  booktitle = {Jacob Mincer: A Pioneer of Modern Labor Economics},
+  editor    = {Grossbard, Shoshana},
+  publisher = {Springer},
+  year      = {2006},
+  note      = {The exact Mincer form: log y = log y0 + r*S + b1*X + b2*X^2, X = age - S - 6. CRITICAL
+             CAVEAT for us: it is fit on the earnings of the EMPLOYED (strictly positive). It says nothing
+             about zeros, and Mincer never puts lagged earnings on the RHS at all.}
+}
+
+@incollection{heckman2006earnings,
+  author    = {Heckman, James J. and Lochner, Lance J. and Todd, Petra E.},
+  title     = {Earnings Functions, Rates of Return and Treatment Effects: The Mincer Equation and Beyond},
+  booktitle = {Handbook of the Economics of Education},
+  volume    = {1},
+  chapter   = {7},
+  year      = {2006},
+  note      = {Where the Mincer equation's assumptions hold and where they break.}
+}
+
+@misc{wooldridge_hurdle,
+  author = {Wooldridge, Jeffrey M.},
+  title  = {Hurdle and ``Selection'' Models},
+  note   = {"The value zero is not arbitrary; it is observed data." Selection models are usually NOT
+            appropriate for corner solutions. Tobit is too restrictive (one index governs both margins).
+            Recommended part 2: specify E(y | x, y>0) = exp(x*beta) and use a QMLE in the linear
+            exponential family (Poisson or gamma) --- NOT log-OLS plus retransformation.},
+  howpublished = {Teaching slides}
+}

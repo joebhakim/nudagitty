@@ -23,6 +23,28 @@ already does `Y = g⁻¹(η+ε)`, so the fitter just learns the link the node's 
 **Full design + econ literature + roadmap: `docs/fitting-outcome-marginals.md`** (references in
 `docs/references/outcome-marginals-earnings.bib`).
 
+> ⚠️ **`docs/lalonde-specification.md` (2026-07) supersedes several choices made under this heading.** A
+> literature search (LaLonde 1986; Dehejia–Wahba 1999/2002; Smith–Todd 2005; Dehejia 2005; Diamond–Sekhon
+> 2013; Imbens 2015; Imbens–Xu 2024; Wooldridge; Manning–Mullahy 2001; Santos Silva–Tenreyro 2006;
+> Chen–Roth 2024) plus fresh measurement shows our earnings DGP is wrong at the FOUNDATION, not in its
+> predictor transforms:
+>
+> - **`log(re78) | re78>0` is LEFT-skewed (−1.79) with excess kurtosis 5.34 — it is not lognormal.** Our
+>   `exp(η + ε), ε~N` intensive margin is wrong in shape AND manufactures a $2.4M tail (real max: $121k).
+> - **Nobody in this literature logs the earnings regressor. Zero papers.** The canonical vector is
+>   `age, educ, black, hisp, married, nodegree, re74, re75, u74, u75` — **levels + ZERO-INDICATORS**
+>   (`u74 = 1(re74==0)`), which we do not have. Its logit coefficient is **1.94–3.26**; the dollar slope is
+>   **−0.00007**. No smooth transform can represent a discontinuity at a point mass.
+> - **Imbens (2015 §3.2) uses our exact mistake (`ln(1+earn75)` as a regressor) as his cautionary example
+>   on this exact dataset**: a $4,070 swing in the imputed counterfactual against a ~$2,000 ATT.
+> - Our shipped `log(1+x)` and then `sqrt(x)` were a **post-hoc specification search on a fit statistic** —
+>   the precise practice Smith–Todd spent twenty years teaching the field to distrust.
+>
+> Proposed principled DGP: two-part gate on the canonical vector **with u74/u75**; intensive margin
+> **linear in levels** (softplus for positivity, no log link); **gamma** noise (shape ≈ 2.6, matching the
+> real conditional CV of 0.621). Measured: mean 20,488 / max $237k / skew 2.5 vs a real
+> 20,502 / $121k / 1.3. Costs a third re-baseline. **Not built yet.**
+
 - [x] **#93 Family-aware fit v1 DONE** (commits e41adb4, ae031ae) — reconcilePins fits OLS on the LINK
       scale from the node's valueType (identity / log=`positive`/gamma_log / logit=`proportion`), normal
       noise on that scale, + a retransformation-bias correction so the log-link generated MEAN still matches
