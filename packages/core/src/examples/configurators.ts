@@ -1,8 +1,8 @@
 import { parseModel } from "../parser";
 import { analyzeGraph } from "../analysis";
-import { authorNumber, pinKeys, pinNodeEquation, reconcilePins } from "../fitDgp";
+import { addPointMassIndicator, authorNumber, pinKeys, pinNodeEquation, reconcilePins } from "../fitDgp";
 import { datasetColumnIndex, datasetRows } from "../datasets";
-import { defaultEdgeMechanism, normalizeEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "../graph";
+import { addEdge, defaultEdgeMechanism, normalizeEdgeMechanism, normalizeGraphDocumentMetadata, normalizeNodeMechanism, normalizeSelectionCondition, normalizeVariableModel } from "../graph";
 import { setCopulaBlock } from "../copula";
 import { simpleEdge } from "../copulaVine";
 import type { CopulaBlock, EdgeMechanismKind, GraphDocument, GraphDocumentMetadata, GraphEdge, GraphModel, GraphNode, MixtureEdge, NodeDistribution, NodeInteraction, NodeMechanism, Point, SimulationSelectionCondition, VariableModel } from "../types";
@@ -1327,31 +1327,40 @@ export function configureLalondeFitRecoverTwoPart(document: GraphDocument): Grap
   setEdgeMechanism(document, "Row_source", "Earnings_78", "table_lookup", { dataset: "lalonde-obs", dataColumn: datasetColumnIndex("lalonde-obs", "re78") });
   setVariable(document, "Earnings_78", { valueType: "semicontinuous" });
 
-  // EARNINGS HISTORY ENTERS THROUGH A CONCAVE TRANSFORM, and this was corrupting the benchmark.
+  // ============ THE SPECIFICATION, PER THE LITERATURE (docs/lalonde-specification.md) ============
   //
-  // The intensive margin has a LOG LINK. Feeding it DOLLAR-VALUED earnings history makes E[Y|L] exponential
-  // IN DOLLARS, which manufactured a world with $2.6M earners (real LaLonde max: $121k) and skew 31 (real:
-  // 1.3). Not cosmetic: an analyst's OLS reported +$14,599 on our simulated rows where the REAL rows give
-  // +$752. We were punishing estimators for a world we invented, then calling it their failure.
+  // Everything below is what the LaLonde literature actually does, and every piece of it was something we
+  // got wrong first by guessing. The autopsy is in the doc; the short version:
   //
-  // WHY sqrt AND NOT log. The obvious reach is the Mincer move — log your dollar regressors. It does fix the
-  // tail, but the app's OWN residual test says it is the WORST option on the books: log(1+x) leaves
-  // dCor(ε, re74) = 0.354, worse even than raw dollars (0.245). The reason is the mass at ZERO — a third of
-  // these rows have no 1974 earnings, and log(1+x) blows that point up into a violent jump while compressing
-  // everything above it. sqrt is concave enough to kill the tail and gentle enough at zero not to:
+  // 1. EARNINGS HISTORY ENTERS IN LEVELS, PLUS A ZERO-INDICATOR. Nobody in this literature logs the
+  //    earnings regressor — zero papers. The canonical vector (DW 1999/2002, Smith-Todd, Diamond-Sekhon,
+  //    Imbens 2015, Imbens-Xu 2024) is levels + u74/u75 = 1(re74==0), 1(re75==0). Smith-Todd Table 3: the
+  //    INDICATOR's logit coefficient is 1.94-3.26; the DOLLAR slope is -0.00007. The point mass carries
+  //    essentially all of the selection signal and the amount carries none — and no smooth transform of the
+  //    column (we tried log, then sqrt) can represent a discontinuity at a point. Imbens (2015 §3.2) uses
+  //    ln(1+earn75) as a regressor as his CAUTIONARY EXAMPLE on this exact data: a $4,070 swing in the
+  //    imputed counterfactual against a ~$2,000 ATT.
   //
-  //     spec        marginal skew / max        dCor(ε, re74)
-  //     raw           30.6 / $2,620,368            0.245
-  //     log(1+x)       3.1 /   $389,874            0.354   <- fixes the tail, WRECKS the conditional fit
-  //     sqrt(x)        3.2 /   $428,654            0.240   <- fixes both
-  //     (real)         1.3 /   $121,174               —
+  // 2. THE INTENSIVE MARGIN IS LINEAR IN LEVELS, NOT A LOG LINK. log(re78)|re78>0 on these rows is
+  //    LEFT-skewed (-1.79) with excess kurtosis 5.34 — it is not lognormal, so exponentiating a normal is
+  //    wrong in shape; and a log link fed dollar regressors is exponential IN DOLLARS, which manufactured a
+  //    $2.4M tail against a real max of $121k. Mincer's log-normality is a claim about WAGES of the
+  //    EMPLOYED; this is ANNUAL earnings including part-year workers, hence the long LEFT tail.
   //
-  // So: power_law with exponent 0.5. The FORM is authored, the SCALE is fitted. This is exactly the loop a
-  // practitioner runs — the residual panel names the offending predictor, you change its function, the panel
-  // re-scores — and it is the loop that caught my own first answer being wrong.
-  for (const src of ["Earnings_74", "Earnings_75"]) {
-    setEdgeMechanism(document, src, "Earnings_78", "power_law", { exponent: 0.5, scale: 1, offset: 0, baseline: 0, coefficient: 0 });
+  // 3. THE NOISE IS GAMMA, NOT LOGNORMAL. The real conditional CV of earnings among earners is 0.621
+  //    => a gamma with shape ~2.6. Multiplicative, mean 1, so it cannot go negative and needs no
+  //    retransformation correction at all.
+  const u74 = addPointMassIndicator(document, "Earnings_74");
+  const u75 = addPointMassIndicator(u74, "Earnings_75");
+  document.graph = u75.graph;
+  document.simulation = u75.simulation;
+  for (const u of ["Earnings_74_is_zero", "Earnings_75_is_zero"]) {
+    document.graph = addEdge(document.graph, u, "In_program", "directed");   // selection: where they matter most
+    document.graph = addEdge(document.graph, u, "Earnings_78", "directed");  // and the outcome surface
   }
+  // positive_softplus = the identity intensive margin: E[Y|Y>0] = softplus(eta), gamma noise. The fit picks
+  // this up and switches from log-OLS to OLS on the raw amounts.
+  setNode(document, "Earnings_78", { combiner: "positive_softplus" });
 
   // DECLARE THE ESTIMAND, don't type coefficients. The $1,794 benchmark is imposed extensive-led: 62% of
   // it from MORE PEOPLE WORKING (the gate γ), the rest from HIGHER PAY AMONG WORKERS (the intensive δ).

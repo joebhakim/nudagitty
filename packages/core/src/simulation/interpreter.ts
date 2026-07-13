@@ -145,7 +145,25 @@ export function gateProbability(mechanism: NodeMechanism, values: Record<string,
   return sigmoid(eta);
 }
 
-export function finalizeNodeValue(value: number, mechanism: NodeMechanism, variable: VariableModel, contributions: StructuralContribution[], leakTerm: number, rng: () => number, forceDraw = false, gateProb = 1): number {
+/**
+ * A positive mean from a LINEAR index, without an exponential.
+ *
+ * `softplus(η) = s·ln(1 + e^(η/s))` is η itself wherever η is comfortably positive (which is 99.89% of rows
+ * on LaLonde) and bends smoothly to a small positive number where the linear index would have gone
+ * negative — 3 rows in 2,675, all in the treated extrapolation region, min −$1,119. A hard clamp would do
+ * the same job with a kink; this is the same thing, differentiable.
+ *
+ * The scale is taken from the intercept so it is in the variable's own units (2% of it, floored at 1): for
+ * an intercept near $20,000 that is $400, which leaves everything above ~$5k untouched.
+ */
+export function softplusMean(eta: number, intercept: number): number {
+  const scale = Math.max(1, 0.02 * Math.abs(intercept));
+  const z = eta / scale;
+  if (z > 30) return eta;                       // identity where it matters — and avoids exp() overflow
+  return scale * Math.log1p(Math.exp(Math.max(-30, z)));
+}
+
+export function finalizeNodeValue(value: number, mechanism: NodeMechanism, variable: VariableModel, contributions: StructuralContribution[], leakTerm: number, rng: () => number, forceDraw = false, gateProb = 1, noise = 0): number {
   // Gaussian copula: η (= value, built from latent-Gaussian parents + noise) is mapped through
   // Φ then the node's target marginal — deterministic given η, for both continuous and binary
   // marginals (so the cross-covariate correlation carried by the shared latent is preserved).
@@ -200,15 +218,34 @@ export function finalizeNodeValue(value: number, mechanism: NodeMechanism, varia
     for (let k = 0; k < K; k += 1) { cum += exps[k]! / total; if (u <= cum) return k; }
     return K - 1;
   }
-  // Semicontinuous / two-part: participation gate (extensive) × positive amount (intensive). The
-  // amount is the log-link intensive draw exp(η+ε) (= gamma_log's applyCombiner); the gate
-  // probability P(Y>0) is precomputed by the caller from the node's separate gate model. In
-  // expected_value mode we return the per-draw expectation gateProb·amount — matching how count
-  // returns λ and binary returns its probability rather than drawing.
+  // Semicontinuous / two-part: participation gate (extensive) × positive amount (intensive). The gate
+  // probability P(Y>0) is precomputed by the caller from the node's separate gate model. In expected_value
+  // mode we return the per-draw expectation gateProb·E[amount] — matching how count returns λ and binary
+  // returns its probability rather than drawing.
+  //
+  // TWO INTENSIVE LINKS, chosen by the node's combiner:
+  //
+  //   gamma_log (log)   amount = exp(η + ε), ε normal on the LOG scale ⇒ LOGNORMAL.
+  //   additive (identity) amount = softplus(η) · g, g a GAMMA with mean 1 ⇒ gamma around a linear mean.
+  //
+  // The log form is the textbook one and it is WRONG for earnings. Measured on the LaLonde rows:
+  // log(re78) | re78>0 is LEFT-skewed (−1.79) with excess kurtosis 5.34 — it is not normal, so
+  // exponentiating a normal is wrong in shape; and a log link fed dollar-valued regressors is exponential
+  // IN DOLLARS, which manufactured a $2.4M tail against a real max of $121k. Mincer's log-normality is a
+  // claim about WAGES of the EMPLOYED; this is ANNUAL earnings including part-year workers, hence the long
+  // LEFT tail. The identity+gamma form is what the literature actually fits (levels), and it measures at
+  // skew 2.5 / max $237k against a real 1.3 / $121k. See docs/lalonde-specification.md.
   if (variable.valueType === "semicontinuous") {
-    const amount = safeExp(value);
-    if (!forceDraw && variable.simulation.mode === "expected_value") return gateProb * amount;
-    return rng() < gateProb ? amount : 0;
+    if (mechanism.combiner !== "positive_softplus") {
+      const amount = safeExp(value);                       // the log link — the default, and the old behaviour
+      if (!forceDraw && variable.simulation.mode === "expected_value") return gateProb * amount;
+      return rng() < gateProb ? amount : 0;
+    }
+    // The caller ADDED the noise draw to `value`; on this link it scales the amount instead of shifting it.
+    const eta = value - noise;
+    const mean = softplusMean(eta, mechanism.intercept);
+    if (!forceDraw && variable.simulation.mode === "expected_value") return gateProb * mean;   // E[g] = 1
+    return rng() < gateProb ? mean * (noise > 0 ? noise : 1) : 0;
   }
   if (variable.valueType !== "binary") return applyCombiner(value, mechanism, regularContributions, leakTerm);
   const probability = binaryProbability(value, mechanism, contributions, leakTerm);

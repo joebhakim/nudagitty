@@ -1,9 +1,9 @@
-import type { EdgeMechanism, GraphDocument, ImposedEffect, NodeCombinerKind, NodeGate } from "./types";
+import type { EdgeMechanism, GraphDocument, ImposedEffect, NodeCombinerKind, NodeDistribution, NodeGate } from "./types";
 import { addEdge, addNode, cloneDocument, defaultEdgeMechanism, normalizeEdgeMechanism, normalizeNodeMechanism, normalizeVariableModel, reconcileSimulationSpec, withGraph } from "./graph";
 import { setLinearCoefficient, setNode, ZERO_NOISE } from "./examples/builders";
 import { datasetRows, lookupDataset, registerRuntimeDataset } from "./datasets";
 import { categoryCandidate, findPointMassColumn, pointMassColumnName, pointMassShare, withCategoryDummies, withPointMassIndicator } from "./data/pointMass";
-import { edgeBaseline, edgeBasis, edgeContribution } from "./simulation/interpreter";
+import { edgeBaseline, edgeBasis, edgeContribution, softplusMean } from "./simulation/interpreter";
 
 // ---------- provenance keys ----------
 const edgeKey = (id: string) => `e:${id}`;
@@ -15,11 +15,21 @@ const noiseKey = (id: string) => `nn:${id}`;
 // so fitting a continuous node = fit OLS on g(Y) ~ X with normal noise on the link scale. That gives a
 // realistic (e.g. lognormal) marginal that stays testable — no marginal-forcing copula. `Y = f(X)+ε` stays.
 export type FitLink = "identity" | "log" | "logit";
-export function linkForValueType(valueType: string): { link: FitLink; combiner: NodeCombinerKind } {
+export function linkForValueType(valueType: string, currentCombiner?: NodeCombinerKind): { link: FitLink; combiner: NodeCombinerKind } {
   if (valueType === "positive") return { link: "log", combiner: "gamma_log" };
-  // Two-part: the intensive margin (amount | Y>0) is fit on the log scale, exactly like `positive`.
-  // The extensive margin (the gate, P(Y>0)) is fit separately below and stored on `mechanism.gate`.
-  if (valueType === "semicontinuous") return { link: "log", combiner: "gamma_log" };
+  // TWO-PART: the intensive margin (amount | Y>0) has a CHOICE of link, and it is the node's own combiner
+  // that carries it. `gamma_log` ⇒ log-OLS on log(Y), lognormal draws. `additive` ⇒ OLS on Y itself, gamma
+  // draws around a linear mean — which is what the LaLonde literature actually fits (levels; no paper logs
+  // earnings) and what the data demands: log(re78)|re78>0 is LEFT-skewed with excess kurtosis 5.34, so it is
+  // not lognormal, and a log link on dollar regressors is exponential IN DOLLARS. See
+  // docs/lalonde-specification.md. The extensive margin (the gate) is fit separately either way.
+  // `positive_softplus` is the OPT-IN, and it must be explicit: `additive` is the DEFAULT combiner on every
+  // fresh node, so treating it as the signal would silently flip every two-part node to the identity link.
+  if (valueType === "semicontinuous") {
+    return currentCombiner === "positive_softplus"
+      ? { link: "identity", combiner: "positive_softplus" }
+      : { link: "log", combiner: "gamma_log" };
+  }
   if (valueType === "proportion") return { link: "logit", combiner: "bounded_logistic" };
   return { link: "identity", combiner: "additive" };
 }
@@ -240,6 +250,9 @@ export function unpinNumber(input: GraphDocument, key: string): GraphDocument {
 // exceed ~82%. We clamp to that and say so.
 export interface ImposedEffectContext {
   family: "additive" | "log" | "two_part";
+  /** Two-part only: is the intensive margin on the IDENTITY link? Then δ is in DOLLARS (a per-worker raise),
+   *  not log-dollars — and any UI that renders it as `exp(δ)−1` would print Infinity. */
+  identityAmount: boolean;
   exposure: string;
   outcome: string;
   edgeId: string;
@@ -309,7 +322,7 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
   if (family === "additive") {
     const solve = (): ImposedEffectSolution => ({ gamma: 0, delta: target, extensiveShare: 0, clamped: false, extensive: 0, intensive: target });
     return {
-      family, exposure, outcome, edgeId: edge.id, target,
+      family, identityAmount: false, exposure, outcome, edgeId: edge.id, target,
       c0: 0, amax: 0, s: () => 0, maxExtensiveShare: 0, deltaFloor: -Infinity,
       deltaFor: () => target,
       decompose: () => ({ extensive: 0, intensive: target, ate: target }),
@@ -327,6 +340,11 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
   const sd = mech.noise.kind === "normal" ? mech.noise.sd : 0;
   const h = (sd * sd) / 2;
   const gate = mech.gate;
+  // TWO INTENSIVE LINKS ⇒ two manifolds. Under the LOG link δ is in log-dollars and factors out of exp(),
+  // which is what gives the closed form δ(γ) = ln((C₀+A)/S(γ)). Under the IDENTITY link δ is in DOLLARS and
+  // simply shifts the amount, so the amount is softplus(ηa + δ) — no exp, no retransformation, and δ is the
+  // per-worker dollar raise, which is the quantity an economist would actually name.
+  const identityAmount = mech.combiner === "positive_softplus";
 
   // η's over the CONFOUNDERS ONLY — the exposure's own contribution is exactly what γ/δ add, so it must be
   // excluded here or we'd double-count it.
@@ -341,7 +359,7 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
     })
     .filter((c): c is typeof c & { col: NonNullable<typeof c.col> } => Boolean(c.col));
 
-  const etaG: number[] = [], amount: number[] = [];
+  const etaG: number[] = [], etaA: number[] = [], amount: number[] = [];
   for (const r of rows) {
     let g = gate?.intercept ?? 0, a = mech.intercept;
     for (const c of confounders) {
@@ -351,9 +369,13 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
       g += (gate?.coefficients[c.source] ?? 0) * (c.basis ? c.basis(v) : v);
     }
     etaG.push(g);
-    amount.push(Math.exp(a + h)); // exp(ηa + h) — the baseline expected amount for this row
+    etaA.push(a);
+    // the baseline expected amount for this row: exp(ηa + h) under the log link, softplus(ηa) under identity
+    amount.push(identityAmount ? softplusMean(a, mech.intercept) : Math.exp(a + h));
   }
   const n = rows.length;
+  const amountAt = (i: number, delta: number) =>
+    identityAmount ? softplusMean(etaA[i]! + delta, mech.intercept) : amount[i]! * Math.exp(delta);
 
   // LOG (single-part, no gate): everyone "participates", so ATE = (e^δ − 1)·Ā ⇒ δ = ln(1 + A/Ā).
   const abar = amount.reduce((s, v) => s + v, 0) / n;
@@ -361,7 +383,7 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
     const delta = Math.log(1 + target / Math.max(1e-9, abar));
     const solve = (): ImposedEffectSolution => ({ gamma: 0, delta, extensiveShare: 0, clamped: false, extensive: 0, intensive: target });
     return {
-      family, exposure, outcome, edgeId: edge.id, target,
+      family, identityAmount: false, exposure, outcome, edgeId: edge.id, target,
       c0: abar, amax: abar, s: () => abar, maxExtensiveShare: 0, deltaFloor: -Infinity,
       deltaFor: () => delta,
       decompose: () => ({ extensive: 0, intensive: target, ate: target }),
@@ -379,20 +401,33 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
   const amax = abar;                                     // S(+∞): everyone participates
   const maxExtensive = Math.max(0, amax - c0);           // the most employment alone can ever deliver
   const maxExtensiveShare = target > 0 ? Math.min(1, maxExtensive / target) : 0;
-  const deltaFloor = Math.log((c0 + target) / Math.max(1e-9, amax));
-  const deltaFor = (gamma: number) => Math.log((c0 + target) / Math.max(1e-9, s(gamma)));
-
   const decompose = (gamma: number, delta: number) => {
     let extensive = 0, intensive = 0, ate = 0;
     for (let i = 0; i < n; i += 1) {
       const p0 = sigmoid01(etaG[i]!), p1 = sigmoid01(etaG[i]! + gamma);
-      const a0 = amount[i]!, a1 = a0 * Math.exp(delta);
+      const a0 = amount[i]!, a1 = amountAt(i, delta);
       extensive += (p1 - p0) * a0;   // change WHO works, amount at baseline
       intensive += p1 * (a1 - a0);   // change HOW MUCH, among (new) workers
       ate += p1 * a1 - p0 * a0;      // the actual two-part do()-contrast (== extensive + intensive)
     }
     return { extensive: extensive / n, intensive: intensive / n, ate: ate / n };
   };
+
+  // δ(γ): the value of δ that holds the ATE at exactly the target, given γ.
+  //   LOG      δ factors out of exp() ⇒ ATE = e^δ·S(γ) − C₀ ⇒ CLOSED FORM.
+  //   IDENTITY softplus is not linear at the floor (3 rows in 2,675), so the closed form
+  //            δ = (A − extensive(γ)) / mean[σ(ηg+γ)] is an excellent SEED but not exact. The ATE is
+  //            monotone increasing in δ, so one bisection makes it exact — cheaper than being clever.
+  const ateAt = (gamma: number, delta: number) => decompose(gamma, delta).ate;
+  const deltaFloorLog = Math.log((c0 + target) / Math.max(1e-9, amax));
+  const deltaFor = (gamma: number) => {
+    if (!identityAmount) return Math.log((c0 + target) / Math.max(1e-9, s(gamma)));
+    let lo = -Math.abs(mech.intercept) - Math.abs(target), hi = Math.abs(mech.intercept) + Math.abs(target) * 4;
+    for (let k = 0; k < 90; k += 1) { const m = (lo + hi) / 2; if (ateAt(gamma, m) < target) lo = m; else hi = m; }
+    return (lo + hi) / 2;
+  };
+  // The floor: even with EVERYONE working, δ must still make up whatever the gate cannot.
+  const deltaFloor = identityAmount ? deltaFor(40) : deltaFloorLog;
 
   const solve = (requestedShare: number): ImposedEffectSolution => {
     const want = Math.max(0, Math.min(1, requestedShare));
@@ -405,7 +440,7 @@ export function imposedEffectContext(document: GraphDocument, override?: Imposed
     return { gamma, delta, extensiveShare: share, clamped, extensive: d.extensive, intensive: d.intensive };
   };
 
-  return { family, exposure, outcome, edgeId: edge.id, target, c0, amax, s, maxExtensiveShare, deltaFloor, deltaFor, decompose, solve };
+  return { family, identityAmount, exposure, outcome, edgeId: edge.id, target, c0, amax, s, maxExtensiveShare, deltaFloor, deltaFor, decompose, solve };
 }
 
 /** Which edge an imposed effect lives on. Cheap — no dataset reads (unlike imposedEffectContext). */
@@ -713,10 +748,14 @@ export function reconcilePins(input: GraphDocument, depth = 0): { document: Grap
     if (pinnedEdges.length === 0 && !pinSet.has(interceptKey(nodeId)) && !pinSet.has(noiseKey(nodeId))) continue;
     const valueType = normalizeVariableModel(node.variable).valueType;
     const isBinary = valueType === "binary";
-    const { link, combiner: linkCombiner } = linkForValueType(valueType);
+    const mech = normalizeNodeMechanism(document.simulation.nodes[nodeId]);
+    // The intensive link is the NODE's choice, carried on its combiner — not a property of the family.
+    const { link, combiner: linkCombiner } = linkForValueType(valueType, mech.combiner);
+    // The INTENSIVE margin is only about the positive rows. Under a log link that happens for free (log(0) is
+    // -Inf and gets filtered); under identity, zeros are perfectly finite, so they must be excluded by hand.
+    const intensiveOnly = valueType === "semicontinuous" && link === "identity";
     const fitIntercept = pinSet.has(interceptKey(nodeId));
     const fitNoise = !isBinary && pinSet.has(noiseKey(nodeId));
-    const mech = normalizeNodeMechanism(document.simulation.nodes[nodeId]);
 
     // Skip the re-fit when nothing that determines this node's fit has changed since it was last fitted.
     const sig = [
@@ -769,7 +808,10 @@ export function reconcilePins(input: GraphDocument, depth = 0): { document: Grap
     const XRaw = rows.map((r) => fitEdges.map((f) => f.basis(r[f.dataColumn] ?? 0)));
     // Drop rows outside the link's domain (e.g. Y≤0 under a log link) so the fit only sees valid targets.
     const keep: number[] = [];
-    for (let i = 0; i < yRaw.length; i += 1) if (Number.isFinite(yRaw[i]) && Number.isFinite(offsetRaw[i]) && XRaw[i]!.every(Number.isFinite)) keep.push(i);
+    for (let i = 0; i < yRaw.length; i += 1) {
+      if (intensiveOnly && (rows[i]![col.dataColumn] ?? 0) <= 0) continue;
+      if (Number.isFinite(yRaw[i]) && Number.isFinite(offsetRaw[i]) && XRaw[i]!.every(Number.isFinite)) keep.push(i);
+    }
     const y = keep.map((i) => yRaw[i]!);
     const offset = keep.map((i) => offsetRaw[i]!);
     const X = keep.map((i) => XRaw[i]!);
@@ -785,11 +827,27 @@ export function reconcilePins(input: GraphDocument, depth = 0): { document: Grap
     }
     let newIntercept = fitIntercept ? fit.intercept : mech.intercept;
     const currentSd = mech.noise.kind === "normal" ? mech.noise.sd : 1;
-    const newNoise = isBinary ? ZERO_NOISE : { kind: "normal" as const, mean: 0, sd: fitNoise ? fit.residualSd : currentSd };
+    let newNoise: NodeDistribution = isBinary ? ZERO_NOISE : { kind: "normal", mean: 0, sd: fitNoise ? fit.residualSd : currentSd };
+    if (intensiveOnly) {
+      // MULTIPLICATIVE gamma noise with mean 1 (shape k, scale 1/k), so E[Y|Y>0] = softplus(η) exactly and
+      // the draw cannot go negative. k = 1/CV² matches the observed conditional dispersion: on LaLonde the
+      // real CV of earnings among earners is 0.621 ⇒ shape ≈ 2.6. Lognormal noise on the log scale was the
+      // root cause of the $2.4M tail; this is the family the data actually has.
+      let mean = 0;
+      for (let i = 0; i < X.length; i += 1) {
+        let eta = (fitIntercept ? fit.intercept : mech.intercept) + offset[i]!;
+        for (let j = 0; j < fitEdges.length; j += 1) eta += (fit.coefs[j] ?? 0) * X[i]![j]!;
+        mean += eta;
+      }
+      mean = mean / Math.max(1, X.length);
+      const cv = fit.residualSd / Math.max(1e-9, Math.abs(mean));
+      const shape = Math.min(200, Math.max(0.2, 1 / Math.max(1e-6, cv * cv)));
+      newNoise = { kind: "gamma", shape, scale: 1 / shape };
+    }
     // Retransformation-bias correction for the log link: generation draws Y = exp(η+ε), whose mean is
     // exp(η+σ²/2), not exp(η). Shift the intercept so the generated MEAN matches the data mean (over the
     // fitted rows) — keeps the "mean matches data" promise; the residual check still tests the log-scale shape.
-    if (link === "log" && fitIntercept) {
+    if (link === "log" && !intensiveOnly && fitIntercept) {
       const sd = newNoise.kind === "normal" ? newNoise.sd : 0;
       const half = (sd * sd) / 2;
       let genSum = 0, targetSum = 0;
@@ -1209,7 +1267,7 @@ export function residualDiagnostics(document: GraphDocument, nodeId: string, cap
 
   // Residuals live on the node's LINK scale (log(Y)−η̂ for a log-linked node), so ε⊥X and the normality
   // check test the assumption the model actually makes. Rows outside the link domain (Y≤0 under log) drop out.
-  const scale = linkForValueType(normalizeVariableModel(node.variable).valueType).link;
+  const scale = linkForValueType(normalizeVariableModel(node.variable).valueType, mech.combiner).link;
   const gy = rows.map((r) => applyLink(r[col.dataColumn] ?? 0, scale));
   const fitted = rows.map((r) => mech.intercept + parentCols.reduce((s, p) => s + edgeContribution(r[p.col.dataColumn] ?? 0, p.mech), 0));
   const resid = gy.map((v, i) => v - fitted[i]!);

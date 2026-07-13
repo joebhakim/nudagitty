@@ -7,9 +7,9 @@ import { Checkbox, InfoDot } from "../controls";
 export interface ImposeSpec { exposure: string; outcome: string; target: number; extensiveShare?: number }
 
 const PAD_TIP =
-  "A two-part outcome has TWO treatment coefficients — γ on the participation gate (log-odds) and δ on the amount (log-dollars) — and neither is in dollars. \"ATE = $1,794\" is ONE equation in TWO unknowns, so it does not pick a single answer: it defines a whole FAMILY of causal stories that all deliver the same dollar effect. This pad IS that family. Slide along the curve to choose how much of the effect comes from MORE PEOPLE WORKING versus HIGHER PAY AMONG WORKERS — the dollar total stays exactly on target either way. (With an additive outcome none of this arises: the coefficient simply IS the ATE.)";
+  "A two-part outcome has TWO treatment coefficients — γ on the participation gate (log-odds) and δ on the amount (dollars per worker on an identity link, log-dollars on a log link). \"ATE = $1,794\" is ONE equation in TWO unknowns, so it does not pick a single answer: it defines a whole FAMILY of causal stories that all deliver the same dollar effect. This pad IS that family. Slide along the curve to choose how much of the effect comes from MORE PEOPLE WORKING versus HIGHER PAY AMONG WORKERS — the dollar total stays exactly on target either way. (With an additive outcome none of this arises: the coefficient simply IS the ATE.)";
 const WALL_TIP =
-  "Not a preference — a proof. The gate can at most put EVERYONE into work, so the extensive margin can never deliver more than (everyone-works mean − do(0) mean). Here that is $1,473, LESS than the $1,794 target. So no amount of employment effect can reach it: pay must rise by at least the floor shown, and the extensive share can never hit 100%. Everything in the grey band is unreachable, for any γ.";
+  "Not a preference — a proof. The gate can at most put EVERYONE into work, so the extensive margin can never deliver more than (everyone-works mean − do(0) mean). Everything in the grey band is unreachable, for ANY γ: no employment effect can get there, and pay must make up the difference. Whether the wall BINDS depends on your target. On the corrected LaLonde DGP the ceiling is $1,835, which sits just ABOVE the $1,794 benchmark — so employment alone could in principle do all of it, and the band is empty. Ask for $4,000 and the wall bites. (An earlier version of this example put the ceiling at $1,473 and made a great deal of the wall being unreachable. That was an artefact of a log link on dollar-valued regressors — a modelling error, not a fact about job training. See docs/lalonde-specification.md.)";
 const LOCK_TIP =
   "Locked: you author the ESTIMAND (the dollar target + how the story splits) and the engine derives γ and δ — the handle can only move along the curve, because that curve IS every DGP consistent with your target. Unlocked: you drag anywhere and the ATE becomes whatever that point implies. Even then you are still authoring an estimand, not coefficients — the target and the split are read off the point you chose, and the coefficients are re-derived from them.";
 
@@ -193,6 +193,9 @@ export function ImposedEffectPad(props: {
 
   const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
   const money = (v: number) => `$${Math.round(v).toLocaleString()}`;
+  // Under the IDENTITY intensive link δ is a per-worker RAISE IN DOLLARS, not a log-dollar shift. Rendering
+  // it as exp(δ)−1 would print Infinity (exp(719)). The pad shows whichever the DGP actually uses.
+  const payLabel = (delta: number) => (ctx.identityAmount ? money(delta) : `+${pct(Math.exp(delta) - 1)}`);
   const participation = (gamma: number) => ctx.s(gamma) / Math.max(1e-9, ctx.amax); // earnings-weighted
 
   const pointAt = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -259,8 +262,8 @@ export function ImposedEffectPad(props: {
         <circle cx={x(at.gamma)} cy={y(at.delta)} r={4} className={offTarget ? "ipad-handle off" : "ipad-handle"} />
 
         <text x={mL - 4} y={mT + 8} className="resid-axlabel" textAnchor="end">pay</text>
-        <text x={mL - 4} y={y(ctx.deltaFor(0)) + 3} className="resid-tick" textAnchor="end">{pct(Math.exp(ctx.deltaFor(0)) - 1)}</text>
-        <text x={mL - 4} y={y(ctx.deltaFloor) + 3} className="resid-tick" textAnchor="end">{pct(Math.exp(ctx.deltaFloor) - 1)}</text>
+        <text x={mL - 4} y={y(ctx.deltaFor(0)) + 3} className="resid-tick" textAnchor="end">{payLabel(ctx.deltaFor(0))}</text>
+        <text x={mL - 4} y={y(ctx.deltaFloor) + 3} className="resid-tick" textAnchor="end">{payLabel(ctx.deltaFloor)}</text>
         <text x={W - mR} y={mT + plotH + 12} className="resid-tick" textAnchor="end">employment →</text>
         <text x={mL + plotW / 2} y={H - 3} className="resid-axlabel" textAnchor="middle">grey = unreachable{<InfoDot tip={WALL_TIP} href="/effects.html#wall" />}</text>
       </svg>
@@ -286,15 +289,15 @@ export function ImposedEffectPad(props: {
 
       <div className="imposed-readout">
         <div><span>employment</span><b>{pct(participation(0))} → {pct(participation(at.gamma))}</b></div>
-        <div><span>pay at work</span><b>+{pct(Math.exp(at.delta) - 1)}</b></div>
+        <div><span>pay at work</span><b>{payLabel(at.delta)}</b></div>
         <div><span>from working</span><b>{money(shownSplit.extensive)}</b></div>
         <div><span>from pay</span><b>{money(shownSplit.intensive)}</b></div>
       </div>
 
       <p className="muted imposed-foot">
         At most {pct(maxShare)} can come from employment — putting <i>everyone</i> into work yields only{" "}
-        {money(ctx.amax - ctx.c0)}, short of {money(ctx.target)}, so pay must rise ≥&nbsp;{pct(Math.exp(ctx.deltaFloor) - 1)}.
-        {" "}γ&nbsp;=&nbsp;{at.gamma.toFixed(3)} (log-odds), δ&nbsp;=&nbsp;{at.delta.toFixed(4)} (log-$) are{" "}
+        {money(ctx.amax - ctx.c0)}, short of {money(ctx.target)}, so pay must rise ≥&nbsp;{payLabel(ctx.deltaFloor)}.
+        {" "}γ&nbsp;=&nbsp;{at.gamma.toFixed(3)} (log-odds), δ&nbsp;=&nbsp;{ctx.identityAmount ? at.delta.toFixed(0) : at.delta.toFixed(4)} ({ctx.identityAmount ? "$/worker" : "log-$"}) are{" "}
         <b>derived</b> from the estimand — never typed.
       </p>
     </div>

@@ -41,7 +41,10 @@ describe("authoring the imposed effect's story (what the pad drives)", () => {
     const { gamma, delta } = coefs(doc);
     const d = ctx.decompose(gamma, delta);
     expect(d.ate).toBeCloseTo(1794, 4);            // truth intact
-    expect(d.extensive / 1794).toBeLessThan(0.93); // story clamped to what the data can deliver (max share 0.921)
+    // The wall no longer binds at $1,794 (max extensive-only is $1,835), so a 100% request is FEASIBLE now:
+    // the gate really can do all of it. That is a property of the corrected DGP, not a broken clamp — the
+    // clamp is exercised against a target the gate cannot reach in imposedEffectSolve.test.ts.
+    expect(d.extensive / 1794).toBeCloseTo(1, 2);
     expect(delta).toBeGreaterThanOrEqual(ctx.deltaFloor - 1e-9);
   });
 
@@ -61,8 +64,11 @@ describe("authoring the imposed effect's story (what the pad drives)", () => {
   // had stored the coefficient instead, this shift is precisely the silent lie we would have shipped.)
   it("free-drag: the ESTIMAND round-trips exactly (the coefficients need not)", () => {
     const ctx0 = imposedEffectContext(base)!;
-    for (const [gamma, delta] of [[0.9, 0.05], [2.2, 0.02], [0.3, 0.07]] as const) {
-      const ate = Math.exp(delta) * ctx0.s(gamma) - ctx0.c0;      // what that DGP would impose
+    // δ is in DOLLARS on this DGP's intensive link (a per-worker raise), so the dragged points are dollar
+    // amounts — and the ATE is read from decompose(), which is link-agnostic, rather than from the log
+    // link's closed form e^δ·S(γ) − C₀.
+    for (const [gamma, delta] of [[0.9, 900], [2.2, 300], [0.3, 1500]] as const) {
+      const ate = ctx0.decompose(gamma, delta).ate;               // what that DGP would impose
       const share = ctx0.decompose(gamma, delta).extensive / ate;
       const doc = reconcilePins(setImposedEffect(base, { target: ate, extensiveShare: share })).document;
 
@@ -71,7 +77,7 @@ describe("authoring the imposed effect's story (what the pad drives)", () => {
       expect(got.ate).toBeCloseTo(ate, 4);                        // the dollar effect you chose: exact
       expect(got.extensive / got.ate).toBeCloseTo(share, 3);      // the story you chose: exact
       expect(back.gamma).toBeCloseTo(gamma, 1);                   // coefficients land NEAR the dragged point,
-      expect(back.delta).toBeCloseTo(delta, 3);                   // shifted only by the confounders' refit
+      expect(back.delta).toBeCloseTo(delta, -2);                  // shifted only by the confounders' refit
     }
   });
 });

@@ -14,7 +14,7 @@ describe("two-part fitted-DGP example (lalonde-fit-recover-2part)", () => {
     const outcome = doc.graph.nodes.find((n) => n.id === "Earnings_78")!;
     expect(normalizeVariableModel(outcome.variable).valueType).toBe("semicontinuous");
     const mech = normalizeNodeMechanism(doc.simulation.nodes["Earnings_78"]);
-    expect(mech.combiner).toBe("gamma_log");
+    expect(mech.combiner).toBe("positive_softplus");
     expect(mech.gate?.coefficients["In_program"] ?? 0).toBeGreaterThan(0); // extensive shift γ
     const effect = doc.graph.edges.find((e) => e.source === "In_program" && e.target === "Earnings_78")!;
     const m = normalizeEdgeMechanism(doc.simulation.edges[effect.id]);

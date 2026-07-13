@@ -42,17 +42,16 @@ describe("imposeEffect — the create path", () => {
   it("the trap is real: FITTING the effect edge builds a DGP that carries a large NEGATIVE effect", () => {
     const doc = trapped();
     const coef = doc.simulation.edges[effectEdgeId(doc)]!.coefficient!;
-    // ≈ −0.11 log-dollars. (It was −0.41 before the Mincer correction: with earnings history entering the
-    // fit as log(1+x), the confounders soak up far more of the association, so the trap coefficient is
-    // smaller — but it is still NEGATIVE, and the DGP it builds still carries a large negative "truth".)
-    expect(coef).toBeLessThan(-0.05);
+    // ≈ −$5,259 per worker. The intensive margin is now on the IDENTITY link, so the fitted effect
+    // coefficient is a DOLLAR amount, and fitting it hands the DGP a large NEGATIVE causal effect.
+    expect(coef).toBeLessThan(-1000);      // ≈ −$5,259 — δ is in DOLLARS on this link
     // …so the DGP's "true" ATE comes out at ≈ −$700 when it should be +$1,794: still SIGN-FLIPPED, ~$2,500
     // out. (It was < −$3,000 when the confounder surface was badly specified; a better-specified surface
     // absorbs more of the association, so the trap is less lurid. It is still a trap: the benchmark carries
     // a NEGATIVE truth, and every estimator that "recovers" it is recovering the bias.)
     const trap = simulatedAte(doc);
-    expect(trap).toBeLessThan(0);
-    expect(Math.abs(trap - 1794)).toBeGreaterThan(2000);
+    expect(trap).toBeLessThan(0);                           // ≈ −$3,527: still SIGN-FLIPPED against a true +$1,794
+    expect(Math.abs(trap - 1794)).toBeGreaterThan(4000);
   });
 
   it("the trapped edge is offerable — and imposing rescues it to exactly +$1,794", () => {
@@ -107,7 +106,7 @@ describe("dataImpliedEffect — what the data can and cannot tell you about the 
   it("…so the suggestion adopts the gate and SOLVES the amount for your target", () => {
     const s = suggestImposedShare(fitted, EXPOSURE, OUTCOME, 1794);
     expect(s.basis).toBe("gate-only");
-    expect(s.share).toBeCloseTo(0.128, 2);  // 13% extensive — not the 62% that was once hand-picked
+    expect(s.share).toBeCloseTo(0.619, 2);  // 62% extensive — and now the data AGREES with the example
     expect(s.clamped).toBe(false);
     expect(s.share).toBeLessThan(imposedEffectContext(fitted)!.maxExtensiveShare);
   });
@@ -115,8 +114,8 @@ describe("dataImpliedEffect — what the data can and cannot tell you about the 
   it("the shape is a suggestion; the TARGET is not — the estimand still lands exactly", () => {
     const doc = reconcilePins(imposeEffect(trapped(), { exposure: EXPOSURE, outcome: OUTCOME, target: 1794 })).document;
     const share = doc.metadata.imposedEffect!.extensiveShare!;
-    expect(share).toBeGreaterThan(0.05);
-    expect(share).toBeLessThan(0.30);       // gate-derived, not an arbitrary midpoint
+    expect(share).toBeGreaterThan(0.4);
+    expect(share).toBeLessThan(0.8);        // gate-derived
 
     const sol = imposedEffectContext(doc)!.solve(share);
     expect(sol.extensive + sol.intensive).toBeCloseTo(1794, 4);

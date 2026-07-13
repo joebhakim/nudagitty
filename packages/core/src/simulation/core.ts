@@ -114,7 +114,7 @@ export function runSimulation(graph: GraphModel, spec: SimulationSpec, previous?
     value += interaction + noise;
     const analytic = analyticForStructuralNode(activeGraph, id, spec, mech, analyticByNode);
     const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mech, values, parentMechanisms) : 1;
-    const finalized = finalizeNodeValue(value, mech, variable, nodeContributions, mech.intercept + interaction + noise, rng, false, gateProb);
+    const finalized = finalizeNodeValue(value, mech, variable, nodeContributions, mech.intercept + interaction + noise, rng, false, gateProb, noise);
     values[id] = variable.valueType === "distributional" ? distributionProjection(analytic, finalized) : finalized;
     analyticByNode.set(id, analytic);
   }
@@ -239,7 +239,7 @@ export function runIntervenedEmpiricalSimulation(graph: GraphModel, spec: Simula
         const noise = sampleDistribution(mech.noise, rng);
         value += interaction + noise;
         const gateProb = variable.valueType === "semicontinuous" ? gateProbability(mech, values, parentMechanisms) : 1;
-        values[id] = finalizeNodeValue(value, mech, variable, nodeContributions, mech.intercept + interaction + noise, rng, true, gateProb);
+        values[id] = finalizeNodeValue(value, mech, variable, nodeContributions, mech.intercept + interaction + noise, rng, true, gateProb, noise);
       }
       lastValues = values;
       for (const id of order) samples[id]?.push(values[id] ?? 0);

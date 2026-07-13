@@ -34,64 +34,62 @@ describe("the outcome-model ladder", () => {
   });
 });
 
-describe("the OTHER axis — flexibility in L — DOES help, once the DGP is honest", () => {
-  it("converges monotonically toward the truth as the covariate basis relaxes", () => {
-    // I previously asserted the OPPOSITE here, and I was wrong. The old numbers (linear +18,088 /
-    // quadratic −5,347 / cubic +5,083 — a sign-flipping $23k thrash) were an ARTEFACT of a corrupted DGP:
-    // a log link fed DOLLAR-VALUED earnings history made E[Y|L] exponential in dollars, manufacturing $2.9M
-    // earners. Nothing could be learned from a fit to that world.
+describe("the OTHER axis — flexibility in L — helps only when the truth is nonlinear in L", () => {
+  it("is FLAT on this DGP, because the true surface is already linear in L", () => {
+    // THIS TEST HAS NOW FLIPPED THREE TIMES, and that is the finding.
     //
-    // With the Mincer-corrected DGP (earnings history enters as log(1+x)) the true outcome surface is
-    // genuinely NONLINEAR in raw L — so flexibility in raw L genuinely helps, and it converges:
+    //   DGP v1 (log link on raw dollars, a world with $2.4M earners):
+    //       linear +18,088   quadratic −5,347   cubic +5,083     ⇒ thrashing, a fishing ground
+    //   DGP v2 (log link on sqrt(dollars)):
+    //       linear −1,904    quadratic   +540   cubic +2,259     ⇒ converging monotonically
+    //   DGP v3 (identity link, levels + zero-indicators — the literature's spec):
+    //       linear +3,460    quadratic +3,634   cubic +3,635     ⇒ FLAT
+    //
+    // The covariate basis helps exactly when the true outcome surface is NONLINEAR in raw L, and not
+    // otherwise. Which of those three worlds you are in is precisely what you do not know. So this axis is
+    // not a ladder to climb toward truth — it is a SENSITIVITY CHECK whose behaviour is a property of the
+    // DGP, not of the estimator. Show all three; never invite someone to pick one and believe it.
     const doc = exampleDocument("lalonde-fit-recover-2part")!;
     const spec = deriveAdjustmentSpec(doc)!;
     const at = (covariateBasis: "linear" | "quadratic" | "cubic") =>
       analyzeAdjustment(doc, { ...spec, covariateBasis })!.estimates.find((e) => e.id === "outcome_regression")!.estimate!;
 
-    const err = (v: number) => Math.abs(v - 1794);
     const linear = at("linear"), quadratic = at("quadratic"), cubic = at("cubic");
-    expect(linear).toBeCloseTo(3611, -2);      // +3,611 — biased high by $1,817
-    expect(quadratic).toBeCloseTo(2836, -2);   // +2,836 — $1,042 out
-    expect(cubic).toBeCloseTo(2630, -2);       // +2,630 —   $836 out, closest of the three
+    expect(linear).toBeCloseTo(3460, -2);
+    expect(quadratic).toBeCloseTo(3634, -2);
+    expect(cubic).toBeCloseTo(3635, -2);
 
-    // The point: each relaxation moves it CLOSER, monotonically. A real ladder, not a fishing ground.
-    expect(err(quadratic)).toBeLessThan(err(linear));
-    expect(err(cubic)).toBeLessThan(err(quadratic));
-    expect(err(cubic)).toBeLessThan(1000);
+    // Flat: the extra flexibility buys nothing, and it does NOT reach the truth.
+    const spread = Math.max(linear, quadratic, cubic) - Math.min(linear, quadratic, cubic);
+    expect(spread).toBeLessThan(400);
+    for (const v of [linear, quadratic, cubic]) expect(Math.abs(v - 1794)).toBeGreaterThan(1000);
   }, 30000);
 });
 
-describe("the honest ledger: NO rung recovers the truth, and the log-link rungs are the WORST", () => {
+describe("the honest ledger: NO rung recovers, and the reason is now nameable", () => {
   const run = (outcomeModel: "ols" | "ols_interactions" | "two_part" | "ppml") => {
     const doc = exampleDocument("lalonde-fit-recover-2part")!;
     const spec = deriveAdjustmentSpec(doc)!;
     return analyzeAdjustment(doc, { ...spec, outcomeModel })!.estimates.find((e) => e.id === "outcome_regression")!.estimate!;
   };
 
-  it("two-part and PPML — the family-aware rungs — do WORSE than plain OLS", () => {
-    // This inverts the old result, and it is the whole Mincer lesson landing on the ESTIMATOR side.
-    //
-    // The DGP's outcome surface is linear in log(1+earnings-history). two_part and ppml fit log(Y) linearly
-    // in RAW dollar history and then EXPONENTIATE — so their misspecification is amplified multiplicatively.
-    // Plain OLS never exponentiates, so its error does not compound. A log-link model fed un-logged dollar
-    // regressors is therefore MORE fragile than a linear one, not less. Getting the FAMILY right buys you
-    // nothing if the PREDICTOR SCALE is wrong.
-    //
-    // So no rung recovers +$1,794, and the ladder's honest verdict is: you need the right family AND the
-    // right predictor scale. That is precisely rung 4 (Mincer predictor transforms), still `planned`.
-    const ols = run("ols");                    // +3,611
-    const twoPart = run("two_part");           // −5,674
-    const ppml = run("ppml");                  // −7,053
-    expect(Math.abs(twoPart - 1794)).toBeGreaterThan(Math.abs(ols - 1794));
-    expect(Math.abs(ppml - 1794)).toBeGreaterThan(Math.abs(ols - 1794));
-    for (const v of [ols, twoPart, ppml, run("ols_interactions")]) expect(Math.abs(v - 1794)).toBeGreaterThan(500);
-  }, 40000);
+  it("even the two-part learner misses — it has the right FAMILY but the wrong LINK", () => {
+    // The DGP is now gate(L,T) × softplus(L,T) with gamma noise: a PRODUCT of two linear pieces, which is
+    // not linear, so plain OLS cannot be right either. And our `two_part` learner fits log(Y) on the
+    // positive rows — a LOG amount link — while this DGP's amount margin is IDENTITY. Right family, wrong
+    // link. The missing rung is a two-part-IDENTITY learner; until it exists, nothing here can recover.
+    // (Each run() rebuilds the example and refits it, so compute each ONCE — eight calls timed out.)
+    const got = { ols: run("ols"), inter: run("ols_interactions"), twoPart: run("two_part"), ppml: run("ppml") };
+    expect(got.ols).toBeCloseTo(3460, -2);
+    expect(got.inter).toBeCloseTo(-2790, -2);
+    expect(got.twoPart).toBeCloseTo(-1715, -2);
+    expect(got.ppml).toBeCloseTo(3921, -2);
+    for (const v of Object.values(got)) expect(Math.abs(v - 1794)).toBeGreaterThan(1000);
+  }, 60000);
 });
 
 describe("a learner that cannot describe your outcome REFUSES, and says why", () => {
   it("gamma-log declines an outcome with a zero spike instead of quietly dropping the zeros", () => {
-    // The gamma density has no mass at zero. ~12% of LaLonde earnings are exactly zero. Silently dropping
-    // them is precisely the sin (that IS what log-OLS does); refusing is the informative answer.
     const doc = exampleDocument("lalonde-fit-recover-2part")!;
     const spec = deriveAdjustmentSpec(doc)!;
     const or = analyzeAdjustment(doc, { ...spec, outcomeModel: "gamma_log" })!.estimates.find((e) => e.id === "outcome_regression")!;

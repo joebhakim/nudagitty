@@ -1,6 +1,6 @@
 # Modelling LaLonde: what the literature says, what we did wrong, and what the data says
 
-**Status:** findings + proposal. Nothing in this document is built yet.
+**Status:** ✅ **BUILT** (commit following). Findings, autopsy, and the specification we now ship.
 **Companion to:** [`fitting-outcome-marginals.md`](fitting-outcome-marginals.md) (the honest-fit philosophy).
 **Bibliography:** [`references/outcome-marginals-earnings.bib`](references/outcome-marginals-earnings.bib).
 
@@ -465,15 +465,50 @@ intensive(γ,δ)= δ · mean[ σ(η_g + γ) ]
 Closed form, **no `exp`**. The feasibility wall survives: extensive alone can deliver at most
 `mean[(1 − σ(η_g)) · η_a]`.
 
-### Build cost
+### Built — and what it measured
 
-1. **`u74`/`u75` as derived zero-indicator columns.** Generalises: *"add a zero-indicator for this column"*
-   is an operation any user with a zero-inflated variable needs.
-2. **The `semicontinuous` intensive link becomes a choice** (identity / softplus / log) instead of
-   hardcoded log — consistent with "the user specifies the functional form."
-3. **Gamma noise** on the intensive margin.
-4. **Re-derive the manifold** (simpler; see above).
-5. **Third re-baseline** of golden, manifold constants, ladder, trap, and the replication test.
+All five pieces shipped: `u74`/`u75` as a derived-column primitive (with a UI affordance), the
+`semicontinuous` intensive link as a **choice** (`positive_softplus` opts into identity; `gamma_log`
+remains the default so nothing else moved), **gamma** noise, the re-derived manifold, and the re-baseline.
+
+| re78 | mean | sd | p99 | max | skew | zeros |
+|---|---|---|---|---|---|---|
+| **REAL** | 20,502 | 15,630 | 73,886 | **121,174** | **1.3** | 12.4% |
+| **ours, now** | **20,911** | **16,526** | **75,831** | **153,270** | **1.7** | 10.9% |
+| *ours, before (log + lognormal)* | *23,677* | *35,120* | *137,308* | ***1,597,146*** | *16.1* | — |
+
+**δ is now $719 — a per-worker raise in dollars.** `decompose(γ, δ).ate == 1794.00` exactly.
+
+### Two honest consequences
+
+**1. The feasibility wall was an artefact.** We made much of it: *"employment alone can deliver at most
+$1,473 < $1,794, so the extensive share can never exceed 82%."* Under the corrected DGP the ceiling is
+**$1,835**, which sits just *above* the $1,794 benchmark — so **the wall no longer binds**, and
+`maxExtensiveShare = 1.0`. The machinery is unchanged and still correct (ask for $4,000 and it bites); the
+*number* was a property of a log link on dollar-valued regressors, not a fact about job training.
+
+**2. Nothing recovers the truth, and the reason is now nameable.** OLS **+$3,460**, +interactions
+**−$2,790**, two-part **−$1,715**, PPML **+$3,921** against a true **+$1,794**. The DGP is
+`gate(L,T) × softplus(L,T)` — a *product* of two linear pieces, so not linear, so plain OLS cannot be right.
+And our `two_part` learner fits `log(Y)` on the positive rows — a **log** amount link — while this DGP's
+amount margin is **identity**. **Right family, wrong link.** The missing rung is a **two-part-identity**
+learner.
+
+Also: the residual panel's worst offender is now **the zero-indicator itself** (dCor 0.385) — which is
+*precisely* why Dehejia–Wahba include `u74 × black` (PSID-1, 1999) and `U74 × Hisp` (PSID, 2002). The tool
+independently rediscovered their balance finding.
+
+### The covariate-basis test has now flipped three times, and that is the finding
+
+| DGP | linear | quadratic | cubic | reading |
+|---|---|---|---|---|
+| v1 — log link on raw dollars ($2.4M earners) | +18,088 | −5,347 | +5,083 | **thrashing** |
+| v2 — log link on `sqrt(dollars)` | −1,904 | +540 | +2,259 | **converging** |
+| **v3 — identity link, levels + indicators** | **+3,460** | **+3,634** | **+3,635** | **flat** |
+
+The covariate basis helps exactly when the true surface is **nonlinear in raw L**, and not otherwise —
+and *which of those worlds you are in is precisely what you do not know.* It is not a ladder to climb; it
+is a sensitivity check whose behaviour is a property of the **DGP**, not of the estimator.
 
 ### Open design question
 

@@ -4,7 +4,7 @@ import { LALONDE_OBS_DATASET } from "./data/lalonde-obs";
 import {
   parseCsvToDataFrame, documentFromDataFrame, runSimulation, setNodeRole, addEdge, withGraph,
   registerRuntimeDataset, setExampleSampleSize, setVariable, pinNodeEquation, reconcilePins,
-  imposeEffect, imposedEffectContext, imposableEffect, normalizeEdgeMechanism, normalizeNodeMechanism, setEdgeMechanism
+  imposeEffect, imposedEffectContext, imposableEffect, normalizeEdgeMechanism, normalizeNodeMechanism, addPointMassIndicator, setNode
 } from "./index";
 import type { GraphDocument } from "./types";
 
@@ -40,11 +40,21 @@ function importAndWire(): GraphDocument {
   g = addEdge(g, "treat", "re78", "directed");
   doc = withGraph(doc, g);
   setVariable(doc, "re78", { valueType: "semicontinuous" });   // earnings are zero-or-positive, not Gaussian
-  // …and earnings HISTORY enters through a CONCAVE transform, not as dollars. This is a real step a user
-  // takes (the edge's function picker), and it is not optional: feeding dollar-valued history into a
-  // log-link intensive margin makes E[Y|L] exponential in dollars and manufactures $2.6M earners. sqrt, not
-  // log — the app's own residual test says log(1+x) is WORSE than raw here (the mass at zero).
-  for (const src of ["re74", "re75"]) setEdgeMechanism(doc, src, "re78", "power_law", { exponent: 0.5, scale: 1, offset: 0, baseline: 0, coefficient: 0 });
+  // …and THE LITERATURE'S SPECIFICATION, which is two more real UI steps:
+  //   (a) earnings history keeps its LEVELS but gains a ZERO-INDICATOR node (the "add a zero-indicator"
+  //       button). u74 = 1(re74==0) carries the selection signal; the dollar slope carries none.
+  //   (b) the intensive margin is IDENTITY + gamma, not log + lognormal (the response-family picker).
+  // Neither is optional: a log link on dollar-valued history is exponential IN DOLLARS and manufactures
+  // $2.4M earners, and log(re78)|re78>0 is left-skewed with excess kurtosis 5.34 — it is not lognormal.
+  doc = addPointMassIndicator(doc, "re74");
+  doc = addPointMassIndicator(doc, "re75");
+  let g2 = doc.graph;
+  for (const u of ["re74_is_zero", "re75_is_zero"]) {
+    g2 = addEdge(g2, u, "treat", "directed");
+    g2 = addEdge(g2, u, "re78", "directed");
+  }
+  doc = withGraph(doc, g2);
+  setNode(doc, "re78", { combiner: "positive_softplus" });
   return doc;
 }
 

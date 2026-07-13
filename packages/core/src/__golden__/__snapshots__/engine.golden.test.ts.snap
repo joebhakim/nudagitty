@@ -1002,52 +1002,60 @@ exports[`engine golden > lalonde-fit-recover — simulation + do-contrasts are s
 exports[`engine golden > lalonde-fit-recover-2part — simulation + do-contrasts are stable 1`] = `
 {
   "doContrasts": {
-    "do(In_program=1)−do(0) on Earnings_78": 1933.719043,
+    "do(In_program=1)−do(0) on Earnings_78": 1781.643823,
   },
   "nodes": {
     "Age": {
-      "mean": 34.23975,
-      "sd": 10.420522,
+      "mean": 34.01425,
+      "sd": 10.394544,
     },
     "Black": {
-      "mean": 0.29725,
-      "sd": 0.457048,
+      "mean": 0.28625,
+      "sd": 0.452008,
     },
     "Earnings_74": {
-      "mean": 18642.625048,
-      "sd": 14740.698863,
+      "mean": 18379.441272,
+      "sd": 13859.137409,
+    },
+    "Earnings_74_is_zero": {
+      "mean": 0.13475,
+      "sd": 0.341456,
     },
     "Earnings_75": {
-      "mean": 18247.424778,
-      "sd": 15039.524287,
+      "mean": 17998.22433,
+      "sd": 14006.52218,
+    },
+    "Earnings_75_is_zero": {
+      "mean": 0.13325,
+      "sd": 0.339845,
     },
     "Earnings_78": {
-      "mean": 20978.758553,
-      "sd": 22502.416256,
+      "mean": 20911.327892,
+      "sd": 16526.00917,
     },
     "Education": {
-      "mean": 12.0145,
-      "sd": 2.993959,
+      "mean": 12.039,
+      "sd": 3.057937,
     },
     "Hispanic": {
-      "mean": 0.0315,
-      "sd": 0.174665,
+      "mean": 0.03375,
+      "sd": 0.180585,
     },
     "In_program": {
-      "mean": 0.07425,
-      "sd": 0.262177,
+      "mean": 0.0735,
+      "sd": 0.260955,
     },
     "Married": {
-      "mean": 0.8115,
-      "sd": 0.391111,
+      "mean": 0.8155,
+      "sd": 0.387891,
     },
     "No_degree": {
-      "mean": 0.33625,
-      "sd": 0.472426,
+      "mean": 0.327,
+      "sd": 0.469117,
     },
     "Row_source": {
-      "mean": 1348.864027,
-      "sd": 772.536148,
+      "mean": 1325.08689,
+      "sd": 771.224846,
     },
   },
 }
