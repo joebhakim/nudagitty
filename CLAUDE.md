@@ -73,13 +73,23 @@ expansion to enumerate related files compactly. Examples:
 
 ## Deploy & canary (read before building)
 
-`nudag.joeha.kim` (prod) is served by `joesite-nudagitty.service` running `vite preview`
-over **`apps/web/dist` in `/home/joe/skunks/nudagitty`**, read live from disk. So
-**building a non-`main` branch inside the prod checkout publishes it to prod** the moment
-`npm run build` overwrites `dist`. Do NOT build feature branches in `/home/joe/skunks/nudagitty`.
+Two worktrees, two branches, two long-running `vite preview` services. That is the whole model.
 
-In-progress work lives in a separate worktree, `/home/joe/skunks/nudagitty-canary`
-(branch `output-redesign`), served at `canary-nudag.joeha.kim` (port 8506). Build and review
-there. Push `output-redesign` → the webhook deploys the canary; prod is untouched. Full deploy
-+ tunnel details: `/home/joe/skunks/joeha.kim/ops/joesite-status/README.md` ("Canary /
-Preview Environments").
+| worktree | branch | serves | port | url |
+|---|---|---|---|---|
+| `/home/joe/skunks/nudagitty` | `main` | prod | 8502 | `nudag.joeha.kim` |
+| `/home/joe/skunks/nudagitty-canary` | `canary` | in progress | 8506 | `canary-nudag.joeha.kim` |
+
+Both are `joesite-nudagitty.service`-style `vite preview` processes reading **`apps/web/dist`
+live from disk**. `dist` is gitignored, so a `git` operation NEVER deploys — only `npm run build`
+does, and it deploys **whatever branch that checkout happens to be on**.
+
+Hence the one rule: **do NOT build a non-`main` branch inside `/home/joe/skunks/nudagitty`.**
+`npm run build` there overwrites prod's `dist` the moment it finishes. Build and review in the
+canary worktree; promote by fast-forwarding `main` to `canary` and then building in the prod
+checkout deliberately.
+
+Rollback is a tag + a rebuild: `prod-<date>` tags mark what prod was serving.
+
+Full deploy + tunnel details: `/home/joe/skunks/joeha.kim/ops/joesite-status/README.md`
+("Canary / Preview Environments").
